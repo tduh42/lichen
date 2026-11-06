@@ -1,0 +1,206 @@
+//! Vectors copied from oxymesh (`testdata/meshcore/`): independent Python oracle for on-air
+//! frames and ECDH, meshcore.js for the companion protocol.
+
+use lc_meshcore::air::{Packet, Route};
+use lc_meshcore::ecdh::{expand_seed, public_key, shared_secret};
+use lc_meshcore::{Command, Path, Response};
+use toml::{Table, Value};
+
+fn load(name: &str) -> Table {
+    let path = format!(
+        "{}/../../testdata/meshcore/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(path).unwrap().parse().unwrap()
+}
+
+fn entries<'a>(t: &'a Table, kind: &str) -> &'a Vec<Value> {
+    t[kind].as_array().unwrap()
+}
+
+fn s<'a>(v: &'a Value, k: &str) -> &'a str {
+    v[k].as_str().unwrap()
+}
+
+fn h(v: &Value, k: &str) -> Vec<u8> {
+    hex::decode(s(v, k)).unwrap()
+}
+
+fn arr<const N: usize>(b: &[u8]) -> [u8; N] {
+    b.try_into().unwrap()
+}
+
+#[test]
+fn identities_and_ecdh() {
+    let t = load("air.toml");
+    let mut ids = std::collections::HashMap::new();
+    for v in entries(&t, "identity") {
+        let prv = expand_seed(&arr(&h(v, "seed")));
+        assert_eq!(prv.to_vec(), h(v, "prv"), "{}", s(v, "name"));
+        assert_eq!(public_key(&prv).to_vec(), h(v, "pub"), "{}", s(v, "name"));
+        ids.insert(s(v, "name").to_owned(), (prv, arr::<32>(&h(v, "pub"))));
+    }
+    for v in entries(&t, "ecdh") {
+        let (a_prv, a_pub) = ids[s(v, "a")];
+        let (b_prv, b_pub) = ids[s(v, "b")];
+        let secret = h(v, "secret");
+        assert_eq!(shared_secret(&a_prv, &b_pub).unwrap().to_vec(), secret);
+        assert_eq!(shared_secret(&b_prv, &a_pub).unwrap().to_vec(), secret);
+    }
+}
+
+#[test]
+fn packets_round_trip() {
+    let t = load("air.toml");
+    for v in entries(&t, "packet") {
+        let raw = h(v, "raw");
+        let p = Packet::decode(&raw).unwrap_or_else(|e| panic!("{}: {e:?}", s(v, "name")));
+        assert_eq!(p.route as i64, v["route"].as_integer().unwrap());
+        assert_eq!(p.ptype as i64, v["ptype"].as_integer().unwrap());
+        assert_eq!(
+            i64::from(p.path.len_byte()),
+            v["path_len"].as_integer().unwrap()
+        );
+        assert_eq!(p.path.bytes(), h(v, "path").as_slice());
+        let mut out = [0u8; 255];
+        let n = p.encode(&mut out).unwrap();
+        assert_eq!(&out[..n], raw.as_slice(), "{}", s(v, "name"));
+    }
+}
+
+#[test]
+fn packets_rejected() {
+    let t = load("air.toml");
+    for v in entries(&t, "reject") {
+        assert!(Packet::decode(&h(v, "raw")).is_err(), "{}", s(v, "name"));
+    }
+}
+
+fn command_for<'a>(name: &str, frame: &'a [u8]) -> Option<Command<'a>> {
+    let key = || -> &'a [u8; 32] { frame[frame.len() - 32..].try_into().unwrap() };
+    Some(match name {
+        "device-query" => Command::DeviceQuery { app_ver: 3 },
+        "app-start" => Command::AppStart { name: b"ln" },
+        "app-start-no-name" => Command::AppStart { name: b"" },
+        "set-time" => Command::SetDeviceTime {
+            time: 1_793_000_000,
+        },
+        "get-contacts" => Command::GetContacts { since: None },
+        "get-contacts-since" => Command::GetContacts { since: Some(5) },
+        "reset-path" => Command::ResetPath { key: key() },
+        "advert-flood" => Command::SendSelfAdvert { flood: true },
+        "advert-zero-hop" => Command::SendSelfAdvert { flood: false },
+        "get-device-time" => Command::GetDeviceTime,
+        "export-private-key" => Command::ExportPrivateKey,
+        "get-batt-and-storage" => Command::GetBattAndStorage,
+        "get-contact-by-key" => Command::GetContactByKey { key: key() },
+        "path-discovery" => Command::SendPathDiscoveryReq { key: key() },
+        "send-raw-data" => Command::SendRawData {
+            path: Path::new(0x02, &[0xaa, 0xbb]).unwrap(),
+            payload: &[1, 2, 3, 4, 5, 6],
+        },
+        "send-raw-data-zero-hop" => Command::SendRawData {
+            path: Path::EMPTY,
+            payload: &[1, 2, 3, 4],
+        },
+        "send-raw-data-hash-2" => Command::SendRawData {
+            path: Path::new(0x41, &[0xaa, 0xbb]).unwrap(),
+            payload: &[1, 2, 3, 4],
+        },
+        "send-raw-packet" => Command::SendRawPacket {
+            priority: 1,
+            raw: &frame[2..],
+        },
+        _ => return None,
+    })
+}
+
+#[test]
+fn commands_match_meshcore_js() {
+    let t = load("companion.toml");
+    let mut seen = 0;
+    for v in entries(&t, "command") {
+        let frame = h(v, "hex");
+        let Some(cmd) = command_for(s(v, "name"), &frame) else {
+            continue;
+        };
+        let mut out = [0u8; 176];
+        let n = cmd.encode(&mut out).unwrap();
+        assert_eq!(&out[..n], frame.as_slice(), "{}", s(v, "name"));
+        seen += 1;
+    }
+    assert_eq!(seen, 18);
+}
+
+#[test]
+fn responses_decode() {
+    let t = load("companion.toml");
+    for v in entries(&t, "response") {
+        let frame = h(v, "hex");
+        let name = s(v, "name");
+        let r = Response::decode(&frame);
+        if s(v, "expect") == "ok" {
+            assert!(r.is_ok(), "{name}: {r:?}");
+        }
+        match (name, r) {
+            (
+                "raw-data",
+                Ok(Response::RawData {
+                    snr4,
+                    rssi,
+                    payload,
+                }),
+            ) => {
+                assert_eq!((snr4, rssi, payload), (40, -75, &[1u8, 2, 3, 4, 5][..]));
+            }
+            ("log-rx-data", Ok(Response::LogRxData { snr4, rssi, raw })) => {
+                assert_eq!((snr4, rssi, raw), (44, -80, &[0x11u8, 0x22][..]));
+            }
+            ("contact", Ok(Response::Contact(c))) => assert_eq!(c.key[0], 0x80),
+            ("self-info", Ok(Response::SelfInfo(si))) => {
+                assert_eq!((si.tx_power_dbm, si.max_tx_power_dbm), (22, 22));
+                assert_eq!(si.key[0], 0x10);
+            }
+            (
+                "sent",
+                Ok(Response::Sent {
+                    flood,
+                    tag,
+                    timeout_ms,
+                }),
+            ) => {
+                assert_eq!((flood, tag, timeout_ms), (false, 0xefbe_adde, 5000));
+            }
+            (
+                "batt-and-storage",
+                Ok(Response::BattAndStorage {
+                    millivolts,
+                    used_kb,
+                    total_kb,
+                }),
+            ) => {
+                assert_eq!(
+                    (millivolts, used_kb, total_kb),
+                    (4123, Some(12), Some(1408))
+                );
+            }
+            ("device-info", Ok(Response::DeviceInfo(d))) => assert_eq!(d.fw_ver, 14),
+            ("path-discovery-response", Ok(Response::PathDiscoveryResponse { out_path, .. })) => {
+                assert_eq!(
+                    (out_path.len_byte(), out_path.bytes()),
+                    (2, &[0x11u8, 0x22][..])
+                );
+            }
+            ("private-key", Ok(r)) => assert!(matches!(r, Response::PrivateKey(_))),
+            ("disabled", Ok(r)) => assert_eq!(r, Response::Disabled),
+            ("err", Ok(r)) => assert_eq!(r, Response::Err(2)),
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn route_has_transport() {
+    assert!(Route::TransportFlood.has_transport());
+    assert!(!Route::Direct.has_transport());
+}

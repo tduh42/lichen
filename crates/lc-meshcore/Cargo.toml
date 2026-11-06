@@ -1,0 +1,20 @@
+[package]
+name = "lc-meshcore"
+description = "App side of the MeshCore v1.18 companion protocol (subset), USB framing, on-air frames, ECDH, airtime."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sha2.workspace = true
+curve25519-dalek.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+serde.workspace = true
+toml.workspace = true
+hex.workspace = true
+
+[lints]
+workspace = true

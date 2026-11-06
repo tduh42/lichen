@@ -1,0 +1,57 @@
+//! Companion-protocol codes (`oxymesh/docs/spec/companion.md` §2 and §4).
+
+/// App commands used by lichen.
+pub mod cmd {
+    pub const APP_START: u8 = 1;
+    pub const GET_CONTACTS: u8 = 4;
+    pub const GET_DEVICE_TIME: u8 = 5;
+    pub const SET_DEVICE_TIME: u8 = 6;
+    pub const SEND_SELF_ADVERT: u8 = 7;
+    pub const RESET_PATH: u8 = 13;
+    pub const GET_BATT_AND_STORAGE: u8 = 20;
+    pub const DEVICE_QUERY: u8 = 22;
+    pub const EXPORT_PRIVATE_KEY: u8 = 23;
+    pub const SEND_RAW_DATA: u8 = 25;
+    pub const GET_CONTACT_BY_KEY: u8 = 30;
+    pub const SEND_PATH_DISCOVERY_REQ: u8 = 52;
+    pub const SEND_RAW_PACKET: u8 = 65;
+}
+
+/// Device responses (< 0x80) and push notifications (≥ 0x80).
+pub mod resp {
+    pub const OK: u8 = 0;
+    pub const ERR: u8 = 1;
+    pub const CONTACTS_START: u8 = 2;
+    pub const CONTACT: u8 = 3;
+    pub const END_OF_CONTACTS: u8 = 4;
+    pub const SELF_INFO: u8 = 5;
+    pub const SENT: u8 = 6;
+    pub const CURR_TIME: u8 = 9;
+    pub const NO_MORE_MESSAGES: u8 = 10;
+    pub const BATT_AND_STORAGE: u8 = 12;
+    pub const DEVICE_INFO: u8 = 13;
+    pub const PRIVATE_KEY: u8 = 14;
+    pub const DISABLED: u8 = 15;
+
+    pub const ADVERT: u8 = 0x80;
+    pub const PATH_UPDATED: u8 = 0x81;
+    pub const SEND_CONFIRMED: u8 = 0x82;
+    pub const MSG_WAITING: u8 = 0x83;
+    pub const RAW_DATA: u8 = 0x84;
+    pub const LOG_RX_DATA: u8 = 0x88;
+    pub const NEW_ADVERT: u8 = 0x8A;
+    pub const PATH_DISCOVERY_RESPONSE: u8 = 0x8D;
+}
+
+/// Error codes (`ERR` = `[0x01, code]`).
+pub mod err {
+    pub const UNSUPPORTED_CMD: u8 = 1;
+    pub const NOT_FOUND: u8 = 2;
+    pub const TABLE_FULL: u8 = 3;
+    pub const BAD_STATE: u8 = 4;
+    pub const FILE_IO_ERROR: u8 = 5;
+    pub const ILLEGAL_ARG: u8 = 6;
+}
+
+/// Protocol version announced by `DEVICE_QUERY`: ≥ 3 to receive V3 frames.
+pub const APP_VER: u8 = 3;
