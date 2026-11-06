@@ -30,6 +30,8 @@ targets:
       - framework: LichenCore.xcframework
         embed: false
       - package: MapLibre
+      # iroh reads DNS and proxy settings through SystemConfiguration (ADR-0015).
+      - sdk: SystemConfiguration.framework
     info:
       path: Lichen/Info.plist
       properties:

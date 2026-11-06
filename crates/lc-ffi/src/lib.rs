@@ -15,8 +15,10 @@ use lc_core::{
 };
 use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
 
+mod bridge;
 mod demo;
 
+pub use bridge::{BridgeError, LichenBridge, Offered};
 pub use demo::DemoNetwork;
 
 uniffi::setup_scaffolding!();
@@ -156,10 +158,28 @@ pub enum Message {
         full_len: u16,
         data: Vec<u8>,
     },
+    /// Content offered over the Internet bridge (§14.1): fetch it with `LichenBridge`.
+    Announce {
+        sent_at: u32,
+        media_id: Vec<u8>,
+        /// 1 image, 2 voice, 3 file.
+        kind: u8,
+        hash: Vec<u8>,
+        size: u32,
+        providers: Vec<Provider>,
+        name: String,
+    },
     Other {
         content_type: u8,
         body: Vec<u8>,
     },
+}
+
+/// Where announced content can be fetched: transport 1 iroh, 2 Tor.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Provider {
+    pub transport: u8,
+    pub key: Vec<u8>,
 }
 
 /// How long a received position stays on the map, in seconds.
@@ -201,6 +221,22 @@ impl From<Content> for Message {
                 height,
                 full_len,
                 data,
+            },
+            Content::Announce(a) => Self::Announce {
+                sent_at: a.sent_at,
+                media_id: a.media_id.to_vec(),
+                kind: a.kind,
+                hash: a.hash.to_vec(),
+                size: a.size,
+                providers: a
+                    .providers
+                    .into_iter()
+                    .map(|(transport, key)| Provider {
+                        transport,
+                        key: key.to_vec(),
+                    })
+                    .collect(),
+                name: a.name,
             },
             c @ Content::MediaRequest { .. } => {
                 let mut v = c.encode();
@@ -1300,6 +1336,76 @@ impl LichenCore {
         }
         // What we keep in our history is the full image.
         Ok(i.stored_outgoing(k, full, id, estimate))
+    }
+
+    /// Announces content offered over the bridge (§14.1) to a contact or a group. `media_id`
+    /// links it to a LoRa preview sent before (empty: a new one).
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_announce(
+        &self,
+        chat: ChatRef,
+        media_id: Vec<u8>,
+        kind: u8,
+        hash: Vec<u8>,
+        size: u64,
+        providers: Vec<Provider>,
+        name: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let c = chat.to_store()?;
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let media_id: [u8; 8] = match <[u8; 8]>::try_from(media_id.as_slice()) {
+            Ok(m) => m,
+            Err(_) => i.core.random_id(),
+        };
+        let content = Content::Announce(lc_core::Announce {
+            sent_at,
+            media_id,
+            kind,
+            hash: hash
+                .as_slice()
+                .try_into()
+                .map_err(|_| LichenError::InvalidKey)?,
+            size: u32::try_from(size).map_err(|_| LichenError::TooLarge)?,
+            providers: providers
+                .iter()
+                .map(|p| key(&p.key).map(|k| (p.transport, k)))
+                .collect::<Result<_, _>>()?,
+            name,
+        });
+        let datagram = content.encode();
+        match c {
+            Chat::Contact(k) => {
+                let estimate = i.core.estimate_send(&k, datagram.len());
+                let id = i.core.send_datagram(&k, datagram, now_ms)?;
+                Ok(i.stored_outgoing(k, content, id, estimate))
+            }
+            Chat::Group(g) => {
+                i.core.send_group_datagram(&g, &datagram, now_ms)?;
+                let row = store::Message {
+                    id: 0,
+                    chat: Chat::Group(g),
+                    outgoing: true,
+                    author: None,
+                    content,
+                    at_ms: unix_ms(),
+                    status: Status::Flooded,
+                    fragments: 1,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                };
+                let stored = i
+                    .store
+                    .as_ref()
+                    .and_then(|s| s.insert(&row).ok())
+                    .unwrap_or(row);
+                i.persist();
+                Ok(stored.into())
+            }
+        }
     }
 
     /// Asks the sender of image preview `message_id` for its full variant.

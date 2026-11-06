@@ -758,6 +758,17 @@ impl Core {
         self.send_group(gid, &body, now)
     }
 
+    /// Floods a datagram (`content_type ‖ body`) to the group, signed (§10.3): an
+    /// announcement, for instance (§14.1).
+    pub fn send_group_datagram(
+        &mut self,
+        gid: &GroupId,
+        datagram: &[u8],
+        now: Millis,
+    ) -> Result<MsgId, Error> {
+        self.send_group(gid, datagram, now)
+    }
+
     pub(crate) fn send_group(
         &mut self,
         gid: &GroupId,

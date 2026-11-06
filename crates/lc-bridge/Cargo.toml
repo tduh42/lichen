@@ -1,0 +1,24 @@
+[package]
+name = "lc-bridge"
+description = "lichen's Internet bridge (ADR-0015): offers and fetches blobs over iroh, verified by BLAKE3."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+iroh.workspace = true
+blake3.workspace = true
+tokio.workspace = true
+hkdf = { version = "0.13" }
+sha2.workspace = true
+hex.workspace = true
+
+# libc 0.2.191 limits the routing-socket API (RTAX_*, RTM_*, in6_ifreq) to macOS, which
+# breaks iroh's netwatch 0.19 and netdev 0.46 on iOS. Held at 0.2.189 until they follow
+# (netdev 0.47 already has). Not used directly: the pin is for the resolver.
+[target.'cfg(target_os = "ios")'.dependencies]
+libc = "=0.2.189"
+
+[lints]
+workspace = true

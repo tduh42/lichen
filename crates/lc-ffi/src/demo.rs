@@ -2,7 +2,7 @@
 //! `lc_core::fakenet`, next to two simulated users who write, answer and start a group.
 //! Simulated time follows the app's clock, so LoRa delays are real.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use lc_core::content::MediaId;
 use lc_core::fakenet::Net;
@@ -21,6 +21,51 @@ const WALK: f64 = 1.3;
 /// Camille's voice message: `mode u8 ‖ frames u16 ‖ Codec2 data` (macOS speech synthesis,
 /// encoded by `cargo run -p lc-media --example encode_voice`).
 const CAMILLE_VOICE: &[u8] = include_bytes!("../../../testdata/voice/camille-refuge.c2");
+/// Camille's photo id: her LoRa preview and her announcement share it.
+const CAMILLE_PHOTO: [u8; 8] = [0xCA, 0x31, 0x11, 0xE0, 0, 0, 0, 1];
+
+/// An offer on the bridge: endpoint id, BLAKE3 hash, size.
+type Offer = ([u8; 32], [u8; 32], u32);
+
+/// Camille's full-resolution photo on a real iroh endpoint, started once per process in
+/// the background: the demo's bridge needs the Internet.
+fn camille_offer() -> &'static Mutex<Option<Offer>> {
+    static OFFER: OnceLock<Mutex<Option<Offer>>> = OnceLock::new();
+    static STARTED: OnceLock<()> = OnceLock::new();
+    let slot = OFFER.get_or_init(|| Mutex::new(None));
+    STARTED.get_or_init(|| {
+        std::thread::spawn(|| {
+            let Ok(rt) = tokio::runtime::Runtime::new() else {
+                return;
+            };
+            rt.block_on(async {
+                let (w, h) = (1280, 960);
+                let Ok(photo) = lc_media::image::encode_avif(
+                    &lc_media::image::sample_landscape(w, h),
+                    w,
+                    h,
+                    70.0,
+                ) else {
+                    return;
+                };
+                let key = lc_bridge::derive_key(&[0xCA; 32], "lichen/1 iroh");
+                let Ok(bridge) =
+                    lc_bridge::Bridge::start(key, None, lc_bridge::Network::Default).await
+                else {
+                    return;
+                };
+                if let Ok((hash, size)) = bridge.offer(photo)
+                    && let Ok(mut s) = camille_offer().lock()
+                {
+                    *s = Some((bridge.id(), hash, size as u32));
+                }
+                // Serve for as long as the app runs.
+                std::future::pending::<()>().await;
+            });
+        });
+    });
+    slot
+}
 
 #[derive(Clone, Debug)]
 enum Action {
@@ -59,6 +104,8 @@ struct Demo {
     wall0: u64,
     /// The full variant of Camille's photo, kept for when it is asked for.
     camille_full: Option<(MediaId, Vec<u8>)>,
+    /// Camille announced her full-resolution photo (§14.1).
+    announced: bool,
     bots_met: bool,
 }
 
@@ -170,7 +217,9 @@ impl Demo {
                 else {
                     return;
                 };
-                let media_id = [0xCA, 0x31, 0x11, 0xE0, 0, 0, 0, 1];
+                let media_id = CAMILLE_PHOTO;
+                // Her full-resolution photo goes on the Internet bridge meanwhile.
+                let _ = camille_offer();
                 let variant = |full: bool, data: Vec<u8>| Content::Image {
                     sent_at: ts,
                     media_id,
@@ -248,6 +297,28 @@ impl Demo {
         }
         self.locate();
         let app_key = self.net.key(self.app);
+        // Once her photo's preview went out and the bridge is up, Camille announces the full
+        // resolution (one LoRa frame).
+        if !self.announced
+            && self.camille_full.is_some()
+            && let Some((id, hash, size)) = camille_offer().lock().ok().and_then(|s| *s)
+        {
+            self.announced = true;
+            let ts = (self.unix_s() & 0xFFFF_FFFF) as u32;
+            let announce = Content::Announce(lc_core::Announce {
+                sent_at: ts,
+                media_id: CAMILLE_PHOTO,
+                kind: 1,
+                hash,
+                size,
+                providers: vec![(lc_core::content::transport::IROH, id)],
+                name: "refuge-dusk.avif".into(),
+            })
+            .encode();
+            let _ = self.net.with_core(self.camille, |c, now| {
+                c.send_datagram(&app_key, announce, now)
+            });
+        }
         for (bot, name) in [(self.camille, "Camille"), (self.julien, "Julien")] {
             for e in self.net.take_events(bot) {
                 match e {
@@ -427,6 +498,7 @@ impl DemoNetwork {
                 next_fix: 0,
                 wall0: wall,
                 camille_full: None,
+                announced: false,
                 bots_met: false,
             }),
         })
@@ -708,6 +780,77 @@ mod media {
 }
 
 #[cfg(test)]
+mod bridge {
+    use super::*;
+    use crate::{LichenCore, LichenEvent, Message};
+
+    /// Camille's preview arrives over LoRa, then her announcement; the app fetches the full
+    /// photo over iroh from her endpoint, by id, verified (§14). Needs the Internet:
+    /// `cargo test -p lc-ffi --release -- --ignored`.
+    #[test]
+    #[ignore = "needs the Internet"]
+    fn camille_announces_her_photo_over_iroh() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![6; 32], vec![106; 32], None).unwrap();
+        core.connect(0);
+        let mut announce = None;
+        let mut now = 0;
+        while now < 12 * 60_000 && announce.is_none() {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::MessageChanged { message } = e
+                    && let Message::Announce {
+                        media_id,
+                        hash,
+                        size,
+                        providers,
+                        ..
+                    } = message.message
+                {
+                    announce = Some((media_id, hash, size, providers));
+                }
+            }
+            now += 100;
+            // The demo's clock is the app's: give the background bridge real time too.
+            if now % 10_000 == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        let (media_id, hash, size, providers) = announce.expect("Camille announced her photo");
+        assert_eq!(
+            media_id,
+            CAMILLE_PHOTO.to_vec(),
+            "linked to her LoRa preview"
+        );
+        assert_eq!(providers[0].transport, lc_core::content::transport::IROH);
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let bytes = rt.block_on(async {
+            let me = lc_bridge::Bridge::start(
+                lc_bridge::derive_key(&[0x77; 32], "lichen/1 iroh"),
+                None,
+                lc_bridge::Network::Default,
+            )
+            .await
+            .unwrap();
+            let key: [u8; 32] = providers[0].key.as_slice().try_into().unwrap();
+            let hash: [u8; 32] = hash.as_slice().try_into().unwrap();
+            let t = std::time::Instant::now();
+            let got = me.fetch(key, hash, u64::from(size)).await.unwrap();
+            eprintln!("{} bytes over iroh in {:?}", got.len(), t.elapsed());
+            got
+        });
+        assert_eq!(bytes.len(), size as usize);
+        assert_eq!(&bytes[4..12], b"ftypavif");
+    }
+}
+
+#[cfg(test)]
 mod persistence {
     use super::*;
     use crate::{ChatRef, LichenCore, LichenEvent, Message, MessageStatus};
@@ -741,7 +884,10 @@ mod persistence {
     fn text(m: &Message) -> &str {
         match m {
             Message::Text { text, .. } => text,
-            Message::Voice { .. } | Message::Image { .. } | Message::Other { .. } => "",
+            Message::Voice { .. }
+            | Message::Image { .. }
+            | Message::Announce { .. }
+            | Message::Other { .. } => "",
         }
     }
 

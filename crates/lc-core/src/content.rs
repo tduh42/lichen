@@ -22,6 +22,30 @@ pub const fn voice_bits(mode: u8) -> Option<usize> {
     }
 }
 
+/// Transports of an announcement (§14.1).
+pub mod transport {
+    pub const IROH: u8 = 1;
+    pub const TOR: u8 = 2;
+}
+
+/// Largest announced content (§14.1).
+pub const ANNOUNCE_MAX_SIZE: u32 = 64 << 20;
+
+/// An announcement (§14.1): what to fetch, from whom, verified by its BLAKE3 hash.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Announce {
+    pub sent_at: u32,
+    /// The LoRa preview it completes, if any (§13.2).
+    pub media_id: MediaId,
+    /// 1 image, 2 voice, 3 file.
+    pub kind: u8,
+    pub hash: [u8; 32],
+    pub size: u32,
+    /// (transport, provider key), 1 or 2 of them.
+    pub providers: Vec<(u8, [u8; 32])>,
+    pub name: String,
+}
+
 /// A decoded datagram content.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Content {
@@ -49,6 +73,8 @@ pub enum Content {
     },
     /// "Send me this variant" (§13.3).
     MediaRequest { media_id: MediaId, full: bool },
+    /// Content offered over the Internet bridge (§14.1).
+    Announce(Announce),
     /// A type this version does not interpret.
     Other { content_type: u8, body: Vec<u8> },
 }
@@ -111,6 +137,27 @@ impl Content {
                 v.push(u8::from(*full));
                 v
             }
+            Content::Announce(a) => {
+                let mut end = a.name.len().min(32);
+                while !a.name.is_char_boundary(end) {
+                    end -= 1;
+                }
+                let mut v = Vec::with_capacity(52 + 33 * a.providers.len() + end);
+                v.push(content::ANNOUNCE);
+                v.extend_from_slice(&a.sent_at.to_le_bytes());
+                v.extend_from_slice(&a.media_id);
+                v.push(a.kind);
+                v.extend_from_slice(&a.hash);
+                v.extend_from_slice(&a.size.to_le_bytes());
+                v.push(a.providers.len() as u8);
+                for (t, k) in &a.providers {
+                    v.push(*t);
+                    v.extend_from_slice(k);
+                }
+                v.push(end as u8);
+                v.extend_from_slice(a.name.as_bytes().get(..end).unwrap_or(&[]));
+                v
+            }
             Content::Other { content_type, body } => {
                 let mut v = Vec::with_capacity(1 + body.len());
                 v.push(*content_type);
@@ -137,6 +184,8 @@ impl Content {
             decode_voice(body)
         } else if content_type == content::FILE && body.get(4) == Some(&KIND_AVIF) {
             decode_image(body)
+        } else if content_type == content::ANNOUNCE {
+            decode_announce(body)
         } else if content_type == content::MEDIA_REQUEST {
             let (id, rest) = body.split_first_chunk::<8>()?;
             let full = match rest {
@@ -176,6 +225,39 @@ fn decode_voice(body: &[u8]) -> Option<Content> {
         frames,
         data: data.to_vec(),
     })
+}
+
+fn decode_announce(body: &[u8]) -> Option<Content> {
+    let (ts, b) = body.split_first_chunk::<4>()?;
+    let (media_id, b) = b.split_first_chunk::<8>()?;
+    let (&kind, b) = b.split_first()?;
+    let (hash, b) = b.split_first_chunk::<32>()?;
+    let (size, b) = b.split_first_chunk::<4>()?;
+    let size = u32::from_le_bytes(*size);
+    let (&n, mut b) = b.split_first()?;
+    if !(1..=2).contains(&n) || size > ANNOUNCE_MAX_SIZE {
+        return None;
+    }
+    let mut providers = Vec::with_capacity(usize::from(n));
+    for _ in 0..n {
+        let (&t, rest) = b.split_first()?;
+        let (k, rest) = rest.split_first_chunk::<32>()?;
+        providers.push((t, *k));
+        b = rest;
+    }
+    let (&len, name) = b.split_first()?;
+    if usize::from(len) != name.len() || len > 32 {
+        return None;
+    }
+    Some(Content::Announce(Announce {
+        sent_at: u32::from_le_bytes(*ts),
+        media_id: *media_id,
+        kind,
+        hash: *hash,
+        size,
+        providers,
+        name: String::from_utf8(name.to_vec()).ok()?,
+    }))
 }
 
 fn decode_image(body: &[u8]) -> Option<Content> {
@@ -259,9 +341,66 @@ mod tests {
                 media_id: [4; 8],
                 full: true,
             },
+            Content::Announce(Announce {
+                sent_at: 5,
+                media_id: [6; 8],
+                kind: 1,
+                hash: [7; 32],
+                size: 1_800_000,
+                providers: vec![(transport::IROH, [8; 32]), (transport::TOR, [9; 32])],
+                name: "Photo du refuge".into(),
+            }),
         ];
         for c in all {
             assert_eq!(Content::decode(&c.encode()), Some(c));
+        }
+    }
+
+    #[test]
+    fn announce_size_and_limits() {
+        let a = Announce {
+            sent_at: 1,
+            media_id: [0; 8],
+            kind: 1,
+            hash: [1; 32],
+            size: 1_000,
+            providers: vec![(transport::IROH, [2; 32])],
+            name: "IMG_2031.jpg".into(),
+        };
+        // One iroh provider and a 12-byte name: 97 bytes, one fragment on any path.
+        assert_eq!(Content::Announce(a.clone()).encode().len(), 97);
+        let bad = |a: Announce| Content::decode(&Content::Announce(a).encode());
+        assert_eq!(
+            bad(Announce {
+                providers: vec![],
+                ..a.clone()
+            }),
+            None
+        );
+        assert_eq!(
+            bad(Announce {
+                providers: vec![(1, [0; 32]); 3],
+                ..a.clone()
+            }),
+            None
+        );
+        assert_eq!(
+            bad(Announce {
+                size: ANNOUNCE_MAX_SIZE + 1,
+                ..a.clone()
+            }),
+            None
+        );
+        // An unknown transport is kept (and skipped by the app).
+        let other = Announce {
+            providers: vec![(9, [3; 32])],
+            ..a.clone()
+        };
+        assert_eq!(bad(other.clone()), Some(Content::Announce(other)));
+        // Truncated anywhere: refused.
+        let full = Content::Announce(a).encode();
+        for n in 1..full.len() {
+            assert_eq!(Content::decode(&full[..n]), None, "{n}");
         }
     }
 

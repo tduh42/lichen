@@ -411,12 +411,12 @@
         }
       }
     },
-    "1-packet LoRa announcement, peer-to-peer transfer": {
+    "1-packet LoRa announcement, peer-to-peer transfer (%@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Annonce LoRa d'1 paquet, transfert P2P"
+            "value": "Annonce LoRa d'un paquet, transfert pair à pair (%@)"
           }
         }
       }
@@ -981,6 +981,16 @@
         }
       }
     },
+    "Contacts only: never flooded to a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts seulement : jamais en flood dans un groupe"
+          }
+        }
+      }
+    },
     "Contacts; groups every 30 min": {
       "localizations": {
         "fr": {
@@ -1201,6 +1211,26 @@
         }
       }
     },
+    "Download failed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec du téléchargement."
+          }
+        }
+      }
+    },
+    "Download in full resolution": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger en pleine résolution"
+          }
+        }
+      }
+    },
     "Download this area": {
       "localizations": {
         "fr": {
@@ -1217,6 +1247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les zones téléchargées marchent sans réseau."
+          }
+        }
+      }
+    },
+    "Downloading over iroh…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement via iroh…"
           }
         }
       }
@@ -1711,6 +1751,16 @@
         }
       }
     },
+    "Larger than announced: dropped.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus gros qu'annoncé : abandonné."
+          }
+        }
+      }
+    },
     "Last GPS position": {
       "localizations": {
         "fr": {
@@ -2091,6 +2141,16 @@
         }
       }
     },
+    "Needs an Internet connection": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande une connexion Internet"
+          }
+        }
+      }
+    },
     "Never expose your IP": {
       "localizations": {
         "fr": {
@@ -2151,6 +2211,16 @@
         }
       }
     },
+    "No Internet connection: the photo cannot be offered.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de connexion Internet : impossible de proposer la photo."
+          }
+        }
+      }
+    },
     "No cell towers": {
       "localizations": {
         "fr": {
@@ -2187,6 +2257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore de conversation"
+          }
+        }
+      }
+    },
+    "No longer offered by the sender.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'expéditeur ne la propose plus."
           }
         }
       }
@@ -2397,6 +2477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Photo"
+          }
+        }
+      }
+    },
+    "Photo: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo : %@"
           }
         }
       }
@@ -2821,6 +2911,16 @@
         }
       }
     },
+    "Send the announcement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer l'annonce"
+          }
+        }
+      }
+    },
     "Send the preview": {
       "localizations": {
         "fr": {
@@ -3061,6 +3161,16 @@
         }
       }
     },
+    "The content did not match its fingerprint: dropped.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le contenu ne correspond pas à son empreinte : abandonné."
+          }
+        }
+      }
+    },
     "The message is empty.": {
       "localizations": {
         "fr": {
@@ -3101,6 +3211,16 @@
         }
       }
     },
+    "The transfer took too long.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le transfert a pris trop de temps."
+          }
+        }
+      }
+    },
     "Their identity is not known yet: exchange a message or scan their code first.": {
       "localizations": {
         "fr": {
@@ -3117,6 +3237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sa clé n'est pas encore connue : échangez d'abord un message, ou scanne son code."
+          }
+        }
+      }
+    },
+    "Their phone is not reachable: offline, or the app is closed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son téléphone est injoignable : hors ligne, ou l'app est fermée."
           }
         }
       }
@@ -3207,6 +3337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tor"
+          }
+        }
+      }
+    },
+    "Tor and later sending come with the second part of the Internet bridge (L7b).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tor et l'envoi différé arrivent avec la seconde partie du pont Internet (L7b)."
           }
         }
       }
@@ -3541,6 +3681,16 @@
         }
       }
     },
+    "hash verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "empreinte vérifiée"
+          }
+        }
+      }
+    },
     "iroh (direct P2P)": {
       "localizations": {
         "fr": {
@@ -3557,16 +3707,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "iroh et Tor : avec le pont Internet"
-          }
-        }
-      }
-    },
-    "iroh, Tor and later sending come with the Internet bridge (L7).": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iroh, Tor et l'envoi différé arrivent avec le pont Internet (L7)."
           }
         }
       }

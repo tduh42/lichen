@@ -153,6 +153,13 @@ fn describe(core: &Core, e: &Event) -> String {
                     data.len()
                 ),
                 Content::MediaRequest { .. } => "media request".into(),
+                Content::Announce(a) => format!(
+                    "announces \"{}\" ({} bytes, BLAKE3 {}) over {} transport(s)",
+                    a.name,
+                    a.size,
+                    hex::encode(&a.hash[..8]),
+                    a.providers.len()
+                ),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }
@@ -196,6 +203,13 @@ fn describe(core: &Core, e: &Event) -> String {
                     data.len()
                 ),
                 Content::MediaRequest { .. } => "media request".into(),
+                Content::Announce(a) => format!(
+                    "announces \"{}\" ({} bytes, BLAKE3 {}) over {} transport(s)",
+                    a.name,
+                    a.size,
+                    hex::encode(&a.hash[..8]),
+                    a.providers.len()
+                ),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }

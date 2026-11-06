@@ -217,7 +217,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x01 | TEXT | `ts u32 (sender's Unix seconds) ‖ UTF-8 text (≥ 1 byte)` | L2 |
 | 0x02 | FILE | §13.2 (images) | L6 |
 | 0x03 | LOCATION | §12 (14 bytes) | L5 |
-| 0x04 | ANNOUNCE | reserved (blob announcement, `design.md`) | L7 |
+| 0x04 | ANNOUNCE | §14.1 | L7 |
 | 0x05 | VOICE | §13.1 | L6 |
 | 0x06 | MEDIA_REQUEST | §13.3 | L6 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
@@ -343,7 +343,7 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 
 ## 11. Parts taken as is from `design.md`
 
-Internet bridge (iroh, Tor), search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
+Search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
 
 ## 12. Location (ADR-0011)
 
@@ -402,4 +402,38 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 ### 13.4 Airtime
 
 Before sending a medium, the core estimates the airtime of its first round on the current path. When it does not fit in what is left of the sliding hour (§9), the send is refused with the time at which it would fit; nothing is queued. Text and positions are never refused this way (they are deferred frame by frame, §9).
+
+## 14. Internet bridge (ADR-0015)
+
+LoRa carries an authenticated **announcement**; the content travels over the Internet, verified against the hash the announcement pins. A malicious relay can neither impersonate the provider nor substitute the content.
+
+### 14.1 ANNOUNCE (0x04)
+
+`ts u32 ‖ media_id [8] ‖ kind u8 ‖ hash [32] ‖ size u32 ‖ n (1..2) ‖ n × (transport u8 ‖ key [32]) ‖ name_len u8 ‖ name (UTF-8, ≤ 32)`
+
+- `kind`: 1 image, 2 voice, 3 file.
+- `hash`: BLAKE3 of the content; `size`: its length in bytes (at most 64 MiB).
+- `transport` 1: **iroh**, `key` the provider's iroh endpoint id (Ed25519); 2: **Tor**, `key` the provider's onion service identity (Ed25519, the v3 address derives from it). Unknown transports are skipped.
+- `media_id` links the announcement to a LoRa preview of the same image (§13.2), when one was sent.
+- Sent like any datagram (direct) or as a group message (§10.3, two fragments at most): **media reach groups this way**, never flooded themselves.
+
+One announcement over iroh with a 20-byte name is 105 bytes: one fragment on any path.
+
+### 14.2 Blob protocol
+
+Over a bidirectional stream (iroh ALPN `lichen/blob/1`; the same bytes over a Tor stream to the onion service):
+
+```
+request  = 0x01 ‖ hash [32]
+response = 0x00 ‖ size u64 ‖ content     (found)
+         | 0x01                         (unknown hash)
+```
+
+- The requester reads at most the announced `size` (and never more than 64 MiB), computes BLAKE3 and drops the content unless it matches `hash`.
+- The provider serves whoever asks for a hash it offers: the hash is the capability, and it only travels inside encrypted announcements. iroh authenticates the provider by its endpoint id (TLS 1.3, end to end even through a relay).
+- The provider offers a blob while the app runs (synchronous mode), for 7 days after the announcement.
+
+### 14.3 Keys
+
+The iroh key is `HKDF(seed, "lichen/1 iroh")` (§2): stable for a phone, so connections reuse what the network learned, but distinct from the lichen identity. The Tor key is derived the same way with `"lichen/1 onion"`.
 

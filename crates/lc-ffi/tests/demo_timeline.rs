@@ -31,6 +31,9 @@ fn timeline() {
                         Message::Image { full, data, .. } => {
                             format!("image full={full} {} B", data.len())
                         }
+                        Message::Announce { name, size, .. } => {
+                            format!("announce {name:?} {size} B")
+                        }
                         Message::Other { content_type, .. } => format!("other {content_type}"),
                     };
                     println!(

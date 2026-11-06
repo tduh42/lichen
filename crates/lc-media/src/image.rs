@@ -34,6 +34,31 @@ pub enum ImageError {
     Encode,
 }
 
+/// A full-size AVIF of an RGBA8 image (alpha ignored), for the Internet bridge (§14).
+pub fn encode_avif(
+    rgba: &[u8],
+    width: u32,
+    height: u32,
+    quality: f32,
+) -> Result<Vec<u8>, ImageError> {
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or(ImageError::BadSize)?;
+    if width == 0 || height == 0 || rgba.len() != expected {
+        return Err(ImageError::BadSize);
+    }
+    let pixels = downscale(rgba, width, height, width, height);
+    Encoder::new()
+        .with_quality(quality.clamp(1.0, 100.0))
+        .with_speed(8)
+        .with_bit_depth(BitDepth::Eight)
+        .with_num_threads(Some(1))
+        .encode_rgb(Img::new(pixels.as_slice(), width as usize, height as usize))
+        .map(|e| e.avif_file)
+        .map_err(|_| ImageError::Encode)
+}
+
 /// Size that fits in 160 × 120 with the same aspect ratio (never upscaled).
 pub fn fit(width: u32, height: u32) -> (u32, u32) {
     let (w, h) = (width.max(1), height.max(1));

@@ -161,3 +161,16 @@ A first contact costs about 1.8 s of airtime for its three frames, once per pair
 
 The demo network showed a cost of congestion: an introduction still retrying after a HELLO had succeeded replaced the working session, and INTRO_FIN resends without data to acknowledge only added collisions at the hub. Both are now ruled out (§4.6).
 
+
+## 2026-11-06 — Internet bridge over iroh (L7a)
+
+`cargo test -p lc-bridge --release -- --ignored --nocapture` and `cargo test -p lc-ffi --release --lib -- --ignored bridge --nocapture`, both ends on the same Mac, over n0's public relays and address lookup (iroh 1.4.1).
+
+| Transfer | Bytes | Time |
+|---|---|---|
+| Blob fetched by endpoint id alone (`lichen/blob/1`, BLAKE3 checked) | 300,000 | 135 ms |
+| Demo: Camille's full photo, 1280 × 960 AVIF, after her LoRa announcement | 8,958 | 191 ms |
+
+The announcement is one LoRa datagram: 52 + 33 per provider + name bytes of content, 101 bytes for Camille's (one iroh provider, a 16-byte name), against 975 bytes for the full 160 × 120 thumbnail over LoRa. Substituted content (a provider answering other bytes) is dropped by the hash check (`substitution_is_caught`).
+
+iOS simulator, demo network (`-demo YES -open Camille -media YES`): the announcement arrives after the LoRa preview, the app fetches over iroh and shows the full-resolution photo with "hash verified" (`docs/screenshots/ios-announce-en.png`, `ios-iroh-fetched-en.png`).

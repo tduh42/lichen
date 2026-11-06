@@ -22,7 +22,9 @@ lc-core.workspace = true
 lc-meshcore.workspace = true
 lc-proto.workspace = true
 lc-media.workspace = true
-uniffi.workspace = true
+uniffi = { workspace = true, features = ["tokio"] }
+lc-bridge.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

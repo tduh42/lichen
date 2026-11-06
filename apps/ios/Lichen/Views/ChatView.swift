@@ -213,6 +213,11 @@ private struct MessageView: View {
                 VoiceNote(message: message)
             case .image:
                 ImageCard(message: message)
+            case let .announce(_, mediaId, _, _, _, _, _):
+                // Shown inside its LoRa preview's card when that preview is here.
+                if model.preview(for: mediaId, in: message.chat) == nil {
+                    BridgeSection(announce: message, standalone: true)
+                }
             default:
                 Text(message.message.display)
                     .font(.system(size: 16))
@@ -297,10 +302,20 @@ private struct ImageCard: View {
     @State private var error: String?
 
     var body: some View {
-        if case let .image(_, _, full, width, height, fullLen, data) = message.message {
+        if case let .image(_, mediaId, full, width, height, fullLen, data) = message.message {
+            let announce = model.announcement(for: mediaId, in: message.chat)
+            let fetched = announce.flatMap { a -> UIImage? in
+                guard case let .announce(_, _, _, hash, _, _, _) = a.message,
+                      let url = model.downloads[hash] else { return nil }
+                return UIImage(contentsOfFile: url.path)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
-                    if let ui = UIImage(data: data) {
+                    if let fetched {
+                        Image(uiImage: fetched)
+                            .resizable()
+                            .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
+                    } else if let ui = UIImage(data: data) {
                         Image(uiImage: ui)
                             .resizable()
                             .interpolation(.medium)
@@ -309,7 +324,7 @@ private struct ImageCard: View {
                     } else {
                         Theme.s2
                     }
-                    if !full {
+                    if !full && fetched == nil {
                         Text("LoRa preview · \(data.count) bytes")
                             .font(.system(size: 11))
                             .padding(.horizontal, 8)
@@ -332,7 +347,9 @@ private struct ImageCard: View {
                         TransportBadge(kind: .lora, label: full ? String(localized: "LoRa · full thumbnail") : String(localized: "LoRa · preview"))
                         if !full && !message.outgoing { Text("full one on request").font(.system(size: 11)).foregroundStyle(Theme.tx2) }
                     }
-                    if !message.outgoing && !full && fullLen > 0 {
+                    if let announce {
+                        BridgeSection(announce: announce, standalone: false)
+                    } else if !message.outgoing && !full && fullLen > 0 {
                         if model.requestedFull.contains(message.id) {
                             Label("Full image requested…", systemImage: "hourglass")
                                 .font(.system(size: 13))
@@ -375,6 +392,7 @@ private struct Composer: View {
     @State private var picked: PhotosPickerItem?
     @State private var picking = false
     @State private var image: PreparedImage?
+    @State private var original: Data?
     @State private var preparing = false
 
     var body: some View {
@@ -386,7 +404,7 @@ private struct Composer: View {
                 recordingBar
             } else {
                 HStack(spacing: 8) {
-                    if isContact {
+                    if isContact || model.bridgeOnline {
                         Button { picking = true } label: {
                             Image(systemName: preparing ? "hourglass" : "plus")
                                 .font(.system(size: 18, weight: .semibold))
@@ -450,6 +468,7 @@ private struct Composer: View {
                     error = LichenError.BadImage.display
                     return
                 }
+                original = data
                 do {
                     image = try await Task.detached { try prepareImage(rgba: rgba, width: w, height: h) }.value
                 } catch {
@@ -467,8 +486,9 @@ private struct Composer: View {
             #endif
         }
         .sheet(item: Binding(get: { image.map(ImageDraft.init) }, set: { image = $0?.image })) { draft in
-            SendPhotoSheet(chat: chat, image: draft.image) { e in
+            SendPhotoSheet(chat: chat, image: draft.image, original: original) { e in
                 image = nil
+                original = nil
                 error = e
             }
         }
@@ -560,8 +580,23 @@ private struct ImageDraft: Identifiable {
 private struct SendPhotoSheet: View {
     let chat: ChatID
     let image: PreparedImage
+    /// The photo as picked, offered over the bridge in full resolution.
+    let original: Data?
     let done: (String?) -> Void
     @Environment(AppModel.self) private var model
+    @State private var mode: Mode?
+
+    enum Mode { case lora, iroh }
+
+    private var isGroup: Bool {
+        if case .group = chat { return true }
+        return false
+    }
+
+    private var irohOK: Bool { model.bridgeOnline && original != nil }
+
+    /// LoRa previews go to contacts only; groups get the announcement (§14.1).
+    private var chosen: Mode { mode ?? (isGroup ? .iroh : .lora) }
 
     var body: some View {
         NavigationStack {
@@ -587,25 +622,38 @@ private struct SendPhotoSheet: View {
                     SectionLabel("How to send it to \(model.title(of: chat))")
                     option(
                         title: String(localized: "LoRa preview"),
-                        detail: String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
-                        badge: costBadge, kind: .lora, selected: true, enabled: true
+                        detail: isGroup
+                            ? String(localized: "Contacts only: never flooded to a group")
+                            : String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
+                        badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
                     )
+                    .onTapGesture { if !isGroup { mode = .lora } }
                     option(title: String(localized: "Full resolution via iroh"),
-                           detail: String(localized: "1-packet LoRa announcement, peer-to-peer transfer"),
-                           badge: String(localized: "1 packet"), kind: .iroh, selected: false, enabled: false)
+                           detail: irohOK
+                               ? String(localized: "1-packet LoRa announcement, peer-to-peer transfer (\(ByteCountFormatter.string(fromByteCount: Int64(original?.count ?? 0), countStyle: .file)))")
+                               : String(localized: "Needs an Internet connection"),
+                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                    .onTapGesture { if irohOK { mode = .iroh } }
                     option(title: String(localized: "Full resolution via Tor"),
                            detail: String(localized: "Anonymous, slower"),
                            badge: String(localized: "1 packet"), kind: .tor, selected: false, enabled: false)
                     option(title: String(localized: "Thumbnail now, full resolution later"),
                            detail: String(localized: "Sent when the Internet comes back"),
                            badge: costBadge, kind: .lora, selected: false, enabled: false)
-                    LaterNote(text: "iroh, Tor and later sending come with the Internet bridge (L7).")
+                    LaterNote(text: "Tor and later sending come with the second part of the Internet bridge (L7b).")
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. Images are never flooded.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.tx2)
-                    Button("Send the preview") { done(model.sendImage(image, to: chat)) }
-                        .buttonStyle(.primary)
-                        .padding(.top, 8)
+                    Button(chosen == .iroh ? String(localized: "Send the announcement") : String(localized: "Send the preview")) {
+                        if chosen == .iroh, let original {
+                            done(model.sendViaIroh(original, name: Self.name(of: original), to: chat))
+                        } else {
+                            done(model.sendImage(image, to: chat))
+                        }
+                    }
+                    .buttonStyle(.primary)
+                    .disabled(chosen == .iroh ? !irohOK : isGroup)
+                    .padding(.top, 8)
                 }
                 .padding(16)
             }
@@ -621,6 +669,20 @@ private struct SendPhotoSheet: View {
     }
 
     private var estimate: Estimate? { model.estimate(chat, datagramLen: imageDatagramLen(image: image)) }
+
+    /// A file name from the image's format.
+    static func name(of data: Data) -> String {
+        let head = [UInt8](data.prefix(12))
+        let ext: String
+        if head.starts(with: [0xFF, 0xD8]) { ext = "jpg" }
+        else if head.starts(with: [0x89, 0x50, 0x4E, 0x47]) { ext = "png" }
+        else if head.count >= 12, String(bytes: head[4..<12], encoding: .ascii)?.hasPrefix("ftyphei") == true { ext = "heic" }
+        else if head.count >= 12, String(bytes: head[4..<12], encoding: .ascii) == "ftypavif" { ext = "avif" }
+        else { ext = "jpg" }
+        let stamp = Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false))
+            .replacingOccurrences(of: ":", with: "")
+        return "photo-\(stamp).\(ext)"
+    }
 
     private var previewFragments: String {
         estimate.map { fragmentsText($0.fragments) } ?? fragmentsText(3)
@@ -653,3 +715,70 @@ private struct SendPhotoSheet: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
+
+/// Content announced over LoRa and fetched over the Internet bridge (§14, mockup `chat`):
+/// size, transports, the download, "hash verified" once done.
+private struct BridgeSection: View {
+    let announce: StoredMessage
+    /// Its own card (no LoRa preview in this conversation).
+    let standalone: Bool
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if case let .announce(_, _, _, hash, size, providers, name) = announce.message {
+            let file = model.downloads[hash]
+            let content = VStack(alignment: .leading, spacing: 8) {
+                if standalone, let file, let ui = UIImage(contentsOfFile: file.path) {
+                    Image(uiImage: ui).resizable().scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                HStack {
+                    Text(verbatim: name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Spacer()
+                    Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                }
+                HStack(spacing: 6) {
+                    ForEach(providers, id: \.transport) { p in
+                        switch p.transport {
+                        case 1: TransportBadge(kind: .iroh, label: "iroh")
+                        case 2: TransportBadge(kind: .tor, label: "Tor")
+                        default: EmptyView()
+                        }
+                    }
+                    if file != nil {
+                        Label("hash verified", systemImage: "checkmark.seal")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.ok)
+                    }
+                }
+                if let error = model.fetchErrors[hash] {
+                    Text(error).font(.system(size: 12)).foregroundStyle(Theme.sosFg)
+                }
+                if file == nil && !announce.outgoing {
+                    if model.fetching.contains(hash) {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Downloading over iroh…").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        }
+                    } else {
+                        Button("Download in full resolution") { model.fetch(announce) }
+                            .buttonStyle(SecondaryButtonStyle(background: Theme.irohBg, foreground: Theme.irohFg, height: 40))
+                            .disabled(!model.bridgeOnline)
+                    }
+                }
+            }
+            if standalone {
+                content
+                    .padding(12)
+                    .frame(width: 250)
+                    .background(Theme.s1)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+            } else {
+                content
+            }
+        }
+    }
+}
+

@@ -20,6 +20,13 @@ final class AppModel {
     var phraseBackedUp = UserDefaults.standard.bool(forKey: "lichen.phraseBackedUp") {
         didSet { UserDefaults.standard.set(phraseBackedUp, forKey: "lichen.phraseBackedUp") }
     }
+    // Internet bridge (ADR-0015).
+    var bridgeOnline = false
+    /// Content fetched or offered over the bridge, by BLAKE3 hash.
+    var downloads: [Data: URL] = [:]
+    var fetching: Set<Data> = []
+    var fetchErrors: [Data: String] = [:]
+
     /// The name we give on our contact card.
     var myName = UserDefaults.standard.string(forKey: "lichen.myName") ?? "" {
         didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
@@ -74,6 +81,7 @@ final class AppModel {
     @ObservationIgnored let locator = Locator()
     @ObservationIgnored private var lastFed: UInt64?
     @ObservationIgnored private var demoFixTimer: Timer?
+    @ObservationIgnored private var bridge: LichenBridge?
 
     private static let nodeKeyDefault = "lichen.nodeKey"
 
@@ -91,6 +99,8 @@ final class AppModel {
         shares = core.shares()
         positions = core.positions(nowMs: now())
         updateLocator()
+        loadDownloads()
+        startBridge()
         #if DEBUG
         let args = UserDefaults.standard
         debugSay = args.string(forKey: "say")
@@ -312,10 +322,12 @@ final class AppModel {
             upsert(m)
             conversations = core.conversations()
             #if DEBUG
-            // -media YES: ask for full images as their previews arrive.
-            if UserDefaults.standard.bool(forKey: "media"), !m.outgoing,
-               case .image(_, _, false, _, _, _, _) = m.message, !requestedFull.contains(m.id) {
-                _ = requestFull(m)
+            // -media YES: ask for full images as their previews arrive, fetch what is announced.
+            if UserDefaults.standard.bool(forKey: "media"), !m.outgoing {
+                if case .image(_, _, false, _, _, _, _) = m.message, !requestedFull.contains(m.id) {
+                    _ = requestFull(m)
+                }
+                if case .announce = m.message { fetch(m) }
             }
             #endif
         case let .location(position, end):
@@ -560,6 +572,104 @@ final class AppModel {
         pump()
     }
 
+    // MARK: Internet bridge (ADR-0015)
+
+    private static func folder(_ name: String) -> URL? {
+        guard let base = dataDirectory() else { return nil }
+        let dir = URL(fileURLWithPath: base).appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Starts this phone's iroh endpoint; `bridgeOnline` once a relay answers.
+    func startBridge() {
+        let seed = Keychain.identitySeed()
+        let dir = Self.folder("offers")?.path
+        Task {
+            guard let b = try? await LichenBridge.start(identitySeed: seed, dir: dir) else { return }
+            bridge = b
+            bridgeOnline = await b.online(limitS: 30)
+        }
+    }
+
+    private func loadDownloads() {
+        guard let dir = Self.folder("downloads"),
+              let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
+        else { return }
+        for f in files {
+            if let h = Data(hex: f.deletingPathExtension().lastPathComponent), h.count == 32 { downloads[h] = f }
+        }
+    }
+
+    private func keep(_ bytes: Data, hash: Data, name: String) -> URL? {
+        let ext = (name as NSString).pathExtension
+        guard let url = Self.folder("downloads")?.appendingPathComponent(hash.hex)
+            .appendingPathExtension(ext.isEmpty ? "bin" : ext)
+        else { return nil }
+        try? bytes.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        downloads[hash] = url
+        return url
+    }
+
+    /// Offers a photo on the bridge and announces it in one LoRa frame (§14.1).
+    func sendViaIroh(_ original: Data, name: String, to chat: ChatID) -> String? {
+        guard let bridge, bridgeOnline else { return String(localized: "No Internet connection: the photo cannot be offered.") }
+        do {
+            let offered = try bridge.offer(bytes: original)
+            _ = keep(original, hash: offered.hash, name: name)
+            let m = try core.sendAnnounce(
+                chat: chat, mediaId: Data(), kind: 1, hash: offered.hash, size: offered.size,
+                providers: [Provider(transport: 1, key: bridge.endpointId())], name: name,
+                sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now()
+            )
+            if chats[chat] == nil { load(chat) } else { upsert(m) }
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// Fetches announced content over iroh, verified against its hash.
+    func fetch(_ m: StoredMessage) {
+        guard case let .announce(_, _, _, hash, size, providers, name) = m.message,
+              let p = providers.first(where: { $0.transport == 1 }), let bridge,
+              !fetching.contains(hash)
+        else { return }
+        fetching.insert(hash)
+        fetchErrors[hash] = nil
+        Task {
+            defer { fetching.remove(hash) }
+            do {
+                let bytes = try await bridge.fetch(provider: p.key, hash: hash, size: UInt64(size))
+                _ = keep(bytes, hash: hash, name: name)
+            } catch let e as BridgeError {
+                fetchErrors[hash] = e.display
+            } catch {
+                fetchErrors[hash] = String(localized: "Download failed.")
+            }
+        }
+    }
+
+    /// The announcement that completes the LoRa preview `mediaId` in `chat`, if any.
+    func announcement(for mediaId: Data, in chat: ChatID) -> StoredMessage? {
+        chats[chat]?.last { m in
+            if case let .announce(_, id, _, _, _, _, _) = m.message { return id == mediaId }
+            return false
+        }
+    }
+
+    /// The LoRa preview an announcement completes, if it is in `chat`.
+    func preview(for mediaId: Data, in chat: ChatID) -> StoredMessage? {
+        chats[chat]?.first { m in
+            if case let .image(_, id, _, _, _, _, _) = m.message { return id == mediaId }
+            return false
+        }
+    }
+
     // MARK: identity (ADR-0013)
 
     var fingerprint: [String] { core.fingerprint() }
@@ -651,6 +761,32 @@ final class AppModel {
 
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
+
+    init?(hex: String) {
+        guard hex.count.isMultiple(of: 2) else { return nil }
+        var bytes = [UInt8]()
+        var i = hex.startIndex
+        while i < hex.endIndex {
+            let j = hex.index(i, offsetBy: 2)
+            guard let b = UInt8(hex[i..<j], radix: 16) else { return nil }
+            bytes.append(b)
+            i = j
+        }
+        self.init(bytes)
+    }
+}
+
+extension BridgeError {
+    var display: String {
+        switch self {
+        case .Unreachable: return String(localized: "Their phone is not reachable: offline, or the app is closed.")
+        case .NotFound: return String(localized: "No longer offered by the sender.")
+        case .TooLarge: return String(localized: "Larger than announced: dropped.")
+        case .Mismatch: return String(localized: "The content did not match its fingerprint: dropped.")
+        case .Timeout: return String(localized: "The transfer took too long.")
+        case let .Failed(reason): return reason
+        }
+    }
 }
 
 extension StoredMessage {
@@ -671,6 +807,7 @@ extension Message {
         case let .voice(_, _, _, durationMs, _):
             return String(localized: "Voice message (\(clock(TimeInterval(durationMs) / 1000)))")
         case .image: return String(localized: "Photo")
+        case let .announce(_, _, _, _, _, _, name): return String(localized: "Photo: \(name)")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
         case let .other(type, body): return String(localized: "Unsupported content (type \(String(type)), \(String(body.count)) bytes)")
         }
@@ -678,7 +815,8 @@ extension Message {
 
     var date: Date {
         switch self {
-        case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _):
+        case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _),
+             let .announce(sentAt, _, _, _, _, _, _):
             if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
         case .other:
             break
