@@ -50,3 +50,10 @@ What it took (3 repeaters, 10 % per link, 12 to 20 runs each):
 | + 8 silent rounds and 8 HELLOs before giving up | 49/50 | 0.9 % |
 
 Bugs the fake network found, all fixed: HELLO retries on fixed timers collided forever between two hidden nodes that started together (now a random backoff); a responder sending on its pending session resent the same datagram when the session was confirmed (duplicate delivery); a single lost ACK on a long path restarted a whole 64-fragment transfer.
+
+## 2026-11-06 — Cross-check against oxymesh's MeshCore node logic (`sim/`)
+
+`(cd sim && cargo test --release -- --nocapture)`: two lichen apps on oxymesh's `mc-sim`, which runs oxymesh's port of the MeshCore v1.18 node logic (alice — companion with repeat on — bob). Contacts come from a real advert flood with auto-add.
+
+- First run: `NoPath`. MeshCore's `SEND_PATH_DISCOVERY_REQ` is a flooded telemetry request, and a node answers only when its owner allows base telemetry, off by default. lichen's own fake network had answered discovery from the topology and hidden this. Hence ADR-0008: lichen floods its own PROBE as `GRP_DATA` and reads it through `LOG_RX_DATA`.
+- With the probe: text delivered 26 s into the simulation (probe from alice, re-flooded by the relay with its hash, PATH_REPLY, handshake, data, all in direct mode); 3 KB delivered at 5 % random loss.

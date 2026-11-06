@@ -5,6 +5,7 @@
 use crate::bytes::{Reader, Writer};
 use crate::path::{Path, path_bytes};
 use crate::{DecodeError, EncodeError};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 
 /// Largest on-air frame (`MAX_TRANS_UNIT`).
@@ -161,6 +162,41 @@ impl<'a> Packet<'a> {
     /// (`src/Packet.cpp:41-50`). Route, path and transport codes are not covered.
     pub fn dedup_hash(&self) -> [u8; 8] {
         dedup_hash(self.ptype, self.path.len_byte(), self.payload)
+    }
+}
+
+/// Key of a region (flood scope) from its name: `SHA256("#" ‖ name)[0..16]`; "fr" and "#fr"
+/// give the same key (`oxymesh/docs/spec/air.md` §1.3).
+pub fn region_key(name: &str) -> [u8; 16] {
+    let name = name.strip_prefix('#').unwrap_or(name);
+    let mut h = Sha256::new();
+    h.update(b"#");
+    h.update(name.as_bytes());
+    let d = h.finalize();
+    let mut k = [0u8; 16];
+    for (o, b) in k.iter_mut().zip(d.iter()) {
+        *o = *b;
+    }
+    k
+}
+
+/// Transport code of a scoped flood: `u16le(HMAC-SHA256(key, [type] ‖ payload)[0..2])`, with
+/// 0x0000 → 0x0001 and 0xFFFF → 0xFFFE.
+pub fn transport_code(key: &[u8; 16], ptype: PayloadType, payload: &[u8]) -> u16 {
+    let Ok(mut mac) = <Hmac<Sha256> as KeyInit>::new_from_slice(key) else {
+        return 1;
+    };
+    mac.update(&[ptype as u8]);
+    mac.update(payload);
+    let tag = mac.finalize().into_bytes();
+    let code = u16::from_le_bytes([
+        tag.first().copied().unwrap_or(0),
+        tag.get(1).copied().unwrap_or(0),
+    ]);
+    match code {
+        0 => 1,
+        0xFFFF => 0xFFFE,
+        c => c,
     }
 }
 

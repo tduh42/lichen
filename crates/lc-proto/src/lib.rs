@@ -17,6 +17,7 @@
 )]
 
 pub mod aead;
+pub mod discovery;
 pub mod handshake;
 pub mod header;
 pub mod kdf;

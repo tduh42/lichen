@@ -7,12 +7,14 @@
 
 use std::collections::{HashMap, VecDeque};
 
+use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::airtime::LoRaParams;
 use lc_meshcore::codes::APP_VER;
 use lc_meshcore::command::{Command, raw_payload_max};
 use lc_meshcore::ecdh::{public_key, shared_secret};
 use lc_meshcore::path::{PATH_UNKNOWN, Path};
 use lc_meshcore::response::Response;
+use lc_proto::discovery::{self, ProbeId};
 use lc_proto::handshake::{self, Hello, HelloAck, SALT_LEN};
 use lc_proto::kdf::x25519_public;
 use lc_proto::sender::{SendError, Timing};
@@ -34,6 +36,10 @@ pub type MsgId = u64;
 const COMMAND_TIMEOUT_MS: Millis = 5_000;
 /// HELLO tries before giving up on a peer.
 const HELLO_TRIES: u8 = 8;
+/// Path discovery probes before reporting `NoPath` (§4.5).
+const PROBE_TRIES: u8 = 3;
+/// Wait for a PATH_REPLY: uniform in `[PROBE_WAIT_MS, 2 × PROBE_WAIT_MS)`.
+const PROBE_WAIT_MS: Millis = 20_000;
 /// How long a received datagram is remembered to drop identical resends (§6).
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
 /// Rounds without any ACK, for a datagram the peer never acknowledged, after which the session
@@ -180,7 +186,7 @@ enum Expect {
     Contacts,
     Contact,
     Ok,
-    Sent(PubKey),
+    Scope,
 }
 
 #[derive(Clone, Debug)]
@@ -198,6 +204,14 @@ struct Initiating {
     attempt: u8,
     next_retry: Millis,
     path: OwnedPath,
+}
+
+/// A path discovery in progress (§4.5).
+#[derive(Clone, Debug)]
+struct Probing {
+    id: ProbeId,
+    tries: u8,
+    next_try: Millis,
 }
 
 #[derive(Clone, Debug)]
@@ -229,7 +243,7 @@ struct Peer {
     answered: Option<Answered>,
     queue: VecDeque<Outgoing>,
     in_flight: Option<InFlight>,
-    discovering_until: Option<Millis>,
+    probing: Option<Probing>,
 }
 
 impl Peer {
@@ -286,6 +300,10 @@ pub struct Core {
     deferred_until: Option<Millis>,
     /// Hashes of datagrams received recently, per peer, to drop resends (§6).
     recent: HashMap<PubKey, VecDeque<([u8; 16], Millis)>>,
+    /// Key of the companion's default flood scope, for our floods' transport codes.
+    scope: Option<[u8; 16]>,
+    /// Probes already answered (a flood arrives several times, by several paths).
+    seen_probes: VecDeque<ProbeId>,
 }
 
 impl std::fmt::Debug for Core {
@@ -331,6 +349,8 @@ impl Core {
             next_id: 1,
             deferred_until: None,
             recent: HashMap::new(),
+            scope: None,
+            seen_probes: VecDeque::new(),
         }
     }
 
@@ -382,6 +402,7 @@ impl Core {
             &Command::DeviceQuery { app_ver: APP_VER },
             Expect::DeviceInfo,
         );
+        self.command(&Command::GetDefaultFloodScope, Expect::Scope);
         if self.prv.is_none() {
             self.command(&Command::ExportPrivateKey, Expect::PrivateKey);
         }
@@ -484,10 +505,8 @@ impl Core {
                 let key = *key;
                 self.command(&Command::GetContactByKey { key: &key }, Expect::Contact);
             }
-            Response::NewAdvert(_)
-            | Response::LogRxData { .. }
-            | Response::MsgWaiting
-            | Response::SendConfirmed { .. } => {}
+            Response::LogRxData { raw, .. } => self.on_log_rx(raw, now),
+            Response::NewAdvert(_) | Response::MsgWaiting | Response::SendConfirmed { .. } => {}
             Response::Other { code, .. } if code >= 0x80 => {}
             r => self.on_reply(r, now),
         }
@@ -530,8 +549,8 @@ impl Core {
             if let Some(i) = &p.initiating {
                 consider(i.next_retry);
             }
-            if let Some(d) = p.discovering_until {
-                consider(d);
+            if let Some(pr) = &p.probing {
+                consider(pr.next_try);
             }
             if p.has_work() && p.session.is_none() && p.pending.is_none() && p.initiating.is_none()
             {
@@ -619,18 +638,7 @@ impl Core {
                 }
             }
             Response::EndOfContacts { .. } => self.events.push_back(Event::ContactsUpdated),
-            Response::Sent { timeout_ms, .. } => {
-                if let Some(Expect::Sent(peer)) = expect
-                    && let Some(p) = self.peers.get_mut(&peer)
-                {
-                    p.discovering_until = Some(now + Millis::from(timeout_ms) + 2_000);
-                }
-            }
-            Response::Err(_) => {
-                if let Some(Expect::Sent(peer)) = expect {
-                    self.fail_queue(&peer, FailReason::NoPath);
-                }
-            }
+            Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             _ => {}
         }
         if done {
@@ -642,7 +650,7 @@ impl Core {
         let Some(key) = self
             .peers
             .iter()
-            .find(|(k, p)| p.discovering_until.is_some() && k.starts_with(prefix))
+            .find(|(k, p)| p.probing.is_some() && k.starts_with(prefix))
             .map(|(k, _)| *k)
         else {
             return;
@@ -651,7 +659,7 @@ impl Core {
             c.out_path = Some(path.clone());
         }
         if let Some(p) = self.peers.get_mut(&key) {
-            p.discovering_until = None;
+            p.probing = None;
             p.path = Some(path);
         }
     }
@@ -701,14 +709,11 @@ impl Core {
         self.budget.record(now, airtime);
     }
 
-    fn fail_queue(&mut self, k: &PubKey, reason: FailReason) {
-        let Some(p) = self.peers.get_mut(k) else {
-            return;
-        };
-        p.requeue_in_flight();
-        let ids: Vec<MsgId> = p.queue.drain(..).map(|m| m.id).collect();
-        for id in ids {
-            self.events.push_back(Event::Failed { id, reason });
+    /// Reports every queued message of `peer` as failed.
+    fn fail_queue(&mut self, peer: &mut Peer, reason: FailReason) {
+        peer.requeue_in_flight();
+        for m in peer.queue.drain(..) {
+            self.events.push_back(Event::Failed { id: m.id, reason });
         }
     }
 
@@ -723,22 +728,13 @@ impl Core {
     }
 
     fn drive_peer(&mut self, k: &PubKey, peer: &mut Peer, now: Millis) {
-        if peer.discovering_until.is_some_and(|t| now >= t) {
-            peer.discovering_until = None;
-            self.peers.insert(*k, std::mem::take(peer));
-            self.fail_queue(k, FailReason::NoPath);
-            *peer = self.peers.remove(k).unwrap_or_default();
-        }
-
         // HELLO retries.
         if let Some(init) = peer.initiating.as_mut()
             && now >= init.next_retry
         {
             if init.attempt + 1 >= HELLO_TRIES {
                 peer.initiating = None;
-                self.peers.insert(*k, std::mem::take(peer));
-                self.fail_queue(k, FailReason::Unreachable);
-                *peer = self.peers.remove(k).unwrap_or_default();
+                self.fail_queue(peer, FailReason::Unreachable);
             } else {
                 init.attempt += 1;
                 let init = init.clone();
@@ -751,12 +747,22 @@ impl Core {
         }
 
         let Some(path) = self.path_for(k, peer) else {
-            if peer.has_work() && peer.discovering_until.is_none() {
-                self.command(&Command::SendPathDiscoveryReq { key: k }, Expect::Sent(*k));
-                peer.discovering_until = Some(now + 30_000);
+            if !peer.has_work() {
+                peer.probing = None;
+                return;
+            }
+            match peer.probing.as_ref().map(|p| (p.tries, now >= p.next_try)) {
+                None => self.probe(k, peer, 1, now),
+                Some((tries, true)) if tries >= PROBE_TRIES => {
+                    peer.probing = None;
+                    self.fail_queue(peer, FailReason::NoPath);
+                }
+                Some((tries, true)) => self.probe(k, peer, tries + 1, now),
+                Some((_, false)) => {}
             }
             return;
         };
+        peer.probing = None;
 
         if peer.session.is_none() && peer.pending.is_none() {
             if peer.has_work() && peer.initiating.is_none() {
@@ -873,6 +879,49 @@ impl Core {
         }
     }
 
+    /// Floods a path discovery PROBE for `k` (§4.5).
+    fn probe(&mut self, k: &PubKey, peer: &mut Peer, tries: u8, now: Millis) {
+        let (Some(me), Some(s)) = (self.key, self.secret(k)) else {
+            return;
+        };
+        let mut id: ProbeId = [0; 8];
+        self.rng.fill_bytes(&mut id);
+        let payload = discovery::build_probe(&s, &me, k, &id);
+        let (route, transport) = match &self.scope {
+            Some(key) => (
+                Route::TransportFlood,
+                Some([transport_code(key, PayloadType::GrpData, &payload), 0]),
+            ),
+            None => (Route::Flood, None),
+        };
+        let packet = Packet {
+            route,
+            ptype: PayloadType::GrpData,
+            transport,
+            path: Path::EMPTY,
+            payload: &payload,
+        };
+        let mut raw = [0u8; 64];
+        if let Ok(n) = packet.encode(&mut raw) {
+            let raw = raw.get(..n).unwrap_or(&[]).to_vec();
+            self.command(
+                &Command::SendRawPacket {
+                    priority: 1,
+                    raw: &raw,
+                },
+                Expect::Ok,
+            );
+            let airtime = self.radio.airtime_us(raw.len()) / 1000;
+            self.budget.record(now, airtime);
+        }
+        let wait = PROBE_WAIT_MS + Millis::from(self.rng.next_u32()) % PROBE_WAIT_MS;
+        peer.probing = Some(Probing {
+            id,
+            tries,
+            next_try: now + wait,
+        });
+    }
+
     fn start_handshake(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
         let mut salt = [0u8; SALT_LEN];
         self.rng.fill_bytes(&mut salt);
@@ -926,7 +975,8 @@ impl Core {
         }
         match (h.kind, h.index) {
             (Kind::Control, 0) => self.on_hello(&h, payload, now),
-            (Kind::Control, _) => self.on_hello_ack(&h, payload, now),
+            (Kind::Control, 1) => self.on_hello_ack(&h, payload, now),
+            (Kind::Control, _) => self.on_path_reply(&h, payload, now),
             _ => self.on_session_frame(&h, payload, snr4, rssi, now),
         }
     }
@@ -940,6 +990,91 @@ impl Core {
             .collect();
         v.sort_unstable();
         v
+    }
+
+    /// Every frame the companion hears: we only look for path discovery probes addressed to
+    /// us (§4.5).
+    fn on_log_rx(&mut self, raw: &[u8], now: Millis) {
+        let (Some(me), true) = (self.key, self.prv.is_some()) else {
+            return;
+        };
+        let Ok(p) = Packet::decode(raw) else {
+            return;
+        };
+        if p.ptype != PayloadType::GrpData
+            || !matches!(p.route, Route::Flood | Route::TransportFlood)
+        {
+            return;
+        }
+        let Some(probe) = discovery::parse_probe(p.payload) else {
+            return;
+        };
+        if probe.dst != me[0] || self.seen_probes.contains(&probe.id) {
+            return;
+        }
+        for c in self.candidates(probe.src) {
+            let Some(s) = self.secret(&c) else {
+                continue;
+            };
+            if !discovery::verify_probe(&s, &c, &me, p.payload) {
+                continue;
+            }
+            if self.seen_probes.len() >= 64 {
+                self.seen_probes.pop_front();
+            }
+            self.seen_probes.push_back(probe.id);
+            let forward = OwnedPath::from_path(p.path);
+            let back = forward.reversed();
+            let mut buf = [0u8; FRAME_MAX];
+            if let Ok(n) = discovery::seal_path_reply(
+                &s,
+                &me,
+                &c,
+                &probe.id,
+                forward.len_byte,
+                &forward.bytes,
+                &mut buf,
+            ) {
+                let frame = buf.get(..n).unwrap_or(&[]).to_vec();
+                self.send_raw(&back, &frame, now);
+            }
+            self.peers.entry(c).or_default().path = Some(back);
+            return;
+        }
+    }
+
+    fn on_path_reply(&mut self, h: &Header, payload: &[u8], now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        for c in self.candidates(h.src) {
+            let Some(probing) = self.peers.get(&c).and_then(|p| p.probing.clone()) else {
+                continue;
+            };
+            if u16::from_le_bytes([probing.id[0], probing.id[1]]) != h.tag {
+                continue;
+            }
+            let Some(s) = self.secret(&c) else {
+                continue;
+            };
+            let mut buf = payload.to_vec();
+            let Ok((id, len_byte, path)) = discovery::open_path_reply(&s, &c, &me, &mut buf) else {
+                continue;
+            };
+            if id != probing.id {
+                continue;
+            }
+            let path = OwnedPath {
+                len_byte,
+                bytes: path.to_vec(),
+            };
+            if let Some(p) = self.peers.get_mut(&c) {
+                p.probing = None;
+                p.path = Some(path);
+            }
+            self.tick(now);
+            return;
+        }
     }
 
     fn on_hello(&mut self, h: &Header, payload: &[u8], now: Millis) {

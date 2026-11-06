@@ -200,6 +200,55 @@ fn responses_decode() {
 }
 
 #[test]
+fn transport_codes() {
+    let t = load("air.toml");
+    for v in entries(&t, "transport") {
+        let key = lc_meshcore::air::region_key(s(v, "region"));
+        let ptype = match v["ptype"].as_integer().unwrap() {
+            4 => lc_meshcore::PayloadType::Advert,
+            5 => lc_meshcore::PayloadType::GrpTxt,
+            6 => lc_meshcore::PayloadType::GrpData,
+            p => panic!("ptype {p}"),
+        };
+        let code = lc_meshcore::air::transport_code(&key, ptype, &h(v, "payload"));
+        assert_eq!(
+            i64::from(code),
+            v["code"].as_integer().unwrap(),
+            "{}",
+            s(v, "region")
+        );
+    }
+}
+
+#[test]
+fn default_flood_scope() {
+    let t = load("companion.toml");
+    let mut seen = 0;
+    for v in entries(&t, "response") {
+        let frame = h(v, "hex");
+        if frame.first() != Some(&28) {
+            continue;
+        }
+        match Response::decode(&frame).unwrap() {
+            Response::DefaultFloodScope {
+                name,
+                key: Some(key),
+            } => {
+                assert_eq!(name, b"fr");
+                assert_eq!(key, &lc_meshcore::air::region_key("fr"));
+            }
+            Response::DefaultFloodScope { key: None, .. } => {}
+            r => panic!("{r:?}"),
+        }
+        seen += 1;
+    }
+    assert!(seen >= 1);
+    let mut out = [0u8; 4];
+    assert_eq!(Command::GetDefaultFloodScope.encode(&mut out), Ok(1));
+    assert_eq!(out[0], 64);
+}
+
+#[test]
 fn route_has_transport() {
     assert!(Route::TransportFlood.has_transport());
     assert!(!Route::Direct.has_transport());

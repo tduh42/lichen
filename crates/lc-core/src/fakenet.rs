@@ -7,14 +7,17 @@
 //!   `SEND_PATH_DISCOVERY_REQ`, `SEND_RAW_PACKET`), transmit after the direct delay
 //!   `rand[0, 5·t·0.2]`, and push `RAW_DATA` for a `RAW_CUSTOM` that arrives with an empty path;
 //! - **repeaters** forward a direct packet whose first path hash is theirs, after
-//!   `rand[0, 5·t·0.3]`;
+//!   `rand[0, 5·t·0.3]`, and every new flood packet with their hash appended, after
+//!   `rand[0, 5·t·0.5]`;
+//! - companions push `LOG_RX_DATA` for every frame they hear, before the duplicate filter;
 //! - every node keeps the 160-entry duplicate filter on `SHA256(type ‖ payload)[0..8]`, its own
 //!   transmissions included;
 //! - radios are half duplex, listen before talking (retry after 120, 240 or 360 ms), and lose a
 //!   frame when two neighbours' transmissions overlap at the receiver, or at random with the
 //!   per-link loss rate.
 //!
-//! Path discovery is answered from the topology after a fixed delay instead of being flooded.
+//! `SEND_PATH_DISCOVERY_REQ` gets `SENT` and no answer, as with stock firmware whose owner did
+//! not allow telemetry (the default): lichen discovers paths itself (§4.5).
 //!
 //! Debugging: `LICHEN_TRACE=1` prints the lichen frames each companion hands over and receives,
 //! `LICHEN_TRACE_AIR=1` the fate of every reception (ok, lost, collision, half duplex).
@@ -77,7 +80,6 @@ enum Ev {
     AppWake(usize),
     TryTx(usize),
     TxEnd(u64),
-    PathResponse(usize, PubKey),
 }
 
 #[derive(Clone, Debug)]
@@ -126,16 +128,6 @@ impl std::fmt::Debug for Net {
 
 const DEDUP_SIZE: usize = 160;
 const FREQ_KHZ: u32 = 869_618;
-
-fn put_path(v: &mut Vec<u8>, path: Option<&OwnedPath>) {
-    match path {
-        Some(p) => {
-            v.push(p.len_byte);
-            v.extend_from_slice(&p.bytes);
-        }
-        None => v.push(PATH_UNKNOWN),
-    }
-}
 
 impl Net {
     /// An empty network with the given preset, per-link loss (percent) and random seed.
@@ -348,7 +340,6 @@ impl Net {
                 }
                 Ev::TryTx(i) => self.try_tx(i),
                 Ev::TxEnd(id) => self.tx_end(id),
-                Ev::PathResponse(i, key) => self.path_response(i, key),
             }
         }
         self.now = deadline;
@@ -493,20 +484,8 @@ impl Net {
                 }
                 vec![vec![resp::OK]]
             }
+            cmd::GET_DEFAULT_FLOOD_SCOPE => vec![vec![resp::DEFAULT_FLOOD_SCOPE]],
             cmd::SEND_PATH_DISCOVERY_REQ => {
-                let Some(target) = frame.get(2..34).and_then(|k| <[u8; 32]>::try_from(k).ok())
-                else {
-                    return vec![vec![resp::ERR, 1]];
-                };
-                // Flood out and back: a few seconds per hop.
-                let hops = self
-                    .nodes
-                    .iter()
-                    .position(|n| n.key == target)
-                    .and_then(|b| self.route(i, b))
-                    .map_or(4, |p| u64::from(p.hops()));
-                let at = self.now + 4_000 * (hops + 1);
-                self.schedule(at, Ev::PathResponse(i, target));
                 let mut v = vec![resp::SENT, 1];
                 v.extend_from_slice(&[1, 2, 3, 4]);
                 v.extend_from_slice(&20_000u32.to_le_bytes());
@@ -514,21 +493,6 @@ impl Net {
             }
             _ => vec![vec![resp::ERR, 1]],
         }
-    }
-
-    fn path_response(&mut self, i: usize, target: PubKey) {
-        let Some(b) = self.nodes.iter().position(|n| n.key == target) else {
-            return;
-        };
-        let Some(out) = self.route(i, b) else {
-            return;
-        };
-        let back = self.route(b, i);
-        let mut v = vec![resp::PATH_DISCOVERY_RESPONSE, 0];
-        v.extend_from_slice(&target[..6]);
-        put_path(&mut v, Some(&out));
-        put_path(&mut v, back.as_ref());
-        self.push_to_app(i, &v);
     }
 
     // ----- radio side ------------------------------------------------------------------
@@ -665,6 +629,11 @@ impl Net {
         let Ok(p) = Packet::decode(frame) else {
             return;
         };
+        if self.nodes.get(r).is_some_and(|n| n.role == Role::Companion) && frame.len() + 3 <= 176 {
+            let mut log = vec![resp::LOG_RX_DATA, 40, (-90i8) as u8];
+            log.extend_from_slice(frame);
+            self.push_to_app(r, &log);
+        }
         let h = p.dedup_hash();
         let Some(node) = self.nodes.get_mut(r) else {
             return;
@@ -686,6 +655,19 @@ impl Net {
                 if let Ok(n) = fwd.encode(&mut out) {
                     self.enqueue_tx(r, out[..n].to_vec(), 0.3);
                 }
+            }
+            return;
+        }
+        if !direct && role == Role::Repeater && p.path.hash_size() == 1 && p.path.hops() < 63 {
+            let mut bytes = p.path.bytes().to_vec();
+            bytes.push(my_hash);
+            let Ok(path) = Path::new(p.path.len_byte() + 1, &bytes) else {
+                return;
+            };
+            let fwd = Packet { path, ..p };
+            let mut out = [0u8; 255];
+            if let Ok(n) = fwd.encode(&mut out) {
+                self.enqueue_tx(r, out[..n].to_vec(), 0.5);
             }
             return;
         }

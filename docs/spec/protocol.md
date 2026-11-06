@@ -10,7 +10,8 @@ Integers are **little-endian**. `‖` = concatenation. MeshCore facts come from 
 |---|---|---|
 | Unicast (everything but groups) | `SEND_RAW_DATA` (25): `path_len ‖ path ‖ payload`, payload ≥ 4 bytes, direct route (C:§2) | push `RAW_DATA` (0x84): `snr×4 i8 ‖ rssi i8 ‖ 0xFF ‖ payload` (C:§4) |
 | Groups (L3) | `SEND_RAW_PACKET` (65): raw `GRP_DATA` frame, flood | push `LOG_RX_DATA` (0x88): `snr×4 ‖ rssi ‖ raw frame` |
-| Paths | contacts' `out_path` (`GET_CONTACTS`), otherwise `SEND_PATH_DISCOVERY_REQ` (52) → 0x8D | — |
+| Paths | contacts' `out_path` (`GET_CONTACTS`), otherwise lichen's own discovery (§4.5): a flooded probe via `SEND_RAW_PACKET`, read through `LOG_RX_DATA` | PATH_REPLY in `RAW_DATA` |
+| Flood scope | `GET_DEFAULT_FLOOD_SCOPE` (64): region name and key, used for the transport codes of our floods | — |
 | Identity | `EXPORT_PRIVATE_KEY` (23) → 64 "expanded" orlp bytes; public key in `SELF_INFO` | — |
 | Radio | `SELF_INFO`: frequency kHz, BW Hz, SF, CR (5..8) | — |
 
@@ -20,7 +21,9 @@ Facts that constrain the protocol:
 2. On air: payload ≤ 184 bytes, path ≤ 64 bytes (A:§1).
 3. `RAW_CUSTOM` (type 0xF): forwarded in direct mode only, by the node whose hash heads the path; delivered to **every** node in range once the path is empty; never flooded (A:§3, §4.2). No addressing, no crypto: everything is in our header.
 4. **Duplicate filter**: ring of 160 hashes `SHA256(type ‖ payload)[0..8]` per node, checked before anything else (A:§1.4, §4.4). The path is not covered. Every retransmission must change at least one payload byte.
-5. Pushes 0x84 and 0x88 are only emitted while the app is connected; otherwise they are **lost** (C:§4, ADR-0006).
+5. Pushes 0x84 and 0x88 are only emitted while the app is connected; otherwise they are **lost** (C:§4, ADR-0006). `LOG_RX_DATA` is emitted for every frame received, before the duplicate filter.
+8. MeshCore's own path discovery (`SEND_PATH_DISCOVERY_REQ`) is a flooded telemetry request: a companion only answers it when its owner allows base telemetry, which is off by default. lichen therefore does its own (§4.5, ADR-0008).
+9. A stock node only tries to decrypt a `GRP_DATA` payload whose ciphertext (after its 2-byte MAC) is a non-empty multiple of 16 bytes. lichen's flooded payloads never have that length, so stock nodes reject them before any MAC check, whatever channels they follow.
 6. The companion does not report when a frame has left: `SEND_RAW_DATA` answers OK as soon as it is queued. Pacing is our job (§7.3).
 7. Hash of an identity = `pub[0]` (A:§3).
 
@@ -50,9 +53,9 @@ A lichen frame is the payload of a `RAW_CUSTOM` packet.
 | 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..157) ‖ AEAD tag (8)` |
 | 1 | ACK | 0 | `total` of the acknowledged datagram | ACK sequence for this `tag` | `ciphertext (9) ‖ tag (8)` |
 | 2 | ABORT | 0: "I give up my datagram"; 1: "I refuse yours" | `total` of the datagram | sequence | `ciphertext (1) ‖ tag (8)` |
-| 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; others reserved, ignored | 1 | try | §4 |
+| 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; 2: PATH_REPLY; others reserved, ignored | 1 | try | §4 |
 
-Decoding (otherwise silently dropped): length ≥ 7 + 1 + 8; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = 24; ABORT: `index ∈ {0, 1}` and length = 16; CONTROL: `total = 1`, `index ∈ {0, 1}`. `dst` must be our hash.
+Decoding (otherwise silently dropped): length ≥ 7 + 1 + 8; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = 24; ABORT: `index ∈ {0, 1}` and length = 16; CONTROL: `total = 1`, `index ∈ {0, 1, 2}`. `dst` must be our hash.
 
 ### 3.2 Useful size (ADR-0002)
 
@@ -115,6 +118,37 @@ Each side encrypts with its own direction's key and decrypts with the other. `ta
 - **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key. Until then it keeps the previous session if there is one. A replayed HELLO therefore cannot break a running session.
 - **No persistence** (ADR-0003): sessions live in memory. After a restart, the first send runs a new handshake.
 - **Renewal**: new handshake before the send `tag` reaches `0xFF00`, after 24 h or after 4 MB sent (configurable). The old receive key stays valid for 10 min.
+
+### 4.5 Path discovery (ADR-0008)
+
+When neither the companion nor the session knows a path to the peer, lichen floods a **PROBE** and the peer answers with a **PATH_REPLY** in direct mode.
+
+**PROBE**, a raw on-air frame handed to the companion with `SEND_RAW_PACKET` (priority 1):
+
+```
+frame   = header ‖ [tc0 ‖ tc1] ‖ path_len (0) ‖ payload
+header  = FLOOD | GRP_DATA << 2 = 0x19, or TRANSPORT_FLOOD | GRP_DATA << 2 = 0x18 with the transport
+          codes of the companion's default flood scope (tc0 = code(region key, 6, payload), tc1 = 0)
+payload = 0x7C (channel hash, ADR-0008) ‖ 0x01 (probe version) ‖ dst (1) ‖ src (1) ‖ id (8, random) ‖ mac (8)
+K_p     = HKDF(id, S, "lichen/1 probe" ‖ pub_src ‖ pub_dst, 32)
+mac     = ChaCha20-Poly1305 tag (8) under K_p, nonce 0, empty plaintext, AAD = payload[0..12]
+```
+
+The payload is 20 bytes: after the 2-byte "MAC" a stock node would read, 17 bytes remain, not a multiple of 16 (§1 fact 9). Repeaters forward it as any flood, appending their hash to the path.
+
+**On receipt** (a `LOG_RX_DATA` whose frame decodes as `GRP_DATA`, flood route, 20-byte payload starting `0x7C 0x01`, `dst` = our hash): try the contacts whose `pub[0] = src`; the one whose `K_p` verifies `mac` sent it. The frame's path is the sender-to-us path; its reverse is our path back. The first copy of a given `id` wins (usually the shortest); later copies are ignored. We store the reversed path as our path to the sender and answer.
+
+**PATH_REPLY**, a lichen frame in `RAW_CUSTOM` along the reversed path:
+
+```
+header = kind 3, index 2, total 1, tag = id[0..2], attempt 0
+body   = id (8, in clear) ‖ ciphertext ‖ tag (8)
+plain  = path_len (1) ‖ path (the sender-to-us path, as received)
+K_pr   = HKDF(id, S, "lichen/1 path-reply" ‖ pub_us ‖ pub_sender, 32)
+AAD    = header (7) ‖ id
+```
+
+The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`. Because `id` makes every key single-use, nonces never repeat.
 
 ## 5. Nonces and AAD (ADR-0003)
 

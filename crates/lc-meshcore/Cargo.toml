@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 sha2.workspace = true
+hmac.workspace = true
 curve25519-dalek.workspace = true
 
 [dev-dependencies]

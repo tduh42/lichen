@@ -34,6 +34,8 @@ pub enum Command<'a> {
     SendPathDiscoveryReq { key: &'a [u8; 32] },
     /// `[65] priority ‖ raw frame` → `OK`: the frame is transmitted as is.
     SendRawPacket { priority: u8, raw: &'a [u8] },
+    /// `[64]` → `DEFAULT_FLOOD_SCOPE`.
+    GetDefaultFloodScope,
 }
 
 /// Smallest `SEND_RAW_DATA` payload accepted by the firmware.
@@ -94,6 +96,7 @@ impl Command<'_> {
                 w.put(&[cmd::SEND_PATH_DISCOVERY_REQ, 0])?;
                 w.put(key)?;
             }
+            Command::GetDefaultFloodScope => w.u8(cmd::GET_DEFAULT_FLOOD_SCOPE)?,
             Command::SendRawPacket { priority, raw } => {
                 if raw.len() < 2 {
                     return Err(EncodeError::Invalid);

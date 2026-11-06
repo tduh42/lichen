@@ -74,4 +74,5 @@ cargo run --release -p lc-cli -- send /dev/cu.usbmodem2141101 --to bob --text "h
 cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
 cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # measurements
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
+(cd sim && cargo test --release -- --nocapture)                            # against oxymesh's MeshCore logic
 ```

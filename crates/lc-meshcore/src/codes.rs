@@ -14,6 +14,7 @@ pub mod cmd {
     pub const SEND_RAW_DATA: u8 = 25;
     pub const GET_CONTACT_BY_KEY: u8 = 30;
     pub const SEND_PATH_DISCOVERY_REQ: u8 = 52;
+    pub const GET_DEFAULT_FLOOD_SCOPE: u8 = 64;
     pub const SEND_RAW_PACKET: u8 = 65;
 }
 
@@ -32,6 +33,7 @@ pub mod resp {
     pub const DEVICE_INFO: u8 = 13;
     pub const PRIVATE_KEY: u8 = 14;
     pub const DISABLED: u8 = 15;
+    pub const DEFAULT_FLOOD_SCOPE: u8 = 28;
 
     pub const ADVERT: u8 = 0x80;
     pub const PATH_UPDATED: u8 = 0x81;

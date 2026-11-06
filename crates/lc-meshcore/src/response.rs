@@ -80,6 +80,11 @@ pub enum Response<'a> {
     DeviceInfo(DeviceInfo<'a>),
     PrivateKey(&'a [u8; 64]),
     Disabled,
+    /// The companion's default flood scope: region name (NUL-trimmed) and key, if any.
+    DefaultFloodScope {
+        name: &'a [u8],
+        key: Option<&'a [u8; 16]>,
+    },
     Advert {
         key: &'a [u8; 32],
     },
@@ -240,6 +245,19 @@ impl<'a> Response<'a> {
             }
             resp::PRIVATE_KEY => Response::PrivateKey(r.array::<64>().ok_or(t)?),
             resp::DISABLED => Response::Disabled,
+            resp::DEFAULT_FLOOD_SCOPE => {
+                if r.remaining() >= 47 {
+                    let name = trim_nul(r.bytes(31).ok_or(t)?);
+                    let key = r.array::<16>().ok_or(t)?;
+                    let key = key.iter().any(|&b| b != 0).then_some(key);
+                    Response::DefaultFloodScope { name, key }
+                } else {
+                    Response::DefaultFloodScope {
+                        name: &[],
+                        key: None,
+                    }
+                }
+            }
             resp::ADVERT => Response::Advert {
                 key: r.array::<32>().ok_or(t)?,
             },

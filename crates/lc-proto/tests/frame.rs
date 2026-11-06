@@ -30,6 +30,11 @@ fn header_rules() {
     assert!(Header::decode(&f).is_ok());
     f[4] = 0x03; // DATA index 3 of total 3
     assert_eq!(Header::decode(&f).unwrap_err(), FrameError::Malformed);
+    let mut c = [0u8; 40];
+    c[..7].copy_from_slice(&[1, 2, 0, 0, 0xC2, 1, 0]); // CONTROL index 2 (PATH_REPLY)
+    assert!(Header::decode(&c).is_ok());
+    c[4] = 0xC3; // CONTROL index 3: reserved
+    assert_eq!(Header::decode(&c).unwrap_err(), FrameError::Malformed);
     f[5] = 0; // total 0
     assert_eq!(Header::decode(&f).unwrap_err(), FrameError::Malformed);
     f[5] = 65;

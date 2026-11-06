@@ -11,7 +11,7 @@
 
 ## Decision
 
-- Send path: the contact's `out_path` in the companion, otherwise `SEND_PATH_DISCOVERY_REQ` and its 0x8D answer.
+- Send path: the contact's `out_path` in the companion, otherwise lichen's own discovery (ADR-0008; MeshCore's `SEND_PATH_DISCOVERY_REQ` needs the peer to allow telemetry).
 - The HELLO carries the return path (the forward path reversed). The responder uses it, otherwise its own `out_path`, otherwise a discovery.
 - Pacing: `Δ = t_frame × k + 100 ms`, with `k` = 1, 3 or 7 for 0, 1 or at least 2 repeaters. `k = 7` covers the worst case of MeshCore's repeater delays (up to `1.5 t` per hop); measured, `k = 5` loses 12 % of receptions to collisions over 3 repeaters, `k = 7` under 1 %, at the same mean transfer time.
 - ACKs are sent twice, and the sender waits out the copy before resending; HELLO retries use a random backoff (protocol.md §4.4, §7.3).

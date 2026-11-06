@@ -1,0 +1,15 @@
+# Optional cross-check (ADR-0001): lichen's core against oxymesh's simulator, which runs
+# oxymesh's port of the MeshCore v1.18 node logic. Needs ../../oxymesh; not part of the build.
+[package]
+name = "lichen-sim"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+lc-core = { path = "../crates/lc-core" }
+mc-sim = { path = "../../oxymesh/crates/mc-sim" }
+mc-core = { path = "../../oxymesh/crates/mc-core" }
+
+[workspace]
+members = ["."]
