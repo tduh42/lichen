@@ -30,9 +30,16 @@ pub struct GroupHeader {
     pub counter: u32,
     pub index: u8,
     pub total: u8,
+    /// 0 for the first transmission of a message, 1 for its copy (§10.3).
+    pub copy: u8,
 }
 
 impl GroupHeader {
+    /// `index << 4 | copy << 3 | total`.
+    const fn frag(&self) -> u8 {
+        (self.index << 4) | ((self.copy & 1) << 3) | (self.total & 0x03)
+    }
+
     fn encode(&self, padded: bool) -> [u8; HEADER_LEN] {
         let g = self.gid_hash.to_le_bytes();
         let c = self.counter.to_le_bytes();
@@ -51,7 +58,7 @@ impl GroupHeader {
             c[1],
             c[2],
             c[3],
-            (self.index << 4) | (self.total & 0x0F),
+            self.frag(),
         ]
     }
 
@@ -64,7 +71,7 @@ impl GroupHeader {
             c[2],
             c[3],
             self.key_epoch,
-            (self.index << 4) | (self.total & 0x0F),
+            self.frag(),
             0,
             0,
             0,
@@ -111,8 +118,8 @@ pub fn parse(payload: &[u8]) -> Option<(GroupHeader, bool)> {
     if padded && payload.last() != Some(&0) {
         return None;
     }
-    let (index, total) = (frag >> 4, frag & 0x0F);
-    if total == 0 || total > MAX_FRAGMENTS || index >= total {
+    let (index, copy, total) = (frag >> 4, (frag >> 3) & 1, frag & 0x03);
+    if frag & 0x04 != 0 || total == 0 || total > MAX_FRAGMENTS || index >= total {
         return None;
     }
     Some((
@@ -123,6 +130,7 @@ pub fn parse(payload: &[u8]) -> Option<(GroupHeader, bool)> {
             counter: u32::from_le_bytes([c0, c1, c2, c3]),
             index,
             total,
+            copy,
         },
         padded,
     ))

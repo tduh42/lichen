@@ -1,0 +1,14 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSBluetoothAlwaysUsageDescription" : {
+      "comment" : "Bluetooth permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen talks to your MeshCore node over Bluetooth." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen parle à ton nœud MeshCore en Bluetooth." } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

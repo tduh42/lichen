@@ -19,6 +19,7 @@ fuzz_target!(|data: &[u8]| {
             counter: u32::from(first),
             index: 0,
             total: 1,
+            copy: first & 1,
         };
         let mut out = [0u8; 200];
         if let Ok(n) = seal(&KEY, &h, plain, &mut out) {

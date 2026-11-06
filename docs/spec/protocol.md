@@ -285,7 +285,7 @@ payload = 0x7C ‖ type (1) ‖ gid_hash (2) ‖ sender (1) ‖ key_epoch (1) �
           ‖ ciphertext ‖ tag (8) ‖ [0x00 if type = 0x03]
 type    = 0x02, or 0x03 when a trailing pad byte is present
 gid_hash = SHA256(gid)[0..2];  sender = pub[0] of the sender
-frag    = index << 4 | total, total ∈ {1, 2}, index < total
+frag    = index << 4 | copy << 3 | total, total ∈ {1, 2}, index < total, copy ∈ {0, 1}, bit 2 = 0
 nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  key = sender key
 ```
 
@@ -293,7 +293,9 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 - **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 139 bytes of plaintext.
 - **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 70 bytes in one fragment, 209 in two.
 - **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces.
+- **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
 - **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's public key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
+- **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept, 16 at most, for 10 minutes, and tried again when a new sender key arrives. Sender keys travel pairwise over several hops and often arrive after a member's first post.
 - **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006).
 
 ## 11. Parts taken as is from `design.md`

@@ -75,4 +75,10 @@ cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
 cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # measurements
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 (cd sim && cargo test --release -- --nocapture)                            # against oxymesh's MeshCore logic
+scripts/build-ios-core.sh && (cd apps/ios && xcodegen generate)           # iOS core + project
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project apps/ios/Lichen.xcodeproj \
+  -scheme Lichen -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+python3 -I apps/ios/sync-strings.py                                       # String Catalog keys after a build
 ```
+
+iOS: one simulator at a time (Tanguy's Mac). Debug launch arguments for screenshots: `-demo YES`, `-open <contact or group>`, `-say <text>`.

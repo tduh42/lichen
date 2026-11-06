@@ -15,6 +15,7 @@ publish = false
 lc-meshcore = { path = "crates/lc-meshcore" }
 lc-proto = { path = "crates/lc-proto" }
 lc-core = { path = "crates/lc-core" }
+lc-ffi = { path = "crates/lc-ffi" }
 
 # no_std
 chacha20 = { version = "0.10", default-features = false, features = ["cipher"] }
@@ -37,6 +38,7 @@ hex = "0.4"
 clap = { version = "4.6", features = ["derive"] }
 serialport = { version = "4.10", default-features = false }
 getrandom = "0.4"
+uniffi = "0.32"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

@@ -11,6 +11,7 @@ fn header(index: u8, total: u8) -> GroupHeader {
         counter: 42,
         index,
         total,
+        copy: 0,
     }
 }
 

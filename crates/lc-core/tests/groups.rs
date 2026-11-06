@@ -10,7 +10,11 @@ const MIN: u64 = 60_000;
 /// Five companions, each linked only to one repeater in the middle (none hears another).
 /// Every member knows the admin (node 0) and the admin knows everyone.
 fn star(seed: u64) -> (Net, Vec<usize>) {
-    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, seed);
+    star_with_loss(seed, 0)
+}
+
+fn star_with_loss(seed: u64, loss: u32) -> (Net, Vec<usize>) {
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), loss, seed);
     let names = ["alice", "bob", "carol", "dave", "eve"];
     let members: Vec<usize> = names
         .iter()
@@ -218,4 +222,57 @@ fn limits() {
         .with_core(m[1], |c, now| c.remove_member(&gid, &keys[2], now))
         .unwrap();
     assert_eq!(r, Err(Error::NotAllowed));
+}
+
+/// `cargo test -p lc-core --release --test groups -- --ignored --nocapture`
+#[test]
+#[ignore = "measurement, prints numbers for docs/measurements.md"]
+fn measure_group_delivery_one_or_two_copies() {
+    for copies in [1u8, 2] {
+        let (mut ok, mut total, mut dup) = (0usize, 0usize, 0usize);
+        for seed in 0..10u64 {
+            let (mut net, m) = star_with_loss(100 + seed, 10);
+            for &i in &m {
+                net.with_core(i, |c, _| c.set_group_copies(copies));
+            }
+            let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+            let gid = net
+                .with_core(m[0], |c, now| c.create_group("g", &keys[1..], now))
+                .unwrap()
+                .unwrap();
+            if !net.run_until(net.now + 90 * MIN, |n| keys_complete(n, &m, &gid)) {
+                continue;
+            }
+            settle(&mut net);
+            for &i in &m {
+                net.take_events(i);
+            }
+            // Every member posts 8 times, one post a minute overall.
+            for round in 0..8 {
+                for (j, &i) in m.iter().enumerate() {
+                    let text = format!("{round}-{j}");
+                    net.with_core(i, |c, now| c.send_group_text(&gid, &text, 1, now));
+                    net.run_until(net.now + MIN, |_| false);
+                }
+            }
+            settle(&mut net);
+            for (j, &i) in m.iter().enumerate() {
+                let got = group_texts(&net.take_events(i));
+                let expected = 8 * (m.len() - 1);
+                total += expected;
+                let mut seen = std::collections::HashSet::new();
+                for (_, t) in &got {
+                    if !seen.insert(t.clone()) {
+                        dup += 1;
+                    }
+                }
+                ok += seen.len();
+                let _ = j;
+            }
+        }
+        println!(
+            "| {copies} | {ok}/{total} ({:.1} %) | {dup} |",
+            100.0 * ok as f64 / total.max(1) as f64
+        );
+    }
 }

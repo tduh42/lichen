@@ -12,6 +12,21 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 | `lc-proto` | `no_std` lichen frame, crypto, handshake, ACK-on-Error fragmentation |
 | `lc-core` | sessions, contacts, paths, airtime budget, storage; fake MeshCore network for tests |
 | `lc-cli` | `lichen` command-line client over USB |
+| `lc-ffi` | UniFFI bindings for Swift and Kotlin, and a demo network for the apps |
+
+## iOS app
+
+```sh
+scripts/build-ios-core.sh                 # Rust core → apps/ios/LichenCore.xcframework + Swift bindings
+cd apps/ios && xcodegen generate          # Lichen.xcodeproj from project.yml
+open Lichen.xcodeproj                     # Run on a simulator or an iPhone
+```
+
+Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings → **Try the demo network** runs the app's real core against a simulated network with two other users and a group, in real time.
+
+| Messages | Chat |
+|---|---|
+| ![Messages](docs/screenshots/ios-demo-messages-en.png) | ![Chat](docs/screenshots/ios-demo-chat-en.png) |
 
 ```sh
 scripts/check.sh                                               # all checks

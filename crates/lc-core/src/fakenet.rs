@@ -63,6 +63,10 @@ pub struct Node {
     pub tx_airtime_ms: Millis,
     /// `RAW_DATA` pushes delivered to the app.
     pub raw_pushed: u64,
+    /// The app is outside the simulation (a real app driving a simulated companion): its
+    /// frames come through [`Net::external_write`] and go out through [`Net::external_read`].
+    external: bool,
+    outbox: Vec<Vec<u8>>,
 }
 
 impl std::fmt::Debug for Node {
@@ -175,6 +179,8 @@ impl Net {
             tx_frames: 0,
             tx_airtime_ms: 0,
             raw_pushed: 0,
+            external: false,
+            outbox: Vec::new(),
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -189,6 +195,32 @@ impl Net {
         let i = self.add(seed, name, Role::Companion);
         self.attach_app(i, seed);
         i
+    }
+
+    /// A companion driven by an app outside the simulation.
+    pub fn add_external_companion(&mut self, seed: u8, name: &str) -> usize {
+        let i = self.add(seed, name, Role::Companion);
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.external = true;
+            n.connected = true;
+        }
+        i
+    }
+
+    /// A frame from the external app to companion `i`; the answers go to its outbox.
+    pub fn external_write(&mut self, i: usize, frame: &[u8]) {
+        let replies = self.companion_command(i, frame);
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.outbox.extend(replies);
+        }
+    }
+
+    /// Frames from companion `i` to the external app.
+    pub fn external_read(&mut self, i: usize) -> Vec<Vec<u8>> {
+        self.nodes
+            .get_mut(i)
+            .map(|n| std::mem::take(&mut n.outbox))
+            .unwrap_or_default()
     }
 
     /// Replaces the companion's app by a fresh one (an app restart: sessions are lost).
@@ -381,6 +413,10 @@ impl Net {
             return;
         };
         if !n.connected {
+            return;
+        }
+        if n.external {
+            n.outbox.push(frame.to_vec());
             return;
         }
         if let Some(c) = n.core.as_mut() {

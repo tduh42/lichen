@@ -1,0 +1,1006 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ connected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ connecté"
+          }
+        }
+      }
+    },
+    "%@ dBm": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ dBm"
+          }
+        }
+      }
+    },
+    "%@ members": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ membres"
+          }
+        }
+      }
+    },
+    "%@ members · keys %@/%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ membres · clés %@/%@"
+          }
+        }
+      }
+    },
+    "%@ s / %@ s": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ s / %@ s"
+          }
+        }
+      }
+    },
+    "%@ · SNR %@ dB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · SNR %@ dB"
+          }
+        }
+      }
+    },
+    "A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l'app, sans radio."
+          }
+        }
+      }
+    },
+    "About": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À propos"
+          }
+        }
+      }
+    },
+    "Airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d'antenne"
+          }
+        }
+      }
+    },
+    "Airtime left this hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d'antenne restant cette heure"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous"
+          }
+        }
+      }
+    },
+    "BLE · SF%@ / %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "BLE · SF%@ / %@"
+          }
+        }
+      }
+    },
+    "Bluetooth is off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bluetooth désactivé"
+          }
+        }
+      }
+    },
+    "Cancel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        }
+      }
+    },
+    "Coming with milestone L5. Your position is never put in MeshCore adverts.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrive avec le jalon L5. Ta position n'est jamais mise dans les annonces MeshCore."
+          }
+        }
+      }
+    },
+    "Coming with milestone L8: find a group member with RSSI, bearings and SOS beacons.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrive avec le jalon L8 : retrouver un membre du groupe grâce au RSSI, aux caps et aux balises SOS."
+          }
+        }
+      }
+    },
+    "Connect your MeshCore node in Settings.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte ton nœud MeshCore dans les Réglages."
+          }
+        }
+      }
+    },
+    "Connecting to %@…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à %@…"
+          }
+        }
+      }
+    },
+    "Contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Could not create the group.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de créer le groupe."
+          }
+        }
+      }
+    },
+    "Could not send.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'envoyer."
+          }
+        }
+      }
+    },
+    "Create group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer le groupe"
+          }
+        }
+      }
+    },
+    "Delivered · %lld fragments · %@ s of airtime": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delivered · %lld fragment · %@ s of airtime"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Delivered · %lld fragments · %@ s of airtime"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remis · %lld fragment · %@ s d'antenne"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Remis · %lld fragments · %@ s d'antenne"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Disconnect": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déconnecter"
+          }
+        }
+      }
+    },
+    "EU rules cap each node's time on air. lichen counts its own transmissions and waits when the budget is spent.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réglementation européenne plafonne le temps d'antenne de chaque nœud. lichen compte ses propres émissions et attend quand le budget est épuisé."
+          }
+        }
+      }
+    },
+    "Encrypted session": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session chiffrée"
+          }
+        }
+      }
+    },
+    "End-to-end encryption": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chiffrement de bout en bout"
+          }
+        }
+      }
+    },
+    "Estimated cost: %lld fragments · ≈ %@ s of airtime": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Estimated cost: %lld fragment · ≈ %@ s of airtime"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Estimated cost: %lld fragments · ≈ %@ s of airtime"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Coût estimé : %lld fragment · ≈ %@ s d'antenne"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Coût estimé : %lld fragments · ≈ %@ s d'antenne"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chaque membre reçoit les clés d'émission des autres par des sessions chiffrées. Les messages de groupe sont inondés et signés."
+          }
+        }
+      }
+    },
+    "Filter": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtre"
+          }
+        }
+      }
+    },
+    "Find nodes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher des nœuds"
+          }
+        }
+      }
+    },
+    "Flooded to every member, without acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diffusé à tous les membres, sans accusé de réception"
+          }
+        }
+      }
+    },
+    "Group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe"
+          }
+        }
+      }
+    },
+    "Group name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom du groupe"
+          }
+        }
+      }
+    },
+    "Group · flood": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe · flood"
+          }
+        }
+      }
+    },
+    "Groups": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupes"
+          }
+        }
+      }
+    },
+    "Invalid key.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé invalide."
+          }
+        }
+      }
+    },
+    "Key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé"
+          }
+        }
+      }
+    },
+    "Key export refused by the node": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export de la clé refusé par le nœud"
+          }
+        }
+      }
+    },
+    "Leave the demo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter la démo"
+          }
+        }
+      }
+    },
+    "LoRa": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LoRa"
+          }
+        }
+      }
+    },
+    "LoRa · %lld hops": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "LoRa · %lld hop"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "LoRa · %lld hops"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "LoRa · %lld saut"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "LoRa · %lld sauts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "LoRa · direct": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LoRa · direct"
+          }
+        }
+      }
+    },
+    "Looking for nodes…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche de nœuds…"
+          }
+        }
+      }
+    },
+    "Map": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carte"
+          }
+        }
+      }
+    },
+    "Map and location sharing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carte et partage de position"
+          }
+        }
+      }
+    },
+    "MeshCore node": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nœud MeshCore"
+          }
+        }
+      }
+    },
+    "Message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message"
+          }
+        }
+      }
+    },
+    "Messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages"
+          }
+        }
+      }
+    },
+    "Name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom"
+          }
+        }
+      }
+    },
+    "New conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle conversation"
+          }
+        }
+      }
+    },
+    "New group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau groupe"
+          }
+        }
+      }
+    },
+    "New message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau message"
+          }
+        }
+      }
+    },
+    "No contacts yet: they come from your node.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de contacts : ils viennent de ton nœud."
+          }
+        }
+      }
+    },
+    "No conversations yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de conversation."
+          }
+        }
+      }
+    },
+    "No node connected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun nœud connecté"
+          }
+        }
+      }
+    },
+    "Not delivered: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non remis : %@"
+          }
+        }
+      }
+    },
+    "Not sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non envoyé"
+          }
+        }
+      }
+    },
+    "OK": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Only the group admin can do this.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seul l'administrateur du groupe peut faire ça."
+          }
+        }
+      }
+    },
+    "Pairing asks for the PIN shown on the node. Messages arrive only while the phone is connected to it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'appairage demande le code affiché sur le nœud. Les messages n'arrivent que pendant que le téléphone y est connecté."
+          }
+        }
+      }
+    },
+    "Radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radio"
+          }
+        }
+      }
+    },
+    "Ready": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prêt"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche"
+          }
+        }
+      }
+    },
+    "Search conversations": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher"
+          }
+        }
+      }
+    },
+    "Search mode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode recherche"
+          }
+        }
+      }
+    },
+    "Send": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer"
+          }
+        }
+      }
+    },
+    "Sending %@ / %@ fragments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi %@ / %@ fragments"
+          }
+        }
+      }
+    },
+    "Sent to the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé au groupe"
+          }
+        }
+      }
+    },
+    "Settings": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglages"
+          }
+        }
+      }
+    },
+    "Stop looking": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter la recherche"
+          }
+        }
+      }
+    },
+    "The message is empty.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le message est vide."
+          }
+        }
+      }
+    },
+    "The message is too long.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le message est trop long."
+          }
+        }
+      }
+    },
+    "The node's key is not available yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clé du nœud n'est pas encore disponible."
+          }
+        }
+      }
+    },
+    "Tor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tor"
+          }
+        }
+      }
+    },
+    "Try the demo network": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Essayer le réseau de démo"
+          }
+        }
+      }
+    },
+    "Unknown contact.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact inconnu."
+          }
+        }
+      }
+    },
+    "Unknown group.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Groupe inconnu."
+          }
+        }
+      }
+    },
+    "Unsupported content (type %@, %@ bytes)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contenu non pris en charge (type %@, %@ octets)"
+          }
+        }
+      }
+    },
+    "Used this hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisé cette heure"
+          }
+        }
+      }
+    },
+    "Version": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version"
+          }
+        }
+      }
+    },
+    "Waiting for the node's key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la clé du nœud"
+          }
+        }
+      }
+    },
+    "You": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toi"
+          }
+        }
+      }
+    },
+    "available": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "disponible"
+          }
+        }
+      }
+    },
+    "iroh": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iroh"
+          }
+        }
+      }
+    },
+    "no acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas d'accusé de réception"
+          }
+        }
+      }
+    },
+    "no path found": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aucun chemin trouvé"
+          }
+        }
+      }
+    },
+    "refused": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "refusé"
+          }
+        }
+      }
+    },
+    "too large": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "trop grand"
+          }
+        }
+      }
+    },
+    "unavailable": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "indisponible"
+          }
+        }
+      }
+    },
+    "unreachable": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "injoignable"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

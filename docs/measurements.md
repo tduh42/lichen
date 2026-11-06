@@ -83,3 +83,29 @@ About half a frame time more per gap, and slightly fewer deliveries at the harsh
 **Against oxymesh** (`sim/tests/groups.rs`): a group of three on oxymesh's MeshCore node logic, next to a stock node that follows a named channel whose hash is `0x7C`. The message reached both other members; the relay re-flooded the envelopes; the stock node pushed no channel message, channel data or "message waiting" to its app.
 
 **Fuzz** `discovery_open`: 96.7 M runs in 20 min, no crash.
+
+## 2026-11-06 — Group messages: one or two floods
+
+`cargo test -p lc-core --release --test groups -- --ignored --nocapture`: the five-member star above with 10 % loss per link, 10 seeds; after setup, every member posts 8 times (one post a minute overall), 1,280 expected deliveries per row.
+
+| Floods per message | Delivered | Duplicates shown |
+|---|---|---|
+| 1 | 1045/1280 (81.6 %) | 0 |
+| 2 | 1249/1280 (97.6 %) | 0 |
+
+A flood lost at its first hop (collision with other traffic, or the 10 %) is lost for every member, hence the second copy (protocol.md §10.3). It was found with the demo network: Julien's first post collided at the first repeater with a forwarded ACK.
+
+## 2026-11-06 — Fuzzing, two hours per target
+
+Two one-hour campaigns per target (`cargo +nightly fuzz run <target> -- -max_total_time=3600`), from the same corpus, alongside other work: no crash. Slow units reported while the machine was busy run in 0 to 3 ms when replayed.
+
+| Target | Runs |
+|---|---|
+| `air_packet` | 445 M + 624 M |
+| `companion_response` | 121 M + 196 M |
+| `frame_header` | 447 M + 626 M |
+| `handshake_open` | 228 M + 326 M |
+| `session_peer` | 19 M + 15 M |
+| `discovery_open` | 96.7 M (20 min) |
+
+`session_peer` found one bug before these campaigns (unbounded receiver gap estimate), fixed in L1.

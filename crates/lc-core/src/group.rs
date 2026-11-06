@@ -18,10 +18,26 @@ pub type GroupId = [u8; 16];
 
 /// Members per group, admin included.
 pub const MAX_MEMBERS: usize = 32;
+/// Every group message is flooded this many times by default (§10.3): a flood lost at its
+/// first hop, to a collision with other traffic, is lost for everyone.
+pub const COPIES: u8 = 2;
 /// A partial (first of two fragments) is forgotten after this long.
 const PARTIAL_MS: Millis = 300_000;
 /// Keys that arrived before their group state are kept this long.
 const PENDING_KEY_MS: Millis = 600_000;
+/// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
+const HELD_MS: Millis = 600_000;
+/// And at most this many.
+const HELD_MAX: usize = 16;
+
+/// An envelope from a known member whose key we do not hold yet.
+#[derive(Clone, Debug)]
+pub(crate) struct Held {
+    payload: Vec<u8>,
+    snr4: i8,
+    rssi: i8,
+    at: Millis,
+}
 
 /// A member as listed in the group state.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -273,6 +289,11 @@ fn signed_parts<'a>(
 // ----- the core's group operations ---------------------------------------------------------
 
 impl Core {
+    /// How many times each group message is flooded (1 or 2).
+    pub fn set_group_copies(&mut self, copies: u8) {
+        self.group_copies = copies.clamp(1, 2);
+    }
+
     /// Groups this node belongs to.
     pub fn groups(&self) -> impl Iterator<Item = &Group> {
         self.groups.values()
@@ -528,12 +549,15 @@ impl Core {
             return;
         }
         let mk = g.keys.entry(*from).or_default();
-        match &mk.current {
-            Some(c) if c.epoch == epoch => {}
-            _ => {
-                mk.previous = mk.current.take();
-                mk.current = Some(KeyState::new(epoch, key, next));
-            }
+        if mk.current.as_ref().is_some_and(|c| c.epoch == epoch) {
+            return;
+        }
+        mk.previous = mk.current.take();
+        mk.current = Some(KeyState::new(epoch, key, next));
+        // Messages that came before this key can now be read.
+        let held: Vec<Held> = std::mem::take(&mut self.held).into();
+        for h in held {
+            self.on_group_envelope(&h.payload, h.snr4, h.rssi, h.at.max(now));
         }
     }
 
@@ -571,24 +595,28 @@ impl Core {
         let total = group::fragments_for(plain.len()).ok_or(Error::TooLarge)?;
         g.my_counter = g.my_counter.checked_add(1).ok_or(Error::TooLarge)?;
         let (key, epoch, gh) = (g.my_key, g.my_epoch, g.gid_hash());
+        // Each frame waits until the repeaters have re-flooded the previous one, with jitter.
+        let spacing = 10 * self.radio.airtime_us(group::PAYLOAD_MAX + 6) / 1000;
         let mut due = now;
-        for (index, chunk) in plain.chunks(group::FRAGMENT_PLAIN_MAX).enumerate() {
-            let header = GroupHeader {
-                gid_hash: gh,
-                sender: me[0],
-                key_epoch: epoch,
-                counter,
-                index: index as u8,
-                total,
-            };
-            let mut out = [0u8; group::PAYLOAD_MAX];
-            let Ok(n) = group::seal(&key, &header, chunk, &mut out) else {
-                return Err(Error::TooLarge);
-            };
-            let raw = self.flood_frame(out.get(..n).unwrap_or(&[]));
-            self.group_tx.push_back((due, raw));
-            // The second fragment waits until the repeaters have re-flooded the first.
-            due += 10 * self.radio.airtime_us(group::PAYLOAD_MAX + 6) / 1000;
+        for copy in 0..self.group_copies {
+            for (index, chunk) in plain.chunks(group::FRAGMENT_PLAIN_MAX).enumerate() {
+                let header = GroupHeader {
+                    gid_hash: gh,
+                    sender: me[0],
+                    key_epoch: epoch,
+                    counter,
+                    index: index as u8,
+                    total,
+                    copy,
+                };
+                let mut out = [0u8; group::PAYLOAD_MAX];
+                let Ok(n) = group::seal(&key, &header, chunk, &mut out) else {
+                    return Err(Error::TooLarge);
+                };
+                let raw = self.flood_frame(out.get(..n).unwrap_or(&[]));
+                self.group_tx.push_back((due, raw));
+                due += spacing + Millis::from(self.rng.next_u32()) % spacing.max(1);
+            }
         }
         let id = self.next_id;
         self.next_id += 1;
@@ -630,6 +658,7 @@ impl Core {
         for g in self.groups.values_mut() {
             g.partials.retain(|p| p.at + PARTIAL_MS > now);
         }
+        self.held.retain(|h| h.at + HELD_MS > now);
     }
 
     pub(crate) fn next_group_wakeup(&self) -> Option<Millis> {
@@ -663,6 +692,26 @@ impl Core {
                 .filter(|k| k[0] == h.sender && *k != me)
                 .collect();
             for member in candidates {
+                let has_key = g.keys.get(&member).is_some_and(|mk| {
+                    [&mk.current, &mk.previous]
+                        .iter()
+                        .any(|k| k.as_ref().is_some_and(|k| k.epoch == h.key_epoch))
+                });
+                if !has_key {
+                    // The key may still be on its way (pairwise, several hops): keep the envelope.
+                    if !self.held.iter().any(|x| x.payload == payload) {
+                        if self.held.len() >= HELD_MAX {
+                            self.held.pop_front();
+                        }
+                        self.held.push_back(Held {
+                            payload: payload.to_vec(),
+                            snr4,
+                            rssi,
+                            at: now,
+                        });
+                    }
+                    continue;
+                }
                 let Some(mk) = g.keys.get_mut(&member) else {
                     continue;
                 };

@@ -28,7 +28,7 @@ use sha2::{Digest, Sha256};
 
 use crate::budget::{Budget, EU868};
 use crate::content::Content;
-use crate::group::{Group, GroupId, PendingKey};
+use crate::group::{Group, GroupId, Held, PendingKey};
 
 pub type PubKey = [u8; 32];
 pub type MsgId = u64;
@@ -347,6 +347,10 @@ pub struct Core {
     pub(crate) groups: HashMap<GroupId, Group>,
     /// Sender keys that came before their group state.
     pub(crate) pending_keys: Vec<PendingKey>,
+    /// Group envelopes waiting for their sender key.
+    pub(crate) held: VecDeque<Held>,
+    /// Floods per group message (§10.3).
+    pub(crate) group_copies: u8,
     /// Group frames waiting for their time (the second fragment is spaced out).
     pub(crate) group_tx: VecDeque<(Millis, Vec<u8>)>,
     /// The radio is shared by every session: the next data frame may go at this time.
@@ -402,6 +406,8 @@ impl Core {
             seen_probes: VecDeque::new(),
             groups: HashMap::new(),
             pending_keys: Vec::new(),
+            held: VecDeque::new(),
+            group_copies: crate::group::COPIES,
             group_tx: VecDeque::new(),
             next_slot: 0,
             rr_last: None,
@@ -430,6 +436,38 @@ impl Core {
 
     pub const fn radio(&self) -> &LoRaParams {
         &self.radio
+    }
+
+    /// Frequency reported by the companion, in kHz.
+    pub const fn freq_khz(&self) -> u32 {
+        self.freq_khz
+    }
+
+    /// Fragments and airtime (ms, our transmissions only, first round) of a datagram of
+    /// `datagram_len` bytes to `to`, on the path known now (0 hops if none is known yet).
+    pub fn estimate_send(&self, to: &PubKey, datagram_len: usize) -> (u8, Millis) {
+        let path_bytes = self
+            .peers
+            .get(to)
+            .and_then(|p| p.path.as_ref())
+            .or_else(|| self.contacts.get(to).and_then(|c| c.out_path.as_ref()))
+            .map_or(0, |p| p.bytes.len());
+        let chunk = chunk_for_path(path_bytes);
+        let len = datagram_len.max(1);
+        let fragments = len.div_ceil(chunk);
+        let mut airtime = 0;
+        for i in 0..fragments {
+            let plain = if i + 1 == fragments {
+                len - i * chunk
+            } else {
+                chunk
+            };
+            airtime += self
+                .radio
+                .airtime_us(2 + path_bytes + plain + lc_proto::OVERHEAD)
+                / 1000;
+        }
+        (fragments.min(255) as u8, airtime)
     }
 
     /// Airtime used in the sliding hour and the limit, in milliseconds.
