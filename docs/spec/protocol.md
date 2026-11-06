@@ -158,7 +158,7 @@ An unknown type is handed to the app as "unsupported", with no error on the netw
 4. ACK without `COMPLETE`: new round (`attempt + 1`) with only the fragments missing from the bitmap.
 5. No ACK within `W`: new round that resends only the **last** fragment, to solicit an ACK.
 6. ACK with `COMPLETE`: datagram **delivered**.
-7. Beyond `R_max` rounds (8 by default): ABORT (`index 0`), datagram **failed**.
+7. Give up after 4 consecutive ACKs that confirm no new fragment, after 6 consecutive rounds without any ACK (peer unreachable), or beyond `R_max` = 32 rounds (which bounds the airtime of a datagram): ABORT (`index 0`), datagram **failed**.
 8. A single datagram in flight per direction and session; others wait in `lc-core`'s queue.
 
 ### 7.2 Receiver
@@ -167,10 +167,10 @@ An unknown type is handed to the app as "unsupported", with no error on the netw
    - `tag` already completed: send a `COMPLETE` ACK again (next sequence);
    - `tag` older than the window (§8): ignored;
    - new `tag`: allocate the reassembly buffer whatever the `index`, thanks to `total`. A reassembly in progress with a smaller `tag` is dropped: the sender has moved on.
-2. Store the fragment in its slot (64 slots of 157 bytes). Duplicates are ignored.
+2. Store the fragment in its slot (64 slots of 157 bytes). A duplicate is not stored, but it shows the sender is alive (it resets the give-up counter of step 4), and a repeated fragment that closes the round (step 3) triggers an ACK: it is the sender asking for an ACK it missed (§7.1 step 5).
 3. **ACK** (`bitmap u64 ‖ flags`, bit `i` = fragment `i` received; flag bit 0 = `COMPLETE`):
    - everything received: the datagram goes to the app, the `tag` is marked completed, `COMPLETE` ACK;
-   - the last fragment (`index = total − 1`) arrives while some are missing: ACK with the bitmap;
+   - the fragment that **closes the round** arrives while some are missing: ACK with the bitmap. The round is closed by any fragment whose index is at least `round_last`: `total − 1` at first, then the highest index reported missing in our last ACK (the sender resends missing fragments in increasing order). This plays the role of SCHC's "All-1" fragment without spending a header bit;
    - otherwise, when the reassembly timer fires (§7.4): ACK with the bitmap.
 4. After an incomplete ACK, if nothing new arrives before the timer, resend the ACK (next sequence), at most 4 times. Then give up: ABORT `index 1`, reason `TIMEOUT`.
 5. On delivery, every fragment but the last must have the same length, and the last must not be longer. Otherwise: give up, reason `MALFORMED`.
@@ -194,7 +194,7 @@ W   (ACK wait, sender)          = (hops + 1) × (2 × t_frame + 2 × t_ack) + 2 
 G   (reassembly, receiver)      = last_received + (missing_after_highest + 2) × g + 3 s
 ```
 
-`hops` = number of repeaters; `t_ack` = airtime of an ACK frame (24-byte payload). `g` = measured gap between the last two fragments received, at least 1 s; 10 s while only one fragment has been received.
+`hops` = number of repeaters; `t_ack` = airtime of an ACK frame (24-byte payload). `g` = measured gap between the last two fragments received, clamped to 1..60 s; 10 s while only one fragment has been received.
 
 ## 8. Replay protection
 

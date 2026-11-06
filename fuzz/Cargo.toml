@@ -1,0 +1,52 @@
+[package]
+name = "lichen-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+lc-meshcore = { path = "../crates/lc-meshcore" }
+lc-proto = { path = "../crates/lc-proto" }
+
+# Separate workspace: nightly toolchain and instrumentation specific to fuzzing.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "companion_response"
+path = "fuzz_targets/companion_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "air_packet"
+path = "fuzz_targets/air_packet.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frame_header"
+path = "fuzz_targets/frame_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "handshake_open"
+path = "fuzz_targets/handshake_open.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_peer"
+path = "fuzz_targets/session_peer.rs"
+test = false
+doc = false
+bench = false

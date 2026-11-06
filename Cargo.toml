@@ -16,7 +16,7 @@ lc-meshcore = { path = "crates/lc-meshcore" }
 lc-proto = { path = "crates/lc-proto" }
 
 # no_std
-chacha20 = { version = "0.10", default-features = false }
+chacha20 = { version = "0.10", default-features = false, features = ["cipher"] }
 poly1305 = { version = "0.9", default-features = false }
 hkdf = { version = "0.13", default-features = false }
 hmac = { version = "0.13", default-features = false }
