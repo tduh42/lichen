@@ -116,7 +116,7 @@ struct SosReceivedView: View {
                 CardDivider()
                 if let d = model.distanceTo(sos) {
                     CardRow(title: String(localized: "From you")) {
-                        Text("\(distanceText(d.meters)) · \(Int(d.bearing))°").font(Theme.figure(18))
+                        Text("\(distanceText(d.meters)) · \(Int(d.bearing.rounded()))°").font(Theme.figure(18))
                     }
                 } else {
                     CardRow(title: String(localized: "From you"), subtitle: String(localized: "Your position is not known yet")) {
@@ -158,6 +158,8 @@ struct SosReceivedView: View {
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
         .background(SosColor.screen.ignoresSafeArea())
+        // Our position, for the distance and bearing.
+        .onAppear { model.mapVisible = true }
     }
 
     private var via: String {

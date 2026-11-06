@@ -95,17 +95,7 @@ final class AppModel {
         default: break
         }
         debugScreen = args.string(forKey: "screen")
-        if args.bool(forKey: "sosdemo") {
-            // An SOS from "Julien", for screenshots of the alert and the Search tab.
-            let p = PeerPosition(
-                from: Data([0x9E] + Array(repeating: 1, count: 31)), group: nil,
-                lat: 44.9065, lon: 5.4745, altM: 1_620, radiusM: 6, headingDeg: nil, speedMps: nil,
-                atS: UInt64(Date().timeIntervalSince1970) - 40, sos: true, extrapolated: false
-            )
-            incomingSos = p
-            sosAlert = debugScreen == "search" ? nil : p
-            sosLog = [p]
-        }
+
         #endif
     }
 
@@ -262,6 +252,18 @@ final class AppModel {
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
                 debugOpen = .contact(key: c.key)
+            }
+            // -sosdemo YES: an SOS from Julien, for screenshots of the alert and the Search tab.
+            if UserDefaults.standard.bool(forKey: "sosdemo"), incomingSos == nil,
+               let j = contacts.first(where: { $0.name == "Julien" }) {
+                let p = PeerPosition(
+                    from: j.key, group: nil,
+                    lat: 44.9065, lon: 5.4745, altM: 1_620, radiusM: 6, headingDeg: nil, speedMps: nil,
+                    atS: UInt64(Date().timeIntervalSince1970) - 40, sos: true, extrapolated: false
+                )
+                incomingSos = p
+                sosAlert = debugScreen == "search" ? nil : p
+                sosLog = [p]
             }
             if shares.isEmpty, let name = UserDefaults.standard.string(forKey: "share"),
                let c = contacts.first(where: { $0.name == name }) {

@@ -351,6 +351,7 @@ struct LaterNote: View {
 
 func seconds(_ ms: UInt64) -> String { String(ms / 1000) }
 
+/// "62.5 kHz", "62,5 kHz" in French.
 func bandwidth(_ hz: UInt32) -> String {
-    hz % 1000 == 0 ? "\(hz / 1000) kHz" : String(format: "%.1f kHz", Double(hz) / 1000)
+    (Double(hz) / 1000).formatted(.number.precision(.fractionLength(0...1))) + " kHz"
 }
