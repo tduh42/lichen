@@ -71,16 +71,6 @@ struct SettingsView: View {
     }
 }
 
-struct MapPlaceholderView: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Map and location sharing",
-            systemImage: "map",
-            description: Text("Coming with milestone L5. Your position is never put in MeshCore adverts.")
-        )
-    }
-}
-
 struct SearchPlaceholderView: View {
     var body: some View {
         ContentUnavailableView(

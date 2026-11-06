@@ -8,6 +8,14 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen talks to your MeshCore node over Bluetooth." } },
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen parle à ton nœud MeshCore en Bluetooth." } }
       }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "Location permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen sends your position, encrypted, to the people and groups you share it with, and shows you on the map." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen envoie ta position, chiffrée, aux personnes et aux groupes avec qui tu la partages, et te montre sur la carte." } }
+      }
     }
   },
   "version" : "1.0"

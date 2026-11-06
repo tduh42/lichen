@@ -176,7 +176,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 |---|---|---|---|
 | 0x01 | TEXT | `ts u32 (sender's Unix seconds) ‖ UTF-8 text (≥ 1 byte)` | L2 |
 | 0x02 | FILE | reserved | L6 |
-| 0x03 | LOCATION | reserved (13 bytes, `design.md`) | L5 |
+| 0x03 | LOCATION | §12 (14 bytes) | L5 |
 | 0x04 | ANNOUNCE | reserved (blob announcement, `design.md`) | L7 |
 | 0x05 | VOICE | reserved (Codec2 700C) | L6 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
@@ -300,4 +300,32 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 
 ## 11. Parts taken as is from `design.md`
 
-Media, Internet bridge (iroh, Tor), location, search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
+Media, Internet bridge (iroh, Tor), search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
+
+## 12. Location (ADR-0011)
+
+### 12.1 Format (datagram type 0x03, 14 bytes)
+
+| Bytes | Field | Encoding |
+|---|---|---|
+| 0-2 | `lat` | i24, `round(lat° × 2^23 / 90)`, clamped to the i24 range: ≈ 1.19 m |
+| 3-5 | `lon` | i24, `round(lon° × 2^23 / 180)`, clamped: ≈ 2.39 m at the equator |
+| 6-7 | `alt` | i16, metres; −32768 = unknown |
+| 8-9 | `t16` | u16, the sender's Unix seconds mod 65,536 |
+| 10-11 | `hs` | u16: heading in degrees in bits 0-8 (0..359, 511 = unknown), speed in bits 9-15 in units of 0.5 m/s (0..126, 127 = unknown) |
+| 12 | `prec` | radius of uncertainty, `2^(prec/16)` m: 0 = 1 m, 160 = 1 km, 255 ≈ 61 km |
+| 13 | `flags` | bit 0 SOS, bit 1 end of sharing; others 0 |
+
+Integers little-endian. The receiver rebuilds the full time as the unique instant within `[now − 18 h, now + 10 min]` whose low 16 bits are `t16`. It drops a position whose time is not newer than the last one it holds from the same sender in the same conversation (direct, or that group), on top of the session or group replay windows. The time is the one the sender vouches for the position: the measurement, or the heartbeat.
+
+One direct position costs about 30 bytes on air (7 header + 1 type + 14 + 8 tag).
+
+### 12.2 Sharing
+
+A **share** is a target (a contact or a group), a precision and an end time.
+
+- **Precision** is chosen per share: exact, 100 m, 1 km or 10 km. A coarse position is snapped to the centre of a fixed grid cell, the same cell for everyone and every time: never random noise, which averaging would remove. The grid is in on-air units: rows `h = round(size / 1.19435 m)` latitude units high, row `r = ⌊lat / h⌋`, centre `r·h + ⌊h/2⌋`; in that row, columns `w = round(size / (2.3887 m × cos φ))` longitude units wide (φ the latitude of the row centre, `w` at least 1), centre `c·w + ⌊w/2⌋`. Only the sender computes it. Coarse positions carry no heading, speed or altitude, and their radius is at least half the cell's diagonal.
+- **When to send.** Sender and receiver extrapolate the last position sent along its heading at its speed, for 15 minutes at most. An exact share sends when the actual position is more than 50 m from the extrapolation; a coarse share when the cell changes. Nothing else is sent while stationary, except a heartbeat every 15 minutes (contact) or 30 minutes (group). Positions to the same target are at least 30 s apart (contact) or 5 minutes (group). A direct position is not resent when it fails: the share sends a fresh one at the next update, and a position still waiting in the queue is replaced by the newer one.
+- **End.** At the end time, or when the user stops, one last position goes out with flag "end of sharing", and the receiver removes the marker.
+- **SOS.** While on, the exact position goes to every share and every group every 2 minutes, with the SOS flag, whatever their precision. When it is turned off, the shares go back to their precision at once, and groups without a share get the end flag.
+- Never in MeshCore adverts (`design.md`).

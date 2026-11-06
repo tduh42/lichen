@@ -687,6 +687,7 @@ version = "0.0.0"
 dependencies = [
  "lc-core",
  "lc-meshcore",
+ "lc-proto",
  "uniffi",
 ]
 

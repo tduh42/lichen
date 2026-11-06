@@ -29,6 +29,8 @@ use sha2::{Digest, Sha256};
 use crate::budget::{Budget, EU868};
 use crate::content::Content;
 use crate::group::{Group, GroupId, Held, PendingKey};
+use crate::location::Locations;
+use lc_proto::location::Position;
 
 pub type PubKey = [u8; 32];
 pub type MsgId = u64;
@@ -167,6 +169,16 @@ pub enum Event {
         snr4: i8,
         rssi: i8,
     },
+    /// A position from `from`, direct or in `group` (§12); `at` is its full Unix time.
+    Location {
+        from: PubKey,
+        group: Option<GroupId>,
+        position: Position,
+        at: u64,
+        snr4: i8,
+    },
+    /// A share ended on its own (expiry, or its contact or group is gone).
+    SharesChanged,
 }
 
 /// Why a request was refused right away.
@@ -361,6 +373,8 @@ pub struct Core {
     pub(crate) next_slot: Millis,
     /// Peer served last, for round-robin between sessions.
     rr_last: Option<PubKey>,
+    /// Location sharing (§12).
+    pub(crate) loc: Locations,
 }
 
 impl std::fmt::Debug for Core {
@@ -416,6 +430,7 @@ impl Core {
             group_tx: VecDeque::new(),
             next_slot: 0,
             rr_last: None,
+            loc: Locations::default(),
         }
     }
 
@@ -589,6 +604,30 @@ impl Core {
             });
     }
 
+    /// Queues a position for `to`, replacing one still waiting in its queue (§12.2).
+    pub(crate) fn enqueue_location(&mut self, to: &PubKey, datagram: Vec<u8>) -> MsgId {
+        let stale: Vec<MsgId> = self
+            .peers
+            .get(to)
+            .map(|p| {
+                p.queue
+                    .iter()
+                    .filter(|m| self.is_location(m.id))
+                    .map(|m| m.id)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if let Some(p) = self.peers.get_mut(to) {
+            p.queue.retain(|m| !stale.contains(&m.id));
+        }
+        for id in &stale {
+            self.loc.in_flight.remove(id);
+        }
+        let id = self.next_id;
+        self.enqueue_internal(to, datagram);
+        id
+    }
+
     /// Hands a raw on-air frame to the companion (`SEND_RAW_PACKET`), and counts its airtime.
     pub(crate) fn send_raw_packet(&mut self, raw: &[u8], now: Millis) {
         if raw.is_empty() {
@@ -651,6 +690,7 @@ impl Core {
             return;
         }
         self.tick_groups(now);
+        self.tick_locations(now);
         // Round robin: start after the peer served last, so that sessions share the radio.
         let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
         keys.sort_unstable();
@@ -676,6 +716,9 @@ impl Core {
             consider(d);
         }
         if let Some(d) = self.next_group_wakeup() {
+            consider(d);
+        }
+        if let Some(d) = self.next_location_wakeup() {
             consider(d);
         }
         let slot = self.next_slot.max(self.deferred_until.unwrap_or(0));
@@ -884,6 +927,9 @@ impl Core {
     fn fail_message(&mut self, peer: &mut Peer, mut m: Outgoing, reason: FailReason, now: Millis) {
         if !m.internal {
             self.events.push_back(Event::Failed { id: m.id, reason });
+        } else if self.is_location(m.id) {
+            // A stale position is not worth resending: the share sends a fresh one.
+            self.location_done(m.id, true);
         } else if m.tries < 5 {
             m.not_before = now + (60_000 << m.tries);
             m.tries += 1;
@@ -1047,7 +1093,7 @@ impl Core {
                     None if !f.msg.internal => {
                         self.events.push_back(Event::Delivered { id: f.msg.id });
                     }
-                    None => {}
+                    None => self.location_done(f.msg.id, false),
                     Some(reason) => self.fail_message(peer, f.msg, reason, now),
                 }
             }
@@ -1448,6 +1494,10 @@ impl Core {
                     && self.first_time(&c, &datagram, now)
                     && let Some(content) = Content::decode(&datagram)
                 {
+                    if let Content::Location(p) = content {
+                        self.on_position(c, None, p, snr4, now);
+                        return;
+                    }
                     self.events.push_back(Event::Received {
                         from: c,
                         content,

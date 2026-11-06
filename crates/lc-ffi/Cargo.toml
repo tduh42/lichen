@@ -20,6 +20,7 @@ cli = ["uniffi/cli"]
 [dependencies]
 lc-core.workspace = true
 lc-meshcore.workspace = true
+lc-proto.workspace = true
 uniffi.workspace = true
 
 [lints]

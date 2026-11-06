@@ -1,3 +1,4 @@
+import CoreLocation
 import Foundation
 import Observation
 
@@ -27,6 +28,22 @@ final class AppModel {
     var isDemo = false
     /// A chat to open (debug launch argument `-open <name>`, for screenshots).
     var debugOpen: ChatID?
+    var tab = Tab.messages
+
+    enum Tab: Hashable { case messages, map, search, settings }
+
+    // Location (protocol.md §12).
+    var shares: [ShareInfo] = []
+    var positions: [PeerPosition] = []
+    var sos = false
+    var myFix: LocationFix?
+    var locationDenied = false
+    /// The latest SOS heard, until dismissed or ended.
+    var incomingSos: PeerPosition?
+    /// The map is on screen: our position is needed even without a share.
+    var mapVisible = false {
+        didSet { if mapVisible != oldValue { updateLocator() } }
+    }
 
     @ObservationIgnored private(set) var core: LichenCore
     @ObservationIgnored let companion = Companion()
@@ -35,6 +52,9 @@ final class AppModel {
     @ObservationIgnored private var demoTimer: Timer?
     @ObservationIgnored private var debugSay: String?
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
+    @ObservationIgnored let locator = Locator()
+    @ObservationIgnored private var lastFed: UInt64?
+    @ObservationIgnored private var demoFixTimer: Timer?
 
     private static let nodeKeyDefault = "lichen.nodeKey"
 
@@ -47,10 +67,21 @@ final class AppModel {
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
         companion.onFound = { [weak self] f in MainActor.assumeIsolated { self?.found = f } }
         companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.frame(d) } }
+        locator.onFix = { [weak self] l in self?.gotFix(LocationFix(l)) }
+        locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
+        locationDenied = [.denied, .restricted].contains(locator.authorization)
+        shares = core.shares()
+        positions = core.positions(nowMs: now())
+        updateLocator()
         #if DEBUG
         let args = UserDefaults.standard
         debugSay = args.string(forKey: "say")
         if args.bool(forKey: "demo") { startDemo() }
+        switch args.string(forKey: "tab") {
+        case "map": tab = .map
+        case "settings": tab = .settings
+        default: break
+        }
         #endif
     }
 
@@ -90,16 +121,21 @@ final class AppModel {
         demoTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.demoStep() }
         }
+        updateLocator()
         pump()
     }
 
     func stopDemo() {
         demoTimer?.invalidate()
+        demoFixTimer?.invalidate()
+        demoFixTimer = nil
         demo = nil
         isDemo = false
         resetState()
         core = Self.makeCore(identity: nil)
         companionState = companion.state
+        shares = core.shares()
+        updateLocator()
     }
 
     private func demoStep() {
@@ -123,6 +159,12 @@ final class AppModel {
         conversations = []
         secured = []
         lastSnr = [:]
+        shares = []
+        positions = []
+        sos = false
+        incomingSos = nil
+        myFix = nil
+        lastFed = nil
     }
 
     var isConnected: Bool {
@@ -153,6 +195,7 @@ final class AppModel {
     /// Writes due frames, reads events, and sets the timer for the next wake-up.
     func pump() {
         let t = now()
+        core.setClock(unixMs: UInt64(Date().timeIntervalSince1970 * 1000), nowMs: t)
         core.tick(nowMs: t)
         while let f = core.pollCompanion(nowMs: t) {
             if let demo { demo.write(frame: f, nowMs: t) } else { companion.write(f) }
@@ -194,6 +237,10 @@ final class AppModel {
                let c = contacts.first(where: { $0.name == name }) {
                 debugOpen = .contact(key: c.key)
             }
+            if shares.isEmpty, let name = UserDefaults.standard.string(forKey: "share"),
+               let c = contacts.first(where: { $0.name == name }) {
+                _ = setShare(.contact(key: c.key), precision: .m100, hours: 1.25)
+            }
             #endif
         case let .sessionEstablished(peer):
             secured.insert(peer)
@@ -221,6 +268,16 @@ final class AppModel {
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
+        case let .location(position, end):
+            positions = core.positions(nowMs: now())
+            if position.sos && !end {
+                incomingSos = position
+            } else if incomingSos?.from == position.from {
+                incomingSos = nil
+            }
+        case .sharesChanged:
+            shares = core.shares()
+            updateLocator()
         }
     }
 
@@ -294,6 +351,88 @@ final class AppModel {
         }
     }
 
+    // MARK: location
+
+    /// Location is needed while sharing, during SOS, or with the map on screen; in the demo it
+    /// comes from the simulated network.
+    private func updateLocator() {
+        let sharing = !shares.isEmpty || sos
+        let needed = sharing || mapVisible
+        if let demo {
+            locator.stop()
+            if needed, demoFixTimer == nil {
+                gotFix(demo.myPosition())
+                demoFixTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self, let demo = self.demo else { return }
+                        self.gotFix(demo.myPosition())
+                    }
+                }
+            } else if !needed {
+                demoFixTimer?.invalidate()
+                demoFixTimer = nil
+            }
+        } else if needed {
+            locator.start(background: sharing)
+        } else {
+            locator.stop()
+        }
+    }
+
+    /// A fix from the phone: shown at once, handed to the core every 5 seconds at most.
+    private func gotFix(_ fix: LocationFix) {
+        myFix = fix
+        let t = now()
+        if let last = lastFed, t < last + 5_000 { return }
+        lastFed = t
+        core.updateLocation(fix: fix, nowMs: t)
+        pump()
+    }
+
+    func refreshPositions() {
+        positions = core.positions(nowMs: now())
+    }
+
+    func share(of chat: ChatID) -> ShareInfo? {
+        shares.first { $0.chat == chat }
+    }
+
+    /// Shares our position with `chat` at `precision` for `hours`, or stops (`nil`).
+    func setShare(_ chat: ChatID, precision: SharePrecision?, hours: Double) -> String? {
+        do {
+            if let precision {
+                let until = UInt64(Date().timeIntervalSince1970 + hours * 3600)
+                try core.startShare(chat: chat, precision: precision, untilS: until, nowMs: now())
+            } else {
+                try core.stopShare(chat: chat, nowMs: now())
+            }
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not change the share.")
+        }
+        shares = core.shares()
+        updateLocator()
+        pump()
+        return nil
+    }
+
+    func stopAllShares() {
+        for s in shares {
+            try? core.stopShare(chat: s.chat, nowMs: now())
+        }
+        shares = core.shares()
+        updateLocator()
+        pump()
+    }
+
+    func setSos(_ on: Bool) {
+        core.setSos(on: on, nowMs: now())
+        sos = core.sos()
+        updateLocator()
+        pump()
+    }
+
     // MARK: lookups for the views
 
     func name(of key: Data) -> String {
@@ -330,6 +469,7 @@ extension Message {
     var display: String {
         switch self {
         case let .text(_, text): return text
+        case let .other(type, _) where type == 0x03: return String(localized: "Position")
         case let .other(type, body): return String(localized: "Unsupported content (type \(String(type)), \(String(body.count)) bytes)")
         }
     }

@@ -109,3 +109,17 @@ Two one-hour campaigns per target (`cargo +nightly fuzz run <target> -- -max_tot
 | `discovery_open` | 96.7 M (20 min) |
 
 `session_peer` found one bug before these campaigns (unbounded receiver gap estimate), fixed in L1.
+
+## 2026-11-06 — Location sharing (L5)
+
+`cargo test -p lc-core --release --test location -- --nocapture`: Alice, Bob and Carol around one repeater, no loss.
+
+| Scenario | Positions sent | Note |
+|---|---|---|
+| Exact share, 20 min walk at 1.4 m/s, one 90° turn at 10 min, a fix every 5 s | 4 (0, 495, 625, 1130 s) | worst distance between Bob's extrapolation and Alice: 60 m |
+| 1 km share, 30 min east at 2 m/s (3.6 km) | 5 (0, 30, 520, 1020, 1520 s) | one per grid cell entered, all cell centres |
+| Exact share, stationary 50 min | 4 | heartbeats at 0, 15, 30, 45 min |
+| SOS, 5 min, group of 3 without a share | 3 per member | then one end-of-sharing position |
+
+The sends at 495 and 1130 s come from the speed quantum (0.5 m/s): 1.4 m/s is sent as 1.5, so the extrapolation drifts 50 m in about 8 minutes on a straight line. The send at 625 s is the turn (25 s after it). One direct position over one hop: 33 bytes, 365 ms at SF8 / 62.5 kHz / CR 4/5.
+

@@ -131,6 +131,8 @@ impl std::fmt::Debug for Net {
 }
 
 const DEDUP_SIZE: usize = 160;
+/// Wall clock of every app at simulated time 0 (Unix milliseconds, 2026-10-26).
+pub const EPOCH_MS: u64 = 1_793_000_000_000;
 const FREQ_KHZ: u32 = 869_618;
 
 impl Net {
@@ -228,7 +230,8 @@ impl Net {
         let mut rng_seed = [seed; 32];
         rng_seed[0] ^= 0x5A;
         rng_seed[1] = self.rng.next_u32() as u8;
-        let core = Core::new(Config::new("lichen-sim", rng_seed));
+        let mut core = Core::new(Config::new("lichen-sim", rng_seed));
+        core.set_clock(EPOCH_MS + self.now, self.now);
         if let Some(n) = self.nodes.get_mut(i) {
             n.core = Some(core);
             n.connected = false;

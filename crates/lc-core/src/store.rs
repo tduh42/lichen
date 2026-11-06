@@ -1,5 +1,5 @@
-//! Persistent storage (SQLite): message history, contacts, groups. One database per MeshCore
-//! node. Sessions and our own group sender keys are never stored (ADR-0003, protocol.md §10.2).
+//! Persistent storage (SQLite): message history, contacts, groups, location shares and the
+//! last positions received. One database per MeshCore node. Sessions and our own group sender keys are never stored (ADR-0003, protocol.md §10.2).
 //!
 //! The core stays IO-free: the runner (`lc-ffi`) records what the core reports and restores
 //! contacts and groups at start.
@@ -11,11 +11,14 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::content::Content;
 use crate::core::{Contact, FailReason, OwnedPath, PubKey};
 use crate::group::GroupId;
+use crate::location::{Precision, Share};
+use lc_proto::location::Position;
 
 pub use rusqlite::Error;
 
 /// Schema version (`PRAGMA user_version`).
-const VERSION: i32 = 1;
+/// 2: location shares and positions (tables added, nothing migrated).
+const VERSION: i32 = 2;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -162,7 +165,33 @@ CREATE TABLE IF NOT EXISTS messages (
     read INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
+CREATE TABLE IF NOT EXISTS shares (
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    precision INTEGER NOT NULL,
+    until INTEGER NOT NULL,
+    PRIMARY KEY (chat_kind, chat)
+);
+CREATE TABLE IF NOT EXISTS positions (
+    sender BLOB NOT NULL,
+    gid BLOB NOT NULL,
+    body BLOB NOT NULL,
+    at INTEGER NOT NULL,
+    snr4 INTEGER NOT NULL,
+    PRIMARY KEY (sender, gid)
+);
 ";
+
+/// The last position received from a sender in a conversation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredPosition {
+    pub from: PubKey,
+    pub group: Option<GroupId>,
+    pub position: Position,
+    /// Unix seconds.
+    pub at: u64,
+    pub snr4: i8,
+}
 
 const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
                        status_b, fragments, airtime_ms, snr4, read";
@@ -212,6 +241,100 @@ impl Store {
         conn.execute_batch(SCHEMA)?;
         conn.pragma_update(None, "user_version", VERSION)?;
         Ok(Self { conn })
+    }
+
+    // ----- location (protocol.md §12) ---------------------------------------------------
+
+    /// Replaces the saved shares by `shares`.
+    pub fn put_shares(&self, shares: &[Share]) -> Result<(), Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM shares", [])?;
+        for s in shares {
+            tx.execute(
+                "INSERT INTO shares (chat_kind, chat, precision, until) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    s.chat.kind(),
+                    s.chat.bytes(),
+                    s.precision.code(),
+                    i64::try_from(s.until).unwrap_or(i64::MAX)
+                ],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// Saved shares: (conversation, precision, end in Unix seconds).
+    pub fn shares(&self) -> Result<Vec<(Chat, Precision, u64)>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT chat_kind, chat, precision, until FROM shares")?;
+        let rows = st.query_map([], |r| {
+            let bytes: Vec<u8> = r.get(1)?;
+            let until: i64 = r.get(3)?;
+            Ok(Chat::from_row(r.get(0)?, &bytes)
+                .zip(Precision::from_code(r.get(2)?))
+                .map(|(c, p)| (c, p, u64::try_from(until).unwrap_or(0))))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Keeps the newest position of `p.from` in its conversation; the end flag removes it.
+    pub fn put_position(&self, p: &StoredPosition) -> Result<(), Error> {
+        let gid: &[u8] = p.group.as_ref().map_or(&[], |g| g.as_slice());
+        if p.position.end() {
+            self.conn.execute(
+                "DELETE FROM positions WHERE sender = ?1 AND gid = ?2",
+                params![p.from.as_slice(), gid],
+            )?;
+            return Ok(());
+        }
+        self.conn.execute(
+            "INSERT INTO positions (sender, gid, body, at, snr4) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (sender, gid) DO UPDATE SET body = ?3, at = ?4, snr4 = ?5
+             WHERE excluded.at > positions.at",
+            params![
+                p.from.as_slice(),
+                gid,
+                p.position.encode().as_slice(),
+                i64::try_from(p.at).unwrap_or(i64::MAX),
+                p.snr4
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn positions(&self) -> Result<Vec<StoredPosition>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT sender, gid, body, at, snr4 FROM positions")?;
+        let rows = st.query_map([], |r| {
+            let from: Vec<u8> = r.get(0)?;
+            let gid: Vec<u8> = r.get(1)?;
+            let body: Vec<u8> = r.get(2)?;
+            let at: i64 = r.get(3)?;
+            Ok((|| {
+                Some(StoredPosition {
+                    from: from.as_slice().try_into().ok()?,
+                    group: if gid.is_empty() {
+                        None
+                    } else {
+                        Some(gid.as_slice().try_into().ok()?)
+                    },
+                    position: Position::decode(&body)?,
+                    at: u64::try_from(at).ok()?,
+                    snr4: r.get(4).ok()?,
+                })
+            })())
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Forgets positions older than `before` (Unix seconds).
+    pub fn prune_positions(&self, before: u64) -> Result<usize, Error> {
+        self.conn.execute(
+            "DELETE FROM positions WHERE at < ?1",
+            params![i64::try_from(before).unwrap_or(i64::MAX)],
+        )
     }
 
     // ----- contacts and groups ---------------------------------------------------------
@@ -401,6 +524,58 @@ mod tests {
             snr4: Some(24),
             read: outgoing,
         }
+    }
+
+    #[test]
+    fn shares_and_positions() {
+        let s = Store::in_memory().unwrap();
+        let (a, g) = (Chat::Contact([1; 32]), Chat::Group([3; 16]));
+        s.put_shares(&[
+            Share::new(a, Precision::Exact, 100),
+            Share::new(g, Precision::Km1, 200),
+        ])
+        .unwrap();
+        let mut got = s.shares().unwrap();
+        got.sort_by_key(|x| x.2);
+        assert_eq!(
+            got,
+            vec![(a, Precision::Exact, 100), (g, Precision::Km1, 200)]
+        );
+        s.put_shares(&[Share::new(g, Precision::M100, 300)])
+            .unwrap();
+        assert_eq!(s.shares().unwrap(), vec![(g, Precision::M100, 300)]);
+
+        let pos = |lat: i32, flags: u8| Position {
+            lat,
+            lon: 2,
+            alt: 3,
+            t16: 4,
+            heading: 5,
+            speed: 6,
+            prec: 7,
+            flags,
+        };
+        let p = |at: u64, group: Option<GroupId>, lat: i32, flags: u8| StoredPosition {
+            from: [1; 32],
+            group,
+            position: pos(lat, flags),
+            at,
+            snr4: -3,
+        };
+        s.put_position(&p(10, None, 1, 0)).unwrap();
+        s.put_position(&p(20, None, 2, 0)).unwrap();
+        // Older than what we hold: ignored.
+        s.put_position(&p(15, None, 3, 0)).unwrap();
+        s.put_position(&p(12, Some([3; 16]), 4, 0)).unwrap();
+        let mut all = s.positions().unwrap();
+        all.sort_by_key(|x| x.at);
+        assert_eq!(all, vec![p(12, Some([3; 16]), 4, 0), p(20, None, 2, 0)]);
+        // The end flag removes the marker of that conversation only.
+        s.put_position(&p(25, None, 2, lc_proto::location::FLAG_END))
+            .unwrap();
+        assert_eq!(s.positions().unwrap(), vec![p(12, Some([3; 16]), 4, 0)]);
+        assert_eq!(s.prune_positions(13).unwrap(), 1);
+        assert!(s.positions().unwrap().is_empty());
     }
 
     #[test]

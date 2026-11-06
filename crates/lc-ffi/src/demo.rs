@@ -5,14 +5,32 @@
 use std::sync::{Arc, Mutex};
 
 use lc_core::fakenet::Net;
-use lc_core::{Content, Event, GroupId};
+use lc_core::{Chat, Content, Event, Fix, GroupId, Precision};
 use lc_meshcore::airtime::LoRaParams;
+
+use crate::LocationFix;
+
+/// The demo's places (Vercors): the refuge where Camille waits, the col Julien leaves from,
+/// and where the app's user stands.
+const REFUGE: (f64, f64) = (44.8960, 5.4880);
+const COL: (f64, f64) = (44.9150, 5.4620);
+const YOU: (f64, f64) = (44.8885, 5.4985);
+/// Julien's walking speed, m/s.
+const WALK: f64 = 1.3;
 
 #[derive(Clone, Debug)]
 enum Action {
-    Dm { from: usize, text: String },
+    Dm {
+        from: usize,
+        text: String,
+    },
     CreateGroup,
-    GroupPost { from: usize, text: String },
+    /// Camille shares her exact position with the app's user for two hours.
+    CamilleShares,
+    GroupPost {
+        from: usize,
+        text: String,
+    },
 }
 
 struct Demo {
@@ -24,6 +42,45 @@ struct Demo {
     group: Option<GroupId>,
     pending: Vec<(u64, Action)>,
     julien_posted: bool,
+    /// When Julien started walking (simulated ms), once he shares with the group.
+    julien_walk: Option<u64>,
+    next_fix: u64,
+    /// Wall clock at simulated time 0, Unix milliseconds.
+    wall0: u64,
+}
+
+fn unix_now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64)
+}
+
+/// A fix at `(lat, lon)`, moving at `speed` m/s on `heading`, measured at `unix_s`.
+fn fix(at: (f64, f64), heading: f64, speed: f64, unix_s: u64) -> Fix {
+    Fix {
+        lat: at.0,
+        lon: at.1,
+        alt_m: Some(1_650.0),
+        accuracy_m: 6.0,
+        heading_deg: Some(heading),
+        speed_mps: Some(speed),
+        unix_s,
+    }
+}
+
+/// Where Julien is `t_s` seconds after leaving the col, and his heading and speed.
+fn julien_at(t_s: f64) -> ((f64, f64), f64, f64) {
+    let m = 111_320.0;
+    let dy = (REFUGE.0 - COL.0) * m;
+    let dx = (REFUGE.1 - COL.1) * m * COL.0.to_radians().cos();
+    let d = dx.hypot(dy);
+    let f = (WALK * t_s / d).min(1.0);
+    let heading = dx.atan2(dy).to_degrees().rem_euclid(360.0);
+    let pos = (
+        COL.0 + (REFUGE.0 - COL.0) * f,
+        COL.1 + (REFUGE.1 - COL.1) * f,
+    );
+    (pos, heading, if f < 1.0 { WALK } else { 0.0 })
 }
 
 /// A simulated MeshCore network for trying the app without a radio.
@@ -41,6 +98,11 @@ impl std::fmt::Debug for DemoNetwork {
 const SEC: u64 = 1_000;
 
 impl Demo {
+    /// The bots' wall clock, Unix seconds.
+    const fn unix_s(&self) -> u64 {
+        (self.wall0 + self.net.now) / 1000
+    }
+
     fn sim_now(&mut self, app_now: u64) -> u64 {
         let origin = *self.origin.get_or_insert(app_now);
         app_now.saturating_sub(origin)
@@ -74,6 +136,14 @@ impl Demo {
                     })
                     .and_then(Result::ok);
             }
+            Action::CamilleShares => {
+                let t = self.unix_s();
+                let until = t + 2 * 3600;
+                let _ = self.net.with_core(self.camille, |c, now| {
+                    c.update_location(fix(REFUGE, 0.0, 0.0, t), now);
+                    c.start_share(Chat::Contact(app_key), Precision::Exact, until, now)
+                });
+            }
             Action::GroupPost { from, text } => {
                 if let Some(gid) = self.group {
                     let _ = self
@@ -96,6 +166,7 @@ impl Demo {
         for a in due {
             self.act(a);
         }
+        self.locate();
         let app_key = self.net.key(self.app);
         for (bot, name) in [(self.camille, "Camille"), (self.julien, "Julien")] {
             for e in self.net.take_events(bot) {
@@ -145,6 +216,14 @@ impl Demo {
                 })
         {
             self.julien_posted = true;
+            // He shares his position with the group, rounded to 1 km, as he leaves the col.
+            self.julien_walk = Some(now);
+            let unix = self.unix_s();
+            let until = unix + 4 * 3600;
+            let _ = self.net.with_core(self.julien, |c, t| {
+                c.update_location(fix(COL, 0.0, 0.0, unix), t);
+                c.start_share(Chat::Group(gid), Precision::Km1, until, t)
+            });
             self.pending.push((
                 now + 5 * SEC,
                 Action::GroupPost {
@@ -152,6 +231,27 @@ impl Demo {
                     text: "Leaving the col now, at the refuge around 2 pm.".into(),
                 },
             ));
+        }
+    }
+}
+
+impl Demo {
+    /// The bots' phones report their positions every 10 seconds.
+    fn locate(&mut self) {
+        let now = self.net.now;
+        if now < self.next_fix {
+            return;
+        }
+        self.next_fix = now + 10 * SEC;
+        let unix = self.unix_s();
+        let _ = self.net.with_core(self.camille, |c, t| {
+            c.update_location(fix(REFUGE, 0.0, 0.0, unix), t);
+        });
+        if let Some(start) = self.julien_walk {
+            let (at, heading, speed) = julien_at((now - start) as f64 / 1000.0);
+            let _ = self.net.with_core(self.julien, |c, t| {
+                c.update_location(fix(at, heading, speed, unix), t);
+            });
         }
     }
 }
@@ -182,6 +282,11 @@ impl DemoNetwork {
         }
         net.connect(camille);
         net.connect(julien);
+        // The bots' clocks are the real one (the demo runs in real time).
+        let wall = unix_now_ms();
+        for bot in [camille, julien] {
+            let _ = net.with_core(bot, |c, now| c.set_clock(wall, now));
+        }
         let pending = vec![
             (
                 30 * SEC,
@@ -191,6 +296,7 @@ impl DemoNetwork {
                 },
             ),
             (60 * SEC, Action::CreateGroup),
+            (90 * SEC, Action::CamilleShares),
         ];
         Arc::new(Self {
             inner: Mutex::new(Demo {
@@ -202,6 +308,9 @@ impl DemoNetwork {
                 group: None,
                 pending,
                 julien_posted: false,
+                julien_walk: None,
+                next_fix: 0,
+                wall0: wall,
             }),
         })
     }
@@ -215,6 +324,19 @@ impl DemoNetwork {
         d.advance(now_ms);
         let app = d.app;
         d.net.external_write(app, &frame);
+    }
+
+    /// Where the app's user stands in the demo (instead of the phone's location).
+    pub fn my_position(&self) -> LocationFix {
+        LocationFix {
+            lat: YOU.0,
+            lon: YOU.1,
+            alt_m: Some(1_480.0),
+            accuracy_m: 8.0,
+            heading_deg: None,
+            speed_mps: None,
+            unix_s: unix_now_ms() / 1000,
+        }
     }
 
     /// Advances the simulation to `now_ms` and returns the companion's frames for the app.
@@ -295,6 +417,69 @@ mod tests {
             texts.iter().any(|t| t.starts_with("Leaving the col")),
             "{texts:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod location {
+    use super::*;
+    use crate::{LichenCore, LichenEvent, SharePrecision};
+
+    /// Camille's exact position arrives directly, Julien's through the group rounded to 1 km;
+    /// the map gets one marker each.
+    #[test]
+    fn bots_share_their_positions() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![4; 32], None, None).unwrap();
+        core.set_clock(unix_now_ms(), 0);
+        core.connect(0);
+        let mut events = Vec::new();
+        let mut shared = false;
+        let mut now = 0;
+        while now < 12 * 60_000 {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                events.push(e);
+            }
+            if now % 10_000 == 0 {
+                let mut me = demo.my_position();
+                me.unix_s = (unix_now_ms() + now) / 1000;
+                core.update_location(me, now);
+            }
+            if !shared && let Some(c) = core.contacts().into_iter().find(|c| c.name == "Camille") {
+                core.start_share(
+                    crate::ChatRef::Contact { key: c.key },
+                    SharePrecision::M100,
+                    u64::MAX,
+                    now,
+                )
+                .unwrap();
+                shared = true;
+            }
+            now += 100;
+        }
+        assert_eq!(core.shares().len(), 1);
+        let got: Vec<_> = events
+            .iter()
+            .filter_map(|e| match e {
+                LichenEvent::Location { position, .. } => Some(position.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(got.iter().any(|p| p.group.is_none() && p.radius_m < 10.0));
+        assert!(got.iter().any(|p| p.group.is_some() && p.radius_m > 700.0));
+        let map = core.positions(now);
+        assert_eq!(map.len(), 2, "{map:?}");
+        let camille = map.iter().find(|p| p.group.is_none()).unwrap();
+        assert!(lc_core::location::distance_m((camille.lat, camille.lon), REFUGE) < 5.0);
+        let julien = map.iter().find(|p| p.group.is_some()).unwrap();
+        assert!(lc_core::location::distance_m((julien.lat, julien.lon), COL) < 2_500.0);
     }
 }
 

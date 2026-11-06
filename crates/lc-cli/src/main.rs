@@ -125,6 +125,7 @@ fn describe(core: &Core, e: &Event) -> String {
         } => {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
+                Content::Location(p) => describe_position(p),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }
@@ -150,6 +151,7 @@ fn describe(core: &Core, e: &Event) -> String {
         } => {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
+                Content::Location(p) => describe_position(p),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }
@@ -160,9 +162,38 @@ fn describe(core: &Core, e: &Event) -> String {
                 name_of(core, from)
             )
         }
+        Event::Location {
+            from,
+            group,
+            position,
+            at,
+            ..
+        } => format!(
+            "{}{} at {at}: {}",
+            group.map_or(String::new(), |g| format!(
+                "[group {}] ",
+                hex::encode(&g[..4])
+            )),
+            name_of(core, from),
+            describe_position(position)
+        ),
+        Event::SharesChanged => "a location share ended".into(),
         Event::Delivered { id } => format!("message {id} delivered"),
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
     }
+}
+
+fn describe_position(p: &lc_proto::location::Position) -> String {
+    let (lat, lon) = lc_core::location::to_degrees(p.lat, p.lon);
+    let flags = match (p.sos(), p.end()) {
+        (true, _) => " SOS",
+        (_, true) => " (sharing ended)",
+        _ => "",
+    };
+    format!(
+        "position {lat:.5}, {lon:.5} ±{:.0} m{flags}",
+        lc_core::location::radius_m(p.prec)
+    )
 }
 
 fn find_contact(core: &Core, to: &str) -> Result<PubKey, String> {

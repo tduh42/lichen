@@ -61,6 +61,86 @@
         }
       }
     },
+    "1 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 h"
+          }
+        }
+      }
+    },
+    "1 km": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 km"
+          }
+        }
+      }
+    },
+    "10 km": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 km"
+          }
+        }
+      }
+    },
+    "100 m": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "100 m"
+          }
+        }
+      }
+    },
+    "24 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24 h"
+          }
+        }
+      }
+    },
+    "8 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "8 h"
+          }
+        }
+      }
+    },
+    "A group gets at most one position every 5 minutes.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un groupe reçoit au plus une position toutes les 5 minutes."
+          }
+        }
+      }
+    },
+    "A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une position arrondie est le centre d'une case d'une grille fixe, jamais un bruit aléatoire : en faire la moyenne n'apprend rien de plus."
+          }
+        }
+      }
+    },
     "A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.": {
       "localizations": {
         "fr": {
@@ -77,6 +157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À propos"
+          }
+        }
+      }
+    },
+    "Active · ends in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actif · expire dans %@"
           }
         }
       }
@@ -131,6 +221,16 @@
         }
       }
     },
+    "Bright": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contrastée"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "fr": {
@@ -141,12 +241,12 @@
         }
       }
     },
-    "Coming with milestone L5. Your position is never put in MeshCore adverts.": {
+    "Collapse": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arrive avec le jalon L5. Ta position n'est jamais mise dans les annonces MeshCore."
+            "value": "Replier"
           }
         }
       }
@@ -181,12 +281,82 @@
         }
       }
     },
+    "Contact · %lld hops": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Contact · %lld hop"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Contact · %lld hops"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Contact · %lld saut"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Contact · %lld sauts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Contact · LoRa direct": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact · LoRa direct"
+          }
+        }
+      }
+    },
+    "Contact · path not known yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Contact · chemin pas encore connu"
+          }
+        }
+      }
+    },
     "Contacts": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Could not change the share.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de modifier le partage."
           }
         }
       }
@@ -211,12 +381,32 @@
         }
       }
     },
+    "Could not share": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partage impossible"
+          }
+        }
+      }
+    },
     "Create group": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Créer le groupe"
+          }
+        }
+      }
+    },
+    "Delete offline maps (%lld, %@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer les cartes hors ligne (%lld, %@)"
           }
         }
       }
@@ -267,6 +457,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déconnecter"
+          }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer"
+          }
+        }
+      }
+    },
+    "Done": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OK"
+          }
+        }
+      }
+    },
+    "Download this area": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger cette zone"
+          }
+        }
+      }
+    },
+    "Downloaded areas work without a network.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les zones téléchargées marchent sans réseau."
+          }
+        }
+      }
+    },
+    "Downloading the map: %lld / %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement de la carte : %lld / %lld"
+          }
+        }
+      }
+    },
+    "Duration": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durée"
           }
         }
       }
@@ -351,6 +601,26 @@
         }
       }
     },
+    "Exact": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exacte"
+          }
+        }
+      }
+    },
+    "Expand": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déplier"
+          }
+        }
+      }
+    },
     "Filter": {
       "localizations": {
         "fr": {
@@ -397,6 +667,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nom du groupe"
+          }
+        }
+      }
+    },
+    "Group · %lld members · flood": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld member · flood"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld members · flood"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membre · flood"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membres · flood"
+                }
+              }
+            }
           }
         }
       }
@@ -461,6 +771,16 @@
         }
       }
     },
+    "Light": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claire"
+          }
+        }
+      }
+    },
     "LoRa": {
       "localizations": {
         "fr": {
@@ -521,6 +841,26 @@
         }
       }
     },
+    "Location access is off: allow it in Settings.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accès à la position est coupé : autorise-le dans les Réglages."
+          }
+        }
+      }
+    },
+    "Location sharing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partage de position"
+          }
+        }
+      }
+    },
     "Looking for nodes…": {
       "localizations": {
         "fr": {
@@ -541,12 +881,22 @@
         }
       }
     },
-    "Map and location sharing": {
+    "Map layers": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Carte et partage de position"
+            "value": "Couches de la carte"
+          }
+        }
+      }
+    },
+    "Map style": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Style de carte"
           }
         }
       }
@@ -621,6 +971,16 @@
         }
       }
     },
+    "No contacts yet: connect your MeshCore node, or try the demo network in Settings.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de contacts : connecte ton nœud MeshCore, ou essaie le réseau de démo dans les Réglages."
+          }
+        }
+      }
+    },
     "No contacts yet: they come from your node.": {
       "localizations": {
         "fr": {
@@ -671,12 +1031,42 @@
         }
       }
     },
+    "Not shared": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non partagée"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        }
+      }
+    },
+    "Off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désactivé"
+          }
+        }
+      }
+    },
+    "On": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activé"
           }
         }
       }
@@ -691,12 +1081,42 @@
         }
       }
     },
+    "Outdoor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Randonnée"
+          }
+        }
+      }
+    },
     "Pairing asks for the PIN shown on the node. Messages arrive only while the phone is connected to it.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "L'appairage demande le code affiché sur le nœud. Les messages n'arrivent que pendant que le téléphone y est connecté."
+          }
+        }
+      }
+    },
+    "Position": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position"
+          }
+        }
+      }
+    },
+    "Precision per contact": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Précision par contact"
           }
         }
       }
@@ -717,6 +1137,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Prêt"
+          }
+        }
+      }
+    },
+    "SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS"
+          }
+        }
+      }
+    },
+    "SOS from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS de %@"
+          }
+        }
+      }
+    },
+    "SOS on: your exact position goes out every 2 minutes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS actif : ta position exacte part toutes les 2 minutes"
           }
         }
       }
@@ -761,12 +1211,42 @@
         }
       }
     },
+    "Send SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer le SOS"
+          }
+        }
+      }
+    },
+    "Send an SOS?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer un SOS ?"
+          }
+        }
+      }
+    },
     "Sending %@ / %@ fragments": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Envoi %@ / %@ fragments"
+          }
+        }
+      }
+    },
+    "Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi seulement quand tu t'écartes de plus de 50 m de ta trajectoire. Le chiffrement ne masque pas ta position radio."
           }
         }
       }
@@ -791,12 +1271,62 @@
         }
       }
     },
+    "Sharing stops on its own at the end; the others see your marker disappear.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le partage s'arrête tout seul à la fin ; les autres voient ton marqueur disparaître."
+          }
+        }
+      }
+    },
+    "Show": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir"
+          }
+        }
+      }
+    },
+    "Show everyone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voir tout le monde"
+          }
+        }
+      }
+    },
+    "Stop SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le SOS"
+          }
+        }
+      }
+    },
     "Stop looking": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter la recherche"
+          }
+        }
+      }
+    },
+    "Stop sharing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le partage"
           }
         }
       }
@@ -827,6 +1357,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La clé du nœud n'est pas encore disponible."
+          }
+        }
+      }
+    },
+    "Their exact position is on the map.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa position exacte est sur la carte."
           }
         }
       }
@@ -921,6 +1461,16 @@
         }
       }
     },
+    "Your exact position goes to every contact you share with and every group, every 2 minutes, until you stop it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta position exacte part vers chaque contact avec qui tu partages et vers chaque groupe, toutes les 2 minutes, jusqu'à ce que tu l'arrêtes."
+          }
+        }
+      }
+    },
     "available": {
       "localizations": {
         "fr": {
@@ -957,6 +1507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aucun chemin trouvé"
+          }
+        }
+      }
+    },
+    "now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "à l'instant"
           }
         }
       }

@@ -8,8 +8,12 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use lc_core::store::{self, Chat, Status, Store};
-use lc_core::{Config, Content, Core, Event, FailReason as CoreFail, GroupId, PubKey};
+use lc_core::location::{self as loc, EXTRAPOLATE_MAX_S};
+use lc_core::store::{self, Chat, Status, Store, StoredPosition};
+use lc_core::{
+    Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Precision, PubKey,
+};
+use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
 
 mod demo;
 
@@ -96,13 +100,139 @@ pub enum Message {
     Other { content_type: u8, body: Vec<u8> },
 }
 
+/// How long a received position stays on the map, in seconds.
+const POSITION_KEEP_S: u64 = 24 * 3600;
+
 impl From<Content> for Message {
     fn from(c: Content) -> Self {
         match c {
             Content::Text { sent_at, text } => Self::Text { sent_at, text },
+            Content::Location(p) => Self::Other {
+                content_type: lc_proto::content::LOCATION,
+                body: p.encode().to_vec(),
+            },
             Content::Other { content_type, body } => Self::Other { content_type, body },
         }
     }
+}
+
+/// Our position, from the phone's location service.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct LocationFix {
+    pub lat: f64,
+    pub lon: f64,
+    pub alt_m: Option<f64>,
+    /// Horizontal accuracy (radius), metres.
+    pub accuracy_m: f64,
+    pub heading_deg: Option<f64>,
+    pub speed_mps: Option<f64>,
+    /// When it was measured, Unix seconds.
+    pub unix_s: u64,
+}
+
+/// What a share reveals (protocol.md §12.2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, uniffi::Enum)]
+pub enum SharePrecision {
+    Exact,
+    M100,
+    Km1,
+    Km10,
+}
+
+impl From<SharePrecision> for Precision {
+    fn from(p: SharePrecision) -> Self {
+        match p {
+            SharePrecision::Exact => Self::Exact,
+            SharePrecision::M100 => Self::M100,
+            SharePrecision::Km1 => Self::Km1,
+            SharePrecision::Km10 => Self::Km10,
+        }
+    }
+}
+
+impl From<Precision> for SharePrecision {
+    fn from(p: Precision) -> Self {
+        match p {
+            Precision::Exact => Self::Exact,
+            Precision::M100 => Self::M100,
+            Precision::Km1 => Self::Km1,
+            Precision::Km10 => Self::Km10,
+        }
+    }
+}
+
+/// One of our shares.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ShareInfo {
+    pub chat: ChatRef,
+    pub precision: SharePrecision,
+    /// End, Unix seconds.
+    pub until_s: u64,
+}
+
+/// Someone's position as the map shows it.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct PeerPosition {
+    pub from: Vec<u8>,
+    /// The group it came through; none for a direct share.
+    pub group: Option<Vec<u8>>,
+    pub lat: f64,
+    pub lon: f64,
+    pub alt_m: Option<f64>,
+    /// Radius of uncertainty (the precision of the share, or of the GPS).
+    pub radius_m: f64,
+    pub heading_deg: Option<f64>,
+    pub speed_mps: Option<f64>,
+    /// When the sender vouched for it, Unix seconds.
+    pub at_s: u64,
+    pub sos: bool,
+    /// `lat`/`lon` follow the sender's heading and speed from `at_s` to now (dead reckoning).
+    pub extrapolated: bool,
+}
+
+impl PeerPosition {
+    fn new(p: &StoredPosition, now_s: u64) -> Self {
+        let q = &p.position;
+        let (lat, lon) = loc::extrapolate(q, p.at, now_s);
+        let moving = q.heading != HEADING_UNKNOWN && q.speed != SPEED_UNKNOWN && q.speed > 0;
+        Self {
+            from: p.from.to_vec(),
+            group: p.group.map(|g| g.to_vec()),
+            lat,
+            lon,
+            alt_m: (q.alt != ALT_UNKNOWN).then_some(f64::from(q.alt)),
+            radius_m: loc::radius_m(q.prec),
+            heading_deg: (q.heading != HEADING_UNKNOWN).then_some(f64::from(q.heading)),
+            speed_mps: (q.speed != SPEED_UNKNOWN).then_some(f64::from(q.speed) * 0.5),
+            at_s: p.at,
+            sos: q.sos(),
+            extrapolated: moving && now_s > p.at && now_s < p.at + EXTRAPOLATE_MAX_S,
+        }
+    }
+}
+
+/// One marker per sender: an SOS first, else the most precise of the positions at most
+/// 15 minutes older than the newest, else the newest.
+fn best_per_sender(all: Vec<StoredPosition>) -> Vec<StoredPosition> {
+    let mut by: HashMap<PubKey, Vec<StoredPosition>> = HashMap::new();
+    for p in all {
+        by.entry(p.from).or_default().push(p);
+    }
+    let mut out: Vec<StoredPosition> = by
+        .into_values()
+        .filter_map(|mut v| {
+            v.sort_by_key(|p| (std::cmp::Reverse(p.position.sos()), std::cmp::Reverse(p.at)));
+            let first = v.first()?.clone();
+            if first.position.sos() {
+                return Some(first);
+            }
+            v.into_iter()
+                .filter(|p| p.at + 900 >= first.at)
+                .min_by_key(|p| p.position.prec)
+        })
+        .collect();
+    out.sort_by_key(|p| p.from);
+    out
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -182,6 +312,13 @@ pub enum LichenEvent {
     MessageChanged {
         message: StoredMessage,
     },
+    /// A position arrived (`end`: the sender stopped sharing; its marker is gone).
+    Location {
+        position: PeerPosition,
+        end: bool,
+    },
+    /// One of our shares ended on its own.
+    SharesChanged,
 }
 
 fn snr(snr4: i8) -> f32 {
@@ -249,6 +386,26 @@ impl LichenEvent {
                 snr_db: snr(snr4),
                 rssi,
             },
+            Event::Location {
+                from,
+                group,
+                position,
+                at,
+                snr4,
+            } => Self::Location {
+                end: position.end(),
+                position: PeerPosition::new(
+                    &StoredPosition {
+                        from,
+                        group,
+                        position,
+                        at,
+                        snr4,
+                    },
+                    at,
+                ),
+            },
+            Event::SharesChanged => Self::SharesChanged,
         }
     }
 }
@@ -385,6 +542,11 @@ impl Inner {
         for snap in store.groups().unwrap_or_default() {
             self.core.restore_group(&snap);
         }
+        for (chat, precision, until) in store.shares().unwrap_or_default() {
+            let _ = self.core.restore_share(chat, precision, until);
+        }
+        let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
+        let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
     }
 
@@ -393,6 +555,12 @@ impl Inner {
             for c in self.core.contacts() {
                 let _ = st.put_contact(c);
             }
+        }
+    }
+
+    fn save_shares(&self) {
+        if let Some(st) = &self.store {
+            let _ = st.put_shares(self.core.shares());
         }
     }
 
@@ -499,6 +667,24 @@ impl Inner {
                     false,
                 );
             }
+            Event::Location {
+                from,
+                group,
+                position,
+                at,
+                snr4,
+            } => {
+                if let Some(st) = &self.store {
+                    let _ = st.put_position(&StoredPosition {
+                        from: *from,
+                        group: *group,
+                        position: *position,
+                        at: *at,
+                        snr4: *snr4,
+                    });
+                }
+            }
+            Event::SharesChanged => self.save_shares(),
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
             _ => {}
@@ -819,6 +1005,104 @@ impl LichenCore {
                 last: m.into(),
                 unread,
             })
+            .collect()
+    }
+
+    // ----- location (protocol.md §12) ---------------------------------------------------
+
+    /// The wall clock: `unix_ms` is the current Unix time in milliseconds at `now_ms`. Call it
+    /// at start and whenever the clock may have jumped; positions wait for it.
+    pub fn set_clock(&self, unix_ms: u64, now_ms: u64) {
+        self.lock().core.set_clock(unix_ms, now_ms);
+    }
+
+    /// Our position, from the location service.
+    pub fn update_location(&self, fix: LocationFix, now_ms: u64) {
+        let mut i = self.lock();
+        i.core.update_location(
+            Fix {
+                lat: fix.lat,
+                lon: fix.lon,
+                alt_m: fix.alt_m,
+                accuracy_m: fix.accuracy_m,
+                heading_deg: fix.heading_deg,
+                speed_mps: fix.speed_mps,
+                unix_s: fix.unix_s,
+            },
+            now_ms,
+        );
+        i.persist();
+    }
+
+    /// Shares our position with `chat` at `precision` until `until_s` (Unix seconds); replaces
+    /// a share with the same conversation.
+    pub fn start_share(
+        &self,
+        chat: ChatRef,
+        precision: SharePrecision,
+        until_s: u64,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let mut i = self.lock();
+        i.core.start_share(c, precision.into(), until_s, now_ms)?;
+        i.save_shares();
+        i.persist();
+        Ok(())
+    }
+
+    /// Stops sharing with `chat` (the receiver removes our marker).
+    pub fn stop_share(&self, chat: ChatRef, now_ms: u64) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let mut i = self.lock();
+        i.core.stop_share(&c, now_ms);
+        i.save_shares();
+        i.persist();
+        Ok(())
+    }
+
+    pub fn shares(&self) -> Vec<ShareInfo> {
+        let mut v: Vec<ShareInfo> = self
+            .lock()
+            .core
+            .shares()
+            .iter()
+            .map(|s| ShareInfo {
+                chat: ChatRef::from_store(&s.chat),
+                precision: s.precision.into(),
+                until_s: s.until,
+            })
+            .collect();
+        v.sort_by_key(|s| s.until_s);
+        v
+    }
+
+    /// SOS: our exact position to every share and every group, every 2 minutes.
+    pub fn set_sos(&self, on: bool, now_ms: u64) {
+        let mut i = self.lock();
+        i.core.set_sos(on, now_ms);
+        i.persist();
+    }
+
+    pub fn sos(&self) -> bool {
+        self.lock().core.sos()
+    }
+
+    /// The positions to show, one per sender, extrapolated to `now_ms`.
+    pub fn positions(&self, now_ms: u64) -> Vec<PeerPosition> {
+        let i = self.lock();
+        let now_s = i
+            .core
+            .unix_s(now_ms)
+            .unwrap_or_else(|| u64::try_from(unix_ms() / 1000).unwrap_or(0));
+        let all = i
+            .store
+            .as_ref()
+            .and_then(|s| s.positions().ok())
+            .unwrap_or_default();
+        best_per_sender(all)
+            .iter()
+            .map(|p| PeerPosition::new(p, now_s))
             .collect()
     }
 

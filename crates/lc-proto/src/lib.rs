@@ -22,6 +22,7 @@ pub mod group;
 pub mod handshake;
 pub mod header;
 pub mod kdf;
+pub mod location;
 pub mod receiver;
 pub mod sender;
 pub mod session;

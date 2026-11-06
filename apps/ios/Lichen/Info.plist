@@ -27,6 +27,8 @@
 	<string>1</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>lichen talks to your MeshCore node over Bluetooth.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>lichen sends your position, encrypted, to the people and groups you share it with, and shows you on the map.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -35,6 +37,7 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
+		<string>location</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

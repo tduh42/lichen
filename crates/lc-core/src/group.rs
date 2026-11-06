@@ -718,7 +718,12 @@ impl Core {
         self.send_group(gid, &body, now)
     }
 
-    fn send_group(&mut self, gid: &GroupId, body: &[u8], now: Millis) -> Result<MsgId, Error> {
+    pub(crate) fn send_group(
+        &mut self,
+        gid: &GroupId,
+        body: &[u8],
+        now: Millis,
+    ) -> Result<MsgId, Error> {
         let (me, prv) = (
             self.key.ok_or(Error::NoIdentity)?,
             self.prv.ok_or(Error::NoIdentity)?,
@@ -927,7 +932,17 @@ impl Core {
                     ) {
                         return;
                     }
-                    if let Some(content) = Content::decode(body) {
+                    if let Some(Content::Location(p)) = Content::decode(body) {
+                        crate::location::receive(
+                            &mut self.loc,
+                            &mut self.events,
+                            member,
+                            Some(gid),
+                            p,
+                            snr4,
+                            now,
+                        );
+                    } else if let Some(content) = Content::decode(body) {
                         self.events.push_back(Event::GroupMessage {
                             gid,
                             from: member,
