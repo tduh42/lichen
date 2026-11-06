@@ -28,6 +28,12 @@ struct RootView: View {
                 OnboardingView { onboarded = true }
             }
         }
+        #if DEBUG
+        // -screen identity: the identity screen, for screenshots.
+        .sheet(isPresented: .constant(model.debugScreen == "identity")) {
+            NavigationStack { IdentityView() }
+        }
+        #endif
         .fullScreenCover(item: $model.sosAlert) { sos in
             SosReceivedView(sos: sos)
         }

@@ -1,8 +1,23 @@
 import Foundation
 import Security
 
-/// The node's private key, kept in the Keychain (ADR-0004), this device only.
+/// Secrets in the Keychain, this device only: the phone identity's seed (ADR-0013).
 enum Keychain {
+    private static let identityAccount = "phone-identity"
+
+    /// Our identity seed: drawn on first launch and kept, never synced.
+    static func identitySeed() -> Data {
+        if let seed = load(node: identityAccount), seed.count == 32 { return seed }
+        let seed = randomSeed()
+        save(seed, node: identityAccount)
+        return seed
+    }
+
+    /// Replaces the identity seed (restored from its 24 words).
+    static func setIdentitySeed(_ seed: Data) {
+        save(seed, node: identityAccount)
+    }
+
     private static let service = "com.tduhamel.lichen.identity"
 
     static func load(node: String) -> Data? {

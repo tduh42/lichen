@@ -49,7 +49,7 @@ struct ConversationsView: View {
                     path.append(chat)
                 }
             }
-            .sheet(isPresented: $addingContact) { AddContactPlaceholder() }
+            .sheet(isPresented: $addingContact) { NavigationStack { AddContactView() } }
         }
     }
 
@@ -244,35 +244,3 @@ private struct EmptyConversations: View {
     }
 }
 
-/// TODO(phone identity): the Add-a-contact screen (mockup `contact`: my QR / scan, safety
-/// number) comes with the phone identity API.
-struct AddContactPlaceholder: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Image(systemName: "qrcode").font(.system(size: 64)).foregroundStyle(Theme.tx2)
-                Text("Coming with the phone identity")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Your key will be made on this phone. You will show it as a QR code, scan your contacts' codes and compare safety numbers, in person.")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Theme.tx2)
-                    .multilineTextAlignment(.center)
-                Text("Until then, contacts come from your radio's MeshCore contacts.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.tx2)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .screen()
-            .navigationTitle("Add a contact")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
-            }
-        }
-        .presentationDetents([.medium])
-    }
-}

@@ -94,4 +94,4 @@ python3 -I apps/ios/sync-strings.py                                       # Stri
 swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appiconset   # app icons
 ```
 
-iOS: one simulator at a time (Tanguy's Mac). Debug launch arguments for screenshots: `-demo YES`, `-open <contact or group>`, `-say <text>`, `-tab map|settings`, `-share <contact>` (100 m), `-media YES` (voice to Camille, full images requested). The demo bots share positions: Camille (exact, direct) after 90 s, Julien (1 km, group) once the group keys are out.
+iOS: one simulator at a time (Tanguy's Mac). The design reference is `docs/design/` (dark by default, orange only for LoRa and the brand). Debug launch arguments for screenshots: `-demo YES`, `-open <contact or group>`, `-say <text>`, `-tab map|search|settings`, `-share <contact>` (100 m), `-media YES` (voice to Camille, full images requested), `-onboarding YES` / `-onboarded YES`, `-screen pairing|media|sos|group|search|contact|identity`, `-sosdemo YES` (an SOS from Julien). The demo bots share positions: Camille (exact, direct) after 90 s, Julien (1 km, group) once the group keys are out.

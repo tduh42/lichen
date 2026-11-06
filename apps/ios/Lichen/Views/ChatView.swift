@@ -8,6 +8,8 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var error: String?
     @State private var showingGroup = false
+    /// The verification sheet: an empty value for the current identity, else a pending one.
+    @State private var verifying: Data?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,6 +63,11 @@ struct ChatView: View {
             if model.debugScreen == "group", isGroup { showingGroup = true }
             #endif
         }
+        .sheet(isPresented: Binding(get: { verifying != nil }, set: { if !$0 { verifying = nil } })) {
+            if case let .contact(key) = chat {
+                VerifySheet(node: key, pending: verifying.flatMap { $0.isEmpty ? nil : $0 })
+            }
+        }
         .alert("Not sent", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -82,12 +89,31 @@ struct ChatView: View {
     }
 
     @ViewBuilder private var sessionLine: some View {
-        if case let .contact(key) = chat, model.secured.contains(key) {
-            Label("Encrypted session", systemImage: "lock")
-                .font(.system(size: 12))
-                .foregroundStyle(Theme.tx2)
-                .labelStyle(TintedIconLabel(tint: Theme.ok))
+        if case let .contact(key) = chat {
+            if let pending = model.conflicts[key] {
+                Banner(kind: .sos, title: String(localized: "\(model.title(of: chat))'s key changed"),
+                       message: String(localized: "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers."),
+                       action: (String(localized: "Compare"), { verifying = pending }))
+                    .padding(.top, 4)
+            } else if let c = model.contact(key), c.identity != nil {
+                Button { verifying = Data() } label: {
+                    Label(c.verified
+                          ? String(localized: "Encrypted session · key verified")
+                          : String(localized: "Encrypted session · key to verify"),
+                          systemImage: c.verified ? "lock" : "lock.open")
+                        .font(.system(size: 12))
+                        .foregroundStyle(c.verified ? Theme.tx2 : Theme.warnFg)
+                        .labelStyle(TintedIconLabel(tint: c.verified ? Theme.ok : Theme.warn))
+                }
+                .buttonStyle(.plain)
                 .padding(.top, 4)
+            } else if model.secured.contains(key) {
+                Label("Encrypted session", systemImage: "lock")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.tx2)
+                    .labelStyle(TintedIconLabel(tint: Theme.ok))
+                    .padding(.top, 4)
+            }
         } else if isGroup {
             Label("Signed group messages, flooded", systemImage: "lock")
                 .font(.system(size: 12))
@@ -162,6 +188,10 @@ private struct FailureBanner: View {
             case .interrupted:
                 Banner(kind: .warn, title: String(localized: "Not sent"),
                        message: String(localized: "The app stopped before delivery."), action: action)
+            case .identityChanged:
+                Banner(kind: .sos, title: String(localized: "Not sent: identity changed"),
+                       message: String(localized: "Compare safety numbers with \(model.title(of: message.chat)) before accepting their new key."),
+                       action: nil)
             }
         }
     }

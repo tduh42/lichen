@@ -84,7 +84,14 @@ struct SettingsView: View {
                                 .foregroundStyle(Theme.tx2)
                         }
                         CardDivider()
-                        CardRow(title: String(localized: "End-to-end encryption"), subtitle: identityStatus)
+                        NavigationLink {
+                            IdentityView()
+                        } label: {
+                            CardRow(title: String(localized: "Your identity"), subtitle: identityStatus) {
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                            }
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 16)
@@ -165,7 +172,9 @@ struct SettingsView: View {
     }
 
     private var identityStatus: String {
-        if model.keyExportRefused { return String(localized: "Key export refused by the node") }
-        return model.identityReady ? String(localized: "Ready") : String(localized: "Waiting for the node's key")
+        let f = model.fingerprint.prefix(2).joined(separator: " ")
+        return model.phraseBackedUp
+            ? String(localized: "Key \(f)… · backed up")
+            : String(localized: "Key \(f)… · not backed up")
     }
 }

@@ -1,0 +1,263 @@
+import AVFoundation
+import CoreImage.CIFilterBuiltins
+import SwiftUI
+
+/// "Add a contact" (mockup `contact`, ADR-0013 §4.7): show my code, scan theirs, compare the
+/// safety number.
+struct AddContactView: View {
+    /// In the first-launch flow: what "Done" does; otherwise the sheet closes.
+    var next: (() -> Void)?
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var tab = Tab.myCode
+    @State private var added: ContactInfo?
+    @State private var error: String?
+
+    enum Tab: Hashable { case myCode, scan }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Picker("Mode", selection: $tab) {
+                Text("My code").tag(Tab.myCode)
+                Text("Scan").tag(Tab.scan)
+            }
+            .pickerStyle(.segmented)
+
+            if let added {
+                VerifyPanel(node: added.key) { finish() }
+            } else if tab == .myCode {
+                myCode
+            } else {
+                ScanPanel { text in
+                    switch model.addCard(text) {
+                    case let .success(c): added = c
+                    case let .failure(e): error = e.display
+                    }
+                }
+            }
+            if let error {
+                Banner(kind: .sos, title: error)
+            }
+            Spacer(minLength: 0)
+            if added == nil {
+                Button(next == nil ? String(localized: "Close") : String(localized: "Later")) { finish() }
+                    .buttonStyle(.secondary)
+            }
+        }
+        .padding(16)
+        .screen()
+        .navigationTitle("Add a contact")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func finish() {
+        if let next { next() } else { dismiss() }
+    }
+
+    @ViewBuilder private var myCode: some View {
+        if let card = model.myCard(), let image = QRCode.image(card) {
+            VStack(spacing: 12) {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(14)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: 240)
+                    .accessibilityLabel("Your contact code")
+                Text("Have your contact scan this code, in person.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+            }
+        } else {
+            Banner(kind: .warn, title: String(localized: "Connect your radio first"),
+                   message: String(localized: "Your code carries your radio's address, so people can reach you."))
+        }
+    }
+}
+
+/// The safety number with a contact (§4.7): the same 30 digits on both phones.
+struct VerifyPanel: View {
+    let node: Data
+    /// A new identity the contact presented, compared before accepting it.
+    var pending: Data?
+    let done: () -> Void
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let name = model.contact(node)?.name ?? model.name(of: node)
+        let numbers = pending.flatMap { model.safetyNumber(withIdentity: $0) } ?? model.safetyNumber(with: node)
+        VStack(alignment: .leading, spacing: 14) {
+            if model.contact(node)?.verified == true, pending == nil {
+                Banner(kind: .ok, title: String(localized: "\(name) added, verified"),
+                       message: String(localized: "You scanned their code in person."))
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Compare these numbers with \(name)")
+                    .font(.system(size: 16, weight: .semibold))
+                if let numbers {
+                    SafetyNumber(groups: numbers).frame(maxWidth: .infinity)
+                } else {
+                    Text("Their key is not known yet: exchange a message first, or scan their code.")
+                        .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                }
+                Text("The same on both phones: nobody in between. Compare them aloud, or over another channel.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+            .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
+            if numbers != nil {
+                Button("The numbers match") {
+                    if pending != nil { model.acceptIdentity(node) }
+                    model.setVerified(node, true)
+                    done()
+                }
+                .buttonStyle(.primary)
+                Button {
+                    if pending != nil { model.rejectIdentity(node) } else { model.setVerified(node, false) }
+                    done()
+                } label: {
+                    Text("They differ")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(Theme.sosBg, in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(Theme.sosFg)
+                }
+            }
+        }
+    }
+}
+
+/// The verification sheet opened from a conversation.
+struct VerifySheet: View {
+    let node: Data
+    var pending: Data?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VerifyPanel(node: node, pending: pending) { dismiss() }.padding(16)
+            }
+            .screen()
+            .navigationTitle(pending == nil ? "Safety number" : "New key")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            }
+        }
+    }
+}
+
+/// Scans a contact code with the camera; without one (simulator), a field to paste it.
+private struct ScanPanel: View {
+    let found: (String) -> Void
+    @State private var pasted = ""
+    @State private var cameraOK = AVCaptureDevice.default(for: .video) != nil
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if cameraOK {
+                QRScanner { code in found(code) }
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
+                Text("Point the camera at your contact's code.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+            }
+            HStack {
+                TextField("Or paste a code: lichen:1:…", text: $pasted)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 14, design: .monospaced))
+                    .padding(10)
+                    .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
+                Button("Add") { found(pasted) }
+                    .disabled(!pasted.hasPrefix("lichen:"))
+            }
+        }
+    }
+}
+
+/// QR codes from CoreImage.
+enum QRCode {
+    static func image(_ text: String) -> UIImage? {
+        let f = CIFilter.qrCodeGenerator()
+        f.message = Data(text.utf8)
+        f.correctionLevel = "M"
+        guard let out = f.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
+              let cg = CIContext().createCGImage(out, from: out.extent)
+        else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
+/// The camera, reporting the first lichen code it reads.
+private struct QRScanner: UIViewControllerRepresentable {
+    let found: (String) -> Void
+
+    func makeUIViewController(context: Context) -> ScannerController {
+        let c = ScannerController()
+        c.found = found
+        return c
+    }
+
+    func updateUIViewController(_ c: ScannerController, context: Context) {}
+
+    final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
+        var found: ((String) -> Void)?
+        private let session = AVCaptureSession()
+        private var reported = false
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .black
+            guard let device = AVCaptureDevice.default(for: .video),
+                  let input = try? AVCaptureDeviceInput(device: device),
+                  session.canAddInput(input)
+            else { return }
+            session.addInput(input)
+            let output = AVCaptureMetadataOutput()
+            guard session.canAddOutput(output) else { return }
+            session.addOutput(output)
+            output.setMetadataObjectsDelegate(self, queue: .main)
+            output.metadataObjectTypes = [.qr]
+            let layer = AVCaptureVideoPreviewLayer(session: session)
+            layer.videoGravity = .resizeAspectFill
+            layer.frame = view.bounds
+            view.layer.addSublayer(layer)
+        }
+
+        override func viewDidLayoutSubviews() {
+            super.viewDidLayoutSubviews()
+            view.layer.sublayers?.first?.frame = view.bounds
+        }
+
+        override func viewWillAppear(_ animated: Bool) {
+            super.viewWillAppear(animated)
+            let s = session
+            DispatchQueue.global(qos: .userInitiated).async { s.startRunning() }
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            session.stopRunning()
+        }
+
+        nonisolated func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject],
+                                        from connection: AVCaptureConnection) {
+            guard let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue,
+                  code.hasPrefix("lichen:")
+            else { return }
+            MainActor.assumeIsolated {
+                guard !reported else { return }
+                reported = true
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                found?(code)
+            }
+        }
+    }
+}

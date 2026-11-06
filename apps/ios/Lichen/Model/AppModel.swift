@@ -14,8 +14,16 @@ final class AppModel {
     var nodeKey: Data?
     var radio: Radio?
     var budget = Budget(usedMs: 0, limitMs: 360_000)
-    var identityReady = false
-    var keyExportRefused = false
+    /// New identities presented by verified contacts, waiting for the user (node → identity).
+    var conflicts: [Data: Data] = [:]
+    /// The recovery phrase was written down (Identity screen).
+    var phraseBackedUp = UserDefaults.standard.bool(forKey: "lichen.phraseBackedUp") {
+        didSet { UserDefaults.standard.set(phraseBackedUp, forKey: "lichen.phraseBackedUp") }
+    }
+    /// The name we give on our contact card.
+    var myName = UserDefaults.standard.string(forKey: "lichen.myName") ?? "" {
+        didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
+    }
     var contacts: [ContactInfo] = []
     var groups: [GroupInfo] = []
     /// Loaded histories, by conversation (filled when a chat is opened).
@@ -70,8 +78,7 @@ final class AppModel {
     private static let nodeKeyDefault = "lichen.nodeKey"
 
     init() {
-        let lastNode = UserDefaults.standard.data(forKey: Self.nodeKeyDefault)
-        core = Self.makeCore(identity: lastNode.flatMap { Keychain.load(node: $0.hex) })
+        core = Self.makeCore(seed: Keychain.identitySeed())
         contacts = core.contacts()
         groups = core.groups()
         conversations = core.conversations()
@@ -99,12 +106,12 @@ final class AppModel {
         #endif
     }
 
-    private static func makeCore(identity: Data?, persistent: Bool = true) -> LichenCore {
+    private static func makeCore(seed: Data, persistent: Bool = true) -> LichenCore {
         // The seed is 32 bytes and the identity 64 or absent: construction cannot fail.
         try! LichenCore(
             appName: "lichen-ios",
             rngSeed: Keychain.randomSeed(),
-            identity: identity,
+            identitySeed: seed,
             dataDir: persistent ? dataDirectory() : nil
         )
     }
@@ -126,7 +133,7 @@ final class AppModel {
     /// Runs the app on a simulated MeshCore network (two simulated users, a group), in real time.
     func startDemo() {
         resetState()
-        core = Self.makeCore(identity: nil, persistent: false)
+        core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
         let net = DemoNetwork()
         demo = net
         isDemo = true
@@ -146,7 +153,7 @@ final class AppModel {
         demo = nil
         isDemo = false
         resetState()
-        core = Self.makeCore(identity: nil)
+        core = Self.makeCore(seed: Keychain.identitySeed())
         companionState = companion.state
         shares = core.shares()
         updateLocator()
@@ -165,8 +172,7 @@ final class AppModel {
         nodeName = ""
         nodeKey = nil
         radio = nil
-        identityReady = false
-        keyExportRefused = false
+        conflicts = [:]
         contacts = []
         groups = []
         chats = [:]
@@ -239,13 +245,10 @@ final class AppModel {
             nodeName = name
             self.radio = radio
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
-        case .identityReady:
-            identityReady = true
-            if !isDemo, let k = nodeKey, let prv = core.privateKey() {
-                Keychain.save(prv, node: k.hex)
-            }
-        case .keyExportRefused:
-            keyExportRefused = true
+        case .identityLearned:
+            contacts = core.contacts()
+        case let .identityConflict(node, identity):
+            conflicts[node] = identity
         case .contactsUpdated:
             contacts = core.contacts()
             #if DEBUG
@@ -557,6 +560,78 @@ final class AppModel {
         pump()
     }
 
+    // MARK: identity (ADR-0013)
+
+    var fingerprint: [String] { core.fingerprint() }
+
+    func recoveryPhrase() -> [String] { core.recoveryPhrase() }
+
+    /// Our contact card for the QR code; nil until the radio is connected.
+    func myCard() -> String? {
+        let name = myName.isEmpty ? nodeName : myName
+        return try? core.contactCard(name: name)
+    }
+
+    /// Adds the contact of a scanned card (verified: scanned in person).
+    func addCard(_ text: String) -> Result<ContactInfo, LichenError> {
+        do {
+            let c = try core.addContactCard(card: text)
+            contacts = core.contacts()
+            pump()
+            return .success(c)
+        } catch let e as LichenError {
+            return .failure(e)
+        } catch {
+            return .failure(.BadCode)
+        }
+    }
+
+    func contact(_ node: Data) -> ContactInfo? { contacts.first { $0.key == node } }
+
+    func safetyNumber(with node: Data) -> [String]? { try? core.safetyNumber(node: node) }
+
+    /// The safety number with a new identity a contact presented (before accepting it).
+    func safetyNumber(withIdentity identity: Data) -> [String]? { try? core.safetyNumberWith(identity: identity) }
+
+    func setVerified(_ node: Data, _ verified: Bool) {
+        try? core.setVerified(node: node, verified: verified)
+        contacts = core.contacts()
+    }
+
+    func acceptIdentity(_ node: Data) {
+        _ = try? core.acceptIdentity(node: node)
+        conflicts[node] = nil
+        contacts = core.contacts()
+        pump()
+    }
+
+    func rejectIdentity(_ node: Data) {
+        try? core.rejectIdentity(node: node)
+        conflicts[node] = nil
+    }
+
+    /// Restores an identity from its 24 words: the core restarts with it.
+    func restore(words: [String]) -> String? {
+        do {
+            let seed = try seedFromPhrase(words: words)
+            Keychain.setIdentitySeed(seed)
+            if isDemo { stopDemo() }
+            resetState()
+            core = Self.makeCore(seed: seed)
+            contacts = core.contacts()
+            groups = core.groups()
+            conversations = core.conversations()
+            phraseBackedUp = true
+            if isConnected { core.connect(nowMs: now()) }
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "This is not a lichen code.")
+        }
+    }
+
     // MARK: lookups for the views
 
     func name(of key: Data) -> String {
@@ -621,6 +696,7 @@ extension FailReason {
         case .refused: return String(localized: "refused")
         case .tooLarge: return String(localized: "too large")
         case .interrupted: return String(localized: "the app stopped before delivery")
+        case .identityChanged: return String(localized: "their identity changed: verify it first")
         }
     }
 }
@@ -632,7 +708,9 @@ extension LichenError {
         case .UnknownGroup: return String(localized: "Unknown group.")
         case .Empty: return String(localized: "The message is empty.")
         case .TooLarge: return String(localized: "The message is too long.")
-        case .NoIdentity: return String(localized: "The node's key is not available yet.")
+        case .NoIdentity: return String(localized: "Connect your radio first.")
+        case .IdentityUnknown: return String(localized: "Their identity is not known yet: exchange a message or scan their code first.")
+        case .BadCode: return String(localized: "This is not a lichen code.")
         case .NotAllowed: return String(localized: "Only the group admin can do this.")
         case .InvalidKey: return String(localized: "Invalid key.")
         case let .OverBudget(waitS):

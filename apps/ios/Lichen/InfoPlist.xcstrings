@@ -9,6 +9,14 @@
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen parle à ton nœud MeshCore en Bluetooth." } }
       }
     },
+    "NSCameraUsageDescription" : {
+      "comment" : "Camera permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen scans your contacts' codes to add them, verified, in person." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen scanne les codes de tes contacts pour les ajouter, vérifiés, en personne." } }
+      }
+    },
     "NSMicrophoneUsageDescription" : {
       "comment" : "Microphone permission prompt",
       "extractionState" : "manual",

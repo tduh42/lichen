@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ added, verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ ajouté, vérifié"
+          }
+        }
+      }
+    },
     "%@ connected": {
       "localizations": {
         "fr": {
@@ -91,6 +101,26 @@
         }
       }
     },
+    "%@'s key changed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La clé de %@ a changé"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
     "%lld / %lld members' keys received; a departure rotates them.": {
       "localizations": {
         "fr": {
@@ -107,6 +137,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld / %lld reçues. Les messages des autres s'affichent dès que leur clé arrive."
+          }
+        }
+      }
+    },
+    "%lld / 24 words": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / 24 mots"
           }
         }
       }
@@ -431,6 +471,16 @@
         }
       }
     },
+    "24 words to write on paper": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "24 mots à écrire sur papier"
+          }
+        }
+      }
+    },
     "50 m": {
       "localizations": {
         "fr": {
@@ -471,6 +521,16 @@
         }
       }
     },
+    "A password-protected file: coming later": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier protégé par mot de passe : plus tard"
+          }
+        }
+      }
+    },
     "A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.": {
       "localizations": {
         "fr": {
@@ -507,6 +567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Actif · expire dans %@"
+          }
+        }
+      }
+    },
+    "Add": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter"
           }
         }
       }
@@ -607,6 +677,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Autorise-le dans les Réglages pour partager ta position."
+          }
+        }
+      }
+    },
+    "An X25519 / Ed25519 key made on this phone. It never leaves it: your radio only carries the messages.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé X25519 / Ed25519 générée sur ce téléphone. Elle ne le quitte jamais : ta radio ne fait que transporter les messages."
           }
         }
       }
@@ -761,12 +841,32 @@
         }
       }
     },
-    "Coming with the phone identity": {
+    "Compare": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Arrive avec l'identité du téléphone"
+            "value": "Comparer"
+          }
+        }
+      }
+    },
+    "Compare safety numbers with %@ before accepting their new key.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare les numéros de sécurité avec %@ avant d'accepter sa nouvelle clé."
+          }
+        }
+      }
+    },
+    "Compare these numbers with %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comparez ces chiffres avec %@"
           }
         }
       }
@@ -777,6 +877,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connecter ma radio"
+          }
+        }
+      }
+    },
+    "Connect your radio first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte d'abord ta radio"
+          }
+        }
+      }
+    },
+    "Connect your radio first.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte d'abord ta radio."
           }
         }
       }
@@ -867,6 +987,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contacts ; groupes toutes les 30 min"
+          }
+        }
+      }
+    },
+    "Continue": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer"
           }
         }
       }
@@ -1121,6 +1251,16 @@
         }
       }
     },
+    "Encrypted backup": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde chiffrée"
+          }
+        }
+      }
+    },
     "Encrypted messaging off the grid, over LoRa and beyond.": {
       "localizations": {
         "fr": {
@@ -1141,22 +1281,32 @@
         }
       }
     },
+    "Encrypted session · key to verify": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session chiffrée · clé à vérifier"
+          }
+        }
+      }
+    },
+    "Encrypted session · key verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session chiffrée · clé vérifiée"
+          }
+        }
+      }
+    },
     "End-to-end encrypted": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Chiffré de bout en bout"
-          }
-        }
-      }
-    },
-    "End-to-end encryption": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chiffrement de bout en bout"
           }
         }
       }
@@ -1247,6 +1397,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Suivre le thème"
+          }
+        }
+      }
+    },
+    "From its 24 words: replaces this one": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À partir de ses 24 mots : remplace celle-ci"
           }
         }
       }
@@ -1401,6 +1561,16 @@
         }
       }
     },
+    "Have your contact scan this code, in person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fais scanner ce code par ton contact, en personne."
+          }
+        }
+      }
+    },
     "Heartbeat when still": {
       "localizations": {
         "fr": {
@@ -1461,6 +1631,16 @@
         }
       }
     },
+    "I wrote them down": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Je les ai notés"
+          }
+        }
+      }
+    },
     "In search mode (L8)": {
       "localizations": {
         "fr": {
@@ -1511,12 +1691,22 @@
         }
       }
     },
-    "Key export refused by the node": {
+    "Key %@… · backed up": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Export de la clé refusé par le nœud"
+            "value": "Clé %@… · sauvegardée"
+          }
+        }
+      }
+    },
+    "Key %@… · not backed up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé %@… · non sauvegardée"
           }
         }
       }
@@ -1871,6 +2061,26 @@
         }
       }
     },
+    "Mode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mode"
+          }
+        }
+      }
+    },
+    "My code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mon code"
+          }
+        }
+      }
+    },
     "N": {
       "localizations": {
         "fr": {
@@ -1917,6 +2127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nouveau groupe"
+          }
+        }
+      }
+    },
+    "New key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle clé"
           }
         }
       }
@@ -2021,6 +2241,16 @@
         }
       }
     },
+    "Not backed up": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde non faite"
+          }
+        }
+      }
+    },
     "Not changed": {
       "localizations": {
         "fr": {
@@ -2061,6 +2291,16 @@
         }
       }
     },
+    "Not sent: identity changed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non envoyé : identité changée"
+          }
+        }
+      }
+    },
     "Not shared": {
       "localizations": {
         "fr": {
@@ -2097,6 +2337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seul l'administrateur du groupe peut faire ça."
+          }
+        }
+      }
+    },
+    "Or paste a code: lichen:1:…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ou colle un code : lichen:1:…"
           }
         }
       }
@@ -2201,6 +2451,16 @@
         }
       }
     },
+    "Point the camera at your contact's code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vise le code de ton contact avec l'appareil photo."
+          }
+        }
+      }
+    },
     "Position": {
       "localizations": {
         "fr": {
@@ -2271,16 +2531,6 @@
         }
       }
     },
-    "Ready": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prêt"
-          }
-        }
-      }
-    },
     "Received over LoRa · direct": {
       "localizations": {
         "fr": {
@@ -2307,6 +2557,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrer un message vocal"
+          }
+        }
+      }
+    },
+    "Recovery phrase": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phrase de récupération"
           }
         }
       }
@@ -2367,6 +2627,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Relancer"
+          }
+        }
+      }
+    },
+    "Restore": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer"
+          }
+        }
+      }
+    },
+    "Restore an identity": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer une identité"
           }
         }
       }
@@ -2437,6 +2717,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Balise SOS reçue %@"
+          }
+        }
+      }
+    },
+    "Safety number": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Numéro de sécurité"
+          }
+        }
+      }
+    },
+    "Scan": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanner"
           }
         }
       }
@@ -2781,12 +3081,42 @@
         }
       }
     },
-    "The node's key is not available yet.": {
+    "The numbers match": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La clé du nœud n'est pas encore disponible."
+            "value": "Les chiffres correspondent"
+          }
+        }
+      }
+    },
+    "The same on both phones: nobody in between. Compare them aloud, or over another channel.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Identiques sur les deux téléphones = pas d'intermédiaire. À comparer de vive voix ou par un autre canal."
+          }
+        }
+      }
+    },
+    "Their identity is not known yet: exchange a message or scan their code first.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son identité n'est pas encore connue : échangez un message ou scanne son code d'abord."
+          }
+        }
+      }
+    },
+    "Their key is not known yet: exchange a message first, or scan their code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa clé n'est pas encore connue : échangez d'abord un message, ou scanne son code."
           }
         }
       }
@@ -2801,6 +3131,16 @@
         }
       }
     },
+    "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa radio répond maintenant avec une autre identité : une app réinstallée, ou quelqu'un entre vous. Rien ne part tant que vous n'avez pas comparé vos numéros de sécurité."
+          }
+        }
+      }
+    },
     "There is no full version to ask for.": {
       "localizations": {
         "fr": {
@@ -2811,12 +3151,32 @@
         }
       }
     },
+    "They differ": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ils sont différents"
+          }
+        }
+      }
+    },
     "This image could not be read.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de lire cette image."
+          }
+        }
+      }
+    },
+    "This is not a lichen code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n'est pas un code lichen."
           }
         }
       }
@@ -2891,6 +3251,16 @@
         }
       }
     },
+    "Type the 24 words of the identity to restore, separated by spaces. It replaces the identity on this phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tape les 24 mots de l'identité à restaurer, séparés par des espaces. Elle remplace l'identité de ce téléphone."
+          }
+        }
+      }
+    },
     "Unknown contact.": {
       "localizations": {
         "fr": {
@@ -2917,16 +3287,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contenu non pris en charge (type %@, %@ octets)"
-          }
-        }
-      }
-    },
-    "Until then, contacts come from your radio's MeshCore contacts.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "D'ici là, les contacts viennent des contacts MeshCore de ta radio."
           }
         }
       }
@@ -2981,16 +3341,6 @@
         }
       }
     },
-    "Waiting for the node's key": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En attente de la clé du nœud"
-          }
-        }
-      }
-    },
     "Waiting for your position": {
       "localizations": {
         "fr": {
@@ -3041,12 +3391,62 @@
         }
       }
     },
+    "Without a backup, losing this phone means losing your identity and your verified contacts.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sans sauvegarde, perdre ce téléphone, c'est perdre ton identité et tes contacts vérifiés."
+          }
+        }
+      }
+    },
+    "Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écris ces 24 mots sur papier, dans l'ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi."
+          }
+        }
+      }
+    },
     "You": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Toi"
+          }
+        }
+      }
+    },
+    "You scanned their code in person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as scanné son code en personne."
+          }
+        }
+      }
+    },
+    "Your code carries your radio's address, so people can reach you.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton code contient l'adresse de ta radio, pour qu'on puisse te joindre."
+          }
+        }
+      }
+    },
+    "Your contact code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton code de contact"
           }
         }
       }
@@ -3061,12 +3461,32 @@
         }
       }
     },
-    "Your key will be made on this phone. You will show it as a QR code, scan your contacts' codes and compare safety numbers, in person.": {
+    "Your identity": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ta clé sera créée sur ce téléphone. Tu la montreras en QR code, tu scanneras le code de tes contacts et vous comparerez les numéros de sécurité, en personne."
+            "value": "Ton identité"
+          }
+        }
+      }
+    },
+    "Your key's fingerprint": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empreinte de ta clé"
+          }
+        }
+      }
+    },
+    "Your name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton nom"
           }
         }
       }
@@ -3217,6 +3637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "l'app s'est arrêtée avant la remise"
+          }
+        }
+      }
+    },
+    "their identity changed: verify it first": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "son identité a changé : vérifie-la d'abord"
           }
         }
       }

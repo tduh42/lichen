@@ -35,6 +35,8 @@ private struct WelcomeView: View {
     let done: () -> Void
     @Environment(AppModel.self) private var model
     @State private var pairing = false
+    @State private var identity = false
+    @State private var contact = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -64,7 +66,7 @@ private struct WelcomeView: View {
             VStack(spacing: 8) {
                 Button("Connect my radio") { pairing = true }
                     .buttonStyle(.primary)
-                Button("Later", action: done)
+                Button("Later") { identity = true }
                     .font(.system(size: 16, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .foregroundStyle(Theme.tx)
@@ -74,7 +76,11 @@ private struct WelcomeView: View {
         .padding(.bottom, 12)
         .screen()
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(isPresented: $pairing) { PairingView(done: done) }
+        .navigationDestination(isPresented: $pairing) { PairingView(done: { identity = true }) }
+        .navigationDestination(isPresented: $identity) {
+            IdentityView(next: { contact = true })
+                .navigationDestination(isPresented: $contact) { AddContactView(next: done) }
+        }
         .onAppear {
             #if DEBUG
             if model.debugScreen == "pairing" { pairing = true }
