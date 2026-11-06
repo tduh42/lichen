@@ -1,15 +1,23 @@
 import MapLibre
 import SwiftUI
 
-/// Map styles from OpenFreeMap: no key, no account (ADR-0011).
+/// Map styles from OpenFreeMap: no key, no account (ADR-0011). `auto` follows the theme.
 enum MapStyle: String, CaseIterable, Identifiable {
-    case liberty, positron, bright
+    case auto, dark, liberty, positron, bright
 
     var id: String { rawValue }
+
+    /// The style actually drawn.
+    func resolved(dark: Bool) -> MapStyle {
+        self == .auto ? (dark ? .dark : .liberty) : self
+    }
+
     var url: URL { URL(string: "https://tiles.openfreemap.org/styles/\(rawValue)")! }
 
     var label: LocalizedStringKey {
         switch self {
+        case .auto: "Follow the theme"
+        case .dark: "Dark"
         case .liberty: "Outdoor"
         case .positron: "Light"
         case .bright: "Bright"
@@ -29,7 +37,10 @@ struct MapItem: Equatable, Identifiable {
     let radius: Double
     let initials: String
     let label: String
+    /// Resolved for `dark`.
     let color: UIColor
+    /// Drawn for the dark theme.
+    let dark: Bool
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 }
@@ -126,7 +137,7 @@ struct MapLibreView: UIViewRepresentable {
                 if let a = annotations[item.id] {
                     if a.item != item {
                         let redraw = a.item.label != item.label || a.item.kind != item.kind
-                            || a.item.initials != item.initials
+                            || a.item.initials != item.initials || a.item.dark != item.dark
                         a.item = item
                         a.coordinate = item.coordinate
                         if redraw {
@@ -255,26 +266,28 @@ struct MarkerBadge: View {
                 Circle()
                     .fill(Color(item.color))
                     .frame(width: Self.dot, height: Self.dot)
-                    .overlay(Circle().stroke(.white, lineWidth: 3))
+                    .overlay(Circle().stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 3))
             case .peer, .sos:
                 Text(item.initials)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Color(hex: 0x141413))
                     .frame(width: Self.avatar, height: Self.avatar)
                     .background(Color(item.color), in: Circle())
-                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                    .overlay(Circle().stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 2))
             }
             if !item.label.isEmpty {
                 Text(item.label)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(item.kind == .sos ? .white : Color(item.color))
+                    .foregroundStyle(item.kind == .sos ? .white : Color(hex: item.dark ? 0xF4F4F0 : 0x141413))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(item.kind == .sos ? Theme.danger : .white, in: RoundedRectangle(cornerRadius: 6))
+                    .background(
+                        item.kind == .sos ? Color(hex: 0xDC2626) : Color(hex: item.dark ? 0x1A1A18 : 0xFFFFFF),
+                        in: RoundedRectangle(cornerRadius: 6)
+                    )
                     .fixedSize()
             }
         }
         .padding(2)
-        .environment(\.colorScheme, .light)
     }
 }

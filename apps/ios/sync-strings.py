@@ -17,7 +17,7 @@ catalog_path = os.path.join(here, "Lichen", "Localizable.xcstrings")
 # most recent build wins.
 tail = "Build/Intermediates.noindex/Lichen.build/Debug-iphonesimulator/Lichen.build/Objects-normal/arm64"
 derived = glob.glob(os.path.expanduser("~/Library/Developer/Xcode/DerivedData/Lichen-*/" + tail))
-derived += glob.glob(os.path.join(here, "..", "..", "local", "dd", tail))
+derived += glob.glob(os.path.join(here, "..", "..", "local", "dd*", tail))
 derived = sorted(derived, key=os.path.getmtime)[-1:]
 if not derived:
     sys.exit("build the app first (xcodebuild ... build)")

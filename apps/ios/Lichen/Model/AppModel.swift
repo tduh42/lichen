@@ -38,8 +38,14 @@ final class AppModel {
     var sos = false
     var myFix: LocationFix?
     var locationDenied = false
-    /// The latest SOS heard, until dismissed or ended.
+    /// The latest SOS heard, until it ends (the Search tab follows it).
     var incomingSos: PeerPosition?
+    /// The full-screen alert for an SOS just heard, until dismissed.
+    var sosAlert: PeerPosition?
+    /// Every SOS position heard, newest last (the Search tab's measurements).
+    var sosLog: [PeerPosition] = []
+    /// A screen to show at launch (debug launch argument `-screen <name>`, for screenshots).
+    var debugScreen: String?
     /// Image previews whose full variant we asked for.
     var requestedFull: Set<Int64> = []
     let recorder = VoiceRecorder()
@@ -84,8 +90,21 @@ final class AppModel {
         if args.bool(forKey: "demo") { startDemo() }
         switch args.string(forKey: "tab") {
         case "map": tab = .map
+        case "search": tab = .search
         case "settings": tab = .settings
         default: break
+        }
+        debugScreen = args.string(forKey: "screen")
+        if args.bool(forKey: "sosdemo") {
+            // An SOS from "Julien", for screenshots of the alert and the Search tab.
+            let p = PeerPosition(
+                from: Data([0x9E] + Array(repeating: 1, count: 31)), group: nil,
+                lat: 44.9065, lon: 5.4745, altM: 1_620, radiusM: 6, headingDeg: nil, speedMps: nil,
+                atS: UInt64(Date().timeIntervalSince1970) - 40, sos: true, extrapolated: false
+            )
+            incomingSos = p
+            sosAlert = debugScreen == "search" ? nil : p
+            sosLog = [p]
         }
         #endif
     }
@@ -168,6 +187,8 @@ final class AppModel {
         positions = []
         sos = false
         incomingSos = nil
+        sosAlert = nil
+        sosLog = []
         myFix = nil
         lastFed = nil
     }
@@ -295,9 +316,12 @@ final class AppModel {
         case let .location(position, end):
             positions = core.positions(nowMs: now())
             if position.sos && !end {
+                if incomingSos?.from != position.from { sosAlert = position }
                 incomingSos = position
+                sosLog.append(position)
             } else if incomingSos?.from == position.from {
                 incomingSos = nil
+                sosAlert = nil
             }
         case .sharesChanged:
             shares = core.shares()
@@ -405,6 +429,34 @@ final class AppModel {
             return e.display
         } catch {
             return String(localized: "Could not send.")
+        }
+    }
+
+    /// Sends a failed text or voice message again (a new message).
+    func resend(_ m: StoredMessage) -> String? {
+        switch m.message {
+        case let .text(_, text):
+            return send(text, to: m.chat)
+        case let .voice(_, mode, frames, durationMs, data):
+            return sendVoice(PreparedVoice(mode: mode, frames: frames, durationMs: durationMs, data: data), to: m.chat)
+        default:
+            return nil
+        }
+    }
+
+    /// Airtime left this hour, milliseconds.
+    var airtimeLeftMs: UInt64 { budget.limitMs - min(budget.usedMs, budget.limitMs) }
+
+    func removeMember(_ member: Data, from gid: Data) -> String? {
+        do {
+            try core.removeMember(gid: gid, member: member, nowMs: now())
+            groups = core.groups()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not change the group.")
         }
     }
 

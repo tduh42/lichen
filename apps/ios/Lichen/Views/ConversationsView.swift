@@ -1,57 +1,47 @@
 import SwiftUI
 
-/// "Messages": node status, airtime budget, then every conversation (mockup ios-conversations).
+/// "Messages": radio, airtime left, then every conversation (mockup `conversations`).
 struct ConversationsView: View {
     @Environment(AppModel.self) private var model
-    @State private var filter = Filter.all
-    @State private var query = ""
     @State private var composing = false
+    @State private var addingContact = false
     @State private var path: [ChatID] = []
-
-    enum Filter: Hashable { case all, groups, contacts }
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 12) {
-                    StatusCard()
-                    Picker("Filter", selection: $filter) {
-                        Text("All").tag(Filter.all)
-                        Text("Groups").tag(Filter.groups)
-                        Text("Contacts").tag(Filter.contacts)
-                    }
-                    .pickerStyle(.segmented)
+                    header
+                    RadioCard()
+                    StatusBanners()
                     if rows.isEmpty {
-                        Text(model.isConnected ? "No conversations yet." : "Connect your MeshCore node in Settings.")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondaryText)
-                            .padding(.top, 40)
+                        EmptyConversations { addingContact = true }
                     } else {
-                        LazyVStack(spacing: 0) {
-                            ForEach(rows) { row in
+                        VStack(spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                                if i > 0 { CardDivider(inset: 72) }
                                 NavigationLink(value: row.id) { ChatRow(row: row) }
                                     .buttonStyle(.plain)
-                                Divider().padding(.leading, 72)
                             }
                         }
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Messages")
-            .searchable(text: $query, prompt: "Search conversations")
+            .screen()
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ChatID.self) { ChatView(chat: $0) }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { composing = true } label: { Image(systemName: "square.and.pencil") }
-                        .accessibilityLabel("New message")
-                }
-            }
             .onChange(of: model.debugOpen) {
                 if let chat = model.debugOpen { path = [chat] }
+            }
+            .onAppear {
+                // A chat asked for before this list appeared (SOS reply, debug `-open`).
+                if let chat = model.debugOpen, path.isEmpty { path = [chat] }
+                #if DEBUG
+                if model.debugScreen == "contact" { addingContact = true }
+                #endif
             }
             .sheet(isPresented: $composing) {
                 NewChatSheet { chat in
@@ -59,7 +49,23 @@ struct ConversationsView: View {
                     path.append(chat)
                 }
             }
+            .sheet(isPresented: $addingContact) { AddContactPlaceholder() }
         }
+    }
+
+    private var header: some View {
+        HStack(alignment: .bottom) {
+            Text("Messages")
+                .font(.system(size: 34, weight: .bold))
+                .tracking(-0.5)
+            Spacer()
+            HStack(spacing: 8) {
+                RoundIconButton(systemName: "qrcode", label: "Add a contact") { addingContact = true }
+                RoundIconButton(systemName: "plus", label: "New message", prominent: true) { composing = true }
+            }
+        }
+        .padding(.top, 8)
+        .padding(.horizontal, 4)
     }
 
     struct Row: Identifiable {
@@ -74,24 +80,24 @@ struct ConversationsView: View {
 
     private var rows: [Row] {
         var out: [Row] = []
-        if filter != .contacts {
-            for g in model.groups {
-                let chat = ChatID.group(gid: g.gid)
-                let last = model.last(chat)
-                out.append(Row(id: chat, title: g.name, key: g.gid, preview: last?.preview(model) ?? String(localized: "\(String(g.members.count)) members"), date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat)))
-            }
+        for g in model.groups {
+            let chat = ChatID.group(gid: g.gid)
+            let last = model.last(chat)
+            out.append(Row(
+                id: chat, title: g.name, key: g.gid,
+                preview: last?.preview(model) ?? String(localized: "\(g.members.count) members"),
+                date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat)
+            ))
         }
-        if filter != .groups {
-            for c in model.contacts {
-                let chat = ChatID.contact(key: c.key)
-                let last = model.last(chat)
-                out.append(Row(id: chat, title: c.name, key: c.key, preview: last?.preview(model) ?? "", date: last?.date, badge: hopsBadge(c.hops), unread: model.unread(chat)))
-            }
+        for c in model.contacts {
+            let chat = ChatID.contact(key: c.key)
+            let last = model.last(chat)
+            out.append(Row(
+                id: chat, title: c.name, key: c.key, preview: last?.preview(model) ?? "",
+                date: last?.date, badge: hopsBadge(c.hops), unread: model.unread(chat)
+            ))
         }
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return out
-            .filter { q.isEmpty || $0.title.lowercased().contains(q) || $0.preview.lowercased().contains(q) }
-            .sorted { ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title) }
+        return out.sorted { ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title) }
     }
 }
 
@@ -107,29 +113,30 @@ private struct ChatRow: View {
     let row: ConversationsView.Row
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Avatar(name: row.title, key: row.key)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(row.title).font(.body.weight(.semibold))
+                    Text(row.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
                     Spacer()
                     if let d = row.date {
-                        Text(d, style: .time).font(.footnote).foregroundStyle(Theme.secondaryText)
+                        Text(d, style: .time).font(.system(size: 13)).foregroundStyle(Theme.tx2)
                     }
                 }
                 if !row.preview.isEmpty {
-                    Text(row.preview).font(.subheadline).foregroundStyle(Theme.secondaryText).lineLimit(1)
+                    Text(row.preview).font(.system(size: 14)).foregroundStyle(Theme.tx2).lineLimit(1)
                 }
                 HStack {
-                    Badge(text: row.badge, background: Theme.accentSoft, foreground: Theme.accentText)
+                    TransportBadge(kind: .lora, label: row.badge)
                     Spacer()
                     if row.unread > 0 {
                         Text(String(row.unread))
-                            .font(.caption.weight(.semibold))
+                            .font(.system(size: 12, weight: .bold))
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 20)
-                            .background(Theme.accent, in: Capsule())
-                            .foregroundStyle(.white)
+                            .background(Theme.actBg, in: Capsule())
+                            .foregroundStyle(Theme.actFg)
+                            .accessibilityLabel("\(row.unread) unread")
                     }
                 }
             }
@@ -140,44 +147,38 @@ private struct ChatRow: View {
     }
 }
 
-/// Node, radio and airtime left this hour (ADR-0007).
-struct StatusCard: View {
+/// Radio, airtime left this hour, transports (ADR-0007).
+struct RadioCard: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Circle().fill(model.isConnected ? Theme.ok : Color.gray).frame(width: 8, height: 8)
-                Text(headline).font(.subheadline.weight(.semibold))
+                Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
+                Text(headline).font(.system(size: 15, weight: .semibold)).lineLimit(1)
                 Spacer()
-                if let r = model.radio {
-                    Text("BLE · SF\(String(r.sf)) / \(bandwidth(r.bwHz))")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
+                if let r = model.radio, model.isConnected {
+                    Text("BLE · SF\(r.sf) / \(bandwidth(r.bwHz))")
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.tx2)
                 }
             }
-            VStack(spacing: 6) {
-                HStack {
-                    Text("Airtime left this hour").foregroundStyle(Theme.secondaryText)
-                    Spacer()
-                    Text("\(seconds(left)) s / \(seconds(model.budget.limitMs)) s").fontWeight(.semibold)
-                }
-                .font(.footnote)
-                ProgressView(value: Double(left), total: Double(max(model.budget.limitMs, 1)))
-                    .tint(Theme.accent)
-            }
+            AirtimeMeter(usedMs: model.budget.usedMs, limitMs: model.budget.limitMs)
             HStack(spacing: 6) {
-                Badge(text: "LoRa", background: Theme.accentSoft, foreground: Theme.accentText)
+                TransportBadge(kind: .lora, label: "LoRa")
                 Text(model.isConnected ? "available" : "unavailable")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.tx2)
+                Spacer()
+                Text("iroh and Tor: with the Internet bridge")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.tx2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+        .card(padding: 16)
     }
-
-    private var left: UInt64 { model.budget.limitMs - min(model.budget.usedMs, model.budget.limitMs) }
 
     private var headline: String {
         switch model.companionState {
@@ -185,13 +186,93 @@ struct StatusCard: View {
         case let .connecting(name): return String(localized: "Connecting to \(name)…")
         case .scanning: return String(localized: "Looking for nodes…")
         case .off: return String(localized: "Bluetooth is off")
-        case .idle: return String(localized: "No node connected")
+        case .idle: return String(localized: "No radio connected")
         }
     }
 }
 
-func seconds(_ ms: UInt64) -> String { String(ms / 1000) }
+/// Degraded states that concern the whole app (mockup `etats`): radio, budget.
+struct StatusBanners: View {
+    @Environment(AppModel.self) private var model
 
-func bandwidth(_ hz: UInt32) -> String {
-    hz % 1000 == 0 ? "\(hz / 1000) kHz" : String(format: "%.1f kHz", Double(hz) / 1000)
+    var body: some View {
+        Group {
+            if !model.isConnected && !model.isDemo {
+                Banner(
+                    kind: .warn,
+                    title: String(localized: "Radio disconnected"),
+                    message: model.companionState == .off
+                        ? String(localized: "Turn Bluetooth on to reach your radio.")
+                        : String(localized: "Messages wait until the radio is back."),
+                    action: (String(localized: "Retry"), { model.companion.scan() })
+                )
+            }
+            if model.isConnected && model.airtimeLeftMs < 10_000 {
+                Banner(
+                    kind: .lora,
+                    title: String(localized: "Airtime budget spent"),
+                    message: String(localized: "Short messages go first; longer sends wait for the hour to free up.")
+                )
+            }
+        }
+    }
+}
+
+/// No conversation yet (mockup `etats`, bottom).
+private struct EmptyConversations: View {
+    let addContact: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            ChirpMark(color: Theme.tx2).frame(width: 40, height: 40)
+            Text("No conversations yet").font(.system(size: 17, weight: .semibold))
+            Text("Add a contact by scanning their code, in person.")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.tx2)
+                .multilineTextAlignment(.center)
+            Button("Add a contact", action: addContact)
+                .font(.system(size: 15, weight: .semibold))
+                .padding(.horizontal, 18)
+                .frame(minHeight: 44)
+                .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 12))
+                .foregroundStyle(Theme.actFg)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(24)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+        .padding(.top, 8)
+    }
+}
+
+/// TODO(phone identity): the Add-a-contact screen (mockup `contact`: my QR / scan, safety
+/// number) comes with the phone identity API.
+struct AddContactPlaceholder: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Image(systemName: "qrcode").font(.system(size: 64)).foregroundStyle(Theme.tx2)
+                Text("Coming with the phone identity")
+                    .font(.system(size: 20, weight: .semibold))
+                Text("Your key will be made on this phone. You will show it as a QR code, scan your contacts' codes and compare safety numbers, in person.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+                Text("Until then, contacts come from your radio's MeshCore contacts.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .screen()
+            .navigationTitle("Add a contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium])
+    }
 }
