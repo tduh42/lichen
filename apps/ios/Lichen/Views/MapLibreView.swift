@@ -47,9 +47,10 @@ struct MapLibreView: UIViewRepresentable {
         let map = MLNMapView(frame: .zero, styleURL: style.url)
         map.delegate = context.coordinator
         map.compassViewPosition = .bottomLeft
-        map.compassViewMargins = CGPoint(x: 16, y: 300)
-        map.attributionButtonPosition = .topLeft
-        map.attributionButtonMargins = CGPoint(x: 8, y: 110)
+        map.compassViewMargins = CGPoint(x: 16, y: 16)
+        // OpenStreetMap / OpenFreeMap attribution, out of the way of the top buttons.
+        map.attributionButtonPosition = .bottomRight
+        map.attributionButtonMargins = CGPoint(x: 8, y: 8)
         map.logoView.isHidden = true
         map.setCenter(CLLocationCoordinate2D(latitude: 45.0, longitude: 5.5), zoomLevel: 9, animated: false)
         context.coordinator.style = style
@@ -71,22 +72,29 @@ struct MapLibreView: UIViewRepresentable {
     }
 
     private func fit(_ map: MLNMapView) {
-        let coords = items.map(\.coordinate)
-        guard let first = coords.first else { return }
-        if coords.count == 1 {
-            map.setCenter(first, zoomLevel: max(map.zoomLevel, 13), animated: true)
+        guard let first = items.first else { return }
+        if items.count == 1 && first.radius < 500 {
+            map.setCenter(first.coordinate, zoomLevel: max(map.zoomLevel, 13), animated: true)
             return
         }
-        var sw = first, ne = first
-        for c in coords {
-            sw.latitude = min(sw.latitude, c.latitude)
-            sw.longitude = min(sw.longitude, c.longitude)
-            ne.latitude = max(ne.latitude, c.latitude)
-            ne.longitude = max(ne.longitude, c.longitude)
+        // Every marker with its whole circle of uncertainty.
+        var sw = first.coordinate, ne = first.coordinate
+        for i in items {
+            let dlat = i.radius / 111_320
+            let dlon = i.radius / (111_320 * max(0.01, cos(i.lat * .pi / 180)))
+            sw.latitude = min(sw.latitude, i.lat - dlat)
+            sw.longitude = min(sw.longitude, i.lon - dlon)
+            ne.latitude = max(ne.latitude, i.lat + dlat)
+            ne.longitude = max(ne.longitude, i.lon + dlon)
         }
         let bounds = MLNCoordinateBounds(sw: sw, ne: ne)
-        let insets = UIEdgeInsets(top: 140, left: 60, bottom: 360, right: 60)
+        // Below the top buttons; the sharing panel is outside the map's frame already.
+        // Labels are up to ~180 pt wide, centred on their marker.
+        let insets = UIEdgeInsets(top: 140, left: 95, bottom: 70, right: 95)
         let camera = map.cameraThatFitsCoordinateBounds(bounds, edgePadding: insets)
+        // Never closer than street level: two people side by side stay in context.
+        let maxAltitude = MLNAltitudeForZoomLevel(15, camera.pitch, bounds.sw.latitude, map.frame.size)
+        camera.altitude = max(camera.altitude, maxAltitude)
         map.setCamera(camera, withDuration: 0.6, animationTimingFunction: nil)
     }
 

@@ -123,3 +123,7 @@ Two one-hour campaigns per target (`cargo +nightly fuzz run <target> -- -max_tot
 
 The sends at 495 and 1130 s come from the speed quantum (0.5 m/s): 1.4 m/s is sent as 1.5, so the extrapolation drifts 50 m in about 8 minutes on a straight line. The send at 625 s is the turn (25 s after it). One direct position over one hop: 33 bytes, 365 ms at SF8 / 62.5 kHz / CR 4/5.
 
+With 25 % loss per link (Alice and Bob around one repeater, 40 min zigzag at 2 m/s, a turn every 4 min): 10 positions received; Bob's extrapolation was more than 250 m off at 1 of 455 checks; no stale position shown (a failed position is never resent, the share sends a fresh one).
+
+**Fuzz** `location_decode`: 362 M runs in 20 min, no crash.
+
