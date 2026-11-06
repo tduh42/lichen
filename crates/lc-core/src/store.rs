@@ -1,0 +1,488 @@
+//! Persistent storage (SQLite): message history, contacts, groups. One database per MeshCore
+//! node. Sessions and our own group sender keys are never stored (ADR-0003, protocol.md §10.2).
+//!
+//! The core stays IO-free: the runner (`lc-ffi`) records what the core reports and restores
+//! contacts and groups at start.
+
+use std::path::Path;
+
+use rusqlite::{Connection, OptionalExtension, params};
+
+use crate::content::Content;
+use crate::core::{Contact, FailReason, OwnedPath, PubKey};
+use crate::group::GroupId;
+
+pub use rusqlite::Error;
+
+/// Schema version (`PRAGMA user_version`).
+const VERSION: i32 = 1;
+
+/// A conversation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Chat {
+    Contact(PubKey),
+    Group(GroupId),
+}
+
+impl Chat {
+    fn kind(&self) -> i64 {
+        match self {
+            Chat::Contact(_) => 0,
+            Chat::Group(_) => 1,
+        }
+    }
+
+    fn bytes(&self) -> &[u8] {
+        match self {
+            Chat::Contact(k) => k,
+            Chat::Group(g) => g,
+        }
+    }
+
+    fn from_row(kind: i64, bytes: &[u8]) -> Option<Self> {
+        match kind {
+            0 => bytes.try_into().ok().map(Chat::Contact),
+            1 => bytes.try_into().ok().map(Chat::Group),
+            _ => None,
+        }
+    }
+}
+
+/// Where a message stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Status {
+    Received,
+    Sending {
+        sent: u32,
+        total: u8,
+    },
+    Delivered,
+    Failed(FailReason),
+    /// Flooded to a group (no acknowledgement).
+    Flooded,
+}
+
+fn fail_code(r: FailReason) -> i64 {
+    match r {
+        FailReason::NoPath => 1,
+        FailReason::Unreachable => 2,
+        FailReason::Timeout => 3,
+        FailReason::Refused => 4,
+        FailReason::TooLarge => 5,
+        FailReason::Interrupted => 6,
+    }
+}
+
+fn fail_reason(c: i64) -> FailReason {
+    match c {
+        1 => FailReason::NoPath,
+        2 => FailReason::Unreachable,
+        4 => FailReason::Refused,
+        5 => FailReason::TooLarge,
+        6 => FailReason::Interrupted,
+        _ => FailReason::Timeout,
+    }
+}
+
+impl Status {
+    fn columns(&self) -> (i64, i64, i64) {
+        match *self {
+            Status::Received => (0, 0, 0),
+            Status::Sending { sent, total } => (1, i64::from(sent), i64::from(total)),
+            Status::Delivered => (2, 0, 0),
+            Status::Failed(r) => (3, fail_code(r), 0),
+            Status::Flooded => (4, 0, 0),
+        }
+    }
+
+    fn from_columns(s: i64, a: i64, b: i64) -> Self {
+        match s {
+            1 => Status::Sending {
+                sent: u32::try_from(a).unwrap_or(0),
+                total: u8::try_from(b).unwrap_or(0),
+            },
+            2 => Status::Delivered,
+            3 => Status::Failed(fail_reason(a)),
+            4 => Status::Flooded,
+            _ => Status::Received,
+        }
+    }
+}
+
+/// A stored message.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Message {
+    /// Row id (0 before insertion).
+    pub id: i64,
+    pub chat: Chat,
+    pub outgoing: bool,
+    /// Author of a group message from someone else.
+    pub author: Option<PubKey>,
+    pub content: Content,
+    /// When it was sent or received, Unix milliseconds.
+    pub at_ms: i64,
+    pub status: Status,
+    pub fragments: u8,
+    pub airtime_ms: u64,
+    pub snr4: Option<i8>,
+    pub read: bool,
+}
+
+/// The SQLite store.
+#[derive(Debug)]
+pub struct Store {
+    conn: Connection,
+}
+
+const SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS contacts (
+    key BLOB PRIMARY KEY,
+    name TEXT NOT NULL,
+    path_len INTEGER,
+    path BLOB
+);
+CREATE TABLE IF NOT EXISTS groups (
+    gid BLOB PRIMARY KEY,
+    snapshot BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    outgoing INTEGER NOT NULL,
+    author BLOB,
+    content BLOB NOT NULL,
+    at_ms INTEGER NOT NULL,
+    status INTEGER NOT NULL,
+    status_a INTEGER NOT NULL,
+    status_b INTEGER NOT NULL,
+    fragments INTEGER NOT NULL,
+    airtime_ms INTEGER NOT NULL,
+    snr4 INTEGER,
+    read INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
+";
+
+const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
+                       status_b, fragments, airtime_ms, snr4, read";
+
+fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Message>> {
+    let chat_bytes: Vec<u8> = r.get(2)?;
+    let content: Vec<u8> = r.get(5)?;
+    let author: Option<Vec<u8>> = r.get(4)?;
+    let (Some(chat), Some(content)) = (
+        Chat::from_row(r.get(1)?, &chat_bytes),
+        Content::decode(&content),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(Message {
+        id: r.get(0)?,
+        chat,
+        outgoing: r.get(3)?,
+        author: author.and_then(|a| a.as_slice().try_into().ok()),
+        content,
+        at_ms: r.get(6)?,
+        status: Status::from_columns(r.get(7)?, r.get(8)?, r.get(9)?),
+        fragments: r.get(10)?,
+        airtime_ms: r.get::<_, i64>(11)?.try_into().unwrap_or(0),
+        snr4: r.get(12)?,
+        read: r.get(13)?,
+    }))
+}
+
+impl Store {
+    /// Opens (or creates) the database at `path`.
+    pub fn open(path: &Path) -> Result<Self, Error> {
+        Self::init(Connection::open(path)?)
+    }
+
+    /// A database in memory (demo, tests).
+    pub fn in_memory() -> Result<Self, Error> {
+        Self::init(Connection::open_in_memory()?)
+    }
+
+    fn init(conn: Connection) -> Result<Self, Error> {
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version > VERSION {
+            return Err(Error::InvalidQuery);
+        }
+        conn.execute_batch(SCHEMA)?;
+        conn.pragma_update(None, "user_version", VERSION)?;
+        Ok(Self { conn })
+    }
+
+    // ----- contacts and groups ---------------------------------------------------------
+
+    pub fn put_contact(&self, c: &Contact) -> Result<(), Error> {
+        let (len, path) = match &c.out_path {
+            Some(p) => (Some(i64::from(p.len_byte)), Some(p.bytes.clone())),
+            None => (None, None),
+        };
+        self.conn.execute(
+            "INSERT INTO contacts (key, name, path_len, path) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT (key) DO UPDATE SET name = ?2, path_len = ?3, path = ?4",
+            params![c.key.as_slice(), c.name, len, path],
+        )?;
+        Ok(())
+    }
+
+    pub fn contacts(&self) -> Result<Vec<Contact>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT key, name, path_len, path FROM contacts")?;
+        let rows = st.query_map([], |r| {
+            let key: Vec<u8> = r.get(0)?;
+            let len: Option<i64> = r.get(2)?;
+            let path: Option<Vec<u8>> = r.get(3)?;
+            Ok(key.as_slice().try_into().ok().map(|key| Contact {
+                key,
+                name: r.get(1).unwrap_or_default(),
+                out_path: match (len, path) {
+                    (Some(l), Some(bytes)) => u8::try_from(l)
+                        .ok()
+                        .map(|len_byte| OwnedPath { len_byte, bytes }),
+                    _ => None,
+                },
+            }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    pub fn put_group(&self, gid: &GroupId, snapshot: &[u8]) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO groups (gid, snapshot) VALUES (?1, ?2)
+             ON CONFLICT (gid) DO UPDATE SET snapshot = ?2",
+            params![gid.as_slice(), snapshot],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_group(&self, gid: &GroupId) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM groups WHERE gid = ?1", params![gid.as_slice()])?;
+        Ok(())
+    }
+
+    pub fn groups(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut st = self.conn.prepare("SELECT snapshot FROM groups")?;
+        let rows = st.query_map([], |r| r.get(0))?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    // ----- messages --------------------------------------------------------------------
+
+    /// Inserts `m` and returns it with its row id.
+    pub fn insert(&self, m: &Message) -> Result<Message, Error> {
+        let (s, a, b) = m.status.columns();
+        self.conn.execute(
+            "INSERT INTO messages (chat_kind, chat, outgoing, author, content, at_ms, status,
+             status_a, status_b, fragments, airtime_ms, snr4, read)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                m.chat.kind(),
+                m.chat.bytes(),
+                m.outgoing,
+                m.author.as_ref().map(|a| a.as_slice()),
+                m.content.encode(),
+                m.at_ms,
+                s,
+                a,
+                b,
+                m.fragments,
+                i64::try_from(m.airtime_ms).unwrap_or(i64::MAX),
+                m.snr4,
+                m.read,
+            ],
+        )?;
+        let mut out = m.clone();
+        out.id = self.conn.last_insert_rowid();
+        Ok(out)
+    }
+
+    /// Updates the status of message `id` and returns it.
+    pub fn set_status(&self, id: i64, status: Status) -> Result<Option<Message>, Error> {
+        let (s, a, b) = status.columns();
+        self.conn.execute(
+            "UPDATE messages SET status = ?2, status_a = ?3, status_b = ?4 WHERE id = ?1",
+            params![id, s, a, b],
+        )?;
+        self.get(id)
+    }
+
+    pub fn get(&self, id: i64) -> Result<Option<Message>, Error> {
+        self.conn
+            .query_row(
+                &format!("SELECT {COLUMNS} FROM messages WHERE id = ?1"),
+                params![id],
+                row,
+            )
+            .optional()
+            .map(Option::flatten)
+    }
+
+    /// The `limit` messages of `chat` before `before` (row id), oldest first.
+    pub fn history(
+        &self,
+        chat: &Chat,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<Message>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
+             ORDER BY id DESC LIMIT ?4"
+        ))?;
+        let rows = st.query_map(
+            params![chat.kind(), chat.bytes(), before.unwrap_or(i64::MAX), limit],
+            row,
+        )?;
+        let mut v: Vec<Message> = rows.filter_map(|r| r.ok().flatten()).collect();
+        v.reverse();
+        Ok(v)
+    }
+
+    /// Every conversation with a message: the last message and the number of unread ones,
+    /// most recent first.
+    pub fn conversations(&self) -> Result<Vec<(Message, u32)>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS},
+                (SELECT COUNT(*) FROM messages u WHERE u.chat_kind = m.chat_kind
+                    AND u.chat = m.chat AND u.read = 0 AND u.outgoing = 0)
+             FROM messages m
+             WHERE id IN (SELECT MAX(id) FROM messages GROUP BY chat_kind, chat)
+             ORDER BY id DESC"
+        ))?;
+        let rows = st.query_map([], |r| Ok(row(r)?.map(|m| (m, r.get(14).unwrap_or(0)))))?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    pub fn mark_read(&self, chat: &Chat) -> Result<(), Error> {
+        self.conn.execute(
+            "UPDATE messages SET read = 1 WHERE chat_kind = ?1 AND chat = ?2 AND read = 0",
+            params![chat.kind(), chat.bytes()],
+        )?;
+        Ok(())
+    }
+
+    /// Messages still sending when the app stopped: failed, to be resent by hand.
+    pub fn fail_unfinished(&self) -> Result<usize, Error> {
+        let (s, a, b) = Status::Failed(FailReason::Interrupted).columns();
+        self.conn.execute(
+            "UPDATE messages SET status = ?1, status_a = ?2, status_b = ?3 WHERE status = 1",
+            params![s, a, b],
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(chat: Chat, outgoing: bool, t: &str, at_ms: i64) -> Message {
+        Message {
+            id: 0,
+            chat,
+            outgoing,
+            author: None,
+            content: Content::Text {
+                sent_at: 1,
+                text: t.into(),
+            },
+            at_ms,
+            status: if outgoing {
+                Status::Sending { sent: 0, total: 1 }
+            } else {
+                Status::Received
+            },
+            fragments: 1,
+            airtime_ms: 400,
+            snr4: Some(24),
+            read: outgoing,
+        }
+    }
+
+    #[test]
+    fn messages_history_conversations() {
+        let s = Store::in_memory().unwrap();
+        let (a, b, g) = (
+            Chat::Contact([1; 32]),
+            Chat::Contact([2; 32]),
+            Chat::Group([3; 16]),
+        );
+        let m1 = s.insert(&text(a, false, "hi", 10)).unwrap();
+        let m2 = s.insert(&text(a, true, "hello", 20)).unwrap();
+        s.insert(&text(b, false, "yo", 30)).unwrap();
+        let mut gm = text(g, false, "group", 40);
+        gm.author = Some([2; 32]);
+        s.insert(&gm).unwrap();
+        assert!(m2.id > m1.id);
+        let h = s.history(&a, None, 10).unwrap();
+        assert_eq!(
+            h.iter().map(|m| m.id).collect::<Vec<_>>(),
+            vec![m1.id, m2.id]
+        );
+        assert_eq!(s.history(&a, Some(m2.id), 10).unwrap().len(), 1);
+        let conv = s.conversations().unwrap();
+        assert_eq!(conv.len(), 3);
+        assert_eq!(conv[0].0.chat, g);
+        assert_eq!(conv[0].0.author, Some([2; 32]));
+        assert_eq!(conv.iter().find(|(m, _)| m.chat == a).unwrap().1, 1);
+        s.mark_read(&a).unwrap();
+        assert_eq!(
+            s.conversations()
+                .unwrap()
+                .iter()
+                .find(|(m, _)| m.chat == a)
+                .unwrap()
+                .1,
+            0
+        );
+        let up = s.set_status(m2.id, Status::Delivered).unwrap().unwrap();
+        assert_eq!(up.status, Status::Delivered);
+        let m3 = s.insert(&text(b, true, "pending", 50)).unwrap();
+        assert_eq!(s.fail_unfinished().unwrap(), 1);
+        assert_eq!(
+            s.get(m3.id).unwrap().unwrap().status,
+            Status::Failed(FailReason::Interrupted)
+        );
+    }
+
+    #[test]
+    fn contacts_and_groups_persist_on_disk() {
+        let dir = std::env::temp_dir().join(format!("lichen-store-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("node.sqlite");
+        let _ = std::fs::remove_file(&path);
+        {
+            let s = Store::open(&path).unwrap();
+            s.put_contact(&Contact {
+                key: [5; 32],
+                name: "Camille".into(),
+                out_path: Some(OwnedPath {
+                    len_byte: 1,
+                    bytes: vec![0xAB],
+                }),
+            })
+            .unwrap();
+            s.put_contact(&Contact {
+                key: [6; 32],
+                name: "Julien".into(),
+                out_path: None,
+            })
+            .unwrap();
+            s.put_group(&[7; 16], b"snapshot").unwrap();
+            s.put_group(&[8; 16], b"gone").unwrap();
+            s.delete_group(&[8; 16]).unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        let mut c = s.contacts().unwrap();
+        c.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(c.len(), 2);
+        assert_eq!(c[0].out_path.as_ref().unwrap().bytes, vec![0xAB]);
+        assert_eq!(c[1].out_path, None);
+        assert_eq!(s.groups().unwrap(), vec![b"snapshot".to_vec()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

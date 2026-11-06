@@ -18,7 +18,7 @@ struct ChatView: View {
                                 .foregroundStyle(Theme.secondaryText)
                                 .padding(.top, 8)
                         }
-                        ForEach(messages) { m in
+                        ForEach(messages, id: \.id) { m in
                             MessageView(message: m, isGroup: isGroup).id(m.id)
                         }
                     }
@@ -41,7 +41,10 @@ struct ChatView: View {
                 }
             }
         }
-        .onAppear { model.markRead(chat) }
+        .onAppear {
+            model.load(chat)
+            model.markRead(chat)
+        }
         .alert("Not sent", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -49,7 +52,7 @@ struct ChatView: View {
         }
     }
 
-    private var messages: [ChatMessage] { model.chats[chat] ?? [] }
+    private var messages: [StoredMessage] { model.chats[chat] ?? [] }
 
     private var isGroup: Bool {
         if case .group = chat { return true }
@@ -81,7 +84,7 @@ struct ChatView: View {
 }
 
 private struct MessageView: View {
-    let message: ChatMessage
+    let message: StoredMessage
     let isGroup: Bool
     @Environment(AppModel.self) private var model
 
@@ -90,7 +93,7 @@ private struct MessageView: View {
             if isGroup, !message.outgoing, let a = message.author {
                 Text(model.name(of: a)).font(.caption.weight(.semibold)).foregroundStyle(Theme.secondaryText)
             }
-            Text(message.text)
+            Text(message.message.display)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
                 .background(message.outgoing ? Theme.accent : Theme.incomingBubble, in: RoundedRectangle(cornerRadius: 18))
@@ -107,11 +110,11 @@ private struct MessageView: View {
         switch message.status {
         case .received: return nil
         case let .sending(sent, total):
-            return String(localized: "Sending \(String(min(sent, total))) / \(String(total)) fragments")
+            return String(localized: "Sending \(String(min(Int(sent), Int(total)))) / \(String(total)) fragments")
         case .delivered:
-            return String(localized: "Delivered · \(message.fragments) fragments · \(airtime) s of airtime")
+            return String(localized: "Delivered · \(Int(message.fragments)) fragments · \(airtime) s of airtime")
         case let .failed(reason):
-            return String(localized: "Not delivered: \(reason)")
+            return String(localized: "Not delivered: \(reason.display)")
         case .flooded:
             return String(localized: "Sent to the group")
         }

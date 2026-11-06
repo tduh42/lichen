@@ -1,33 +1,8 @@
 import Foundation
 import Observation
 
-/// A conversation: with a contact, or in a group.
-enum ChatID: Hashable {
-    case contact(Data)
-    case group(Data)
-}
-
-struct ChatMessage: Identifiable, Equatable {
-    enum Status: Equatable {
-        case received
-        case sending(sent: Int, total: Int)
-        case delivered
-        case failed(String)
-        /// Group messages are flooded, never acknowledged.
-        case flooded
-    }
-
-    let id = UUID()
-    let outgoing: Bool
-    /// Author, for group messages from others.
-    let author: Data?
-    let text: String
-    let date: Date
-    var status: Status
-    /// Fragments and airtime estimated when it was sent.
-    var fragments: Int = 1
-    var airtimeMs: Int = 0
-}
+/// A conversation: `ChatRef` comes from the core (contact or group).
+typealias ChatID = ChatRef
 
 /// The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
 @MainActor @Observable
@@ -42,8 +17,10 @@ final class AppModel {
     var keyExportRefused = false
     var contacts: [ContactInfo] = []
     var groups: [GroupInfo] = []
-    var chats: [ChatID: [ChatMessage]] = [:]
-    var unread: [ChatID: Int] = [:]
+    /// Loaded histories, by conversation (filled when a chat is opened).
+    var chats: [ChatID: [StoredMessage]] = [:]
+    /// Conversations with messages, most recent first, with their unread counts.
+    var conversations: [Conversation] = []
     var secured: Set<Data> = []
     var lastSnr: [Data: Float] = [:]
     /// Running on the simulated network instead of a real node.
@@ -57,7 +34,6 @@ final class AppModel {
     @ObservationIgnored private var demo: DemoNetwork?
     @ObservationIgnored private var demoTimer: Timer?
     @ObservationIgnored private var debugSay: String?
-    @ObservationIgnored private var outgoing: [UInt64: (ChatID, UUID)] = [:]
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
 
     private static let nodeKeyDefault = "lichen.nodeKey"
@@ -65,6 +41,9 @@ final class AppModel {
     init() {
         let lastNode = UserDefaults.standard.data(forKey: Self.nodeKeyDefault)
         core = Self.makeCore(identity: lastNode.flatMap { Keychain.load(node: $0.hex) })
+        contacts = core.contacts()
+        groups = core.groups()
+        conversations = core.conversations()
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
         companion.onFound = { [weak self] f in MainActor.assumeIsolated { self?.found = f } }
         companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.frame(d) } }
@@ -75,9 +54,26 @@ final class AppModel {
         #endif
     }
 
-    private static func makeCore(identity: Data?) -> LichenCore {
+    private static func makeCore(identity: Data?, persistent: Bool = true) -> LichenCore {
         // The seed is 32 bytes and the identity 64 or absent: construction cannot fail.
-        try! LichenCore(appName: "lichen-ios", rngSeed: Keychain.randomSeed(), identity: identity)
+        try! LichenCore(
+            appName: "lichen-ios",
+            rngSeed: Keychain.randomSeed(),
+            identity: identity,
+            dataDir: persistent ? dataDirectory() : nil
+        )
+    }
+
+    /// Per-node databases live in Application Support (file protection until first unlock).
+    private static func dataDirectory() -> String? {
+        guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        else { return nil }
+        let dir = base.appendingPathComponent("lichen", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        )
+        return dir.path
     }
 
     // MARK: demo network
@@ -85,7 +81,7 @@ final class AppModel {
     /// Runs the app on a simulated MeshCore network (two simulated users, a group), in real time.
     func startDemo() {
         resetState()
-        core = Self.makeCore(identity: nil)
+        core = Self.makeCore(identity: nil, persistent: false)
         let net = DemoNetwork()
         demo = net
         isDemo = true
@@ -124,10 +120,9 @@ final class AppModel {
         contacts = []
         groups = []
         chats = [:]
-        unread = [:]
+        conversations = []
         secured = []
         lastSnr = [:]
-        outgoing = [:]
     }
 
     var isConnected: Bool {
@@ -197,63 +192,66 @@ final class AppModel {
             #if DEBUG
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
-                debugOpen = .contact(c.key)
+                debugOpen = .contact(key: c.key)
             }
             #endif
         case let .sessionEstablished(peer):
             secured.insert(peer)
-        case let .received(from, message, snr, _):
+        case let .received(from, _, snr, _):
             lastSnr[from] = snr
-            append(.contact(from), ChatMessage(outgoing: false, author: nil, text: message.display, date: message.date, status: .received))
             #if DEBUG
             if let say = debugSay {
                 debugSay = nil
-                _ = send(say, to: .contact(from))
+                _ = send(say, to: .contact(key: from))
             }
             #endif
-        case let .progress(id, sent, total):
-            update(id) { $0.status = .sending(sent: Int(sent), total: Int(total)) }
-        case let .delivered(id):
-            update(id) { $0.status = .delivered }
-            outgoing[id] = nil
-        case let .failed(id, reason):
-            update(id) { $0.status = .failed(reason.display) }
-            outgoing[id] = nil
+        case .progress, .delivered, .failed:
+            break
         case .groupJoined, .groupUpdated, .groupLeft:
             groups = core.groups()
             contacts = core.contacts()
             #if DEBUG
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let g = groups.first(where: { $0.name == name }) {
-                debugOpen = .group(g.gid)
+                debugOpen = .group(gid: g.gid)
             }
             #endif
-            #if DEBUG
-            if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
-               let g = groups.first(where: { $0.name == name }) {
-                debugOpen = .group(g.gid)
-            }
-            #endif
-        case let .groupMessage(gid, from, message, snr, _):
+        case let .groupMessage(_, from, _, snr, _):
             lastSnr[from] = snr
-            append(.group(gid), ChatMessage(outgoing: false, author: from, text: message.display, date: message.date, status: .received))
+        case let .messageChanged(m):
+            upsert(m)
+            conversations = core.conversations()
         }
     }
 
-    private func append(_ chat: ChatID, _ m: ChatMessage) {
-        chats[chat, default: []].append(m)
-        if !m.outgoing { unread[chat, default: 0] += 1 }
+    private func upsert(_ m: StoredMessage) {
+        guard var list = chats[m.chat] else { return }
+        if let i = list.firstIndex(where: { $0.id == m.id }) {
+            list[i] = m
+        } else {
+            list.append(m)
+        }
+        chats[m.chat] = list
     }
 
-    private func update(_ id: UInt64, _ change: (inout ChatMessage) -> Void) {
-        guard let (chat, mid) = outgoing[id], let i = chats[chat]?.firstIndex(where: { $0.id == mid }) else { return }
-        change(&chats[chat]![i])
+    func unread(_ chat: ChatID) -> Int {
+        Int(conversations.first { $0.chat == chat }?.unread ?? 0)
+    }
+
+    func last(_ chat: ChatID) -> StoredMessage? {
+        conversations.first { $0.chat == chat }?.last
     }
 
     // MARK: actions
 
+    /// Loads the history of `chat` (when its screen opens).
+    func load(_ chat: ChatID) {
+        chats[chat] = (try? core.history(chat: chat, beforeId: nil, limit: 200)) ?? []
+    }
+
     func markRead(_ chat: ChatID) {
-        unread[chat] = nil
+        try? core.markRead(chat: chat)
+        conversations = core.conversations()
     }
 
     func estimate(_ chat: ChatID, text: String) -> Estimate? {
@@ -265,19 +263,15 @@ final class AppModel {
     func send(_ text: String, to chat: ChatID) -> String? {
         let sentAt = UInt32(Date().timeIntervalSince1970)
         do {
+            let m: StoredMessage
             switch chat {
             case let .contact(key):
-                let est = estimate(chat, text: text)
-                let id = try core.sendText(to: key, text: text, sentAt: sentAt, nowMs: now())
-                var m = ChatMessage(outgoing: true, author: nil, text: text, date: Date(), status: .sending(sent: 0, total: Int(est?.fragments ?? 1)))
-                m.fragments = Int(est?.fragments ?? 1)
-                m.airtimeMs = Int(est?.airtimeMs ?? 0)
-                outgoing[id] = (chat, m.id)
-                append(chat, m)
+                m = try core.sendText(to: key, text: text, sentAt: sentAt, nowMs: now())
             case let .group(gid):
-                _ = try core.sendGroupText(gid: gid, text: text, sentAt: sentAt, nowMs: now())
-                append(chat, ChatMessage(outgoing: true, author: nil, text: text, date: Date(), status: .flooded))
+                m = try core.sendGroupText(gid: gid, text: text, sentAt: sentAt, nowMs: now())
             }
+            if chats[chat] == nil { load(chat) } else { upsert(m) }
+            conversations = core.conversations()
             pump()
             return nil
         } catch let e as LichenError {
@@ -313,10 +307,23 @@ final class AppModel {
         case let .group(gid): return groups.first { $0.gid == gid }?.name ?? String(localized: "Group")
         }
     }
+
+    var totalUnread: Int { conversations.reduce(0) { $0 + Int($1.unread) } }
 }
 
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
+}
+
+extension StoredMessage {
+    var date: Date { Date(timeIntervalSince1970: TimeInterval(atMs) / 1000) }
+
+    /// One line for the conversation list ("Camille: …" in groups).
+    @MainActor func preview(_ model: AppModel) -> String {
+        let text = message.display
+        if let author, !outgoing { return "\(model.name(of: author)): \(text)" }
+        return text
+    }
 }
 
 extension Message {
@@ -343,6 +350,7 @@ extension FailReason {
         case .timeout: return String(localized: "no acknowledgement")
         case .refused: return String(localized: "refused")
         case .tooLarge: return String(localized: "too large")
+        case .interrupted: return String(localized: "the app stopped before delivery")
         }
     }
 }

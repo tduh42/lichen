@@ -276,3 +276,48 @@ fn measure_group_delivery_one_or_two_copies() {
         );
     }
 }
+
+/// A member's app restarts: the group comes back from its snapshot, the member draws a new
+/// sender key (next epoch) and sends it, and still reads the others with their stored keys.
+#[test]
+fn member_restart_restores_the_group() {
+    let (mut net, m) = star(13);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("g", &keys[1..4], now))
+        .unwrap()
+        .unwrap();
+    let members = &m[..4];
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, members, &gid)));
+    settle(&mut net);
+    let snapshot = net.nodes[m[2]]
+        .core
+        .as_ref()
+        .unwrap()
+        .group_snapshot(&gid)
+        .unwrap();
+
+    // Carol's app restarts.
+    net.attach_app(m[2], 77);
+    net.with_core(m[2], |c, _| assert!(c.restore_group(&snapshot)));
+    net.connect(m[2]);
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, members, &gid)));
+    settle(&mut net);
+    for &i in members {
+        net.take_events(i);
+    }
+    // She reads Bob, and everyone reads her new key.
+    net.with_core(m[1], |c, now| c.send_group_text(&gid, "from bob", 1, now));
+    net.run_until(net.now + 3 * MIN, |_| false);
+    net.with_core(m[2], |c, now| c.send_group_text(&gid, "from carol", 1, now));
+    settle(&mut net);
+    let carol = group_texts(&net.take_events(m[2]));
+    assert_eq!(carol, vec![(keys[1][0], "from bob".to_owned())]);
+    for &i in [m[0], m[1], m[3]].iter() {
+        let got = group_texts(&net.take_events(i));
+        assert!(
+            got.contains(&(keys[2][0], "from carol".to_owned())),
+            "{got:?}"
+        );
+    }
+}

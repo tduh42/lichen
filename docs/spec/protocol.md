@@ -273,7 +273,7 @@ gid (16) ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32
 ```
 
 - Every member draws a random sender key per group and sends it to every other member. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows.
-- Sender keys and their counters live in memory: after a restart, the app draws a new key (`key_epoch + 1`) and sends it again, so a counter is never reused under a key (as for sessions, ADR-0003).
+- Our own sender key and its counter are never stored: after a restart, the app draws a new key (`key_epoch + 1`) and sends it to the members once the node is connected, so a counter is never reused under a key (as for sessions, ADR-0003). The other members' keys and replay windows are stored with the group (ADR-0010): they do not resend them.
 - A receiver keeps the current and the previous key of each member (messages in flight during a rekey), and drops keys of members who left.
 
 ### 10.3 Group message (flooded envelope)

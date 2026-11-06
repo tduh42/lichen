@@ -5,7 +5,7 @@
 //! frames out ([`Core::poll_companion`]), calls [`Core::tick`] at [`Core::next_wakeup`], and
 //! reads [`Event`]s.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::airtime::LoRaParams;
@@ -101,6 +101,8 @@ pub enum FailReason {
     Unreachable,
     /// The transfer stalled.
     Timeout,
+    /// The app stopped before the message was delivered.
+    Interrupted,
     /// The peer refused the datagram.
     Refused,
     /// The datagram does not fit in 64 fragments on this path.
@@ -351,6 +353,8 @@ pub struct Core {
     pub(crate) held: VecDeque<Held>,
     /// Floods per group message (§10.3).
     pub(crate) group_copies: u8,
+    /// Groups changed since the app last persisted them.
+    pub(crate) dirty_groups: HashSet<GroupId>,
     /// Group frames waiting for their time (the second fragment is spaced out).
     pub(crate) group_tx: VecDeque<(Millis, Vec<u8>)>,
     /// The radio is shared by every session: the next data frame may go at this time.
@@ -408,6 +412,7 @@ impl Core {
             pending_keys: Vec::new(),
             held: VecDeque::new(),
             group_copies: crate::group::COPIES,
+            dirty_groups: HashSet::new(),
             group_tx: VecDeque::new(),
             next_slot: 0,
             rr_last: None,

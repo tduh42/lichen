@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn demo_conversation_and_group() {
         let demo = DemoNetwork::new();
-        let core = LichenCore::new("demo-test".into(), vec![7; 32], None).unwrap();
+        let core = LichenCore::new("demo-test".into(), vec![7; 32], None, None).unwrap();
         core.connect(0);
         let mut events = Vec::new();
         let mut sent = false;
@@ -295,5 +295,146 @@ mod tests {
             texts.iter().any(|t| t.starts_with("Leaving the col")),
             "{texts:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod persistence {
+    use super::*;
+    use crate::{ChatRef, LichenCore, LichenEvent, Message, MessageStatus};
+
+    fn run(
+        demo: &DemoNetwork,
+        core: &LichenCore,
+        from: u64,
+        to: u64,
+        mut each: impl FnMut(&LichenCore, u64),
+    ) -> Vec<LichenEvent> {
+        let mut events = Vec::new();
+        let mut now = from;
+        while now < to {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                events.push(e);
+            }
+            each(core, now);
+            now += 100;
+        }
+        events
+    }
+
+    fn text(m: &Message) -> &str {
+        match m {
+            Message::Text { text, .. } => text,
+            Message::Other { .. } => "",
+        }
+    }
+
+    /// History, contacts and groups survive an app restart; the group keeps working both ways.
+    #[test]
+    fn restart_keeps_history_and_group() {
+        let dir = std::env::temp_dir().join(format!("lichen-ffi-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Some(dir.to_string_lossy().into_owned());
+        let demo = DemoNetwork::new();
+
+        let core = LichenCore::new("t".into(), vec![1; 32], None, data.clone()).unwrap();
+        core.connect(0);
+        let mut sent = false;
+        run(&demo, &core, 0, 8 * 60_000, |c, now| {
+            if !sent
+                && now > 40_000
+                && let Some(k) = c.contacts().into_iter().find(|k| k.name == "Camille")
+            {
+                sent = c.send_text(k.key, "first".into(), 1, now).is_ok();
+            }
+        });
+        let camille = core
+            .contacts()
+            .into_iter()
+            .find(|k| k.name == "Camille")
+            .unwrap()
+            .key;
+        let before = core
+            .history(
+                ChatRef::Contact {
+                    key: camille.clone(),
+                },
+                None,
+                50,
+            )
+            .unwrap();
+        assert!(before.len() >= 3, "{before:?}");
+        assert!(
+            before
+                .iter()
+                .any(|m| m.outgoing && m.status == MessageStatus::Delivered)
+        );
+        let group = core.groups().into_iter().next().expect("joined the group");
+        let gref = ChatRef::Group {
+            gid: group.gid.clone(),
+        };
+        assert!(!core.history(gref.clone(), None, 50).unwrap().is_empty());
+        let prv = core.private_key().unwrap();
+        drop(core);
+
+        // The app restarts with the key from the Keychain: history before connecting.
+        let core = LichenCore::new("t".into(), vec![2; 32], Some(prv), data.clone()).unwrap();
+        assert_eq!(
+            core.history(
+                ChatRef::Contact {
+                    key: camille.clone()
+                },
+                None,
+                50
+            )
+            .unwrap(),
+            before
+        );
+        assert_eq!(core.groups().len(), 1);
+        assert!(!core.conversations().is_empty());
+
+        core.connect(8 * 60_000);
+        let mut step = 0;
+        let events = run(&demo, &core, 8 * 60_000, 20 * 60_000, |c, now| {
+            if step == 0 && now > 9 * 60_000 {
+                step = 1;
+                c.send_text(camille.clone(), "second".into(), 2, now)
+                    .unwrap();
+            }
+            if step == 1 && now > 12 * 60_000 {
+                step = 2;
+                c.send_group_text(group.gid.clone(), "back online".into(), 3, now)
+                    .unwrap();
+            }
+        });
+        let changed: Vec<&str> = events
+            .iter()
+            .filter_map(|e| match e {
+                LichenEvent::MessageChanged { message } if !message.outgoing => {
+                    Some(text(&message.message))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(
+            changed.iter().any(|t| t.starts_with("Copy: \"second\"")),
+            "{changed:?}"
+        );
+        assert!(
+            changed.contains(&"Seen. I'll keep a seat for you by the stove."),
+            "{changed:?}"
+        );
+        let after = core
+            .history(ChatRef::Contact { key: camille }, None, 50)
+            .unwrap();
+        assert!(after.len() >= before.len() + 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

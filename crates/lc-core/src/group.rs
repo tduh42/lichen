@@ -25,6 +25,8 @@ pub const COPIES: u8 = 2;
 const PARTIAL_MS: Millis = 300_000;
 /// Keys that arrived before their group state are kept this long.
 const PENDING_KEY_MS: Millis = 600_000;
+/// Version byte of [`Group::snapshot`].
+const SNAPSHOT_VERSION: u8 = 1;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
 /// And at most this many.
@@ -133,11 +135,111 @@ pub struct Group {
     my_counter: u32,
     keys: HashMap<PubKey, MemberKeys>,
     partials: Vec<Partial>,
+    /// Our (new) sender key still has to go to the members: restored before the node's
+    /// identity was known.
+    announce_key: bool,
 }
 
 impl Group {
     pub fn gid_hash(&self) -> u16 {
         gid_hash(&self.gid)
+    }
+
+    /// The persistent form of the group: state, members, our key epoch and the other members'
+    /// sender keys with their replay windows. Our own key is not kept: after a restart a new
+    /// one is drawn under the next epoch (§10.2).
+    pub fn snapshot(&self) -> Vec<u8> {
+        let mut v = vec![SNAPSHOT_VERSION];
+        v.extend_from_slice(&self.gid);
+        v.extend_from_slice(&self.epoch.to_le_bytes());
+        v.extend_from_slice(&self.admin);
+        put_name(&mut v, &self.name);
+        v.push(self.members.len() as u8);
+        for m in &self.members {
+            v.extend_from_slice(&m.key);
+            put_name(&mut v, &m.name);
+        }
+        v.push(self.my_epoch);
+        let keys: Vec<(&PubKey, &MemberKeys)> = self.keys.iter().collect();
+        v.push(keys.len() as u8);
+        for (k, mk) in keys {
+            v.extend_from_slice(k);
+            for slot in [&mk.current, &mk.previous] {
+                match slot {
+                    None => v.push(0),
+                    Some(ks) => {
+                        v.push(1);
+                        v.push(ks.epoch);
+                        v.extend_from_slice(&ks.key);
+                        v.extend_from_slice(&ks.floor.to_le_bytes());
+                        v.extend_from_slice(&ks.highest.map_or(u64::MAX, u64::from).to_le_bytes());
+                        v.extend_from_slice(&ks.seen.to_le_bytes());
+                    }
+                }
+            }
+        }
+        v
+    }
+
+    /// Rebuilds a group from [`Group::snapshot`], with a new sender key of ours under the next
+    /// epoch.
+    fn from_snapshot(b: &[u8], my_key: [u8; 32]) -> Option<Self> {
+        let (&version, mut b) = b.split_first()?;
+        if version != SNAPSHOT_VERSION {
+            return None;
+        }
+        let b = &mut b;
+        let gid: GroupId = take(b, 16)?.try_into().ok()?;
+        let epoch = u32::from_le_bytes(take(b, 4)?.try_into().ok()?);
+        let admin: PubKey = take(b, 32)?.try_into().ok()?;
+        let name = take_name(b)?;
+        let n = usize::from(*take(b, 1)?.first()?);
+        let mut members = Vec::with_capacity(n);
+        for _ in 0..n {
+            let key: PubKey = take(b, 32)?.try_into().ok()?;
+            members.push(Member {
+                key,
+                name: take_name(b)?,
+            });
+        }
+        let my_epoch = take(b, 1)?.first()?.wrapping_add(1);
+        let nk = usize::from(*take(b, 1)?.first()?);
+        let mut keys = HashMap::new();
+        for _ in 0..nk {
+            let k: PubKey = take(b, 32)?.try_into().ok()?;
+            let mut slots = [None, None];
+            for slot in &mut slots {
+                if *take(b, 1)?.first()? == 1 {
+                    let epoch = *take(b, 1)?.first()?;
+                    let key: [u8; 32] = take(b, 32)?.try_into().ok()?;
+                    let floor = u32::from_le_bytes(take(b, 4)?.try_into().ok()?);
+                    let highest = u64::from_le_bytes(take(b, 8)?.try_into().ok()?);
+                    let seen = u64::from_le_bytes(take(b, 8)?.try_into().ok()?);
+                    *slot = Some(KeyState {
+                        epoch,
+                        key,
+                        floor,
+                        highest: u32::try_from(highest).ok(),
+                        seen,
+                    });
+                }
+            }
+            let [current, previous] = slots;
+            keys.insert(k, MemberKeys { current, previous });
+        }
+        b.is_empty().then_some(Self {
+            gid,
+            name,
+            admin,
+            epoch,
+            members,
+            my_key,
+            my_epoch,
+            my_counter: 0,
+            keys,
+            partials: Vec::new(),
+            announce_key: true,
+        })
     }
 
     /// Number of other members whose current sender key we hold.
@@ -289,6 +391,35 @@ fn signed_parts<'a>(
 // ----- the core's group operations ---------------------------------------------------------
 
 impl Core {
+    /// Groups that changed since the last call, to persist ([`Core::group_snapshot`]); a
+    /// group we left has no snapshot any more.
+    pub fn take_dirty_groups(&mut self) -> Vec<GroupId> {
+        self.dirty_groups.drain().collect()
+    }
+
+    pub fn group_snapshot(&self, gid: &GroupId) -> Option<Vec<u8>> {
+        self.groups.get(gid).map(Group::snapshot)
+    }
+
+    /// Restores a group saved with [`Core::group_snapshot`] (app start). Our sender key is new,
+    /// under the next epoch, and goes to every member once the node is connected.
+    pub fn restore_group(&mut self, snapshot: &[u8]) -> bool {
+        let key = self.fresh_key();
+        let Some(g) = Group::from_snapshot(snapshot, key) else {
+            return false;
+        };
+        let gid = g.gid;
+        let me = self.key;
+        for m in &g.members {
+            if Some(m.key) != me && !self.contacts.contains_key(&m.key) {
+                self.add_contact(m.key, &m.name, None);
+            }
+        }
+        self.groups.insert(gid, g);
+        self.dirty_groups.insert(gid);
+        true
+    }
+
     /// How many times each group message is flooded (1 or 2).
     pub fn set_group_copies(&mut self, copies: u8) {
         self.group_copies = copies.clamp(1, 2);
@@ -343,8 +474,10 @@ impl Core {
             my_counter: 0,
             keys: HashMap::new(),
             partials: Vec::new(),
+            announce_key: false,
         };
         self.groups.insert(gid, group);
+        self.dirty_groups.insert(gid);
         self.broadcast_state(&gid, &[]);
         self.send_my_key(&gid, None);
         self.events.push_back(Event::GroupUpdated { gid });
@@ -367,6 +500,7 @@ impl Core {
         g.members.retain(|m| m.key != *member);
         g.epoch += 1;
         g.keys.remove(member);
+        self.dirty_groups.insert(*gid);
         self.broadcast_state(gid, &[*member]);
         self.rotate_my_key(gid);
         self.events.push_back(Event::GroupUpdated { gid: *gid });
@@ -423,6 +557,7 @@ impl Core {
             g.my_epoch = g.my_epoch.wrapping_add(1);
             g.my_counter = 0;
         }
+        self.dirty_groups.insert(*gid);
         self.send_my_key(gid, None);
     }
 
@@ -452,6 +587,7 @@ impl Core {
         }
         let listed = state.members.iter().any(|m| m.key == me);
         let gid = state.gid;
+        self.dirty_groups.insert(gid);
         for m in &state.members {
             if m.key != me && !self.contacts.contains_key(&m.key) {
                 self.add_contact(m.key, &m.name, None);
@@ -476,6 +612,7 @@ impl Core {
                         my_counter: 0,
                         keys: HashMap::new(),
                         partials: Vec::new(),
+                        announce_key: false,
                     },
                 );
                 self.send_my_key(&gid, None);
@@ -554,6 +691,7 @@ impl Core {
         }
         mk.previous = mk.current.take();
         mk.current = Some(KeyState::new(epoch, key, next));
+        self.dirty_groups.insert(gid);
         // Messages that came before this key can now be read.
         let held: Vec<Held> = std::mem::take(&mut self.held).into();
         for h in held {
@@ -649,6 +787,19 @@ impl Core {
 
     /// Hands due group frames to the companion, in the node's shared radio slot.
     pub(crate) fn tick_groups(&mut self, now: Millis) {
+        // Restored groups send our new sender key once the node's identity is known.
+        let owed: Vec<GroupId> = self
+            .groups
+            .values_mut()
+            .filter(|g| g.announce_key)
+            .map(|g| {
+                g.announce_key = false;
+                g.gid
+            })
+            .collect();
+        for gid in owed {
+            self.send_my_key(&gid, None);
+        }
         while self.group_tx.front().is_some_and(|(due, _)| *due <= now) && now >= self.next_slot {
             let Some((_, raw)) = self.group_tx.pop_front() else {
                 break;
@@ -764,6 +915,7 @@ impl Core {
                         return;
                     };
                     ks.mark(hdr.counter);
+                    self.dirty_groups.insert(gid);
                     let Some((body, sig)) = message.split_last_chunk::<SIGNATURE_LEN>() else {
                         return;
                     };

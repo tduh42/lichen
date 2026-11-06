@@ -76,16 +76,16 @@ struct ConversationsView: View {
         var out: [Row] = []
         if filter != .contacts {
             for g in model.groups {
-                let chat = ChatID.group(g.gid)
-                let last = model.chats[chat]?.last
-                out.append(Row(id: chat, title: g.name, key: g.gid, preview: last?.text ?? String(localized: "\(String(g.members.count)) members"), date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread[chat] ?? 0))
+                let chat = ChatID.group(gid: g.gid)
+                let last = model.last(chat)
+                out.append(Row(id: chat, title: g.name, key: g.gid, preview: last?.preview(model) ?? String(localized: "\(String(g.members.count)) members"), date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat)))
             }
         }
         if filter != .groups {
             for c in model.contacts {
-                let chat = ChatID.contact(c.key)
-                let last = model.chats[chat]?.last
-                out.append(Row(id: chat, title: c.name, key: c.key, preview: last?.text ?? "", date: last?.date, badge: hopsBadge(c.hops), unread: model.unread[chat] ?? 0))
+                let chat = ChatID.contact(key: c.key)
+                let last = model.last(chat)
+                out.append(Row(id: chat, title: c.name, key: c.key, preview: last?.preview(model) ?? "", date: last?.date, badge: hopsBadge(c.hops), unread: model.unread(chat)))
             }
         }
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()

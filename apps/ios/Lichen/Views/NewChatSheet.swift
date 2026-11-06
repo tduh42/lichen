@@ -17,7 +17,7 @@ struct NewChatSheet: View {
                         Text("No contacts yet: they come from your node.").foregroundStyle(Theme.secondaryText)
                     }
                     ForEach(model.contacts, id: \.key) { c in
-                        Button { open(.contact(c.key)) } label: {
+                        Button { open(.contact(key: c.key)) } label: {
                             HStack(spacing: 12) {
                                 Avatar(name: c.name, key: c.key, size: 32)
                                 Text(c.name).foregroundStyle(.primary)
@@ -39,7 +39,7 @@ struct NewChatSheet: View {
                         if let e = model.createGroup(name: groupName, members: Array(selected)) {
                             error = e
                         } else if let g = model.groups.first(where: { $0.name == groupName }) {
-                            open(.group(g.gid))
+                            open(.group(gid: g.gid))
                         }
                     }
                     .disabled(groupName.isEmpty || selected.isEmpty)

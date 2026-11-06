@@ -39,6 +39,7 @@ clap = { version = "4.6", features = ["derive"] }
 serialport = { version = "4.10", default-features = false }
 getrandom = "0.4"
 uniffi = "0.32"
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

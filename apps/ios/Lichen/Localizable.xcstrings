@@ -971,6 +971,16 @@
         }
       }
     },
+    "the app stopped before delivery": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "l'app s'est arrêtée avant la remise"
+          }
+        }
+      }
+    },
     "too large": {
       "localizations": {
         "fr": {
