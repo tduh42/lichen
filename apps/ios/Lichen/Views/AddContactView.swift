@@ -77,19 +77,28 @@ struct AddContactView: View {
     }
 }
 
-/// The safety number with a contact (§4.7): the same 30 digits on both phones.
+/// The safety number with a contact (§4.7): the same 30 digits on both phones. Approving
+/// names the identity whose number was shown, so a key that changes meanwhile is never
+/// approved unseen (review PR-07).
 struct VerifyPanel: View {
     let node: Data
     /// A new identity the contact presented, compared before accepting it.
     var pending: Data?
     let done: () -> Void
     @Environment(AppModel.self) private var model
+    /// The identity whose number is on screen, fixed when the panel opens.
+    @State private var shown: Data?
+    @State private var isNew = false
+    @State private var stale = false
 
     var body: some View {
         let name = model.contact(node)?.name ?? model.name(of: node)
-        let numbers = pending.flatMap { model.safetyNumber(withIdentity: $0) } ?? model.safetyNumber(with: node)
+        let numbers = shown.flatMap { model.safetyNumber(withIdentity: $0) }
         VStack(alignment: .leading, spacing: 14) {
-            if model.contact(node)?.verified == true, pending == nil {
+            if stale {
+                Banner(kind: .warn, title: String(localized: "Their key changed again"),
+                       message: String(localized: "Compare the new numbers below before approving."))
+            } else if model.contact(node)?.verified == true, !isNew {
                 Banner(kind: .ok, title: String(localized: "\(name) added, verified"),
                        message: String(localized: "You scanned their code in person."))
             }
@@ -109,15 +118,15 @@ struct VerifyPanel: View {
             }
             .padding(16)
             .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
-            if numbers != nil {
+            if numbers != nil, let shown {
                 Button("The numbers match") {
-                    if pending != nil { model.acceptIdentity(node) }
-                    model.setVerified(node, true)
-                    done()
+                    let ok = isNew ? model.acceptIdentity(node, expected: shown)
+                                   : model.setVerified(node, identity: shown, true)
+                    if ok { done() } else { refresh(stale: true) }
                 }
                 .buttonStyle(.primary)
                 Button {
-                    if pending != nil { model.rejectIdentity(node) } else { model.setVerified(node, false) }
+                    if isNew { model.rejectIdentity(node, expected: shown) } else { model.setVerified(node, identity: shown, false) }
                     done()
                 } label: {
                     Text("They differ")
@@ -128,6 +137,15 @@ struct VerifyPanel: View {
                 }
             }
         }
+        .onAppear { if shown == nil { refresh(stale: false) } }
+    }
+
+    /// Fixes the identity on screen: the pending new one if any, else the contact's own.
+    private func refresh(stale: Bool) {
+        let newer = model.conflicts[node] ?? (stale ? nil : pending)
+        isNew = newer != nil
+        shown = newer ?? model.contact(node)?.identity
+        self.stale = stale
     }
 }
 

@@ -106,7 +106,7 @@ final class AppModel {
 
     init() {
         core = Self.makeCore(seed: Keychain.identitySeed())
-        contacts = core.contacts()
+        contacts = core.contacts().filter(\.person)
         groups = core.groups()
         conversations = core.conversations()
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
@@ -279,11 +279,11 @@ final class AppModel {
             self.radio = radio
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
         case .identityLearned:
-            contacts = core.contacts()
+            contacts = core.contacts().filter(\.person)
         case let .identityConflict(node, identity):
             conflicts[node] = identity
         case .contactsUpdated:
-            contacts = core.contacts()
+            contacts = core.contacts().filter(\.person)
             #if DEBUG
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
@@ -332,7 +332,7 @@ final class AppModel {
             break
         case .groupJoined, .groupUpdated, .groupLeft:
             groups = core.groups()
-            contacts = core.contacts()
+            contacts = core.contacts().filter(\.person)
             #if DEBUG
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let g = groups.first(where: { $0.name == name }) {
@@ -399,6 +399,19 @@ final class AppModel {
     func markRead(_ chat: ChatID) {
         try? core.markRead(chat: chat)
         conversations = core.conversations()
+    }
+
+    /// Deletes a conversation's messages; the contact or the group stays.
+    func deleteConversation(_ chat: ChatID) {
+        try? core.deleteConversation(chat: chat)
+        chats[chat] = nil
+        conversations = core.conversations()
+    }
+
+    /// A MeshCore advert (flood), so that radios around add ours as a contact.
+    func sendAdvert() {
+        core.sendAdvert(flood: true, nowMs: now())
+        pump()
     }
 
     func estimate(_ chat: ChatID, text: String) -> Estimate? {
@@ -809,7 +822,7 @@ final class AppModel {
     func addCard(_ text: String) -> Result<ContactInfo, LichenError> {
         do {
             let c = try core.addContactCard(card: text)
-            contacts = core.contacts()
+            contacts = core.contacts().filter(\.person)
             pump()
             return .success(c)
         } catch let e as LichenError {
@@ -826,21 +839,28 @@ final class AppModel {
     /// The safety number with a new identity a contact presented (before accepting it).
     func safetyNumber(withIdentity identity: Data) -> [String]? { try? core.safetyNumberWith(identity: identity) }
 
-    func setVerified(_ node: Data, _ verified: Bool) {
-        try? core.setVerified(node: node, verified: verified)
-        contacts = core.contacts()
+    /// Verifies (or not) contact `node`, whose identity `identity` the user compared; false
+    /// when its identity changed meanwhile (nothing verified).
+    @discardableResult
+    func setVerified(_ node: Data, identity: Data, _ verified: Bool) -> Bool {
+        let done = (try? core.setVerified(node: node, identity: identity, verified: verified)) ?? false
+        contacts = core.contacts().filter(\.person)
+        return done
     }
 
-    func acceptIdentity(_ node: Data) {
-        _ = try? core.acceptIdentity(node: node)
-        conflicts[node] = nil
-        contacts = core.contacts()
+    /// Accepts the new identity `expected` the user compared, verified; false when another
+    /// one arrived meanwhile (compare again).
+    func acceptIdentity(_ node: Data, expected: Data) -> Bool {
+        let done = (try? core.acceptIdentity(node: node, expected: expected, verify: true)) ?? false
+        if done { conflicts[node] = nil } else { conflicts[node] = (try? core.pendingIdentity(node: node)) ?? nil }
+        contacts = core.contacts().filter(\.person)
         pump()
+        return done
     }
 
-    func rejectIdentity(_ node: Data) {
-        try? core.rejectIdentity(node: node)
-        conflicts[node] = nil
+    func rejectIdentity(_ node: Data, expected: Data) {
+        try? core.rejectIdentity(node: node, expected: expected)
+        conflicts[node] = (try? core.pendingIdentity(node: node)) ?? nil
     }
 
     /// Restores an identity from its 24 words: the core restarts with it.
@@ -851,7 +871,7 @@ final class AppModel {
             if isDemo { stopDemo() }
             resetState()
             core = Self.makeCore(seed: seed)
-            contacts = core.contacts()
+            contacts = core.contacts().filter(\.person)
             groups = core.groups()
             conversations = core.conversations()
             phraseBackedUp = true

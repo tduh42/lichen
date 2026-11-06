@@ -422,6 +422,8 @@ impl Store {
                 },
                 identity: identity.and_then(|i| i.as_slice().try_into().ok()),
                 verified,
+                // Stored contacts are people we talked with; the companion's list corrects it.
+                kind: crate::contact_kind::CHAT,
             }))
         })?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -591,6 +593,20 @@ impl Store {
             params![chat.kind(), chat.bytes()],
         )?;
         Ok(())
+    }
+
+    /// Deletes a conversation: its messages and the media we kept for it. Location shares
+    /// and positions are separate (the map).
+    pub fn delete_chat(&self, chat: &Chat) -> Result<usize, Error> {
+        let n = self.conn.execute(
+            "DELETE FROM messages WHERE chat_kind = ?1 AND chat = ?2",
+            params![chat.kind(), chat.bytes()],
+        )?;
+        self.conn.execute(
+            "DELETE FROM media WHERE chat_kind = ?1 AND chat = ?2",
+            params![chat.kind(), chat.bytes()],
+        )?;
+        Ok(n)
     }
 
     /// Messages still sending when the app stopped: failed, to be resent by hand.
@@ -780,6 +796,18 @@ mod tests {
             s.get(m3.id).unwrap().unwrap().status,
             Status::Failed(FailReason::Interrupted)
         );
+        // Deleting a conversation leaves the others alone.
+        assert_eq!(s.delete_chat(&a).unwrap(), 2);
+        assert!(s.history(&a, None, 10).unwrap().is_empty());
+        let left: Vec<Chat> = s
+            .conversations()
+            .unwrap()
+            .iter()
+            .map(|(m, _)| m.chat)
+            .collect();
+        assert_eq!(left.len(), 2);
+        assert!(!left.contains(&a));
+        assert_eq!(s.delete_chat(&a).unwrap(), 0);
     }
 
     #[test]
@@ -799,6 +827,7 @@ mod tests {
                 }),
                 identity: Some([9; 32]),
                 verified: true,
+                kind: 1,
             })
             .unwrap();
             s.put_contact(&Contact {
@@ -807,6 +836,7 @@ mod tests {
                 out_path: None,
                 identity: None,
                 verified: false,
+                kind: 1,
             })
             .unwrap();
             s.put_group(&[7; 16], b"snapshot").unwrap();

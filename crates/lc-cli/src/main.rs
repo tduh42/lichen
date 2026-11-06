@@ -1,5 +1,6 @@
 //! `lichen`: run the lichen core against a MeshCore companion over USB, or on the fake network.
 
+mod bot;
 mod device;
 
 use std::path::PathBuf;
@@ -55,6 +56,41 @@ enum Cmd {
         /// Stop after this many minutes.
         #[arg(long, default_value_t = 600)]
         minutes: u64,
+        /// Send a flood advert first, so that other radios add this node as a contact.
+        #[arg(long)]
+        advert: bool,
+        /// Answer every message: texts echoed with the signal heard, media summarised, the full
+        /// variant of an image preview requested.
+        #[arg(long)]
+        echo: bool,
+        /// Save received images (.avif) and voice messages (.wav) in this folder.
+        #[arg(long)]
+        save: Option<PathBuf>,
+        /// Send the lines appended to this file: "@name text", "#group text", or plain text to
+        /// the last contact who wrote.
+        #[arg(long)]
+        outbox: Option<PathBuf>,
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Announce this node so that other radios add it as a contact (SEND_SELF_ADVERT).
+    Advert {
+        port: String,
+        /// Direct neighbours only, not relayed by repeaters.
+        #[arg(long)]
+        zero_hop: bool,
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Print this side's contact card (lichen:1:…), and write it as a QR code to scan.
+    Card {
+        port: String,
+        /// The name on the card (default: the node's name).
+        #[arg(long)]
+        name: Option<String>,
+        /// Write the QR code to this SVG file.
+        #[arg(long)]
+        svg: Option<PathBuf>,
         #[arg(short, long)]
         verbose: bool,
     },
@@ -77,17 +113,17 @@ enum Cmd {
     },
 }
 
-fn unix_now() -> u32 {
+pub(crate) fn unix_now() -> u32 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() as u32)
 }
 
-fn short(key: &PubKey) -> String {
+pub(crate) fn short(key: &PubKey) -> String {
     hex::encode(&key[..4])
 }
 
-fn name_of(core: &Core, key: &PubKey) -> String {
+pub(crate) fn name_of(core: &Core, key: &PubKey) -> String {
     core.contacts()
         .find(|c| c.key == *key)
         .map_or_else(|| short(key), |c| c.name.clone())
@@ -114,14 +150,18 @@ fn describe(core: &Core, e: &Event) -> String {
             identity,
             changed,
         } => format!(
-            "{} is identity {}{}",
+            "{} is identity {}{}{}",
             name_of(core, node),
             lc_core::identity::fingerprint(identity).join(" "),
             if *changed {
                 " (CHANGED: verify again)"
             } else {
                 " (to verify)"
-            }
+            },
+            core.key().map_or(String::new(), |me| format!(
+                "; safety number {}",
+                lc_core::identity::safety_number(me, identity).join(" ")
+            ))
         ),
         Event::ContactsUpdated => format!("{} contacts", core.contacts().count()),
         Event::SessionEstablished { peer } => {
@@ -264,7 +304,7 @@ fn describe_position(p: &lc_proto::location::Position) -> String {
     )
 }
 
-fn find_contact(core: &Core, to: &str) -> Result<PubKey, String> {
+pub(crate) fn find_contact(core: &Core, to: &str) -> Result<PubKey, String> {
     let wanted = to.to_lowercase();
     let mut hits: Vec<&lc_core::Contact> = core
         .contacts()
@@ -382,15 +422,89 @@ fn send(
     }
 }
 
-fn listen(port: &str, minutes: u64, verbose: bool) -> Result<(), String> {
+#[allow(clippy::too_many_arguments)]
+fn listen(
+    port: &str,
+    minutes: u64,
+    advert: bool,
+    echo: bool,
+    save: Option<PathBuf>,
+    outbox: Option<PathBuf>,
+    verbose: bool,
+) -> Result<(), String> {
     let mut dev = connect(port, verbose)?;
-    println!("listening for {minutes} min (Ctrl-C to stop)");
-    dev.run(Duration::from_secs(minutes * 60), |core, e, _| {
-        if !matches!(e, Event::Progress { .. }) {
-            println!("{}", describe(core, &e));
-        }
-        Flow::Continue
-    })?;
+    let outbox = outbox.map(bot::Outbox::new).transpose()?;
+    let mut bot = bot::Bot::new(echo, save, outbox)?;
+    if advert {
+        let now = dev.now();
+        dev.core.send_advert(true, now);
+        println!("flood advert sent");
+    }
+    println!(
+        "listening for {minutes} min{} (Ctrl-C to stop)",
+        if echo { ", echoing" } else { "" }
+    );
+    let started = std::time::Instant::now();
+    let bot = std::cell::RefCell::new(&mut bot);
+    dev.run_with(
+        Duration::from_secs(minutes * 60),
+        |core, e, now| {
+            if !matches!(e, Event::Progress { .. }) {
+                println!(
+                    "[{:>5} s] {}",
+                    started.elapsed().as_secs(),
+                    describe(core, &e)
+                );
+            }
+            bot.borrow_mut().on_event(core, &e, now);
+            Flow::Continue
+        },
+        |core, now| bot.borrow_mut().on_idle(core, now),
+    )?;
+    Ok(())
+}
+
+fn advert(port: &str, zero_hop: bool, verbose: bool) -> Result<(), String> {
+    let mut dev = connect(port, verbose)?;
+    let now = dev.now();
+    dev.core.send_advert(!zero_hop, now);
+    // Let the command reach the companion.
+    dev.run(Duration::from_secs(3), |_, _, _| Flow::Continue)?;
+    println!(
+        "{} advert sent",
+        if zero_hop { "zero-hop" } else { "flood" }
+    );
+    Ok(())
+}
+
+fn card(
+    port: &str,
+    name: Option<String>,
+    svg: Option<PathBuf>,
+    verbose: bool,
+) -> Result<(), String> {
+    let dev = connect(port, verbose)?;
+    let (Some(identity), Some(node)) = (dev.core.key(), dev.core.node_key()) else {
+        return Err("no identity or node yet".into());
+    };
+    let card = lc_core::identity::Card {
+        identity: *identity,
+        node: *node,
+        name: name.unwrap_or_else(|| dev.core.node_name().to_owned()),
+    }
+    .encode();
+    println!("{card}");
+    if let Some(path) = svg {
+        let code = qrcode::QrCode::with_error_correction_level(card.as_bytes(), qrcode::EcLevel::M)
+            .map_err(|e| format!("QR code: {e}"))?;
+        let image = code
+            .render::<qrcode::render::svg::Color>()
+            .min_dimensions(480, 480)
+            .quiet_zone(true)
+            .build();
+        std::fs::write(&path, image).map_err(|e| format!("{}: {e}", path.display()))?;
+        println!("QR code written to {}", path.display());
+    }
     Ok(())
 }
 
@@ -483,8 +597,23 @@ fn main() {
         Cmd::Listen {
             port,
             minutes,
+            advert,
+            echo,
+            save,
+            outbox,
             verbose,
-        } => listen(&port, minutes, verbose),
+        } => listen(&port, minutes, advert, echo, save, outbox, verbose),
+        Cmd::Advert {
+            port,
+            zero_hop,
+            verbose,
+        } => advert(&port, zero_hop, verbose),
+        Cmd::Card {
+            port,
+            name,
+            svg,
+            verbose,
+        } => card(&port, name, svg, verbose),
         Cmd::Sim {
             repeaters,
             loss,

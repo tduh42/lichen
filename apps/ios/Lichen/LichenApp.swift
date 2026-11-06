@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct LichenApp: App {
     @State private var model = AppModel()
-    @AppStorage("appearance") private var appearance = Appearance.dark
+    @AppStorage("appearance") private var appearance = Appearance.system
 
     var body: some Scene {
         WindowGroup {

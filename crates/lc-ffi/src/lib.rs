@@ -97,6 +97,8 @@ pub struct ContactInfo {
     pub identity: Option<Vec<u8>>,
     /// Compared in person (QR code or safety number).
     pub verified: bool,
+    /// A person's companion: someone to talk to. Repeaters, room servers and sensors are not.
+    pub person: bool,
 }
 
 impl ContactInfo {
@@ -107,6 +109,7 @@ impl ContactInfo {
             hops: c.out_path.as_ref().map(lc_core::OwnedPath::hops),
             identity: c.identity.map(|i| i.to_vec()),
             verified: c.verified,
+            person: c.is_person(),
         }
     }
 }
@@ -1145,19 +1148,26 @@ impl LichenCore {
         Ok(self.lock().core.pending_identity(&k).map(|i| i.to_vec()))
     }
 
-    /// Accepts contact `node`'s new identity (it replaces the old one, unverified).
-    pub fn accept_identity(&self, node: Vec<u8>) -> Result<bool, LichenError> {
-        let k = key(&node)?;
+    /// Accepts contact `node`'s new identity `expected`, the one whose safety number the user
+    /// compared, verified when `verify`. False when another identity is pending since: show
+    /// the new numbers and ask again.
+    pub fn accept_identity(
+        &self,
+        node: Vec<u8>,
+        expected: Vec<u8>,
+        verify: bool,
+    ) -> Result<bool, LichenError> {
+        let (k, e) = (key(&node)?, key(&expected)?);
         let mut i = self.lock();
-        let done = i.core.accept_identity(&k);
+        let done = i.core.accept_identity(&k, &e, verify);
         i.save_contacts();
         Ok(done)
     }
 
-    /// Rejects contact `node`'s new identity: the verified one stays.
-    pub fn reject_identity(&self, node: Vec<u8>) -> Result<(), LichenError> {
-        let k = key(&node)?;
-        self.lock().core.reject_identity(&k);
+    /// Rejects contact `node`'s new identity `expected`: the verified one stays.
+    pub fn reject_identity(&self, node: Vec<u8>, expected: Vec<u8>) -> Result<(), LichenError> {
+        let (k, e) = (key(&node)?, key(&expected)?);
+        self.lock().core.reject_identity(&k, &e);
         Ok(())
     }
 
@@ -1169,13 +1179,20 @@ impl LichenCore {
         Ok(lc_core::identity::safety_number(me, &peer).to_vec())
     }
 
-    /// Marks contact `node` verified (safety numbers matched) or not (they differ).
-    pub fn set_verified(&self, node: Vec<u8>, verified: bool) -> Result<(), LichenError> {
-        let k = key(&node)?;
+    /// Marks contact `node` verified (safety numbers matched) or not (they differ); `identity`
+    /// is the one whose number the user compared. False when the contact's identity changed
+    /// meanwhile: nothing is verified.
+    pub fn set_verified(
+        &self,
+        node: Vec<u8>,
+        identity: Vec<u8>,
+        verified: bool,
+    ) -> Result<bool, LichenError> {
+        let (k, id) = (key(&node)?, key(&identity)?);
         let mut i = self.lock();
-        i.core.set_verified(&k, verified);
+        let done = i.core.set_verified(&k, &id, verified);
         i.save_contacts();
-        Ok(())
+        Ok(done)
     }
 
     pub fn radio(&self) -> Radio {
@@ -1226,6 +1243,7 @@ impl LichenCore {
                             identity: Some(m.key.to_vec()),
                             verified: contact
                                 .is_some_and(|c| c.verified && c.identity == Some(m.key)),
+                            person: true,
                         }
                     })
                     .collect(),
@@ -1640,6 +1658,23 @@ impl LichenCore {
             let _ = s.mark_read(&c);
         }
         Ok(())
+    }
+
+    /// Deletes a conversation's messages (and the media kept for it). The contact or the
+    /// group stays: a new message starts the conversation again.
+    pub fn delete_conversation(&self, chat: ChatRef) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        if let Some(s) = self.lock().store.as_ref() {
+            let _ = s.delete_chat(&c);
+        }
+        Ok(())
+    }
+
+    /// Announces our node (a MeshCore advert) so that nearby radios add it as a contact;
+    /// `flood` lets repeaters relay it.
+    pub fn send_advert(&self, flood: bool, now_ms: u64) {
+        let mut i = self.lock();
+        i.core.send_advert(flood, now_ms);
     }
 }
 

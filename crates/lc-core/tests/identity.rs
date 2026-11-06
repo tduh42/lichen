@@ -225,9 +225,88 @@ fn verified_identity_is_not_replaced_without_consent() {
 
     // Alice compares numbers with Bob and accepts: the new identity, unverified, and messages
     // flow.
-    assert!(net.with_core(a, |c, _| c.accept_identity(&bob)).unwrap());
+    assert!(
+        net.with_core(a, |c, _| c.accept_identity(&bob, &new, false))
+            .unwrap()
+    );
     assert_eq!(known(&net, a, b), (Some(new), false));
     net.with_core(a, |c, now| c.send_text(&bob, "hello again", 2, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert_eq!(texts(&net.take_events(b)), vec!["hello again"]);
+}
+
+/// Review PR-07: Alice compares the numbers of one new identity, but another arrives before
+/// she approves. Her approval names the one she compared: refused, nothing adopted, nothing
+/// sent; she must compare the new one.
+#[test]
+fn stale_approval_is_refused() {
+    let (mut net, a, b) = pair(5, 0);
+    let bob = net.key(b);
+    net.introduce(a, b);
+    let old = identity(&net, b);
+    let reinstall = |net: &mut Net, seed: u8| {
+        net.reinstall_app(b, seed);
+        net.connect(b);
+        net.run_until(net.now + 20 * S, |_| false);
+    };
+    // A first new identity, pending: Alice opens its numbers.
+    reinstall(&mut net, 44);
+    let shown = identity(&net, b);
+    net.with_core(a, |c, now| c.send_text(&bob, "first", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 30 * MIN, |_| false);
+    assert_eq!(
+        net.nodes[a].core.as_ref().unwrap().pending_identity(&bob),
+        Some(&shown)
+    );
+    // Before she taps "match", a second introduction replaces the pending identity.
+    reinstall(&mut net, 46);
+    let replacement = identity(&net, b);
+    assert_ne!(replacement, shown);
+    let alice = net.key(a);
+    net.with_core(b, |c, now| {
+        c.send_text(&alice, "second introduction", 3, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert_eq!(
+        net.nodes[a].core.as_ref().unwrap().pending_identity(&bob),
+        Some(&replacement)
+    );
+    net.take_events(a);
+    net.take_events(b);
+    // Her approval of what she saw is refused; verifying the old node without it too.
+    assert!(
+        !net.with_core(a, |c, _| c.accept_identity(&bob, &shown, true))
+            .unwrap()
+    );
+    assert!(
+        !net.with_core(a, |c, _| c.set_verified(&bob, &replacement, true))
+            .unwrap()
+    );
+    assert_eq!(known(&net, a, b), (Some(old), true), "nothing adopted");
+    // Rejecting what she saw leaves the newer one pending: she has not seen it.
+    net.with_core(a, |c, _| c.reject_identity(&bob, &shown));
+    assert_eq!(
+        net.nodes[a].core.as_ref().unwrap().pending_identity(&bob),
+        Some(&replacement)
+    );
+    net.with_core(a, |c, now| c.send_text(&bob, "still held", 4, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert!(texts(&net.take_events(b)).is_empty(), "nothing released");
+    // She compares the new numbers and approves them: adopted, verified, and messages flow.
+    assert!(
+        net.with_core(a, |c, _| c.accept_identity(&bob, &replacement, true))
+            .unwrap()
+    );
+    assert_eq!(known(&net, a, b), (Some(replacement), true));
+    net.with_core(a, |c, now| c.send_text(&bob, "hello again", 5, now))
         .unwrap()
         .unwrap();
     net.run_until(net.now + 10 * MIN, |_| false);

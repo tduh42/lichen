@@ -1497,7 +1497,7 @@ checksum = "17933e749f2502cfcd1c27519292fbbea22e8fc64ce680e863f855e8cd8cce23"
 dependencies = [
  "heck",
  "indexmap 2.14.2",
- "itertools 0.14.0",
+ "itertools 0.15.0",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -3269,8 +3269,10 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "lc-core",
+ "lc-media",
  "lc-meshcore",
  "lc-proto",
+ "qrcode",
  "serialport",
 ]
 
@@ -4692,6 +4694,12 @@ dependencies = [
  "paste",
  "thiserror 2.0.21",
 ]
+
+[[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quick-error"

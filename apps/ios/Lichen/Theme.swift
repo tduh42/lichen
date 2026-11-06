@@ -65,9 +65,9 @@ enum Theme {
     }
 }
 
-/// Light, dark or the system's choice (Settings); dark by default.
+/// The system's choice, dark or light (Settings); the system's by default.
 enum Appearance: String, CaseIterable, Identifiable {
-    case dark, light, system
+    case system, dark, light
 
     var id: String { rawValue }
 

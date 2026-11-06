@@ -54,7 +54,18 @@ impl Device {
     pub fn run(
         &mut self,
         limit: Duration,
+        on_event: impl FnMut(&mut Core, Event, Millis) -> Flow,
+    ) -> Result<bool, String> {
+        self.run_with(limit, on_event, |_, _| {})
+    }
+
+    /// [`run`](Self::run), also calling `on_idle` on every turn of the loop (about every
+    /// 50 ms): the place to feed the core from elsewhere.
+    pub fn run_with(
+        &mut self,
+        limit: Duration,
         mut on_event: impl FnMut(&mut Core, Event, Millis) -> Flow,
+        mut on_idle: impl FnMut(&mut Core, Millis),
     ) -> Result<bool, String> {
         let deadline = Instant::now() + limit;
         let mut buf = [0u8; 512];
@@ -86,6 +97,7 @@ impl Device {
                 Err(e) => return Err(format!("read: {e}")),
             }
             let now = self.now();
+            on_idle(&mut self.core, now);
             self.core.tick(now);
             while let Some(e) = self.core.poll_event() {
                 if let Flow::Stop = on_event(&mut self.core, e, now) {

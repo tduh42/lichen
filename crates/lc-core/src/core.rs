@@ -105,6 +105,25 @@ pub struct Contact {
     pub identity: Option<PubKey>,
     /// Compared in person (QR code or safety number, §4.7).
     pub verified: bool,
+    /// MeshCore's node type ([`contact_kind`]): only people's companions can talk lichen.
+    pub kind: u8,
+}
+
+/// MeshCore node types, as companions report their contacts.
+pub mod contact_kind {
+    pub const UNKNOWN: u8 = 0;
+    pub const CHAT: u8 = 1;
+    pub const REPEATER: u8 = 2;
+    pub const ROOM: u8 = 3;
+    pub const SENSOR: u8 = 4;
+}
+
+impl Contact {
+    /// A person's companion (or a node of unknown type): someone lichen can talk to.
+    /// Repeaters, room servers and sensors cannot.
+    pub const fn is_person(&self) -> bool {
+        matches!(self.kind, contact_kind::UNKNOWN | contact_kind::CHAT)
+    }
 }
 
 /// Why a message was not delivered.
@@ -366,6 +385,10 @@ struct Peer {
     answered_intro: Option<AnsweredIntro>,
     /// The peer answered no HELLO: it may have a new identity, introduce again (§4.6).
     intro_needed: bool,
+    /// When the current session was made, and the datagram bytes sent under it: renewed
+    /// after 24 h or 4 MB (§4.4).
+    session_since: Millis,
+    session_bytes: u64,
     /// No self-introduction before this time (answer to a HELLO we cannot open).
     intro_poke: Millis,
 }
@@ -451,6 +474,9 @@ pub struct Core {
     pub(crate) group_tx: VecDeque<(Millis, Vec<u8>)>,
     /// The radio is shared by every session: the next data frame may go at this time.
     pub(crate) next_slot: Millis,
+    /// Session renewal limits (§4.4): age and bytes sent.
+    session_max_age: Millis,
+    session_max_bytes: u64,
     /// Peer served last, for round-robin between sessions.
     rr_last: Option<PubKey>,
     /// Location sharing (§12).
@@ -469,6 +495,11 @@ impl std::fmt::Debug for Core {
             .finish_non_exhaustive()
     }
 }
+
+/// A session is renewed after this long (§4.4)...
+pub const SESSION_MAX_AGE_MS: Millis = 24 * 3_600_000;
+/// ...or after this many datagram bytes sent under it.
+pub const SESSION_MAX_BYTES: u64 = 4 << 20;
 
 /// Default radio until `SELF_INFO` arrives: 62.5 kHz / SF8 / CR 4/5.
 const DEFAULT_RADIO: LoRaParams = LoRaParams {
@@ -512,6 +543,8 @@ impl Core {
             dirty_groups: HashSet::new(),
             group_tx: VecDeque::new(),
             next_slot: 0,
+            session_max_age: SESSION_MAX_AGE_MS,
+            session_max_bytes: SESSION_MAX_BYTES,
             rr_last: None,
             loc: Locations::default(),
             pending_identities: HashMap::new(),
@@ -528,6 +561,11 @@ impl Core {
     /// The node's key, once `SELF_INFO` gave it.
     pub const fn node_key(&self) -> Option<&PubKey> {
         self.node.as_ref()
+    }
+
+    /// The node's name, from `SELF_INFO` (empty before).
+    pub fn node_name(&self) -> &str {
+        &self.name
     }
 
     /// The node answered: its key is known and lichen can talk.
@@ -556,13 +594,19 @@ impl Core {
         self.pending_identities.get(node)
     }
 
-    /// The user accepts contact `node`'s new identity: it replaces the old one, unverified.
-    pub fn accept_identity(&mut self, node: &PubKey) -> bool {
+    /// The user accepts contact `node`'s new identity, the one they compared (`expected`): it
+    /// replaces the old one, verified when `verify` (safety numbers matched). Refused, and
+    /// nothing changes, when the pending identity is no longer `expected`: another one
+    /// arrived while the user compared, and they must compare again (§4.6).
+    pub fn accept_identity(&mut self, node: &PubKey, expected: &PubKey, verify: bool) -> bool {
+        if self.pending_identities.get(node) != Some(expected) {
+            return false;
+        }
         let Some(identity) = self.pending_identities.remove(node) else {
             return false;
         };
         let old = self.identity_of(node);
-        self.set_identity(node, identity, false);
+        self.set_identity(node, identity, verify);
         if let Some(p) = self.peers.get_mut(node) {
             p.intro_needed = false;
         }
@@ -574,17 +618,24 @@ impl Core {
         true
     }
 
-    /// The user rejects contact `node`'s new identity: the verified one stays.
-    pub fn reject_identity(&mut self, node: &PubKey) {
-        self.pending_identities.remove(node);
+    /// The user rejects contact `node`'s new identity `expected`: the verified one stays. A
+    /// different identity pending since stays pending: the user has not seen it.
+    pub fn reject_identity(&mut self, node: &PubKey, expected: &PubKey) {
+        if self.pending_identities.get(node) == Some(expected) {
+            self.pending_identities.remove(node);
+        }
     }
 
-    /// Marks contact `node` verified or not (safety numbers compared, §4.7).
-    pub fn set_verified(&mut self, node: &PubKey, verified: bool) {
-        if let Some(c) = self.contacts.get_mut(node)
-            && c.identity.is_some()
-        {
-            c.verified = verified;
+    /// Marks contact `node` verified or not (safety numbers compared, §4.7). Verifying needs
+    /// the identity whose number the user compared: refused (false) if the contact's identity
+    /// is no longer `identity`. Withdrawing verification always works.
+    pub fn set_verified(&mut self, node: &PubKey, identity: &PubKey, verified: bool) -> bool {
+        match self.contacts.get_mut(node) {
+            Some(c) if c.identity == Some(*identity) || (!verified && c.identity.is_some()) => {
+                c.verified = verified;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -659,10 +710,12 @@ impl Core {
 
     /// Adds or updates a contact by hand (contact card, tests); a known identity is kept.
     pub fn add_contact(&mut self, key: PubKey, name: &str, out_path: Option<OwnedPath>) {
-        let (identity, verified) = self
+        let (identity, verified, kind) = self
             .contacts
             .get(&key)
-            .map_or((None, false), |c| (c.identity, c.verified));
+            .map_or((None, false, contact_kind::CHAT), |c| {
+                (c.identity, c.verified, c.kind)
+            });
         self.contacts.insert(
             key,
             Contact {
@@ -671,6 +724,7 @@ impl Core {
                 out_path,
                 identity,
                 verified,
+                kind,
             },
         );
     }
@@ -815,6 +869,25 @@ impl Core {
         let id = self.next_id;
         self.enqueue_internal(to, datagram);
         id
+    }
+
+    /// Changes the session renewal limits (§4.4, configurable): age and datagram bytes sent.
+    pub fn set_session_limits(&mut self, max_age_ms: Millis, max_bytes: u64) {
+        self.session_max_age = max_age_ms;
+        self.session_max_bytes = max_bytes;
+    }
+
+    /// Announces our node (`SEND_SELF_ADVERT`): radios that hear it add it as a contact.
+    /// `flood` lets repeaters relay it; otherwise only direct neighbours hear it. Its airtime
+    /// counts like any transmission.
+    pub fn send_advert(&mut self, flood: bool, now: Millis) {
+        self.command(&Command::SendSelfAdvert { flood }, Expect::Ok);
+        // Header and path length, key, timestamp, signature, flags, name.
+        let len = 2 + 32 + 4 + 64 + 1 + self.name.len().min(32);
+        let airtime = self.radio.airtime_us(len) / 1000;
+        self.budget.record(now, airtime);
+        self.occupy(now, airtime, None);
+        self.tick(now);
     }
 
     /// Hands a raw on-air frame to the companion (`SEND_RAW_PACKET`), and counts its airtime.
@@ -990,6 +1063,7 @@ impl Core {
                         out_path,
                         identity,
                         verified,
+                        kind: c.kind,
                     },
                 );
                 if expect == Some(Expect::Contacts) {
@@ -1243,11 +1317,22 @@ impl Core {
             && let Some(i) = peer.queue.iter().position(|m| m.not_before <= now)
             && let Some(msg) = peer.queue.remove(i)
         {
+            // Old or worn session: renew it first, like an exhausted tag (§4.4).
+            if now.saturating_sub(peer.session_since) >= self.session_max_age
+                || peer.session_bytes >= self.session_max_bytes
+            {
+                peer.queue.push_front(msg);
+                peer.session = None;
+                peer.pending = None;
+                return;
+            }
+            let len = msg.datagram.len() as u64;
             let Some(session) = peer.active() else {
                 return;
             };
             match session.send(&msg.datagram, chunk, now) {
                 Ok(tag) => {
+                    peer.session_bytes += len;
                     peer.in_flight = Some(InFlight {
                         msg,
                         tag,
@@ -1809,6 +1894,8 @@ impl Core {
             if let Some(p) = self.peers.get_mut(&c) {
                 p.requeue_in_flight();
                 p.session = Some(Box::new(session));
+                p.session_since = now;
+                p.session_bytes = 0;
                 p.pending = None;
                 p.path = Some(intro.path);
                 p.introducing = None;
@@ -1971,6 +2058,8 @@ impl Core {
                 };
                 let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
                 peer.pending = Some(Box::new(session));
+                peer.session_since = now;
+                peer.session_bytes = 0;
                 peer.path = Some(path.clone());
                 // We know each other: our own introduction is no longer needed (§4.6).
                 peer.introducing = None;
@@ -2045,6 +2134,8 @@ impl Core {
             if let Some(p) = self.peers.get_mut(&c) {
                 p.requeue_in_flight();
                 p.session = Some(Box::new(session));
+                p.session_since = now;
+                p.session_bytes = 0;
                 p.pending = None;
                 p.path = Some(init.path);
                 p.initiating = None;

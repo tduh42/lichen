@@ -14,7 +14,9 @@ pub mod identity;
 pub mod location;
 pub mod store;
 
-pub use crate::core::{Config, Contact, Core, Error, Event, FailReason, MsgId, OwnedPath, PubKey};
+pub use crate::core::{
+    Config, Contact, Core, Error, Event, FailReason, MsgId, OwnedPath, PubKey, contact_kind,
+};
 pub use content::{Announce, Content};
 pub use group::{Group, GroupId, Member};
 pub use lc_proto::Millis;

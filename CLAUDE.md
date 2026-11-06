@@ -83,6 +83,10 @@ cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10 --bytes 10000   # f
 cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101                # a real companion
 cargo run --release -p lc-cli -- send /dev/cu.usbmodem2141101 --to bob --text "hello"
 cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
+cargo run --release -p lc-cli -- listen /dev/cu.usbmodem14301 --advert --echo --save local/received \
+  --outbox local/outbox.txt     # field-test bot: echoes, saves media; lines appended to the outbox are sent
+cargo run --release -p lc-cli -- advert /dev/cu.usbmodem14301          # MeshCore advert (flood)
+cargo run --release -p lc-cli -- card /dev/cu.usbmodem14301 --svg local/card.svg   # contact card + QR
 cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # measurements
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 cargo test -p lc-core --release --test location -- --nocapture            # location: dead reckoning figures
@@ -101,4 +105,4 @@ python3 -I apps/ios/sync-strings.py                                       # Stri
 swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appiconset   # app icons
 ```
 
-iOS: one simulator at a time (Tanguy's Mac). The design reference is `docs/design/` (dark by default, orange only for LoRa and the brand). Debug launch arguments for screenshots: `-demo YES`, `-open <contact or group>`, `-say <text>`, `-tab map|search|settings`, `-share <contact>` (100 m), `-media YES` (voice to Camille, full images requested, announcements fetched), `-onboarding YES` / `-onboarded YES`, `-screen pairing|media|sos|group|search|contact|identity`, `-sosdemo YES` (an SOS from Julien), `-lichen.tor YES` / `-lichen.iroh NO` / `-lichen.relayOnly YES` (bridge settings; with Tor on, the demo's Camille also publishes an onion service). The demo bots share positions: Camille (exact, direct) after 90 s, Julien (1 km, group) once the group keys are out.
+iOS: one simulator at a time (Tanguy's Mac). The design reference is `docs/design/` (the theme follows the system by default; orange only for LoRa and the brand). Debug launch arguments for screenshots: `-demo YES`, `-open <contact or group>`, `-say <text>`, `-tab map|search|settings`, `-share <contact>` (100 m), `-media YES` (voice to Camille, full images requested, announcements fetched), `-onboarding YES` / `-onboarded YES`, `-screen pairing|media|sos|group|search|contact|identity`, `-sosdemo YES` (an SOS from Julien), `-lichen.tor YES` / `-lichen.iroh NO` / `-lichen.relayOnly YES` (bridge settings; with Tor on, the demo's Camille also publishes an onion service). The demo bots share positions: Camille (exact, direct) after 90 s, Julien (1 km, group) once the group keys are out.

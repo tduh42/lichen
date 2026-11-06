@@ -6,6 +6,7 @@ struct ConversationsView: View {
     @State private var composing = false
     @State private var addingContact = false
     @State private var path: [ChatID] = []
+    @State private var deleting: Row?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -22,6 +23,11 @@ struct ConversationsView: View {
                                 if i > 0 { CardDivider(inset: 72) }
                                 NavigationLink(value: row.id) { ChatRow(row: row) }
                                     .buttonStyle(.plain)
+                                    .contextMenu {
+                                        Button(role: .destructive) { deleting = row } label: {
+                                            Label("Delete conversation", systemImage: "trash")
+                                        }
+                                    }
                             }
                         }
                         .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
@@ -50,6 +56,18 @@ struct ConversationsView: View {
                 }
             }
             .sheet(isPresented: $addingContact) { NavigationStack { AddContactView() } }
+            .confirmationDialog(
+                deleting.map { String(localized: "Delete the conversation with \($0.title)?") } ?? "",
+                isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let row = deleting { model.deleteConversation(row.id) }
+                    deleting = nil
+                }
+            } message: {
+                Text("Its messages are deleted from this phone. The contact stays.")
+            }
         }
     }
 
@@ -89,12 +107,14 @@ struct ConversationsView: View {
                 date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat)
             ))
         }
+        // A contact appears once there is something to show: radios the node heard but nobody
+        // wrote to stay in "New message".
         for c in model.contacts {
             let chat = ChatID.contact(key: c.key)
-            let last = model.last(chat)
+            guard let last = model.last(chat) else { continue }
             out.append(Row(
-                id: chat, title: c.name, key: c.key, preview: last?.preview(model) ?? "",
-                date: last?.date, badge: hopsBadge(c.hops), unread: model.unread(chat)
+                id: chat, title: c.name, key: c.key, preview: last.preview(model),
+                date: last.date, badge: hopsBadge(c.hops), unread: model.unread(chat)
             ))
         }
         return out.sorted { ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title) }

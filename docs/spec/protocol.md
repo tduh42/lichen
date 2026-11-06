@@ -152,7 +152,7 @@ K_pr   = HKDF(id ‖ r, S, "lichen/1 path-reply" ‖ id_us ‖ id_sender, 32)
 AAD    = header (7) ‖ id ‖ r
 ```
 
-`r` is drawn for every reply, so a probe answered twice (a copy by another path, or a replay after the cache of answered probes forgot it) never reuses a key: the path differs between answers, and a repeated key and nonce would leak it and allow forged replies (review of 2026-11-06, PR-01). The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`. Because `id` makes every key single-use, nonces never repeat.
+`r` is drawn for every reply, so a probe answered twice (a copy by another path, or a replay after the cache of answered probes forgot it) gets a fresh key each time: the path differs between answers, and a repeated key and nonce would leak it and allow forged replies (review of 2026-11-06, PR-01). Since `r` is 64 random bits, freshness is probabilistic: `q` replies to one probe `id` share a key with probability about `q(q−1) / 2^65`, below `2^-33` for `q ≤ 2^16`. A node answers an `id` once while it remembers it (64 entries, in memory), so `q` counts replays of a recorded probe, each of which costs the attacker airtime. The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`.
 
 ### 4.6 Introduction (first contact, ADR-0013)
 
@@ -315,7 +315,7 @@ Members are identities (§2); `node` is where to reach them (MeshCore routing).
 gid (16) ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32
 ```
 
-- Every member draws a random sender key per group and sends it to every other member. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows.
+- Every member draws a random sender key per group and sends it to every other member. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows. A GROUP_STATE that only **adds** members keeps the keys: each member sends its current key to the newcomers, who could therefore read messages under those keys recorded before they joined (ADR-0014).
 - Our own sender key and its counter are never stored: after a restart, the app draws a new key (`key_epoch + 1`) and sends it to the members once the node is connected, so a counter is never reused under a key (as for sessions, ADR-0003). The other members' keys and replay windows are stored with the group (ADR-0010): they do not resend them.
 - A receiver keeps the current and the previous key of each member (messages in flight during a rekey), and drops keys of members who left.
 

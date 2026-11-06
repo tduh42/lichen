@@ -871,6 +871,16 @@
         }
       }
     },
+    "Compare the new numbers below before approving.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare les nouveaux chiffres ci-dessous avant d'approuver."
+          }
+        }
+      }
+    },
     "Compare these numbers with %@": {
       "localizations": {
         "fr": {
@@ -1111,12 +1121,42 @@
         }
       }
     },
+    "Delete": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer"
+          }
+        }
+      }
+    },
+    "Delete conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer la conversation"
+          }
+        }
+      }
+    },
     "Delete offline maps (%lld, %@)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Supprimer les cartes hors ligne (%lld, %@)"
+          }
+        }
+      }
+    },
+    "Delete the conversation with %@?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer la conversation avec %@ ?"
           }
         }
       }
@@ -1407,16 +1447,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Toutes les 2 minutes, jusqu'à ce qu'il l'arrête"
-          }
-        }
-      }
-    },
-    "Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chaque membre reçoit les clés d'émission des autres par des sessions chiffrées. Les messages de groupe sont inondés et signés."
           }
         }
       }
@@ -1771,6 +1801,16 @@
         }
       }
     },
+    "Its messages are deleted from this phone. The contact stays.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses messages sont supprimés de ce téléphone. Le contact reste."
+          }
+        }
+      }
+    },
     "Key %@… · backed up": {
       "localizations": {
         "fr": {
@@ -1847,6 +1887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "M'autoriser à être localisé par ce groupe"
+          }
+        }
+      }
+    },
+    "Lets radios around add yours as a contact": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permet aux radios autour d'ajouter la tienne en contact"
           }
         }
       }
@@ -2087,6 +2137,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Membres"
+          }
+        }
+      }
+    },
+    "Members are contacts you have already talked with in lichen. Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen. Chaque membre reçoit les clés d'envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en flood et signés."
+          }
+        }
+      }
+    },
+    "MeshCore node: lichen not seen yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nœud MeshCore : lichen pas encore vu"
           }
         }
       }
@@ -2691,6 +2761,16 @@
         }
       }
     },
+    "Radios your node has heard. A first message introduces you; someone without lichen will not answer.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les radios que ton nœud a entendues. Un premier message vous présente ; quelqu'un sans lichen ne répondra pas."
+          }
+        }
+      }
+    },
     "Read from the radio once connected": {
       "localizations": {
         "fr": {
@@ -2991,6 +3071,16 @@
         }
       }
     },
+    "Send an advert": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer un advert"
+          }
+        }
+      }
+    },
     "Send the announcement": {
       "localizations": {
         "fr": {
@@ -3077,6 +3167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyée quand Internet revient"
+          }
+        }
+      }
+    },
+    "Sent: radios around can add yours as a contact.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé : les radios autour peuvent ajouter la tienne en contact."
           }
         }
       }
@@ -3317,6 +3417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Son identité n'est pas encore connue : échangez un message ou scanne son code d'abord."
+          }
+        }
+      }
+    },
+    "Their key changed again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa clé a encore changé"
           }
         }
       }
@@ -3817,6 +3927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "iroh via les relais : tes contacts ne voient jamais ton IP"
+          }
+        }
+      }
+    },
+    "lichen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lichen"
           }
         }
       }

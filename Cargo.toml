@@ -65,6 +65,8 @@ tor-config = "=0.48.0"
 tor-rtcompat = { version = "=0.48.0", default-features = false, features = ["tokio", "rustls"] }
 safelog = "0.10"
 futures = "0.3"
+# QR codes of contact cards in the CLI (SVG only).
+qrcode = { version = "0.14", default-features = false, features = ["svg"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

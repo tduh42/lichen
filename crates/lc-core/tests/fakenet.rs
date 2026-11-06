@@ -269,3 +269,63 @@ fn never_delivered_twice() {
     assert!(delivered_total >= 144, "{delivered_total}/180 delivered");
     eprintln!("never_delivered_twice: {delivered_total}/180 delivered");
 }
+
+/// An advert is one companion command (`SEND_SELF_ADVERT`, flood or not) and costs airtime.
+#[test]
+fn adverts_go_to_the_companion_and_cost_airtime() {
+    let mut c = lc_core::Core::new(lc_core::Config::new("t", [1; 32], [2; 32]));
+    let before = c.budget(0).0;
+    c.send_advert(true, 0);
+    assert_eq!(c.poll_companion(0), Some(vec![7, 1]));
+    let after = c.budget(0).0;
+    assert!(after > before, "{before} -> {after} ms");
+    // The zero-hop variant, once the companion answered the first.
+    c.on_companion_frame(&[0], 1);
+    c.send_advert(false, 2);
+    assert_eq!(c.poll_companion(2), Some(vec![7, 0]));
+}
+
+/// Sessions are renewed after their age or byte limit (§4.4): the next message waits for a
+/// new handshake, then arrives.
+#[test]
+fn sessions_renew_after_their_limits() {
+    let established = |events: &[Event]| {
+        events
+            .iter()
+            .filter(|e| matches!(e, Event::SessionEstablished { .. }))
+            .count()
+    };
+    for (age, bytes) in [(3 * MIN, u64::MAX), (u64::MAX, 1_000)] {
+        let (mut net, a, b) = chain(1, 0, 7, true);
+        net.with_core(a, |c, _| c.set_session_limits(age, bytes));
+        let mut big = vec![lc_proto::content::FILE];
+        big.extend(std::iter::repeat_n(7u8, 1_200));
+        let first = send(&mut net, a, b, big);
+        net.run_until(net.now + 10 * MIN, |_| false);
+        let ea = net.take_events(a);
+        assert!(
+            ea.iter()
+                .any(|e| matches!(e, Event::Delivered { id } if *id == first))
+        );
+        assert!(established(&ea) >= 1);
+        net.run_until(net.now + 4 * MIN, |_| false);
+        net.take_events(a);
+        let second = send(&mut net, a, b, vec![lc_proto::content::FILE, 1, 2, 3]);
+        net.run_until(net.now + 10 * MIN, |_| false);
+        let ea = net.take_events(a);
+        assert!(
+            ea.iter()
+                .any(|e| matches!(e, Event::Delivered { id } if *id == second)),
+            "{ea:?}"
+        );
+        assert_eq!(established(&ea), 1, "renewed for ({age}, {bytes}): {ea:?}");
+    }
+    // Under both limits, the session stays.
+    let (mut net, a, b) = chain(1, 0, 7, true);
+    send(&mut net, a, b, vec![lc_proto::content::FILE, 1]);
+    net.run_until(net.now + 10 * MIN, |_| false);
+    net.take_events(a);
+    send(&mut net, a, b, vec![lc_proto::content::FILE, 2]);
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert_eq!(established(&net.take_events(a)), 0, "no renewal");
+}

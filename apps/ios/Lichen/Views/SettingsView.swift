@@ -3,7 +3,8 @@ import SwiftUI
 /// Radio, airtime, transports, position, appearance (mockup `reglages`).
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
-    @AppStorage("appearance") private var appearance = Appearance.dark
+    @AppStorage("appearance") private var appearance = Appearance.system
+    @State private var advertSent = false
     @AppStorage("onboarded") private var onboarded = true
 
     var body: some View {
@@ -25,6 +26,17 @@ struct SettingsView: View {
                         CardDivider()
                         CardRow(title: String(localized: "Relay for others"),
                                 subtitle: String(localized: "Stock companion firmware does not repeat: a repeater node does that."))
+                        CardDivider()
+                        Button { model.sendAdvert(); advertSent = true } label: {
+                            CardRow(title: String(localized: "Send an advert"),
+                                    subtitle: advertSent ? String(localized: "Sent: radios around can add yours as a contact.")
+                                                         : String(localized: "Lets radios around add yours as a contact")) {
+                                Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Theme.lora)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!model.isConnected)
+                        .opacity(model.isConnected ? 1 : 0.5)
                     }
                     SectionLabel("Internet transports").padding(.top, 10)
                     CardList {
