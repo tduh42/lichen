@@ -1,0 +1,9 @@
+/target/
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+/sim/target/
+/local/
+*.db
+*.db-journal
+.DS_Store

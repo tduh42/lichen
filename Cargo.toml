@@ -1,0 +1,44 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# fuzz/ (nightly) and sim/ (depends on oxymesh, optional) have their own workspaces.
+exclude = ["fuzz", "sim"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[workspace.dependencies]
+# Internal
+lc-meshcore = { path = "crates/lc-meshcore" }
+lc-proto = { path = "crates/lc-proto" }
+
+# no_std
+chacha20 = { version = "0.10", default-features = false }
+poly1305 = { version = "0.9", default-features = false }
+hkdf = { version = "0.13", default-features = false }
+hmac = { version = "0.13", default-features = false }
+sha2 = { version = "0.11", default-features = false }
+curve25519-dalek = { version = "5.0", default-features = false }
+subtle = { version = "2.6", default-features = false }
+
+# std only (application core, CLI, tests)
+chacha20poly1305 = "0.11"
+rand_core = { version = "0.10", default-features = false }
+rand_chacha = { version = "0.10", default-features = false, features = ["std"] }
+proptest = "1.12"
+serde = { version = "1.0", features = ["derive"] }
+toml = "1.2"
+hex = "0.4"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.test]
+opt-level = 1

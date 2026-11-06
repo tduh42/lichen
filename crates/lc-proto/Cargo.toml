@@ -1,0 +1,12 @@
+[package]
+name = "lc-proto"
+description = "lichen protocol: frame, crypto, handshake, ACK-on-Error fragmentation (docs/spec/protocol.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

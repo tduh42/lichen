@@ -1,0 +1,88 @@
+# EU 863-870 MHz regulatory profile, non-specific short-range devices (France).
+# Checked on 2026-11-03 against the primary sources (details and URLs in loranet's ADR-0006, where this file comes from):
+#   - CEPT ERC/REC 70-03, edition of 9 October 2026, annex 1, table 1 (h1.3 to h1.9);
+#   - Decision 2006/771/EC as amended by Implementing Decision (EU) 2025/105, annex, table 2;
+#   - Arcep, decision no. 2014-1263 as amended by no. 2023-1412 (same values for 863-870 MHz).
+# Powers are ERP. Duty cycle: per transmitter, per sub-band, over a continuous one-hour
+# period; the sources do not say whether the window slides, so the oracle uses a sliding
+# window, which is stricter than a fixed one.
+#
+# `polite_access = true`: polite spectrum access (LBT + AFA, EN 300 220-2 V3.3.1 §4.4.3) may replace the
+# duty cycle. It is not modeled yet: nodes always honor the duty cycle.
+#
+# A sub-band with several regimes (h1.8/h1.9) gives several rules; the simulator and the
+# nodes apply the most permissive one that allows the transmission (frequency and power).
+
+name = "eu868"
+window_s = 3600
+status = "checked on 2026-11-03"
+
+[[rule]]
+name = "h1.3"
+low_hz = 863000000
+high_hz = 865000000
+max_erp_mw = 25
+duty_percent = 0.1
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.3; (EU) 2025/105"
+
+[[rule]]
+name = "h1.4"
+low_hz = 865000000
+high_hz = 868000000
+max_erp_mw = 25
+duty_percent = 1.0
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.4; (EU) 2025/105"
+
+[[rule]]
+name = "g1"
+low_hz = 868000000
+high_hz = 868600000
+max_erp_mw = 25
+duty_percent = 1.0
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.5; (EU) 2025/105"
+
+[[rule]]
+name = "g2"
+low_hz = 868700000
+high_hz = 869200000
+max_erp_mw = 25
+duty_percent = 0.1
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.6; (EU) 2025/105"
+
+[[rule]]
+name = "g3"
+low_hz = 869400000
+high_hz = 869650000
+max_erp_mw = 500
+duty_percent = 10.0
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.7; (EU) 2025/105"
+
+[[rule]]
+name = "g4-5mw"
+low_hz = 869700000
+high_hz = 870000000
+max_erp_mw = 5
+duty_percent = 100.0
+polite_access = false
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.8; (EU) 2025/105; Arcep keeps the voice clause, no effect on data"
+
+[[rule]]
+name = "g4-25mw"
+low_hz = 869700000
+high_hz = 870000000
+max_erp_mw = 25
+duty_percent = 1.0
+polite_access = true
+verified = true
+source = "ERC/REC 70-03 annex 1 h1.9; (EU) 2025/105"

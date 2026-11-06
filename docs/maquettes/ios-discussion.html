@@ -1,0 +1,97 @@
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #FFFFFF; font-family: -apple-system, 'SF Pro Text', Inter, system-ui, sans-serif; color: #111111; display: flex; flex-direction: column; overflow: hidden">
+  <header style="padding: 52px 8px 10px; border-bottom: 1px solid #E5E5EA; background: #F9F9FB; display: grid; grid-template-columns: 96px 1fr 96px; align-items: center">
+    <a href="Main.dc.html" style="display: flex; align-items: center; gap: 2px; text-decoration: none; color: #C2410C; font-size: 17px; height: 44px">
+      <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>Messages</a>
+    <div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+      <span style="font-size: 17px; font-weight: 600">Camille</span>
+      <span style="font-size: 12px; color: #5B5B60">LoRa direct · 2 sauts · SNR 6 dB</span>
+    </div>
+    <div style="display: flex; justify-content: flex-end">
+      <button aria-label="Infos du contact et clés" style="width: 44px; height: 44px; border: none; background: transparent; display: flex; align-items: center; justify-content: center">
+        <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7.5v.5"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <div style="flex-grow: 1; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; background: #FFFFFF">
+    <div style="align-self: center; font-size: 12px; color: #5B5B60; display: flex; align-items: center; gap: 6px">
+      <svg width="12" height="12" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>
+      Session chiffrée · clé vérifiée
+    </div>
+
+    <div style="align-self: flex-start; max-width: 76%; background: #E9E9EB; border-radius: 18px; padding: 9px 14px; font-size: 16px; line-height: 1.35">Je suis au refuge, le réseau mobile ne passe pas.</div>
+
+    <div style="align-self: flex-end; max-width: 76%; display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+      <div style="background: #C2410C; color: #FFFFFF; border-radius: 18px; padding: 9px 14px; font-size: 16px; line-height: 1.35">OK, je te rejoins vers 14 h par le sentier nord.</div>
+      <span style="font-size: 11px; color: #5B5B60">Remis · 1 fragment · 0,4 s d'antenne</span>
+    </div>
+
+    <div style="align-self: flex-start; width: 250px; border: 1px solid #E5E5EA; border-radius: 18px; overflow: hidden">
+      <div style="height: 120px; background: repeating-linear-gradient(135deg, #F3F4F6 0 10px, #E5E7EB 10px 20px); display: flex; align-items: center; justify-content: center; font-size: 12px; color: #4B5563">Aperçu LoRa · 4 fragments</div>
+      <div style="padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; justify-content: space-between; font-size: 13px">
+          <span style="font-weight: 600">Photo du refuge</span>
+          <span style="color: #5B5B60">1,8 Mo</span>
+        </div>
+        <div style="display: flex; gap: 6px">
+          <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #DBEAFE; color: #1E40AF">iroh</span>
+          <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; background: #EDE9FE; color: #5B21B6">Tor</span>
+          <span style="font-size: 11px; color: #5B5B60; padding: 2px 0">hash vérifié</span>
+        </div>
+        <button style="height: 36px; border: none; border-radius: 10px; background: #1E40AF; color: #FFFFFF; font-size: 14px; font-weight: 600; font-family: inherit">Télécharger en pleine résolution</button>
+      </div>
+    </div>
+
+    <div style="align-self: flex-start; display: flex; align-items: center; gap: 10px; background: #E9E9EB; border-radius: 18px; padding: 8px 14px 8px 8px">
+      <button aria-label="Lire le message vocal" style="width: 36px; height: 36px; border: none; border-radius: 18px; background: #C2410C; display: flex; align-items: center; justify-content: center">
+        <svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="#FFFFFF" aria-hidden="true"><path d="M7 4v16l13-8z"></path></svg>
+      </button>
+      <div style="display: flex; align-items: center; gap: 2px; height: 24px" aria-hidden="true">
+        <sc-for list="{{wave}}" as="h" hint-placeholder-count="24"><span style="width: 3px; height: {{h.px}}; border-radius: 2px; background: #6B6B70"></span></sc-for>
+      </div>
+      <div style="display: flex; flex-direction: column">
+        <span style="font-size: 13px; font-weight: 600">0:12</span>
+        <span style="font-size: 11px; color: #5B5B60">Codec2</span>
+      </div>
+    </div>
+
+    <div style="align-self: flex-end; width: 250px; display: flex; flex-direction: column; align-items: flex-end; gap: 3px">
+      <div style="width: 100%; box-sizing: border-box; background: #FFF7ED; border: 1px solid #FED7AA; border-radius: 18px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px">
+        <span style="font-size: 14px; color: #111111">Trace GPX du sentier nord</span>
+        <div style="height: 6px; border-radius: 3px; background: #FFEDD5; overflow: hidden"><div style="width: 58%; height: 6px; background: #C2410C"></div></div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #5B5B60">
+          <span>Envoi 7 / 12 fragments</span>
+          <span>2 réémis</span>
+        </div>
+      </div>
+      <span style="font-size: 11px; color: #5B5B60">En attente de l'ACK · ~9 s restantes</span>
+    </div>
+  </div>
+
+  <div style="border-top: 1px solid #E5E5EA; background: #F9F9FB; padding: 8px 10px 30px; display: flex; flex-direction: column; gap: 6px">
+    <span style="font-size: 11px; color: #5B5B60; padding-left: 52px">Coût estimé : 1 fragment · ≈ 0,4 s d'antenne</span>
+    <div style="display: flex; align-items: center; gap: 8px">
+      <button aria-label="Joindre une photo, un fichier ou une position" style="width: 44px; height: 44px; border: none; border-radius: 22px; background: #E9E9EB; display: flex; align-items: center; justify-content: center">
+        <svg width="20" height="20" sc-camel-view-box="0 0 24 24" fill="none" stroke="#111111" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+      </button>
+      <label for="ios-msg" class="sr">Message</label>
+      <input id="ios-msg" placeholder="Message" style="flex-grow: 1; height: 38px; border: 1px solid #D1D1D6; border-radius: 19px; padding: 0 14px; font-size: 16px; font-family: inherit; background: #FFFFFF; color: #111111">
+      <button aria-label="Enregistrer un message vocal" style="width: 44px; height: 44px; border: none; border-radius: 22px; background: transparent; display: flex; align-items: center; justify-content: center">
+        <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="#C2410C" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844}}">
+class Component extends DCLogic {
+  renderVals() {
+    const hs = [6, 10, 16, 12, 20, 14, 8, 18, 22, 12, 9, 15, 19, 11, 7, 13, 17, 10, 6, 12, 16, 9, 7, 5];
+    return { wave: hs.map(function (h) { return { px: h + 'px' }; }) };
+  }
+}
+</script>
+
+
+</body></html>
