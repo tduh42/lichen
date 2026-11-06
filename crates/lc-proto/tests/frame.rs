@@ -49,7 +49,9 @@ fn timing_for_path() {
     let t = Timing::for_path(1_512, 260, 0);
     assert_eq!(t.pace_ms, 1_612);
     let t = Timing::for_path(1_512, 260, 3);
-    assert_eq!(t.pace_ms, 7_660);
+    assert_eq!(t.pace_ms, 10_684);
+    assert_eq!(t.ack_repeat_ms, 2_020);
+    assert_eq!(t.ack_guard_ms, 2_540);
     assert_eq!(t.ack_wait_ms, 4 * (3_024 + 520) + 2_000);
 }
 

@@ -118,12 +118,13 @@ impl Session {
         self.next_tag >= TAG_LIMIT
     }
 
-    /// The datagram in flight, with the number of rounds that got no ACK at all.
-    pub fn in_flight(&self) -> Option<(u16, u8)> {
+    /// The datagram in flight: its `tag`, the number of rounds in a row without any ACK, and
+    /// whether the receiver ever acknowledged it.
+    pub fn in_flight(&self) -> Option<(u16, u8, bool)> {
         self.sender
             .as_ref()
             .filter(|s| matches!(s.state(), SendState::Sending | SendState::WaitingAck))
-            .map(|s| (s.tag(), s.rounds_without_ack()))
+            .map(|s| (s.tag(), s.rounds_without_ack(), s.acknowledged()))
     }
 
     /// Starts sending `datagram` in `chunk`-byte fragments. Returns its `tag`.

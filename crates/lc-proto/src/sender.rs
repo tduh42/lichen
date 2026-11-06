@@ -25,6 +25,11 @@ pub struct Timing {
     pub rx_margin_ms: Millis,
     /// Receiver: incomplete ACKs sent without progress before giving up.
     pub rx_max_acks: u8,
+    /// Receiver: every ACK is sent a second time after this delay (0 = once).
+    pub ack_repeat_ms: Millis,
+    /// Sender: after an ACK starts a new round, wait this long so the receiver's second copy
+    /// does not collide with our first fragment at a repeater neither of us hears.
+    pub ack_guard_ms: Millis,
 }
 
 impl Default for Timing {
@@ -34,12 +39,14 @@ impl Default for Timing {
             ack_wait_ms: 10_000,
             max_rounds: 32,
             max_stalled_rounds: 4,
-            max_silent_rounds: 6,
+            max_silent_rounds: 8,
             rx_first_gap_ms: 10_000,
             rx_min_gap_ms: 1_000,
             rx_max_gap_ms: 60_000,
             rx_margin_ms: 3_000,
             rx_max_acks: 4,
+            ack_repeat_ms: 0,
+            ack_guard_ms: 0,
         }
     }
 }
@@ -50,10 +57,12 @@ impl Timing {
         let k = match hops {
             0 => 1,
             1 => 3,
-            _ => 5,
+            _ => 7,
         };
         Self {
             pace_ms: frame_airtime_ms * k + 100,
+            ack_repeat_ms: ack_airtime_ms * 7 + 200,
+            ack_guard_ms: ack_airtime_ms * 9 + 200,
             ack_wait_ms: (Millis::from(hops) + 1) * (2 * frame_airtime_ms + 2 * ack_airtime_ms)
                 + 2_000,
             ..Self::default()
@@ -184,6 +193,11 @@ impl Sender {
         self.rounds_without_ack
     }
 
+    /// True once the receiver has acknowledged anything for this datagram.
+    pub const fn acknowledged(&self) -> bool {
+        self.last_ack_seq.is_some()
+    }
+
     /// True when the sender has nothing left to emit (finished and abort sent).
     pub const fn is_idle(&self) -> bool {
         matches!(self.state, SendState::Delivered | SendState::Failed) && self.abort.is_none()
@@ -278,9 +292,14 @@ impl Sender {
             self.state = SendState::Delivered;
             return true;
         }
+        // A repeated ACK that brings nothing new while we are already resending: ignore it.
+        if self.state == SendState::Sending && bitmap & full & !self.acked == 0 && self.round > 0 {
+            return false;
+        }
         let progress = bitmap & full & !self.acked != 0;
         self.acked |= bitmap & full;
         self.next_round(full & !bitmap, Some(progress), now, timing);
+        self.next_tx = self.next_tx.max(now + timing.ack_guard_ms);
         true
     }
 

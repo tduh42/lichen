@@ -110,6 +110,7 @@ Each side encrypts with its own direction's key and decrypts with the other. `ta
 
 ### 4.4 Rules
 
+- **Retries**: up to 8 HELLOs, each after a random wait uniform in `[W, 2W)` (`W` from §7.4). Fixed timers keep two nodes that cannot hear each other, and started together, colliding at the repeater between them on every try.
 - **Crossing**: if I receives a HELLO from R while its own is waiting for an answer, the handshake of the smaller public key (lexicographic order) wins. The losing side drops its own and answers the other.
 - **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key. Until then it keeps the previous session if there is one. A replayed HELLO therefore cannot break a running session.
 - **No persistence** (ADR-0003): sessions live in memory. After a restart, the first send runs a new handshake.
@@ -148,6 +149,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 
 An unknown type is handed to the app as "unsupported", with no error on the network.
 
+Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006). The receiver drops a datagram byte-identical to one received from the same peer within the last hour. TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
+
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 
 ### 7.1 Sender
@@ -158,7 +161,7 @@ An unknown type is handed to the app as "unsupported", with no error on the netw
 4. ACK without `COMPLETE`: new round (`attempt + 1`) with only the fragments missing from the bitmap.
 5. No ACK within `W`: new round that resends only the **last** fragment, to solicit an ACK.
 6. ACK with `COMPLETE`: datagram **delivered**.
-7. Give up after 4 consecutive ACKs that confirm no new fragment, after 6 consecutive rounds without any ACK (peer unreachable), or beyond `R_max` = 32 rounds (which bounds the airtime of a datagram): ABORT (`index 0`), datagram **failed**.
+7. Give up after 4 consecutive ACKs that confirm no new fragment, after 8 consecutive rounds without any ACK (peer unreachable), or beyond `R_max` = 32 rounds (which bounds the airtime of a datagram): ABORT (`index 0`), datagram **failed**.
 8. A single datagram in flight per direction and session; others wait in `lc-core`'s queue.
 
 ### 7.2 Receiver
@@ -182,10 +185,12 @@ ABORT, 1-byte plaintext: 1 `TIMEOUT`, 2 `TOO_LARGE`, 3 `MALFORMED`, 4 `CANCELLED
 The companion does not say when a frame has left, and repeaters are half duplex. If the sender chains its fragments, the next repeater is still transmitting the previous fragment and misses the new one. Hand-offs to the companion are therefore spaced:
 
 ```
-Δ = t_frame × k + 100 ms,   k = 1 (0 repeaters), 3 (1 repeater), 5 (2 repeaters or more)
+Δ = t_frame × k + 100 ms,   k = 1 (0 repeaters), 3 (1 repeater), 7 (2 repeaters or more)
 ```
 
-`t_frame` = airtime of the whole frame (`2 + path_bytes + payload`) with the preset read from `SELF_INFO` (§9).
+`t_frame` = airtime of the whole frame (`2 + path_bytes + payload`) with the preset read from `SELF_INFO` (§9). With 2 repeaters or more, the worst case is the second repeater still forwarding fragment `i` (MeshCore repeaters wait up to `1.5 × t` before forwarding) when fragment `i + 1` reaches the first one, which cannot hear it: about `6 t`. Measured on the fake network, `k = 5` loses 12 % of receptions to collisions, `k = 7` less than 1 %, and is not slower (`docs/measurements.md`).
+
+**ACKs are sent twice.** The copy goes `7 × t_ack + 200 ms` after the first, with the next sequence number (so a new nonce and new bytes for the duplicate filter); it carries the current bitmap. When an ACK starts a new round, the sender waits `9 × t_ack + 200 ms` before its first fragment, so that the copy does not collide with it at a repeater that both hear but that cannot hear each other. The sender ignores a copy that confirms nothing new while it is already resending.
 
 ### 7.4 Timers
 

@@ -54,6 +54,8 @@ pub struct Reassembly {
     next_ack_seq: u8,
     acks_without_progress: u8,
     ack_due: bool,
+    /// When the last ACK is sent again (`Timing::ack_repeat_ms`).
+    repeat_at: Option<Millis>,
     abort: Option<u8>,
     state: RxState,
     len: usize,
@@ -94,6 +96,7 @@ impl Reassembly {
             next_ack_seq: 0,
             acks_without_progress: 0,
             ack_due: false,
+            repeat_at: None,
             abort: None,
             state: RxState::Collecting,
             len: 0,
@@ -116,6 +119,7 @@ impl Reassembly {
         self.next_ack_seq = 0;
         self.acks_without_progress = 0;
         self.ack_due = false;
+        self.repeat_at = None;
         self.abort = None;
         self.state = RxState::Collecting;
         self.len = 0;
@@ -158,6 +162,7 @@ impl Reassembly {
         if self.state == RxState::Collecting {
             self.state = RxState::Failed;
             self.ack_due = false;
+            self.repeat_at = None;
         }
     }
 
@@ -205,6 +210,7 @@ impl Reassembly {
             } else {
                 self.state = RxState::Failed;
                 self.abort = Some(reason::MALFORMED);
+                self.repeat_at = None;
                 Stored::Malformed
             };
         }
@@ -251,20 +257,30 @@ impl Reassembly {
         if self.state == RxState::Collecting && !self.ack_due && now >= self.deadline {
             if self.acks_without_progress >= timing.rx_max_acks {
                 self.state = RxState::Failed;
+                self.repeat_at = None;
                 return Some(RxEmit::Abort {
                     reason: reason::TIMEOUT,
                 });
             }
             self.ack_due = true;
         }
-        if !self.ack_due {
+        // The second copy of the last ACK (§7.2): a new sequence number, so a new nonce and
+        // new bytes for MeshCore's duplicate filter.
+        let repeat = !self.ack_due
+            && self.state != RxState::Failed
+            && self.repeat_at.is_some_and(|t| now >= t);
+        if !self.ack_due && !repeat {
             return None;
         }
+        self.repeat_at = None;
         self.ack_due = false;
         let seq = self.next_ack_seq;
         // Never reuse an ACK sequence number (it is part of the nonce).
         self.next_ack_seq = self.next_ack_seq.checked_add(1)?;
-        if self.state == RxState::Collecting {
+        if !repeat && timing.ack_repeat_ms > 0 {
+            self.repeat_at = Some(now + timing.ack_repeat_ms);
+        }
+        if !repeat && self.state == RxState::Collecting {
             self.acks_without_progress = self.acks_without_progress.saturating_add(1);
             let missing_bits = full(self.total) & !self.got;
             let missing = Millis::from(missing_bits.count_ones());
@@ -283,9 +299,13 @@ impl Reassembly {
         if self.ack_due || self.abort.is_some() {
             return Some(0);
         }
-        match self.state {
+        let timer = match self.state {
             RxState::Collecting => Some(self.deadline),
             RxState::Done | RxState::Failed => None,
+        };
+        match (timer, self.repeat_at) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
         }
     }
 }

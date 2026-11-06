@@ -311,6 +311,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "lc-core"
+version = "0.0.0"
+dependencies = [
+ "hex",
+ "lc-meshcore",
+ "lc-proto",
+ "rand_chacha",
+ "rand_core",
+ "serde",
+ "sha2",
+ "toml",
+]
+
+[[package]]
 name = "lc-meshcore"
 version = "0.0.0"
 dependencies = [
