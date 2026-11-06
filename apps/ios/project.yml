@@ -39,6 +39,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tduhamel.lichen
+        DEVELOPMENT_TEAM: A3QVD3333F
         # The Rust core is built for arm64 only (Apple Silicon simulators and iPhones).
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         CODE_SIGN_STYLE: Automatic
