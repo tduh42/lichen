@@ -1,6 +1,6 @@
 # ADR-0004 — Starting key: the node's key, exported once
 
-- Status: accepted (to be confirmed on real devices)
+- Status: superseded by ADR-0013 (2026-11-06): the identity is now a key generated on the phone
 - Date: 2026-11-06
 
 ## Context

@@ -102,7 +102,7 @@ impl Header {
             Kind::Data => header.index < header.total,
             Kind::Ack => header.index == 0 && frame.len() == ACK_FRAME_LEN,
             Kind::Abort => header.index <= 1 && frame.len() == ABORT_FRAME_LEN,
-            Kind::Control => header.total == 1 && header.index <= 2,
+            Kind::Control => header.total == 1 && header.index <= 5,
         };
         if !ok {
             return Err(FrameError::Malformed);

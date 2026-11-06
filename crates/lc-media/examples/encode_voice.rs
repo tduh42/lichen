@@ -1,5 +1,6 @@
-//! Encodes an 8 kHz mono 16-bit WAV into a voice fixture: `mode u8 ‖ frames u16 ‖ data`.
-//! Usage: cargo run -p lc-media --example encode_voice -- in.wav out.c2
+//! Encodes an 8 kHz mono 16-bit WAV into a voice fixture: `mode u8 ‖ frames u16 ‖ data`; with
+//! a third path, also writes what the receiver will hear, as a WAV.
+//! Usage: cargo run -p lc-media --example encode_voice -- in.wav out.c2 [decoded.wav]
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -28,6 +29,23 @@ fn main() {
     out.extend_from_slice(&e.frames.to_le_bytes());
     out.extend_from_slice(&e.data);
     std::fs::write(output, &out).expect("write");
+    if let Some(heard) = args.get(3) {
+        let pcm = lc_media::voice::decode(e.mode.code(), e.frames, &e.data).expect("decodes");
+        let bytes = (pcm.len() * 2) as u32;
+        let mut w = Vec::new();
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + bytes).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        for v in [16u32, 1 | (1 << 16), 8_000, 16_000, 2 | (16 << 16)] {
+            w.extend_from_slice(&v.to_le_bytes());
+        }
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&bytes.to_le_bytes());
+        for s in pcm {
+            w.extend_from_slice(&s.to_le_bytes());
+        }
+        std::fs::write(heard, w).expect("write the WAV");
+    }
     eprintln!(
         "{} samples -> {} frames ({} ms), {} bytes",
         pcm.len(),

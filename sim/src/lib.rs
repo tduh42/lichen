@@ -14,11 +14,25 @@ pub struct App {
 impl App {
     pub fn new(node: usize, seed: u8) -> Self {
         Self {
-            core: Core::new(Config::new("lichen-sim", [seed; 32])),
+            core: Core::new(Config::new("lichen-sim", [seed ^ 0x5A; 32], [seed; 32])),
             node,
             events: Vec::new(),
         }
     }
+}
+
+/// Apps `i` and `j` learn each other's identity, verified, as if they had scanned each
+/// other's contact card (ADR-0013). Needs both contact lists loaded.
+pub fn introduce(apps: &mut [App], i: usize, j: usize) {
+    let id = |a: &App| a.core.key().copied();
+    let node = |a: &App| a.core.node_key().copied();
+    let (Some(ii), Some(ij), Some(ni), Some(nj)) =
+        (id(&apps[i]), id(&apps[j]), node(&apps[i]), node(&apps[j]))
+    else {
+        return;
+    };
+    apps[i].core.set_identity(&nj, ij, true);
+    apps[j].core.set_identity(&ni, ii, true);
 }
 
 pub fn ms(t: Instant) -> u64 {

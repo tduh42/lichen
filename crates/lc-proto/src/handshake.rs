@@ -1,5 +1,5 @@
-//! Handshake (§4): HELLO and HELLO_ACK under single-use keys derived from the static MeshCore
-//! secret and a random salt, then per-direction session keys with forward secrecy.
+//! Handshake (§4): HELLO and HELLO_ACK under single-use keys derived from the static secret
+//! between identities and a random salt, then per-direction session keys with forward secrecy.
 //!
 //! This module only builds, opens and derives. Which handshake is pending, crossing HELLOs and
 //! retries are the caller's business (`lc-core`).
@@ -14,6 +14,16 @@ use lc_meshcore::path::{PATH_UNKNOWN, path_bytes};
 pub const SALT_LEN: usize = 16;
 const EPH_LEN: usize = 32;
 const AAD_LEN: usize = HEADER_LEN + SALT_LEN;
+
+/// The two ends of a handshake: identity keys for the key derivation (§2), node hashes for the
+/// frame header (§3.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Ends<'a> {
+    pub me: &'a [u8; 32],
+    pub peer: &'a [u8; 32],
+    pub me_node: u8,
+    pub peer_node: u8,
+}
 
 /// A HELLO, to send or as received.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,10 +63,16 @@ fn hello_ack_key(
     hkdf(salt_r, s, &[b"lichen/1 hello-ack", pub_r, pub_i, salt_i])
 }
 
-fn control_header(me: &[u8; 32], peer: &[u8; 32], tag: u16, index: u8, attempt: u8) -> Header {
+pub(crate) const fn control_header(
+    me_node: u8,
+    peer_node: u8,
+    tag: u16,
+    index: u8,
+    attempt: u8,
+) -> Header {
     Header {
-        dst: peer[0],
-        src: me[0],
+        dst: peer_node,
+        src: me_node,
         tag,
         kind: Kind::Control,
         index,
@@ -88,18 +104,18 @@ fn seal_control(
 
 /// Splits a control frame into `(header, salt, plaintext)` after verifying it under the key
 /// returned by `key_for(salt)`. The plaintext is decrypted in place.
-fn open_control<'a>(
-    frame: &'a mut [u8],
+fn open_control(
+    frame: &mut [u8],
     index: u8,
-    me: &[u8; 32],
-    peer: &[u8; 32],
+    me_node: u8,
+    peer_node: u8,
     key_for: impl FnOnce(&[u8; SALT_LEN]) -> Key,
-) -> Result<(Header, [u8; SALT_LEN], &'a [u8]), FrameError> {
+) -> Result<(Header, [u8; SALT_LEN], &[u8]), FrameError> {
     let (header, _) = Header::decode(frame)?;
     if header.kind != Kind::Control || header.index != index {
         return Err(FrameError::Malformed);
     }
-    if header.dst != me[0] || header.src != peer[0] {
+    if header.dst != me_node || header.src != peer_node {
         return Err(FrameError::NotForUs);
     }
     if frame.len() < AAD_LEN + TAG_LEN {
@@ -118,7 +134,7 @@ fn open_control<'a>(
     Ok((header, salt, ct))
 }
 
-fn valid_return_path(len_byte: u8, bytes: &[u8]) -> bool {
+pub(crate) fn valid_return_path(len_byte: u8, bytes: &[u8]) -> bool {
     if len_byte == PATH_UNKNOWN {
         bytes.is_empty()
     } else {
@@ -126,11 +142,10 @@ fn valid_return_path(len_byte: u8, bytes: &[u8]) -> bool {
     }
 }
 
-/// Builds a HELLO from `me` (initiator) to `peer`.
+/// Builds a HELLO from `ends.me` (initiator) to `ends.peer`.
 pub fn seal_hello(
     s: &Key,
-    me: &[u8; 32],
-    peer: &[u8; 32],
+    ends: &Ends<'_>,
     hello: &Hello<'_>,
     out: &mut [u8],
 ) -> Result<usize, FrameError> {
@@ -145,21 +160,21 @@ pub fn seal_hello(
     let (flags_len, path) = rest.split_at_mut(2);
     flags_len.copy_from_slice(&[0, hello.return_path_len]);
     path.copy_from_slice(hello.return_path);
-    let header = control_header(me, peer, hello.tag, 0, hello.attempt);
-    let key = hello_key(s, &hello.salt, me, peer);
+    let header = control_header(ends.me_node, ends.peer_node, hello.tag, 0, hello.attempt);
+    let key = hello_key(s, &hello.salt, ends.me, ends.peer);
     seal_control(&key, &header, &hello.salt, p, out)
 }
 
-/// Opens a HELLO sent by `peer` (initiator) to `me` (responder). The frame is decrypted in
-/// place and the return path borrows from it.
+/// Opens a HELLO sent by `ends.peer` (initiator) to `ends.me` (responder). The frame is
+/// decrypted in place and the return path borrows from it.
 pub fn open_hello<'a>(
     s: &Key,
-    peer: &[u8; 32],
-    me: &[u8; 32],
+    ends: &Ends<'_>,
     frame: &'a mut [u8],
 ) -> Result<Hello<'a>, FrameError> {
-    let (header, salt, plain) =
-        open_control(frame, 0, me, peer, |salt| hello_key(s, salt, peer, me))?;
+    let (header, salt, plain) = open_control(frame, 0, ends.me_node, ends.peer_node, |salt| {
+        hello_key(s, salt, ends.peer, ends.me)
+    })?;
     let ephemeral: [u8; EPH_LEN] = plain
         .get(..EPH_LEN)
         .and_then(|e| e.try_into().ok())
@@ -179,11 +194,11 @@ pub fn open_hello<'a>(
     })
 }
 
-/// Builds a HELLO_ACK from `me` (responder) to `peer`, answering the HELLO salted `salt_i`.
+/// Builds a HELLO_ACK from `ends.me` (responder) to `ends.peer`, answering the HELLO salted
+/// `salt_i`.
 pub fn seal_hello_ack(
     s: &Key,
-    me: &[u8; 32],
-    peer: &[u8; 32],
+    ends: &Ends<'_>,
     salt_i: &[u8; SALT_LEN],
     ack: &HelloAck,
     out: &mut [u8],
@@ -191,22 +206,21 @@ pub fn seal_hello_ack(
     let mut plain = [0u8; EPH_LEN + 1];
     let (eph, _flags) = plain.split_at_mut(EPH_LEN);
     eph.copy_from_slice(&ack.ephemeral);
-    let header = control_header(me, peer, ack.tag, 1, ack.attempt);
-    let key = hello_ack_key(s, &ack.salt, me, peer, salt_i);
+    let header = control_header(ends.me_node, ends.peer_node, ack.tag, 1, ack.attempt);
+    let key = hello_ack_key(s, &ack.salt, ends.me, ends.peer, salt_i);
     seal_control(&key, &header, &ack.salt, &plain, out)
 }
 
-/// Opens a HELLO_ACK sent by `peer` (responder) to `me` (initiator) for our HELLO salted
-/// `salt_i`.
+/// Opens a HELLO_ACK sent by `ends.peer` (responder) to `ends.me` (initiator) for our HELLO
+/// salted `salt_i`.
 pub fn open_hello_ack(
     s: &Key,
-    peer: &[u8; 32],
-    me: &[u8; 32],
+    ends: &Ends<'_>,
     salt_i: &[u8; SALT_LEN],
     frame: &mut [u8],
 ) -> Result<HelloAck, FrameError> {
-    let (header, salt, plain) = open_control(frame, 1, me, peer, |salt_r| {
-        hello_ack_key(s, salt_r, peer, me, salt_i)
+    let (header, salt, plain) = open_control(frame, 1, ends.me_node, ends.peer_node, |salt_r| {
+        hello_ack_key(s, salt_r, ends.peer, ends.me, salt_i)
     })?;
     let ephemeral: [u8; EPH_LEN] = plain
         .get(..EPH_LEN)

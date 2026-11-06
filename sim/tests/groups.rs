@@ -2,7 +2,7 @@
 //! channel whose hash is 0x7C, lichen's channel hash (protocol.md §10.3, ADR-0008).
 
 use lc_core::{Content, Event};
-use lichen_sim::{App, ms, pump, run};
+use lichen_sim::{App, introduce, ms, pump, run};
 use mc_sim::World;
 use sha2::{Digest, Sha256};
 
@@ -60,6 +60,9 @@ fn group_next_to_a_stock_node_on_the_same_channel_hash() {
         .map(|c| c.key)
         .collect();
     assert_eq!(members.len(), 2);
+    // Alice scanned Bob's and Carol's codes (ADR-0013).
+    introduce(&mut apps, 0, 1);
+    introduce(&mut apps, 0, 2);
     let now = ms(w.now);
     let gid = apps[0].core.create_group("trail", &members, now).unwrap();
     pump(&mut w, &mut apps);

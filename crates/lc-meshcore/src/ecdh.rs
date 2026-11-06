@@ -38,6 +38,22 @@ pub fn public_key(prv: &[u8; 64]) -> [u8; 32] {
         .to_bytes()
 }
 
+/// The X25519 secret of a private key (its clamped scalar, MeshCore's ECDH side).
+pub fn x25519_secret(prv: &[u8; 64]) -> [u8; 32] {
+    scalar_bytes(prv)
+}
+
+/// The X25519 public key (Montgomery `u`) of an Ed25519 public key; `None` if it does not
+/// decompress.
+pub fn montgomery(public: &[u8; 32]) -> Option<[u8; 32]> {
+    Some(
+        CompressedEdwardsY(*public)
+            .decompress()?
+            .to_montgomery()
+            .to_bytes(),
+    )
+}
+
 /// MeshCore static shared secret with `peer` (32 bytes). `None` if `peer` is not a valid
 /// Ed25519 point or the result is all zeros.
 pub fn shared_secret(prv: &[u8; 64], peer: &[u8; 32]) -> Option<[u8; 32]> {

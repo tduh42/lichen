@@ -2,6 +2,8 @@
 
 use codec2::{Codec2, Codec2Mode};
 
+use crate::codec2_c::Codec700;
+
 /// Sample rate of the audio Codec2 takes and gives.
 pub const SAMPLE_RATE: u32 = 8_000;
 /// Samples in one 40 ms frame (700C and 1200).
@@ -14,7 +16,7 @@ pub const MAX_FRAMES: u16 = 375;
 /// Codec2 mode, as carried in the VOICE body.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Mode {
-    /// 700 bit/s, 28 bits per frame (needs the reference C library, ADR-0012).
+    /// 700 bit/s, 28 bits per frame (the vendored reference C library, ADR-0012).
     C700,
     /// 1200 bit/s, 48 bits per frame.
     C1200,
@@ -45,19 +47,53 @@ impl Mode {
 
     /// This build can decode (and encode) it.
     pub const fn supported(self) -> bool {
-        matches!(self, Mode::C1200)
+        true
     }
 
-    fn codec(self) -> Option<Codec2> {
+    fn codec(self) -> Option<Codec> {
         match self {
-            Mode::C700 => None,
-            Mode::C1200 => Some(Codec2::new(Codec2Mode::MODE_1200)),
+            Mode::C700 => Codec700::new().map(Codec::C700),
+            Mode::C1200 => Some(Codec::C1200(Box::new(Codec2::new(Codec2Mode::MODE_1200)))),
         }
     }
 }
 
 /// The mode new messages are encoded with.
-pub const ENCODE_MODE: Mode = Mode::C1200;
+pub const ENCODE_MODE: Mode = Mode::C700;
+
+/// One codec state, either implementation.
+enum Codec {
+    C700(Codec700),
+    C1200(Box<Codec2>),
+}
+
+impl Codec {
+    /// Encodes a frame into `bits` (the frame's bytes, MSB first).
+    fn encode(&mut self, bits: &mut [u8], frame: &[i16; FRAME_SAMPLES]) {
+        match self {
+            Codec::C700(c) => {
+                let out = c.encode(frame);
+                for (d, s) in bits.iter_mut().zip(out) {
+                    *d = s;
+                }
+            }
+            Codec::C1200(c) => c.encode(bits, frame),
+        }
+    }
+
+    fn decode(&mut self, frame: &mut [i16; FRAME_SAMPLES], bits: &[u8]) {
+        match self {
+            Codec::C700(c) => {
+                let mut b = [0u8; 4];
+                for (d, s) in b.iter_mut().zip(bits) {
+                    *d = *s;
+                }
+                *frame = c.decode(&b);
+            }
+            Codec::C1200(c) => c.decode(frame, bits),
+        }
+    }
+}
 
 /// Bytes of `frames` frames in `mode`.
 pub const fn data_len(mode: Mode, frames: u16) -> usize {
@@ -205,10 +241,10 @@ mod tests {
     #[test]
     fn ten_seconds_size() {
         let e = encode(&speechlike(10.0));
-        assert_eq!(e.mode, Mode::C1200);
+        assert_eq!(e.mode, Mode::C700);
         assert_eq!(e.frames, 250);
-        assert_eq!(e.data.len(), 1_500);
-        assert_eq!(data_len(Mode::C700, 250), 875);
+        assert_eq!(e.data.len(), 875);
+        assert_eq!(data_len(Mode::C1200, 250), 1_500);
         assert_eq!(duration_ms(e.frames), 10_000);
     }
 
@@ -226,13 +262,37 @@ mod tests {
     }
 
     #[test]
+    fn both_modes_decode() {
+        let pcm = speechlike(1.0);
+        for mode in [Mode::C700, Mode::C1200] {
+            let mut codec = mode.codec().unwrap();
+            let mut w = BitWriter::default();
+            let mut frame = [0i16; FRAME_SAMPLES];
+            let mut buf = [0u8; 8];
+            let n = mode.bits_per_frame().div_ceil(8);
+            for chunk in pcm.chunks(FRAME_SAMPLES).take(25) {
+                frame[..chunk.len()].copy_from_slice(chunk);
+                codec.encode(&mut buf[..n], &frame);
+                w.push(&buf[..n], mode.bits_per_frame());
+            }
+            assert_eq!(w.bytes.len(), data_len(mode, 25));
+            let out = decode(mode.code(), 25, &w.bytes).unwrap();
+            assert!(
+                out.iter().any(|&s| s.unsigned_abs() > 500),
+                "{mode:?} decoded silence"
+            );
+        }
+    }
+
+    #[test]
     fn limits() {
         assert_eq!(encode(&speechlike(20.0)).frames, MAX_FRAMES);
         assert_eq!(encode(&[]).frames, 0);
-        // Wrong length, unknown or unsupported mode, too many frames.
+        // Wrong length, unknown mode, too many frames.
         assert!(decode(1, 2, &[0; 11]).is_none());
         assert!(decode(9, 1, &[0; 6]).is_none());
-        assert!(decode(0, 2, &[0; 7]).is_none());
+        assert!(decode(0, 2, &[0; 8]).is_none());
+        assert_eq!(decode(0, 2, &[0; 7]).unwrap().len(), 640);
         assert!(
             decode(
                 1,

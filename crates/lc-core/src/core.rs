@@ -11,11 +11,12 @@ use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::airtime::LoRaParams;
 use lc_meshcore::codes::APP_VER;
 use lc_meshcore::command::{Command, raw_payload_max};
-use lc_meshcore::ecdh::{public_key, shared_secret};
+use lc_meshcore::ecdh::{expand_seed, public_key, shared_secret};
 use lc_meshcore::path::{PATH_UNKNOWN, Path};
 use lc_meshcore::response::Response;
-use lc_proto::discovery::{self, ProbeId};
-use lc_proto::handshake::{self, Hello, HelloAck, SALT_LEN};
+use lc_proto::discovery::{self, Keying, ProbeId};
+use lc_proto::handshake::{self, Ends, Hello, HelloAck, SALT_LEN};
+use lc_proto::intro::{self, Answer, Intro, IntroAck};
 use lc_proto::kdf::x25519_public;
 use lc_proto::sender::{SendError, Timing};
 use lc_proto::{
@@ -45,6 +46,12 @@ const PROBE_TRIES: u8 = 3;
 const PROBE_WAIT_MS: Millis = 20_000;
 /// How long a received datagram is remembered to drop identical resends (§6).
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
+/// A HELLO we cannot open triggers our own introduction at most this often (§4.6).
+const INTRO_POKE_MS: Millis = 600_000;
+/// INTRO_FIN resends before giving up (the session stays).
+const FIN_TRIES: u8 = 8;
+/// An answered INTRO is remembered this long (§4.6).
+const INTRO_MEMORY_MS: Millis = 600_000;
 /// Rounds without any ACK, for a datagram the peer never acknowledged, after which the session
 /// is presumed lost (ADR-0006).
 const SILENT_ROUNDS_BEFORE_REHANDSHAKE: u8 = 3;
@@ -86,12 +93,18 @@ impl OwnedPath {
     }
 }
 
-/// A MeshCore contact known to the companion (or added by hand).
+/// A contact: a MeshCore node (where to send) and, once known, the identity behind it (who,
+/// ADR-0013).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Contact {
+    /// The node key (MeshCore routing).
     pub key: PubKey,
     pub name: String,
     pub out_path: Option<OwnedPath>,
+    /// The phone identity, learned by the introduction (§4.6), a group state or a contact card.
+    pub identity: Option<PubKey>,
+    /// Compared in person (QR code or safety number, §4.7).
+    pub verified: bool,
 }
 
 /// Why a message was not delivered.
@@ -121,11 +134,14 @@ pub enum Event {
         freq_khz: u32,
         radio: LoRaParams,
     },
-    /// The node's private key is known (exported, or given in [`Config`]).
-    IdentityReady,
-    /// The companion refused `EXPORT_PRIVATE_KEY` (ADR-0004).
-    KeyExportRefused,
     ContactsUpdated,
+    /// We learned the identity behind contact `node` (§4.6); `changed`: it replaced another
+    /// one, so the contact is to verify again.
+    IdentityLearned {
+        node: PubKey,
+        identity: PubKey,
+        changed: bool,
+    },
     SessionEstablished {
         peer: PubKey,
     },
@@ -193,8 +209,10 @@ pub enum Error {
     UnknownContact,
     Empty,
     TooLarge,
-    /// The node's key is not known yet.
+    /// The node is not connected yet (its key is unknown).
     NoIdentity,
+    /// The contact's identity is not known yet: exchange a message or scan their code first.
+    IdentityUnknown,
     UnknownGroup,
     /// Only the group admin may do this.
     NotAllowed,
@@ -210,9 +228,8 @@ pub enum Error {
 pub struct Config {
     /// Sent in `APP_START`.
     pub app_name: String,
-    /// The node's private key when the app already has it (Keychain); otherwise it is
-    /// exported from the companion.
-    pub identity: Option<[u8; 64]>,
+    /// The phone identity's seed (ADR-0013), kept by the app (Keychain / Keystore).
+    pub seed: [u8; 32],
     /// Seed of the core's CSPRNG: 32 bytes from the OS random generator.
     pub rng_seed: [u8; 32],
     /// Regulatory profile (TOML).
@@ -220,10 +237,10 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(app_name: &str, rng_seed: [u8; 32]) -> Self {
+    pub fn new(app_name: &str, seed: [u8; 32], rng_seed: [u8; 32]) -> Self {
         Self {
             app_name: app_name.to_owned(),
-            identity: None,
+            seed,
             rng_seed,
             regulatory: EU868.to_owned(),
         }
@@ -234,7 +251,6 @@ impl Config {
 enum Expect {
     SelfInfo,
     DeviceInfo,
-    PrivateKey,
     Contacts,
     Contact,
     Ok,
@@ -264,12 +280,46 @@ struct Initiating {
     path: OwnedPath,
 }
 
+/// Our introduction to a peer whose identity we do not know (§4.6), until INTRO_ACK.
+#[derive(Clone, Debug)]
+struct Introducing {
+    tag: u16,
+    salt: [u8; SALT_LEN],
+    eph_secret: [u8; 32],
+    attempt: u8,
+    next_retry: Millis,
+    path: OwnedPath,
+}
+
+/// INTRO_FIN resent until the responder answers under the new session (§4.6).
+#[derive(Clone, Debug)]
+struct Fin {
+    salt_i: [u8; SALT_LEN],
+    eph_secret: [u8; 32],
+    ack: IntroAck,
+    attempt: u8,
+    next_retry: Millis,
+    path: OwnedPath,
+}
+
+/// An INTRO we answered (§4.6): resends get the same answer.
+#[derive(Clone, Debug)]
+struct AnsweredIntro {
+    tag: u16,
+    answer: Answer,
+    at: Millis,
+    /// INTRO_FIN received: the session is set up.
+    done: bool,
+}
+
 /// A path discovery in progress (§4.5).
 #[derive(Clone, Debug)]
 struct Probing {
     id: ProbeId,
     tries: u8,
     next_try: Millis,
+    /// Sent without the peer's identity: the reply is anonymous too.
+    anonymous: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -302,6 +352,13 @@ struct Peer {
     queue: VecDeque<Outgoing>,
     in_flight: Option<InFlight>,
     probing: Option<Probing>,
+    introducing: Option<Introducing>,
+    fin: Option<Fin>,
+    answered_intro: Option<AnsweredIntro>,
+    /// The peer answered no HELLO: it may have a new identity, introduce again (§4.6).
+    intro_needed: bool,
+    /// No self-introduction before this time (answer to a HELLO we cannot open).
+    intro_poke: Millis,
 }
 
 impl Peer {
@@ -348,8 +405,11 @@ pub struct Core {
     app_name: String,
     pub(crate) rng: ChaCha20Rng,
     regulatory: String,
+    /// The phone identity (ADR-0013): private and public key. Always set.
     pub(crate) prv: Option<[u8; 64]>,
     pub(crate) key: Option<PubKey>,
+    /// The node's key, from `SELF_INFO`: frame headers and routing only.
+    pub(crate) node: Option<PubKey>,
     pub(crate) name: String,
     freq_khz: u32,
     pub(crate) radio: LoRaParams,
@@ -416,8 +476,9 @@ impl Core {
             app_name: config.app_name,
             rng: ChaCha20Rng::from_seed(config.rng_seed),
             regulatory: config.regulatory,
-            key: config.identity.map(|prv| public_key(&prv)),
-            prv: config.identity,
+            key: Some(public_key(&expand_seed(&config.seed))),
+            prv: Some(expand_seed(&config.seed)),
+            node: None,
             name: String::new(),
             freq_khz: 869_618,
             radio: DEFAULT_RADIO,
@@ -447,18 +508,44 @@ impl Core {
 
     // ----- accessors -------------------------------------------------------------------
 
-    /// Our public key, once `SELF_INFO` (or the configured identity) gave it.
+    /// Our identity key (ADR-0013).
     pub const fn key(&self) -> Option<&PubKey> {
         self.key.as_ref()
     }
 
-    pub const fn has_identity(&self) -> bool {
-        self.prv.is_some()
+    /// The node's key, once `SELF_INFO` gave it.
+    pub const fn node_key(&self) -> Option<&PubKey> {
+        self.node.as_ref()
     }
 
-    /// The node's private key, for the app to store (Keychain / Keystore).
-    pub const fn private_key(&self) -> Option<&[u8; 64]> {
-        self.prv.as_ref()
+    /// The node answered: its key is known and lichen can talk.
+    pub const fn ready(&self) -> bool {
+        self.node.is_some()
+    }
+
+    /// Contact `node`'s identity is now `identity`, verified or not (a contact card scanned in
+    /// person, or safety numbers compared).
+    pub fn set_identity(&mut self, node: &PubKey, identity: PubKey, verified: bool) {
+        if let Some(c) = self.contacts.get_mut(node) {
+            if c.identity != Some(identity) {
+                self.secrets.remove(node);
+                if let Some(p) = self.peers.get_mut(node) {
+                    p.session = None;
+                    p.pending = None;
+                }
+            }
+            c.identity = Some(identity);
+            c.verified = verified;
+        }
+    }
+
+    /// Marks contact `node` verified or not (safety numbers compared, §4.7).
+    pub fn set_verified(&mut self, node: &PubKey, verified: bool) {
+        if let Some(c) = self.contacts.get_mut(node)
+            && c.identity.is_some()
+        {
+            c.verified = verified;
+        }
     }
 
     pub fn contacts(&self) -> impl Iterator<Item = &Contact> {
@@ -526,23 +613,31 @@ impl Core {
             Expect::DeviceInfo,
         );
         self.command(&Command::GetDefaultFloodScope, Expect::Scope);
-        if self.prv.is_none() {
-            self.command(&Command::ExportPrivateKey, Expect::PrivateKey);
-        }
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
         self.tick(now);
     }
 
-    /// Adds or updates a contact by hand (QR code, tests).
+    /// Adds or updates a contact by hand (contact card, tests); a known identity is kept.
     pub fn add_contact(&mut self, key: PubKey, name: &str, out_path: Option<OwnedPath>) {
+        let (identity, verified) = self
+            .contacts
+            .get(&key)
+            .map_or((None, false), |c| (c.identity, c.verified));
         self.contacts.insert(
             key,
             Contact {
                 key,
                 name: name.to_owned(),
                 out_path,
+                identity,
+                verified,
             },
         );
+    }
+
+    /// A contact restored by the app with its identity (app start).
+    pub fn restore_contact(&mut self, contact: Contact) {
+        self.contacts.insert(contact.key, contact);
     }
 
     /// Queues a text message. `sent_at` is the wall-clock time in Unix seconds.
@@ -740,7 +835,7 @@ impl Core {
         if self.deferred_until.is_some_and(|t| now >= t) {
             self.deferred_until = None;
         }
-        if self.key.is_none() || self.prv.is_none() {
+        if self.node.is_none() {
             return;
         }
         self.tick_groups(now);
@@ -817,7 +912,7 @@ impl Core {
         let mut done = true;
         match r {
             Response::SelfInfo(si) => {
-                self.key = Some(*si.key);
+                self.node = Some(*si.key);
                 self.name = String::from_utf8_lossy(si.name).into_owned();
                 self.freq_khz = si.freq_khz;
                 self.radio = LoRaParams::meshcore(si.sf, si.bw_hz, si.cr).unwrap_or(DEFAULT_RADIO);
@@ -826,32 +921,12 @@ impl Core {
                 {
                     self.budget = b;
                 }
-                if self.prv.is_some_and(|p| public_key(&p) != *si.key) {
-                    // The configured identity belongs to another node: export again.
-                    self.prv = None;
-                    self.secrets.clear();
-                    self.command(&Command::ExportPrivateKey, Expect::PrivateKey);
-                }
                 self.events.push_back(Event::Connected {
                     key: *si.key,
                     name: self.name.clone(),
                     freq_khz: si.freq_khz,
                     radio: self.radio,
                 });
-                if self.prv.is_some() {
-                    self.events.push_back(Event::IdentityReady);
-                }
-            }
-            Response::PrivateKey(k) => {
-                if self.key.is_none_or(|key| public_key(k) == key) {
-                    self.prv = Some(*k);
-                    self.key = Some(public_key(k));
-                    self.secrets.clear();
-                    self.events.push_back(Event::IdentityReady);
-                }
-            }
-            Response::Disabled | Response::Err(_) if expect == Some(Expect::PrivateKey) => {
-                self.events.push_back(Event::KeyExportRefused);
             }
             Response::ContactsStart { .. } => {
                 done = false;
@@ -863,12 +938,18 @@ impl Core {
                 let key = *c.key;
                 let name = String::from_utf8_lossy(c.name).into_owned();
                 let out_path = c.out_path.map(OwnedPath::from_path);
+                let (identity, verified) = self
+                    .contacts
+                    .get(&key)
+                    .map_or((None, false), |c| (c.identity, c.verified));
                 self.contacts.insert(
                     key,
                     Contact {
                         key,
                         name,
                         out_path,
+                        identity,
+                        verified,
                     },
                 );
                 if expect == Some(Expect::Contacts) {
@@ -907,13 +988,20 @@ impl Core {
         }
     }
 
+    /// The static secret with contact `peer` (a node key): between identities (§2), once the
+    /// peer's identity is known.
     fn secret(&mut self, peer: &PubKey) -> Option<[u8; 32]> {
         if let Some(s) = self.secrets.get(peer) {
             return Some(*s);
         }
-        let s = shared_secret(self.prv.as_ref()?, peer)?;
+        let id = self.contacts.get(peer)?.identity?;
+        let s = shared_secret(self.prv.as_ref()?, &id)?;
         self.secrets.insert(*peer, s);
         Some(s)
+    }
+
+    pub(crate) fn identity_of(&self, node: &PubKey) -> Option<PubKey> {
+        self.contacts.get(node)?.identity
     }
 
     fn timing_for(&self, path: &OwnedPath) -> Timing {
@@ -1021,6 +1109,8 @@ impl Core {
         {
             if init.attempt + 1 >= HELLO_TRIES {
                 peer.initiating = None;
+                // It may have a new identity: introduce again next time (§4.6).
+                peer.intro_needed = true;
                 self.fail_queue(peer, FailReason::Unreachable, now);
             } else {
                 init.attempt += 1;
@@ -1031,6 +1121,49 @@ impl Core {
                 }
                 self.send_hello(k, &init, now);
             }
+        }
+        // INTRO retries.
+        if let Some(intro) = peer.introducing.as_mut()
+            && now >= intro.next_retry
+        {
+            if intro.attempt + 1 >= HELLO_TRIES {
+                peer.introducing = None;
+                self.fail_queue(peer, FailReason::Unreachable, now);
+            } else {
+                intro.attempt += 1;
+                let intro = intro.clone();
+                let next_retry = now + self.hello_backoff(&intro.path);
+                if let Some(i) = peer.introducing.as_mut() {
+                    i.next_retry = next_retry;
+                }
+                self.send_intro(k, &intro, now);
+            }
+        }
+        // INTRO_FIN resends, until the responder answers under the new session; only while
+        // our data waits for it (§4.6): with nothing to send, the responder has nothing to
+        // answer and the resends would only cost airtime.
+        if let Some(fin) = peer.fin.as_mut()
+            && now >= fin.next_retry
+            && peer.in_flight.is_some()
+        {
+            if fin.attempt + 1 >= FIN_TRIES {
+                peer.fin = None;
+            } else {
+                fin.attempt += 1;
+                let fin = fin.clone();
+                let next_retry = now + self.hello_backoff(&fin.path);
+                if let Some(f) = peer.fin.as_mut() {
+                    f.next_retry = next_retry;
+                }
+                self.send_fin(k, &fin, now);
+            }
+        }
+        if peer
+            .answered_intro
+            .as_ref()
+            .is_some_and(|a| now >= a.at + INTRO_MEMORY_MS)
+        {
+            peer.answered_intro = None;
         }
 
         let Some(path) = self.path_for(k, peer) else {
@@ -1052,8 +1185,8 @@ impl Core {
         peer.probing = None;
 
         if peer.session.is_none() && peer.pending.is_none() {
-            if peer.has_work(now) && peer.initiating.is_none() {
-                self.start_handshake(k, peer, path, now);
+            if peer.has_work(now) && peer.initiating.is_none() && peer.introducing.is_none() {
+                self.begin_session(k, peer, path, now);
             }
             return;
         }
@@ -1168,18 +1301,123 @@ impl Core {
             peer.queue.push_front(msg);
             peer.session = None;
             peer.pending = None;
-            self.start_handshake(k, peer, path, now);
+            self.begin_session(k, peer, path, now);
         }
     }
 
-    /// Floods a path discovery PROBE for `k` (§4.5).
+    /// A HELLO when we know the peer's identity, an introduction otherwise (§4.6).
+    fn begin_session(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
+        if self.identity_of(k).is_some() && !peer.intro_needed {
+            self.start_handshake(k, peer, path, now);
+        } else {
+            self.start_intro(k, peer, path, now);
+        }
+    }
+
+    fn start_intro(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
+        let mut salt = [0u8; SALT_LEN];
+        self.rng.fill_bytes(&mut salt);
+        let mut eph_secret = [0u8; 32];
+        self.rng.fill_bytes(&mut eph_secret);
+        let intro = Introducing {
+            tag: self.rng.next_u32() as u16,
+            salt,
+            eph_secret,
+            attempt: 0,
+            next_retry: now + self.hello_backoff(&path),
+            path,
+        };
+        self.send_intro(k, &intro, now);
+        peer.initiating = None;
+        peer.introducing = Some(intro);
+    }
+
+    fn send_intro(&mut self, k: &PubKey, intro: &Introducing, now: Millis) {
+        let Some(node) = self.node else {
+            return;
+        };
+        let back = intro.path.reversed();
+        let msg = Intro {
+            tag: intro.tag,
+            attempt: intro.attempt,
+            salt: intro.salt,
+            ephemeral: x25519_public(&intro.eph_secret),
+            return_path_len: back.len_byte,
+            return_path: &back.bytes,
+        };
+        let mut buf = [0u8; FRAME_MAX];
+        if let Ok(n) = intro::seal_intro(node[0], k[0], &msg, &mut buf) {
+            let frame = buf.get(..n).unwrap_or(&[]).to_vec();
+            self.send_raw(&intro.path, &frame, now);
+        }
+    }
+
+    fn send_fin(&mut self, k: &PubKey, fin: &Fin, now: Millis) {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
+            return;
+        };
+        let mut buf = [0u8; FRAME_MAX];
+        if let Ok(n) = intro::seal_intro_fin(
+            node[0],
+            k[0],
+            &prv,
+            &me,
+            &fin.eph_secret,
+            &fin.salt_i,
+            &fin.ack,
+            fin.attempt,
+            &mut buf,
+        ) {
+            let frame = buf.get(..n).unwrap_or(&[]).to_vec();
+            self.send_raw(&fin.path, &frame, now);
+        }
+    }
+
+    /// The identity behind contact `node` is `identity` (§4.6): new, confirmed, or replacing
+    /// another one (then to verify again).
+    pub(crate) fn learn_identity(&mut self, node: &PubKey, identity: PubKey) {
+        let Some(c) = self.contacts.get_mut(node) else {
+            return;
+        };
+        let known = c.identity;
+        if known == Some(identity) {
+            return;
+        }
+        c.identity = Some(identity);
+        c.verified = false;
+        self.secrets.remove(node);
+        self.events.push_back(Event::IdentityLearned {
+            node: *node,
+            identity,
+            changed: known.is_some(),
+        });
+    }
+
+    /// Floods a path discovery PROBE for `k` (§4.5): keyed by our identities when we know the
+    /// peer's, anonymous otherwise.
     fn probe(&mut self, k: &PubKey, peer: &mut Peer, tries: u8, now: Millis) {
-        let (Some(me), Some(s)) = (self.key, self.secret(k)) else {
+        let (Some(me), Some(node)) = (self.key, self.node) else {
             return;
         };
         let mut id: ProbeId = [0; 8];
         self.rng.fill_bytes(&mut id);
-        let payload = discovery::build_probe(&s, &me, k, &id);
+        let secret = self.secret(k);
+        let peer_id = self.identity_of(k);
+        let payload = match (secret, peer_id) {
+            (Some(s), Some(pid)) => discovery::build_probe(
+                &Keying {
+                    s: &s,
+                    anonymous: false,
+                    prober: &me,
+                    target: &pid,
+                },
+                node[0],
+                k[0],
+                &id,
+            ),
+            _ => discovery::build_probe(&Keying::anonymous(&node, k), node[0], k[0], &id),
+        };
+        let anonymous = secret.is_none() || peer_id.is_none();
         let (route, transport) = match &self.scope {
             Some(key) => (
                 Route::TransportFlood,
@@ -1204,6 +1442,7 @@ impl Core {
             id,
             tries,
             next_try: now + wait,
+            anonymous,
         });
     }
 
@@ -1227,8 +1466,16 @@ impl Core {
     }
 
     fn send_hello(&mut self, k: &PubKey, init: &Initiating, now: Millis) {
-        let (Some(me), Some(s)) = (self.key, self.secret(k)) else {
+        let (Some(me), Some(node), Some(s), Some(pid)) =
+            (self.key, self.node, self.secret(k), self.identity_of(k))
+        else {
             return;
+        };
+        let ends = Ends {
+            me: &me,
+            peer: &pid,
+            me_node: node[0],
+            peer_node: k[0],
         };
         let back = init.path.reversed();
         let hello = Hello {
@@ -1240,7 +1487,7 @@ impl Core {
             return_path: &back.bytes,
         };
         let mut buf = [0u8; FRAME_MAX];
-        if let Ok(n) = handshake::seal_hello(&s, &me, k, &hello, &mut buf) {
+        if let Ok(n) = handshake::seal_hello(&s, &ends, &hello, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&init.path, &frame, now);
         }
@@ -1252,16 +1499,19 @@ impl Core {
         let Ok((h, _)) = Header::decode(payload) else {
             return;
         };
-        let Some(me) = self.key else {
+        let Some(node) = self.node else {
             return;
         };
-        if h.dst != me[0] || self.prv.is_none() {
+        if h.dst != node[0] {
             return;
         }
         match (h.kind, h.index) {
             (Kind::Control, 0) => self.on_hello(&h, payload, now),
             (Kind::Control, 1) => self.on_hello_ack(&h, payload, now),
-            (Kind::Control, _) => self.on_path_reply(&h, payload, now),
+            (Kind::Control, 2) => self.on_path_reply(&h, payload, now),
+            (Kind::Control, 3) => self.on_intro(payload, now),
+            (Kind::Control, 4) => self.on_intro_ack(&h, payload, now),
+            (Kind::Control, _) => self.on_intro_fin(&h, payload, now),
             _ => self.on_session_frame(&h, payload, snr4, rssi, now),
         }
     }
@@ -1280,7 +1530,7 @@ impl Core {
     /// Every frame the companion hears: we look for path discovery probes addressed to us
     /// (§4.5) and group messages (§10.3).
     fn on_log_rx(&mut self, raw: &[u8], snr4: i8, rssi: i8, now: Millis) {
-        let (Some(me), true) = (self.key, self.prv.is_some()) else {
+        let (Some(me), Some(node)) = (self.key, self.node) else {
             return;
         };
         let Ok(p) = Packet::decode(raw) else {
@@ -1295,16 +1545,30 @@ impl Core {
             self.on_group_envelope(p.payload, snr4, rssi, now);
             return;
         };
-        if probe.dst != me[0] || self.seen_probes.contains(&probe.id) {
+        if probe.dst != node[0] || self.seen_probes.contains(&probe.id) {
             return;
         }
         for c in self.candidates(probe.src) {
-            let Some(s) = self.secret(&c) else {
+            // Keyed by our identities when we know the prober's, else anonymous (§4.5).
+            let secret = self.secret(&c);
+            let pid = self.identity_of(&c);
+            let keyed = match (&secret, &pid) {
+                (Some(s), Some(pid)) => Some(Keying {
+                    s,
+                    anonymous: false,
+                    prober: pid,
+                    target: &me,
+                }),
+                _ => None,
+            };
+            let anon = Keying::anonymous(&c, &node);
+            let Some(keying) = [keyed, Some(anon)]
+                .into_iter()
+                .flatten()
+                .find(|k| discovery::verify_probe(k, c[0], node[0], p.payload))
+            else {
                 continue;
             };
-            if !discovery::verify_probe(&s, &c, &me, p.payload) {
-                continue;
-            }
             if self.seen_probes.len() >= 64 {
                 self.seen_probes.pop_front();
             }
@@ -1313,9 +1577,9 @@ impl Core {
             let back = forward.reversed();
             let mut buf = [0u8; FRAME_MAX];
             if let Ok(n) = discovery::seal_path_reply(
-                &s,
-                &me,
-                &c,
+                &keying,
+                node[0],
+                c[0],
                 &probe.id,
                 forward.len_byte,
                 &forward.bytes,
@@ -1330,7 +1594,7 @@ impl Core {
     }
 
     fn on_path_reply(&mut self, h: &Header, payload: &[u8], now: Millis) {
-        let Some(me) = self.key else {
+        let (Some(me), Some(node)) = (self.key, self.node) else {
             return;
         };
         for c in self.candidates(h.src) {
@@ -1340,11 +1604,21 @@ impl Core {
             if u16::from_le_bytes([probing.id[0], probing.id[1]]) != h.tag {
                 continue;
             }
-            let Some(s) = self.secret(&c) else {
-                continue;
+            let secret = self.secret(&c).unwrap_or([0; 32]);
+            let pid = self.identity_of(&c);
+            let keying = match (probing.anonymous, &pid) {
+                (false, Some(pid)) => Keying {
+                    s: &secret,
+                    anonymous: false,
+                    prober: &me,
+                    target: pid,
+                },
+                _ => Keying::anonymous(&node, &c),
             };
             let mut buf = payload.to_vec();
-            let Ok((id, len_byte, path)) = discovery::open_path_reply(&s, &c, &me, &mut buf) else {
+            let Ok((id, len_byte, path)) =
+                discovery::open_path_reply(&keying, node[0], c[0], &mut buf)
+            else {
                 continue;
             };
             if id != probing.id {
@@ -1363,16 +1637,188 @@ impl Core {
         }
     }
 
-    fn on_hello(&mut self, h: &Header, payload: &[u8], now: Millis) {
-        let Some(me) = self.key else {
+    /// An INTRO (§4.6): anyone may send one; we answer with our identity, proven.
+    fn on_intro(&mut self, payload: &[u8], now: Millis) {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
+            return;
+        };
+        let Ok((src, msg)) = intro::open_intro(node[0], payload) else {
+            return;
+        };
+        let Some(c) = self.candidates(src).into_iter().next() else {
+            return;
+        };
+        let mut peer = self.peers.remove(&c).unwrap_or_default();
+        // Crossing introductions: the smaller node key's wins (§4.4). A HELLO of ours cannot
+        // succeed: they do not know us.
+        if peer.introducing.is_some() && node < c {
+            self.peers.insert(c, peer);
+            return;
+        }
+        peer.introducing = None;
+        peer.initiating = None;
+        let return_path = (msg.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
+            len_byte: msg.return_path_len,
+            bytes: msg.return_path.to_vec(),
+        });
+        let Some(path) = return_path.or_else(|| self.path_for(&c, &peer)) else {
+            self.peers.insert(c, peer);
+            return;
+        };
+        let answered = match &peer.answered_intro {
+            Some(a) if a.tag == msg.tag && a.answer.salt_i == msg.salt => a.clone(),
+            _ => {
+                let mut salt_r = [0u8; SALT_LEN];
+                self.rng.fill_bytes(&mut salt_r);
+                let mut eph_secret = [0u8; 32];
+                self.rng.fill_bytes(&mut eph_secret);
+                AnsweredIntro {
+                    tag: msg.tag,
+                    answer: Answer {
+                        salt_i: msg.salt,
+                        e_i: msg.ephemeral,
+                        salt_r,
+                        eph_secret,
+                    },
+                    at: now,
+                    done: false,
+                }
+            }
+        };
+        let mut buf = [0u8; FRAME_MAX];
+        if let Ok(n) = intro::seal_intro_ack(
+            node[0],
+            c[0],
+            &prv,
+            &me,
+            &answered.answer,
+            msg.tag,
+            msg.attempt,
+            &mut buf,
+        ) {
+            let frame = buf.get(..n).unwrap_or(&[]).to_vec();
+            self.send_raw(&path, &frame, now);
+        }
+        peer.path = Some(path);
+        peer.answered_intro = Some(answered);
+        self.peers.insert(c, peer);
+    }
+
+    /// The INTRO_ACK to our introduction: the peer's identity, proven; the session starts.
+    fn on_intro_ack(&mut self, h: &Header, payload: &[u8], now: Millis) {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
             return;
         };
         for c in self.candidates(h.src) {
-            let Some(s) = self.secret(&c) else {
+            let Some(intro) = self
+                .peers
+                .get(&c)
+                .and_then(|p| p.introducing.clone())
+                .filter(|i| i.tag == h.tag)
+            else {
                 continue;
             };
+            let Ok(ack) =
+                intro::open_intro_ack(node[0], c[0], &intro.eph_secret, &intro.salt, payload)
+            else {
+                continue;
+            };
+            let Some(keys) = intro::initiator_keys(&prv, &me, &intro.eph_secret, &intro.salt, &ack)
+            else {
+                return;
+            };
+            self.learn_identity(&c, ack.identity);
+            let session = Session::new(keys, node[0], c[0], self.timing_for(&intro.path));
+            let fin = Fin {
+                salt_i: intro.salt,
+                eph_secret: intro.eph_secret,
+                ack,
+                attempt: 0,
+                next_retry: now + self.hello_backoff(&intro.path),
+                path: intro.path.clone(),
+            };
+            self.send_fin(&c, &fin, now);
+            if let Some(p) = self.peers.get_mut(&c) {
+                p.requeue_in_flight();
+                p.session = Some(Box::new(session));
+                p.pending = None;
+                p.path = Some(intro.path);
+                p.introducing = None;
+                p.intro_needed = false;
+                p.fin = Some(fin);
+            }
+            self.events.push_back(Event::SessionEstablished { peer: c });
+            self.tick(now);
+            return;
+        }
+    }
+
+    /// The INTRO_FIN of an introduction we answered: the initiator's identity, proven; its
+    /// session is pending until its first message (§4.4).
+    fn on_intro_fin(&mut self, h: &Header, payload: &[u8], now: Millis) {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
+            return;
+        };
+        for c in self.candidates(h.src) {
+            let Some(answered) = self
+                .peers
+                .get(&c)
+                .and_then(|p| p.answered_intro.clone())
+                .filter(|a| a.tag == h.tag)
+            else {
+                continue;
+            };
+            let Ok(id_i) =
+                intro::open_intro_fin(node[0], c[0], &prv, &me, &answered.answer, payload)
+            else {
+                continue;
+            };
+            if answered.done {
+                return;
+            }
+            let Some(keys) = intro::responder_keys(&prv, &me, &answered.answer, &id_i) else {
+                return;
+            };
+            self.learn_identity(&c, id_i);
+            let Some(mut peer) = self.peers.remove(&c) else {
+                return;
+            };
+            let Some(path) = self.path_for(&c, &peer) else {
+                self.peers.insert(c, peer);
+                return;
+            };
+            peer.pending = Some(Box::new(Session::new(
+                keys,
+                node[0],
+                c[0],
+                self.timing_for(&path),
+            )));
+            peer.intro_needed = false;
+            if let Some(a) = peer.answered_intro.as_mut() {
+                a.done = true;
+            }
+            self.peers.insert(c, peer);
+            self.tick(now);
+            return;
+        }
+    }
+
+    fn on_hello(&mut self, h: &Header, payload: &[u8], now: Millis) {
+        let (Some(me), Some(node)) = (self.key, self.node) else {
+            return;
+        };
+        for c in self.candidates(h.src) {
+            let (Some(s), Some(pid)) = (self.secret(&c), self.identity_of(&c)) else {
+                continue;
+            };
+            let ends = Ends {
+                me: &me,
+                peer: &pid,
+                me_node: node[0],
+                peer_node: c[0],
+            };
             let mut buf = payload.to_vec();
-            let Ok(hello) = handshake::open_hello(&s, &c, &me, &mut buf) else {
+            let Ok(hello) = handshake::open_hello(&s, &ends, &mut buf) else {
                 continue;
             };
             let return_path = (hello.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
@@ -1393,6 +1839,22 @@ impl Core {
             self.peers.insert(c, peer);
             return;
         }
+        // A HELLO we cannot open, from a contact whose identity we do not know (they scanned
+        // our card, we did not scan theirs): introduce ourselves (§4.6).
+        if let Some(c) = self
+            .candidates(h.src)
+            .into_iter()
+            .find(|c| self.identity_of(c).is_none())
+        {
+            let mut peer = self.peers.remove(&c).unwrap_or_default();
+            if peer.introducing.is_none() && now >= peer.intro_poke {
+                peer.intro_poke = now + INTRO_POKE_MS;
+                if let Some(path) = self.path_for(&c, &peer) {
+                    self.start_intro(&c, &mut peer, path, now);
+                }
+            }
+            self.peers.insert(c, peer);
+        }
     }
 
     fn answer_hello(
@@ -1404,12 +1866,12 @@ impl Core {
         return_path: Option<OwnedPath>,
         now: Millis,
     ) {
-        let Some(me) = self.key else {
+        let (Some(me), Some(node), Some(pid)) = (self.key, self.node, self.identity_of(c)) else {
             return;
         };
-        // Crossing HELLOs: the smaller public key's handshake wins (§4.4).
+        // Crossing HELLOs: the smaller node key's handshake wins (§4.4).
         if peer.initiating.is_some() {
-            if me < *c {
+            if node < *c {
                 return;
             }
             peer.initiating = None;
@@ -1430,15 +1892,17 @@ impl Core {
                     &eph_i,
                     &salt_i,
                     &salt_r,
-                    c,
+                    &pid,
                     &me,
                     false,
                 ) else {
                     return;
                 };
-                let session = Session::new(keys, me[0], c[0], self.timing_for(&path));
+                let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
                 peer.pending = Some(Box::new(session));
                 peer.path = Some(path.clone());
+                // We know each other: our own introduction is no longer needed (§4.6).
+                peer.introducing = None;
                 let a = Answered {
                     tag,
                     salt_i,
@@ -1456,14 +1920,20 @@ impl Core {
             ephemeral: answered.eph_public,
         };
         let mut buf = [0u8; FRAME_MAX];
-        if let Ok(n) = handshake::seal_hello_ack(s, &me, c, &salt_i, &ack, &mut buf) {
+        let ends = Ends {
+            me: &me,
+            peer: &pid,
+            me_node: node[0],
+            peer_node: c[0],
+        };
+        if let Ok(n) = handshake::seal_hello_ack(s, &ends, &salt_i, &ack, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&path, &frame, now);
         }
     }
 
     fn on_hello_ack(&mut self, h: &Header, payload: &[u8], now: Millis) {
-        let Some(me) = self.key else {
+        let (Some(me), Some(node)) = (self.key, self.node) else {
             return;
         };
         for c in self.candidates(h.src) {
@@ -1475,11 +1945,17 @@ impl Core {
             else {
                 continue;
             };
-            let Some(s) = self.secret(&c) else {
+            let (Some(s), Some(pid)) = (self.secret(&c), self.identity_of(&c)) else {
                 continue;
             };
+            let ends = Ends {
+                me: &me,
+                peer: &pid,
+                me_node: node[0],
+                peer_node: c[0],
+            };
             let mut buf = payload.to_vec();
-            let Ok(ack) = handshake::open_hello_ack(&s, &c, &me, &init.salt, &mut buf) else {
+            let Ok(ack) = handshake::open_hello_ack(&s, &ends, &init.salt, &mut buf) else {
                 continue;
             };
             let Some(keys) = handshake::session_keys(
@@ -1489,18 +1965,19 @@ impl Core {
                 &init.salt,
                 &ack.salt,
                 &me,
-                &c,
+                &pid,
                 true,
             ) else {
                 return;
             };
-            let session = Session::new(keys, me[0], c[0], self.timing_for(&init.path));
+            let session = Session::new(keys, node[0], c[0], self.timing_for(&init.path));
             if let Some(p) = self.peers.get_mut(&c) {
                 p.requeue_in_flight();
                 p.session = Some(Box::new(session));
                 p.pending = None;
                 p.path = Some(init.path);
                 p.initiating = None;
+                p.introducing = None;
             }
             self.events.push_back(Event::SessionEstablished { peer: c });
             self.tick(now);
@@ -1534,6 +2011,10 @@ impl Core {
                 // The initiator confirmed the pending session (§4.4).
                 peer.promote_pending();
                 self.events.push_back(Event::SessionEstablished { peer: c });
+            }
+            if outcome.is_some() {
+                // Something arrived under the session: our INTRO_FIN got through (§4.6).
+                peer.fin = None;
             }
             self.peers.insert(c, peer);
             if let Some((result, _)) = outcome {

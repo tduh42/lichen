@@ -26,7 +26,8 @@ pub use rusqlite::Error;
 /// Schema version (`PRAGMA user_version`).
 /// 2: location shares and positions (tables added, nothing migrated).
 /// 3: images (`messages.media_id`, added to older databases; `media` table).
-const VERSION: i32 = 3;
+/// 4: phone identities (ADR-0013): `contacts.identity`, `contacts.verified`, added likewise.
+const VERSION: i32 = 4;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -150,7 +151,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     key BLOB PRIMARY KEY,
     name TEXT NOT NULL,
     path_len INTEGER,
-    path BLOB
+    path BLOB,
+    identity BLOB,
+    verified INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS groups (
     gid BLOB PRIMARY KEY,
@@ -261,6 +264,16 @@ impl Store {
         if !has_media_id {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN media_id BLOB")?;
         }
+        // And from before version 4.
+        let has_identity = conn
+            .prepare("SELECT 1 FROM pragma_table_info('contacts') WHERE name = 'identity'")?
+            .exists([])?;
+        if !has_identity {
+            conn.execute_batch(
+                "ALTER TABLE contacts ADD COLUMN identity BLOB;
+                 ALTER TABLE contacts ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS messages_by_media ON messages (chat_kind, chat, media_id)",
         )?;
@@ -370,9 +383,18 @@ impl Store {
             None => (None, None),
         };
         self.conn.execute(
-            "INSERT INTO contacts (key, name, path_len, path) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT (key) DO UPDATE SET name = ?2, path_len = ?3, path = ?4",
-            params![c.key.as_slice(), c.name, len, path],
+            "INSERT INTO contacts (key, name, path_len, path, identity, verified)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (key) DO UPDATE SET name = ?2, path_len = ?3, path = ?4, identity = ?5,
+             verified = ?6",
+            params![
+                c.key.as_slice(),
+                c.name,
+                len,
+                path,
+                c.identity.as_ref().map(|i| i.as_slice()),
+                c.verified
+            ],
         )?;
         Ok(())
     }
@@ -380,11 +402,13 @@ impl Store {
     pub fn contacts(&self) -> Result<Vec<Contact>, Error> {
         let mut st = self
             .conn
-            .prepare("SELECT key, name, path_len, path FROM contacts")?;
+            .prepare("SELECT key, name, path_len, path, identity, verified FROM contacts")?;
         let rows = st.query_map([], |r| {
             let key: Vec<u8> = r.get(0)?;
             let len: Option<i64> = r.get(2)?;
             let path: Option<Vec<u8>> = r.get(3)?;
+            let identity: Option<Vec<u8>> = r.get(4)?;
+            let verified: bool = r.get(5)?;
             Ok(key.as_slice().try_into().ok().map(|key| Contact {
                 key,
                 name: r.get(1).unwrap_or_default(),
@@ -394,6 +418,8 @@ impl Store {
                         .map(|len_byte| OwnedPath { len_byte, bytes }),
                     _ => None,
                 },
+                identity: identity.and_then(|i| i.as_slice().try_into().ok()),
+                verified,
             }))
         })?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -769,12 +795,16 @@ mod tests {
                     len_byte: 1,
                     bytes: vec![0xAB],
                 }),
+                identity: Some([9; 32]),
+                verified: true,
             })
             .unwrap();
             s.put_contact(&Contact {
                 key: [6; 32],
                 name: "Julien".into(),
                 out_path: None,
+                identity: None,
+                verified: false,
             })
             .unwrap();
             s.put_group(&[7; 16], b"snapshot").unwrap();
@@ -786,7 +816,9 @@ mod tests {
         c.sort_by(|a, b| a.name.cmp(&b.name));
         assert_eq!(c.len(), 2);
         assert_eq!(c[0].out_path.as_ref().unwrap().bytes, vec![0xAB]);
+        assert_eq!((c[0].identity, c[0].verified), (Some([9; 32]), true));
         assert_eq!(c[1].out_path, None);
+        assert_eq!((c[1].identity, c[1].verified), (None, false));
         assert_eq!(s.groups().unwrap(), vec![b"snapshot".to_vec()]);
         let _ = std::fs::remove_dir_all(&dir);
     }

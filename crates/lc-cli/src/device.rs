@@ -32,11 +32,12 @@ impl Device {
         let _ = port.clear(serialport::ClearBuffer::Input);
         let mut seed = [0u8; 32];
         getrandom::fill(&mut seed).map_err(|e| format!("random seed: {e}"))?;
+        let identity = identity_seed()?;
         let mut dev = Self {
             port,
             decoder: usb::Decoder::new(),
             start: Instant::now(),
-            core: Core::new(Config::new("lichen-cli", seed)),
+            core: Core::new(Config::new("lichen-cli", identity, seed)),
             verbose: false,
         };
         let now = dev.now();
@@ -94,4 +95,34 @@ impl Device {
         }
         Ok(false)
     }
+}
+
+/// The CLI's identity seed (ADR-0013): `$LICHEN_IDENTITY`, or `~/.lichen/identity`, created
+/// (32 random bytes, owner-only) on first use.
+fn identity_seed() -> Result<[u8; 32], String> {
+    let path = match std::env::var_os("LICHEN_IDENTITY") {
+        Some(p) => std::path::PathBuf::from(p),
+        None => {
+            let home = std::env::var_os("HOME").ok_or("HOME is not set")?;
+            std::path::Path::new(&home).join(".lichen").join("identity")
+        }
+    };
+    if let Ok(bytes) = std::fs::read(&path) {
+        return bytes
+            .as_slice()
+            .try_into()
+            .map_err(|_| format!("{}: not a 32-byte identity seed", path.display()));
+    }
+    let mut seed = [0u8; 32];
+    getrandom::fill(&mut seed).map_err(|e| format!("random seed: {e}"))?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
+    std::fs::write(&path, seed).map_err(|e| format!("{}: {e}", path.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(seed)
 }

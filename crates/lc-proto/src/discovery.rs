@@ -26,22 +26,61 @@ pub struct Probe {
     pub id: ProbeId,
 }
 
-fn probe_key(s: &Key, id: &ProbeId, pub_src: &[u8; 32], pub_dst: &[u8; 32]) -> Key {
-    hkdf(id, s, &[b"lichen/1 probe", pub_src, pub_dst])
+/// How a probe and its reply are keyed (§4.5): the static secret between identities, or, when
+/// the prober does not know the target's identity, nothing secret (anonymous).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Keying<'a> {
+    /// `S`, or 32 zero bytes when anonymous.
+    pub s: &'a Key,
+    pub anonymous: bool,
+    /// Bound into the derivation: the identities, or the node keys when anonymous.
+    pub prober: &'a [u8; 32],
+    pub target: &'a [u8; 32],
 }
 
-fn reply_key(s: &Key, id: &ProbeId, pub_from: &[u8; 32], pub_to: &[u8; 32]) -> Key {
-    hkdf(id, s, &[b"lichen/1 path-reply", pub_from, pub_to])
+impl<'a> Keying<'a> {
+    /// The anonymous keying between two node keys.
+    pub const fn anonymous(prober_node: &'a [u8; 32], target_node: &'a [u8; 32]) -> Self {
+        Self {
+            s: &[0; 32],
+            anonymous: true,
+            prober: prober_node,
+            target: target_node,
+        }
+    }
 }
 
-/// The `GRP_DATA` payload of a PROBE from `me` to `peer`.
-pub fn build_probe(s: &Key, me: &[u8; 32], peer: &[u8; 32], id: &ProbeId) -> [u8; PROBE_LEN] {
+fn probe_key(k: &Keying<'_>, id: &ProbeId) -> Key {
+    let label: &[u8] = if k.anonymous {
+        b"lichen/1 probe-anon"
+    } else {
+        b"lichen/1 probe"
+    };
+    hkdf(id, k.s, &[label, k.prober, k.target])
+}
+
+fn reply_key(k: &Keying<'_>, id: &ProbeId) -> Key {
+    let label: &[u8] = if k.anonymous {
+        b"lichen/1 path-reply-anon"
+    } else {
+        b"lichen/1 path-reply"
+    };
+    hkdf(id, k.s, &[label, k.target, k.prober])
+}
+
+/// The `GRP_DATA` payload of a PROBE from node `prober_node` to node `target_node`.
+pub fn build_probe(
+    k: &Keying<'_>,
+    prober_node: u8,
+    target_node: u8,
+    id: &ProbeId,
+) -> [u8; PROBE_LEN] {
     let mut p = [0u8; PROBE_LEN];
     let (aad, tag_slot) = p.split_at_mut(PROBE_AAD);
     let (head, id_slot) = aad.split_at_mut(4);
-    head.copy_from_slice(&[CHANNEL_HASH, PROBE_VERSION, peer[0], me[0]]);
+    head.copy_from_slice(&[CHANNEL_HASH, PROBE_VERSION, target_node, prober_node]);
     id_slot.copy_from_slice(id);
-    let tag = aead::seal(&probe_key(s, id, me, peer), &[0; 12], aad, &mut []);
+    let tag = aead::seal(&probe_key(k, id), &[0; 12], aad, &mut []);
     tag_slot.copy_from_slice(&tag);
     p
 }
@@ -59,12 +98,12 @@ pub fn parse_probe(payload: &[u8]) -> Option<Probe> {
     })
 }
 
-/// True when `payload` is a PROBE from `peer` to `me` under the static secret `s`.
-pub fn verify_probe(s: &Key, peer: &[u8; 32], me: &[u8; 32], payload: &[u8]) -> bool {
+/// True when `payload` is a PROBE from `prober_node` to us (`target_node`) under `k`.
+pub fn verify_probe(k: &Keying<'_>, prober_node: u8, target_node: u8, payload: &[u8]) -> bool {
     let Some(p) = parse_probe(payload) else {
         return false;
     };
-    if p.dst != me[0] || p.src != peer[0] {
+    if p.dst != target_node || p.src != prober_node {
         return false;
     }
     let (Some(aad), Some(tag)) = (payload.get(..PROBE_AAD), payload.get(PROBE_AAD..)) else {
@@ -73,15 +112,16 @@ pub fn verify_probe(s: &Key, peer: &[u8; 32], me: &[u8; 32], payload: &[u8]) -> 
     let Ok(tag) = <&[u8; TAG_LEN]>::try_from(tag) else {
         return false;
     };
-    aead::open(&probe_key(s, &p.id, peer, me), &[0; 12], aad, &mut [], tag).is_ok()
+    aead::open(&probe_key(k, &p.id), &[0; 12], aad, &mut [], tag).is_ok()
 }
 
-/// Builds the PATH_REPLY from `me` to `peer` for probe `id`, carrying the path the probe took
-/// (peer → me). Returns the frame length.
+/// Builds the PATH_REPLY from us (`target_node`) to the prober for probe `id`, carrying the
+/// path the probe took (prober → us). Returns the frame length.
+#[allow(clippy::too_many_arguments)]
 pub fn seal_path_reply(
-    s: &Key,
-    me: &[u8; 32],
-    peer: &[u8; 32],
+    k: &Keying<'_>,
+    target_node: u8,
+    prober_node: u8,
     id: &ProbeId,
     path_len: u8,
     path: &[u8],
@@ -91,8 +131,8 @@ pub fn seal_path_reply(
         return Err(FrameError::Malformed);
     }
     let header = Header {
-        dst: peer[0],
-        src: me[0],
+        dst: prober_node,
+        src: target_node,
         tag: u16::from_le_bytes([id[0], id[1]]),
         kind: Kind::Control,
         index: 2,
@@ -109,24 +149,25 @@ pub fn seal_path_reply(
     let (l, p) = ct.split_at_mut(1);
     l.copy_from_slice(&[path_len]);
     p.copy_from_slice(path);
-    let tag = aead::seal(&reply_key(s, id, me, peer), &header.nonce(), aad, ct);
+    let tag = aead::seal(&reply_key(k, id), &header.nonce(), aad, ct);
     tag_slot.copy_from_slice(&tag);
     Ok(len)
 }
 
-/// Opens a PATH_REPLY sent by `peer` to `me`. Returns the probe `id` and the path
-/// (`path_len`, bytes) from `me` to `peer`, borrowed from the decrypted frame.
+/// Opens a PATH_REPLY sent by the target (`target_node`) to us, the prober (`prober_node`).
+/// Returns the probe `id` and the path (`path_len`, bytes) from us to the target, borrowed
+/// from the decrypted frame.
 pub fn open_path_reply<'a>(
-    s: &Key,
-    peer: &[u8; 32],
-    me: &[u8; 32],
+    k: &Keying<'_>,
+    prober_node: u8,
+    target_node: u8,
     frame: &'a mut [u8],
 ) -> Result<(ProbeId, u8, &'a [u8]), FrameError> {
     let (header, _) = Header::decode(frame)?;
     if header.kind != Kind::Control || header.index != 2 {
         return Err(FrameError::Malformed);
     }
-    if header.dst != me[0] || header.src != peer[0] {
+    if header.dst != prober_node || header.src != target_node {
         return Err(FrameError::NotForUs);
     }
     if frame.len() < HEADER_LEN + ID_LEN + 1 + TAG_LEN {
@@ -143,8 +184,7 @@ pub fn open_path_reply<'a>(
     let ct_len = rest.len() - TAG_LEN;
     let (ct, tag) = rest.split_at_mut(ct_len);
     let tag: &[u8; TAG_LEN] = (&*tag).try_into().map_err(|_| FrameError::Length)?;
-    aead::open(&reply_key(s, &id, peer, me), &header.nonce(), aad, ct, tag)
-        .map_err(|_| FrameError::Auth)?;
+    aead::open(&reply_key(k, &id), &header.nonce(), aad, ct, tag).map_err(|_| FrameError::Auth)?;
     let ct: &[u8] = ct;
     let (&len_byte, path) = ct.split_first().ok_or(FrameError::Malformed)?;
     if path_bytes(len_byte) != Some(path.len()) {

@@ -1,6 +1,6 @@
 use lc_meshcore::ecdh::{expand_seed, public_key, shared_secret};
 use lc_proto::handshake::{
-    Hello, HelloAck, open_hello, open_hello_ack, seal_hello, seal_hello_ack, session_keys,
+    Ends, Hello, HelloAck, open_hello, open_hello_ack, seal_hello, seal_hello_ack, session_keys,
 };
 use lc_proto::kdf::x25519_public;
 use lc_proto::{FrameError, Header, Kind};
@@ -8,6 +8,16 @@ use lc_proto::{FrameError, Header, Kind};
 struct Id {
     prv: [u8; 64],
     pubk: [u8; 32],
+}
+
+/// Identity keys for the derivation; their first bytes stand in for the node hashes.
+fn ends<'a>(me: &'a Id, peer: &'a Id) -> Ends<'a> {
+    Ends {
+        me: &me.pubk,
+        peer: &peer.pubk,
+        me_node: me.pubk[0],
+        peer_node: peer.pubk[0],
+    }
 }
 
 fn id(seed: u8) -> Id {
@@ -36,7 +46,7 @@ fn full_handshake_gives_matching_keys() {
         return_path: &return_path,
     };
     let mut frame = [0u8; 172];
-    let n = seal_hello(&s_a, &alice.pubk, &bob.pubk, &hello, &mut frame).unwrap();
+    let n = seal_hello(&s_a, &ends(&alice, &bob), &hello, &mut frame).unwrap();
     assert_eq!(n, 7 + 16 + 32 + 2 + 2 + 8);
     let (h, _) = Header::decode(&frame[..n]).unwrap();
     assert_eq!(
@@ -45,7 +55,7 @@ fn full_handshake_gives_matching_keys() {
     );
     assert_eq!((h.dst, h.src), (bob.pubk[0], alice.pubk[0]));
 
-    let got = open_hello(&s_b, &alice.pubk, &bob.pubk, &mut frame[..n]).unwrap();
+    let got = open_hello(&s_b, &ends(&bob, &alice), &mut frame[..n]).unwrap();
     assert_eq!(got.ephemeral, hello.ephemeral);
     assert_eq!(got.return_path, &return_path);
     let salt_i = got.salt;
@@ -58,9 +68,9 @@ fn full_handshake_gives_matching_keys() {
         ephemeral: x25519_public(&e_b),
     };
     let mut frame2 = [0u8; 172];
-    let n2 = seal_hello_ack(&s_b, &bob.pubk, &alice.pubk, &salt_i, &ack, &mut frame2).unwrap();
+    let n2 = seal_hello_ack(&s_b, &ends(&bob, &alice), &salt_i, &ack, &mut frame2).unwrap();
     let got_ack =
-        open_hello_ack(&s_a, &bob.pubk, &alice.pubk, &hello.salt, &mut frame2[..n2]).unwrap();
+        open_hello_ack(&s_a, &ends(&alice, &bob), &hello.salt, &mut frame2[..n2]).unwrap();
     assert_eq!(got_ack, ack);
 
     let ka = session_keys(
@@ -104,12 +114,12 @@ fn wrong_secret_or_tampering_is_rejected() {
         return_path: &[],
     };
     let mut frame = [0u8; 172];
-    let n = seal_hello(&s_ab, &alice.pubk, &bob.pubk, &hello, &mut frame).unwrap();
+    let n = seal_hello(&s_ab, &ends(&alice, &bob), &hello, &mut frame).unwrap();
 
     // Eve's secret with Bob does not open Alice's HELLO.
     let mut copy = frame;
     assert_eq!(
-        open_hello(&s_eb, &alice.pubk, &bob.pubk, &mut copy[..n]).unwrap_err(),
+        open_hello(&s_eb, &ends(&bob, &alice), &mut copy[..n]).unwrap_err(),
         FrameError::Auth
     );
     // Any changed byte (header, salt, ciphertext, tag) is rejected.
@@ -117,7 +127,7 @@ fn wrong_secret_or_tampering_is_rejected() {
         let mut copy = frame;
         copy[i] ^= 0x01;
         assert!(
-            open_hello(&s_ab, &alice.pubk, &bob.pubk, &mut copy[..n]).is_err(),
+            open_hello(&s_ab, &ends(&bob, &alice), &mut copy[..n]).is_err(),
             "byte {i}"
         );
     }
@@ -127,7 +137,7 @@ fn wrong_secret_or_tampering_is_rejected() {
         attempt: 1,
         ..hello
     };
-    let n2 = seal_hello(&s_ab, &alice.pubk, &bob.pubk, &resend, &mut again).unwrap();
+    let n2 = seal_hello(&s_ab, &ends(&alice, &bob), &resend, &mut again).unwrap();
     assert_eq!(n, n2);
     assert_ne!(frame[..n], again[..n2]);
     // An inconsistent return path is refused at build time.
@@ -136,7 +146,7 @@ fn wrong_secret_or_tampering_is_rejected() {
         return_path: &[1, 2],
         ..hello
     };
-    assert!(seal_hello(&s_ab, &alice.pubk, &bob.pubk, &bad, &mut again).is_err());
+    assert!(seal_hello(&s_ab, &ends(&alice, &bob), &bad, &mut again).is_err());
 }
 
 #[test]

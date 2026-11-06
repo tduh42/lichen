@@ -34,8 +34,12 @@ fn three(seed: u64) -> (Net, [usize; 3]) {
     }
     assert!(net.run_until(net.now + 20 * S, |n| {
         m.iter()
-            .all(|&a| n.nodes[a].core.as_ref().is_some_and(|c| c.has_identity()))
+            .all(|&a| n.nodes[a].core.as_ref().is_some_and(|c| c.ready()))
     }));
+    // Everyone scanned everyone's code (ADR-0013): groups need known identities.
+    net.introduce(m[0], m[1]);
+    net.introduce(m[0], m[2]);
+    net.introduce(m[1], m[2]);
     (net, m)
 }
 

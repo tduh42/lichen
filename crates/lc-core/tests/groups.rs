@@ -35,8 +35,13 @@ fn star_with_loss(seed: u64, loss: u32) -> (Net, Vec<usize>) {
     assert!(net.run_until(net.now + 20_000, |n| {
         members
             .iter()
-            .all(|&m| n.nodes[m].core.as_ref().is_some_and(|c| c.has_identity()))
+            .all(|&m| n.nodes[m].core.as_ref().is_some_and(|c| c.ready()))
     }));
+    // The admin and each member scanned each other's code (ADR-0013); the members learn each
+    // other's identities from the group state.
+    for &m in &members[1..] {
+        net.introduce(members[0], m);
+    }
     (net, members)
 }
 

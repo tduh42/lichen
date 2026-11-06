@@ -11,6 +11,7 @@ Original plan: `~/.claude/plans/glistening-wishing-scone.md` (2026-11-06). Tangu
 - **Stock MeshCore v1.18** (commit 81dbae5): no assumption of a modified firmware. MeshCore facts come from oxymesh's verified documentation (`../oxymesh/docs/spec/{air,companion}.md`) and are copied into our spec with their source.
 - **Self-contained** (ADR-0001): no code dependency on oxymesh or loranet. Only the optional `sim/` workspace, outside the build, may use oxymesh's simulator. The vectors in `testdata/meshcore/` are copied from oxymesh (data, not code).
 - **Never reuse a nonce** (ADR-0003): every session key is fresh, `tag` is a per-direction counter, `attempt` is part of the nonce. A proptest checks it.
+- **The identity is the phone's** (ADR-0013): a seed in the Keychain / Keystore, never the node's key; the node key only routes (frame headers, paths). A contact is a node plus, once known, an identity and a verified flag; strangers meet through the introduction (§4.6).
 - **Never put a location in a MeshCore advert**, never flood media (no media in groups before the bridge, L7); a medium that does not fit in the hour's airtime is refused, not queued (§13.4). A coarse location is a fixed grid cell centre, never random noise (ADR-0011).
 - **Duty cycle**: values in `config/eu868.toml`, never hard-coded; the budget is computed on the host before every costly send.
 
@@ -21,9 +22,11 @@ crates/
   lc-meshcore/  no_std  app side of the companion protocol (subset), USB framing, on-air frame header,
                         MeshCore-style ECDH, LoRa airtime
   lc-proto/     no_std  lichen frame (7-byte header), crypto (ChaCha20-Poly1305 with 8-byte tag, HKDF),
-                        handshake, fragmentation and reassembly machines (ACK-on-Error), fixed capacities
+                        handshake, introduction (intro.rs), fragmentation and reassembly machines
+                        (ACK-on-Error), fixed capacities
   lc-core/      std     sessions, contacts, paths, groups, airtime budget, send queue, events;
-                        location shares (location.rs, ADR-0011); SQLite store (store.rs,
+                        location shares (location.rs, ADR-0011); identity tools (identity.rs:
+                        phrase, fingerprint, safety number, card); SQLite store (store.rs,
                         ADR-0010); fake MeshCore network for tests
   lc-media/     std     media over LoRa (ADR-0012): Codec2 voice frames, AVIF thumbnails (preview + full)
   lc-cli/       std     `lichen` binary: USB client for real-world tests
@@ -44,6 +47,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 ## 3. Code rules
 
 - `no_std` crates: no allocation, no floats, `#![forbid(unsafe_code)]`; clippy `deny(unwrap_used, expect_used, indexing_slicing, panic)` outside tests.
+- The only `unsafe` code is `crates/lc-media/src/codec2_c.rs`, the FFI to the vendored Codec2 (ADR-0012); keep it there, fuzzed.
 - **Hardened parsers**: zero-copy, never panic on external input; one `cargo-fuzz` target per decoder, created together with it.
 - **Nothing is interpreted before the AEAD tag is verified**, except the 7-byte header (which is in the AAD).
 - **Storage stays out of the core logic**: `lc-ffi` records what the core reports and restores contacts and groups (snapshots) at start. Never store sessions or our own group sender key (ADR-0003, ADR-0010).
@@ -79,6 +83,9 @@ cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
 cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # measurements
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 cargo test -p lc-core --release --test location -- --nocapture            # location: dead reckoning figures
+cargo test -p lc-core --release --test identity -- --nocapture            # introduction costs
+cargo run -p lc-media --release --example encode_voice -- in.wav out.c2 heard.wav   # voice fixtures
+CFLAGS="-fsanitize=address -mllvm -asan-guard-against-version-mismatch=0" scripts/fuzz.sh 600 voice_decode
 (cd sim && cargo test --release -- --nocapture)                            # against oxymesh's MeshCore logic
 scripts/build-ios-core.sh && (cd apps/ios && xcodegen generate)           # iOS core + project
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project apps/ios/Lichen.xcodeproj \

@@ -134,10 +134,30 @@ With 25 % loss per link (Alice and Bob around one repeater, 40 min zigzag at 2 m
 | Medium | Bytes | Fragments | Airtime (ours, first round) |
 |---|---|---|---|
 | Voice, 10 s, Codec2 1200 | 1,500 (+ 8) | 10 | 10.7 s |
-| Voice, 10 s, Codec2 700C (when available) | 875 (+ 8) | 6 | — |
-| Voice, 6.2 s (demo, macOS speech synthesis) | 924 | 6 | — |
+| Voice, 10 s, Codec2 700C (vendored C library, sent since) | 875 (+ 8) | 6 | — |
+| Voice, 6.2 s (demo, macOS speech synthesis), 1200 then 700C | 924, then 539 | 6, then 4 | — |
 | Image preview, 160 × 120 AVIF (synthetic landscape) | 409 (+ 21) | 3 | — |
 | Image full, 160 × 120 AVIF (same) | 975 (+ 21) | 7 | — |
 
 Budget: 15-second voice messages to one contact, back to back: 22 accepted (16 s of airtime each, 352 s of the 360 s an hour), the 23rd refused with "fits in 60 min" (nothing sent yet, so the queued airtime frees up an hour from now); after 30 minutes, the refusal points to one hour after the first transmission.
+
+**Fuzz** (10 min each): `content_decode` 35.1 M runs, `voice_decode` (Codec2 1200, pure Rust) 168 k runs, no crash.
+
+**Codec2 700C** (vendored C library): 10 s of voice in 875 bytes (6 fragments); Camille's 6.2 s clip in 539 bytes. `voice_decode` fuzzed 10 min with AddressSanitizer compiled into the C code (`-mllvm -asan-guard-against-version-mismatch=0`, Apple clang against Rust's ASan runtime): 106 k runs, no error.
+
+## 2026-11-06 — Phone identities (ADR-0013)
+
+`cargo test -p lc-core --release --test identity -- --nocapture`, SF8 / 62.5 kHz / CR 4/5, one hop.
+
+| Message | Bytes | Airtime |
+|---|---|---|
+| INTRO | 57 (no return path bytes beyond one hop) | 508 ms |
+| INTRO_ACK | 104 | 754 ms |
+| INTRO_FIN | 56 | 508 ms |
+| HELLO | 66 | 549 ms |
+| HELLO_ACK | 64 | 549 ms |
+
+A first contact costs about 1.8 s of airtime for its three frames, once per pair of identities; later sessions use HELLO / HELLO_ACK (1.1 s). Strangers on 15 % lossy links (10 seeds, three messages each): every message delivered once. A one-sided card (Alice scanned Bob, not the reverse) and a reinstalled app with a new identity both converge, the latter reported as changed.
+
+The demo network showed a cost of congestion: an introduction still retrying after a HELLO had succeeded replaced the working session, and INTRO_FIN resends without data to acknowledge only added collisions at the hub. Both are now ruled out (§4.6).
 

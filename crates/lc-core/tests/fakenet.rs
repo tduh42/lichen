@@ -26,8 +26,8 @@ fn chain(repeaters: usize, loss_pct: u32, seed: u64, with_paths: bool) -> (Net, 
     net.connect(a);
     net.connect(b);
     assert!(net.run_until(net.now + 10_000, |n| {
-        n.nodes[a].core.as_ref().is_some_and(|c| c.has_identity())
-            && n.nodes[b].core.as_ref().is_some_and(|c| c.has_identity())
+        n.nodes[a].core.as_ref().is_some_and(|c| c.ready())
+            && n.nodes[b].core.as_ref().is_some_and(|c| c.ready())
     }));
     net.run_until(net.now + 1_000, |_| false);
     (net, a, b)

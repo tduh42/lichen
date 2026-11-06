@@ -59,6 +59,7 @@ struct Demo {
     wall0: u64,
     /// The full variant of Camille's photo, kept for when it is asked for.
     camille_full: Option<(MediaId, Vec<u8>)>,
+    bots_met: bool,
 }
 
 fn unix_now_ms() -> u64 {
@@ -141,12 +142,18 @@ impl Demo {
             }
             Action::CreateGroup => {
                 let members = [app_key, self.net.key(self.julien)];
-                self.group = self
-                    .net
-                    .with_core(self.camille, |c, now| {
-                        c.create_group("Rando Vercors", &members, now)
-                    })
-                    .and_then(Result::ok);
+                match self.net.with_core(self.camille, |c, now| {
+                    c.create_group("Rando Vercors", &members, now)
+                }) {
+                    Some(Ok(gid)) => self.group = Some(gid),
+                    // She does not know the app's identity yet (ADR-0013): after their first
+                    // exchange.
+                    Some(Err(lc_core::Error::IdentityUnknown)) => {
+                        let at = self.net.now + 15 * SEC;
+                        self.pending.push((at, Action::CreateGroup));
+                    }
+                    _ => {}
+                }
             }
             Action::CamilleShares => {
                 let t = self.unix_s();
@@ -215,6 +222,20 @@ impl Demo {
 
     fn bots(&mut self) {
         let now = self.net.now;
+        // Camille and Julien scanned each other's code before the hike (ADR-0013); the app
+        // meets them over the air.
+        if !self.bots_met
+            && [self.camille, self.julien].iter().all(|&b| {
+                self.net
+                    .nodes
+                    .get(b)
+                    .and_then(|n| n.core.as_ref())
+                    .is_some_and(|c| c.ready())
+            })
+        {
+            self.bots_met = true;
+            self.net.introduce(self.camille, self.julien);
+        }
         let due: Vec<Action> = self
             .pending
             .iter()
@@ -406,6 +427,7 @@ impl DemoNetwork {
                 next_fix: 0,
                 wall0: wall,
                 camille_full: None,
+                bots_met: false,
             }),
         })
     }
@@ -455,11 +477,11 @@ mod tests {
     #[test]
     fn demo_conversation_and_group() {
         let demo = DemoNetwork::new();
-        let core = LichenCore::new("demo-test".into(), vec![7; 32], None, None).unwrap();
+        let core = LichenCore::new("demo-test".into(), vec![7; 32], vec![107; 32], None).unwrap();
         core.connect(0);
         let mut events = Vec::new();
         let mut sent = false;
-        for step in 0..(10 * 60 * 10) {
+        for step in 0..(20 * 60 * 10) {
             let now = step * 100;
             for f in demo.read(now) {
                 core.on_companion_frame(f, now);
@@ -469,6 +491,11 @@ mod tests {
                 demo.write(f, now);
             }
             while let Some(e) = core.poll_event() {
+                if matches!(&e, LichenEvent::GroupMessage { message: Message::Text { text, .. }, .. }
+                    if text.starts_with("Leaving the col"))
+                {
+                    eprintln!("Julien's post at {} s", now / 1000);
+                }
                 events.push(e);
             }
             if !sent
@@ -525,7 +552,7 @@ mod location {
     #[test]
     fn bots_share_their_positions() {
         let demo = DemoNetwork::new();
-        let core = LichenCore::new("t".into(), vec![4; 32], None, None).unwrap();
+        let core = LichenCore::new("t".into(), vec![4; 32], vec![104; 32], None).unwrap();
         core.set_clock(unix_now_ms(), 0);
         core.connect(0);
         let mut events = Vec::new();
@@ -588,12 +615,12 @@ mod media {
     #[test]
     fn voice_and_images_with_camille() {
         let demo = DemoNetwork::new();
-        let core = LichenCore::new("t".into(), vec![5; 32], None, None).unwrap();
+        let core = LichenCore::new("t".into(), vec![5; 32], vec![105; 32], None).unwrap();
         core.connect(0);
         let mut changed: Vec<StoredMessage> = Vec::new();
         let mut step = 0;
         let mut now = 0;
-        while now < 9 * 60_000 {
+        while now < 13 * 60_000 {
             for f in demo.read(now) {
                 core.on_companion_frame(f, now);
             }
@@ -611,7 +638,7 @@ mod media {
                 if step == 0 && now > 40_000 {
                     let pcm: Vec<i16> = (0..24_000).map(|i| ((i % 80) as i16 - 40) * 200).collect();
                     let v = crate::prepare_voice(pcm);
-                    assert_eq!((v.mode, v.frames, v.data.len()), (1, 75, 450));
+                    assert_eq!((v.mode, v.frames, v.data.len()), (0, 75, 263));
                     core.send_voice(c.key.clone(), v, 1, now).unwrap();
                     step = 1;
                 }
@@ -726,7 +753,7 @@ mod persistence {
         let data = Some(dir.to_string_lossy().into_owned());
         let demo = DemoNetwork::new();
 
-        let core = LichenCore::new("t".into(), vec![1; 32], None, data.clone()).unwrap();
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![101; 32], data.clone()).unwrap();
         core.connect(0);
         let mut sent = false;
         run(&demo, &core, 0, 8 * 60_000, |c, now| {
@@ -763,11 +790,10 @@ mod persistence {
             gid: group.gid.clone(),
         };
         assert!(!core.history(gref.clone(), None, 50).unwrap().is_empty());
-        let prv = core.private_key().unwrap();
         drop(core);
 
-        // The app restarts with the key from the Keychain: history before connecting.
-        let core = LichenCore::new("t".into(), vec![2; 32], Some(prv), data.clone()).unwrap();
+        // The app restarts with its identity seed from the Keychain: history before connecting.
+        let core = LichenCore::new("t".into(), vec![2; 32], vec![101; 32], data.clone()).unwrap();
         assert_eq!(
             core.history(
                 ChatRef::Contact {
@@ -829,7 +855,7 @@ mod unread {
     #[test]
     fn unread_counts_received_messages() {
         let demo = DemoNetwork::new();
-        let core = LichenCore::new("t".into(), vec![3; 32], None, None).unwrap();
+        let core = LichenCore::new("t".into(), vec![3; 32], vec![103; 32], None).unwrap();
         core.connect(0);
         let mut now = 0;
         while now < 60_000 {

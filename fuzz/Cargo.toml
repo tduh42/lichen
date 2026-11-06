@@ -88,3 +88,10 @@ test = false
 doc = false
 bench = false
 
+
+[[bin]]
+name = "intro_open"
+path = "fuzz_targets/intro_open.rs"
+test = false
+doc = false
+bench = false

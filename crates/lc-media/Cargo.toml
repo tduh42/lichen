@@ -10,5 +10,14 @@ publish.workspace = true
 codec2.workspace = true
 ravif.workspace = true
 
-[lints]
-workspace = true
+[build-dependencies]
+cc = "1.2"
+
+# The workspace forbids unsafe code; here it is denied, and allowed in codec2_c.rs only (the
+# FFI to the vendored Codec2, ADR-0012).
+[lints.rust]
+unsafe_code = "deny"
+missing_debug_implementations = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }

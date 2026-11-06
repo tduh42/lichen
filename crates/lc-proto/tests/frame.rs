@@ -33,7 +33,9 @@ fn header_rules() {
     let mut c = [0u8; 40];
     c[..7].copy_from_slice(&[1, 2, 0, 0, 0xC2, 1, 0]); // CONTROL index 2 (PATH_REPLY)
     assert!(Header::decode(&c).is_ok());
-    c[4] = 0xC3; // CONTROL index 3: reserved
+    c[4] = 0xC5; // CONTROL index 5 (INTRO_FIN)
+    assert!(Header::decode(&c).is_ok());
+    c[4] = 0xC6; // CONTROL index 6: reserved
     assert_eq!(Header::decode(&c).unwrap_err(), FrameError::Malformed);
     f[5] = 0; // total 0
     assert_eq!(Header::decode(&f).unwrap_err(), FrameError::Malformed);

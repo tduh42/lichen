@@ -1,6 +1,6 @@
 # ADR-0012 — Media over LoRa: Codec2 voice, AVIF thumbnails with a preview
 
-- Status: accepted (voice codec: 1200 for now, 700C pending)
+- Status: accepted; voice in 700C since the vendored C library (same day)
 - Date: 2026-11-06
 
 ## Context
@@ -9,7 +9,7 @@ The design allows two media over LoRa, direct only: voice messages in Codec2 700
 
 ## Decision
 
-- **Voice.** No Rust port implements 700C: the `codec2` crate (pure Rust, LGPL-2.1) stops at 1200 bit/s. 700C needs the reference C library (Codec2 1.2.0, LGPL-2.1), built from vendored sources. Until that is settled, voice uses the crate's 1200 mode; the format carries the mode (§13.1), so 700C can come without breaking anything. 1200 costs 10 fragments for 10 s instead of 6, and sounds better.
+- **Voice.** No Rust port implements 700C: the `codec2` crate (pure Rust, LGPL-2.1) stops at 1200 bit/s. 700C comes from the reference C library (Codec2 1.2.0, LGPL-2.1), vendored in `crates/lc-media/codec2/` (the speech codec only, 15 files) and built by `build.rs`; its codebooks are generated the way Codec2 does, value for value. A five-function FFI wrapper is the repository's only `unsafe` code; the decoder is fuzzed with AddressSanitizer in the C code. New messages are 700C (10 s = 875 bytes, 6 fragments); 1200 is still decoded (the mode is in the body, §13.1).
 - **Images.** AVIF, encoded in the Rust core with `ravif` (pure Rust, rav1e without assembly) so iOS and Android produce the same bytes; decoded by the system (iOS 16+, Android 12+). Fit in 160 × 120. A preview of at most 450 bytes is sent; the full thumbnail (at most 4 KB) only on request.
 - **Groups.** No media: it would have to be flooded. It waits for the Internet bridge (L7), as the design says.
 - **Budget.** A medium is refused, not queued, when its first round does not fit in the airtime left in the sliding hour; the app shows when it will fit.

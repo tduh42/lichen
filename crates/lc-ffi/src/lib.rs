@@ -42,6 +42,10 @@ pub enum LichenError {
     BadImage,
     /// Not an image preview that can be asked for in full.
     NotAPreview,
+    /// The contact's identity is not known yet: exchange a message or scan their code first.
+    IdentityUnknown,
+    /// Not a lichen contact code, or not 24 valid words.
+    BadCode,
 }
 
 impl std::fmt::Display for LichenError {
@@ -60,6 +64,7 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::Empty => Self::Empty,
             lc_core::Error::TooLarge => Self::TooLarge,
             lc_core::Error::NoIdentity => Self::NoIdentity,
+            lc_core::Error::IdentityUnknown => Self::IdentityUnknown,
             lc_core::Error::NotAllowed => Self::NotAllowed,
             lc_core::Error::OverBudget { wait_ms } => Self::OverBudget {
                 wait_s: wait_ms.div_ceil(1000),
@@ -77,12 +82,31 @@ pub struct Radio {
     pub cr: u8,
 }
 
+/// A contact: its node key identifies it in the app; the identity behind it comes once known
+/// (ADR-0013).
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ContactInfo {
+    /// The node key.
     pub key: Vec<u8>,
     pub name: String,
     /// Repeaters on the known path, if any.
     pub hops: Option<u8>,
+    /// The phone identity, once known.
+    pub identity: Option<Vec<u8>>,
+    /// Compared in person (QR code or safety number).
+    pub verified: bool,
+}
+
+impl ContactInfo {
+    fn of(c: &lc_core::Contact) -> Self {
+        Self {
+            key: c.key.to_vec(),
+            name: c.name.clone(),
+            hops: c.out_path.as_ref().map(lc_core::OwnedPath::hops),
+            identity: c.identity.map(|i| i.to_vec()),
+            verified: c.verified,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -341,8 +365,13 @@ pub enum LichenEvent {
         name: String,
         radio: Radio,
     },
-    IdentityReady,
-    KeyExportRefused,
+    /// We learned the identity behind contact `node`; `changed`: it replaced another one (to
+    /// verify again).
+    IdentityLearned {
+        node: Vec<u8>,
+        identity: Vec<u8>,
+        changed: bool,
+    },
     ContactsUpdated,
     SessionEstablished {
         peer: Vec<u8>,
@@ -406,7 +435,12 @@ fn snr(snr4: i8) -> f32 {
 }
 
 impl LichenEvent {
-    fn from_core(e: Event, freq_khz: u32) -> Self {
+    /// `admin_node` maps a group admin's identity to its node (the app knows contacts by node).
+    fn from_core(
+        e: Event,
+        freq_khz: u32,
+        admin_node: impl Fn(&GroupId, &PubKey) -> PubKey,
+    ) -> Self {
         match e {
             Event::Connected {
                 key,
@@ -423,8 +457,15 @@ impl LichenEvent {
                     cr: radio.cr,
                 },
             },
-            Event::IdentityReady => Self::IdentityReady,
-            Event::KeyExportRefused => Self::KeyExportRefused,
+            Event::IdentityLearned {
+                node,
+                identity,
+                changed,
+            } => Self::IdentityLearned {
+                node: node.to_vec(),
+                identity: identity.to_vec(),
+                changed,
+            },
             Event::ContactsUpdated => Self::ContactsUpdated,
             Event::SessionEstablished { peer } => Self::SessionEstablished {
                 peer: peer.to_vec(),
@@ -449,7 +490,7 @@ impl LichenEvent {
             Event::GroupJoined { gid, name, admin } => Self::GroupJoined {
                 gid: gid.to_vec(),
                 name,
-                admin: admin.to_vec(),
+                admin: admin_node(&gid, &admin).to_vec(),
             },
             Event::GroupUpdated { gid } => Self::GroupUpdated { gid: gid.to_vec() },
             Event::GroupLeft { gid } => Self::GroupLeft { gid: gid.to_vec() },
@@ -594,6 +635,8 @@ pub struct Conversation {
 
 struct Inner {
     core: Core,
+    /// The identity seed (ADR-0013), for the recovery phrase.
+    seed: [u8; 32],
     store: Option<Store>,
     data_dir: Option<PathBuf>,
     /// Core message id → row id, for the messages sent by this run.
@@ -605,13 +648,18 @@ struct Inner {
 }
 
 impl Inner {
-    /// Opens the database of node `key` (or one in memory) and restores contacts and groups.
-    fn open_store(&mut self, node: &PubKey) {
+    /// Opens the database of our identity (or one in memory) and restores contacts, groups
+    /// and shares.
+    fn open_store(&mut self, identity: &PubKey) {
         let store = match &self.data_dir {
             Some(dir) => {
                 let _ = std::fs::create_dir_all(dir);
-                let hex: String = node.iter().take(8).map(|b| format!("{b:02x}")).collect();
-                Store::open(&dir.join(format!("node-{hex}.sqlite")))
+                let hex: String = identity
+                    .iter()
+                    .take(8)
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+                Store::open(&dir.join(format!("id-{hex}.sqlite")))
             }
             None => Store::in_memory(),
         };
@@ -620,9 +668,7 @@ impl Inner {
         };
         let _ = store.fail_unfinished();
         for c in store.contacts().unwrap_or_default() {
-            if !self.core.contacts().any(|k| k.key == c.key) {
-                self.core.add_contact(c.key, &c.name, c.out_path.clone());
-            }
+            self.core.restore_contact(c);
         }
         for snap in store.groups().unwrap_or_default() {
             self.core.restore_group(&snap);
@@ -728,13 +774,11 @@ impl Inner {
     /// Records what an event means for the history.
     fn on_event(&mut self, e: &Event) {
         match e {
-            Event::Connected { key, .. } => {
-                if self.store.is_none() {
-                    self.open_store(key);
-                    self.save_contacts();
-                }
-            }
-            Event::ContactsUpdated | Event::GroupJoined { .. } | Event::GroupUpdated { .. } => {
+            Event::Connected { .. } => self.save_contacts(),
+            Event::ContactsUpdated
+            | Event::GroupJoined { .. }
+            | Event::GroupUpdated { .. }
+            | Event::IdentityLearned { .. } => {
                 self.save_contacts();
             }
             Event::Received {
@@ -876,41 +920,37 @@ impl LichenCore {
 
 #[uniffi::export]
 impl LichenCore {
-    /// `rng_seed`: 32 bytes from the OS random generator. `identity`: the node's 64-byte
-    /// private key if the app stored it (Keychain), otherwise it is exported from the
-    /// companion. `data_dir`: where the per-node databases live; without it, history is kept
+    /// `rng_seed`: 32 bytes from the OS random generator. `identity_seed`: the phone
+    /// identity's 32-byte seed (ADR-0013), drawn once by the app and kept in the Keychain /
+    /// Keystore. `data_dir`: where the identity's database lives; without it, history is kept
     /// in memory only (demo).
     #[uniffi::constructor]
     pub fn new(
         app_name: String,
         rng_seed: Vec<u8>,
-        identity: Option<Vec<u8>>,
+        identity_seed: Vec<u8>,
         data_dir: Option<String>,
     ) -> Result<Arc<Self>, LichenError> {
-        let seed: [u8; 32] = rng_seed
+        let rng: [u8; 32] = rng_seed
             .as_slice()
             .try_into()
             .map_err(|_| LichenError::InvalidKey)?;
-        let mut config = Config::new(&app_name, seed);
-        config.identity = match identity {
-            Some(k) => Some(
-                k.as_slice()
-                    .try_into()
-                    .map_err(|_| LichenError::InvalidKey)?,
-            ),
-            None => None,
-        };
+        let seed: [u8; 32] = identity_seed
+            .as_slice()
+            .try_into()
+            .map_err(|_| LichenError::InvalidKey)?;
         let mut inner = Inner {
-            core: Core::new(config),
+            core: Core::new(Config::new(&app_name, seed, rng)),
+            seed,
             store: None,
             data_dir: data_dir.map(PathBuf::from),
             inflight: HashMap::new(),
             extra: VecDeque::new(),
             last_now: 0,
         };
-        // With a known identity the history is available before the node connects.
-        if let Some(node) = inner.core.key().copied() {
-            inner.open_store(&node);
+        // The history is available before the node connects.
+        if let Some(id) = inner.core.key().copied() {
+            inner.open_store(&id);
         }
         Ok(Arc::new(Self {
             inner: Mutex::new(inner),
@@ -958,16 +998,105 @@ impl LichenCore {
         i.on_event(&e);
         i.persist();
         let f = i.core.freq_khz();
-        Some(LichenEvent::from_core(e, f))
+        let core = &i.core;
+        Some(LichenEvent::from_core(e, f, |gid, admin| {
+            core.groups()
+                .find(|g| g.gid == *gid)
+                .and_then(|g| g.members.iter().find(|m| m.key == *admin))
+                .map_or(*admin, |m| m.node)
+        }))
     }
 
+    /// Our identity key (ADR-0013).
     pub fn key(&self) -> Option<Vec<u8>> {
         self.lock().core.key().map(|k| k.to_vec())
     }
 
-    /// The node's private key, for the app to keep in the Keychain / Keystore.
-    pub fn private_key(&self) -> Option<Vec<u8>> {
-        self.lock().core.private_key().map(|k| k.to_vec())
+    /// The connected node's key.
+    pub fn node_key(&self) -> Option<Vec<u8>> {
+        self.lock().core.node_key().map(|k| k.to_vec())
+    }
+
+    /// The 24 words that restore our identity (§2).
+    pub fn recovery_phrase(&self) -> Vec<String> {
+        lc_core::identity::recovery_phrase(&self.lock().seed)
+    }
+
+    /// Our fingerprint: 6 groups of 4 hexadecimal digits (§4.7).
+    pub fn fingerprint(&self) -> Vec<String> {
+        let i = self.lock();
+        i.core
+            .key()
+            .map(|k| lc_core::identity::fingerprint(k).to_vec())
+            .unwrap_or_default()
+    }
+
+    /// Our contact card for a QR code (`lichen:1:…`); needs the node connected.
+    pub fn contact_card(&self, name: String) -> Result<String, LichenError> {
+        let i = self.lock();
+        let (Some(identity), Some(node)) = (i.core.key(), i.core.node_key()) else {
+            return Err(LichenError::NoIdentity);
+        };
+        Ok(lc_core::identity::Card {
+            identity: *identity,
+            node: *node,
+            name,
+        }
+        .encode())
+    }
+
+    /// Adds (or updates) the contact of a scanned card, verified: it was scanned in person.
+    pub fn add_contact_card(&self, card: String) -> Result<ContactInfo, LichenError> {
+        let c = lc_core::identity::Card::decode(&card).ok_or(LichenError::BadCode)?;
+        let mut i = self.lock();
+        if i.core.key() == Some(&c.identity) {
+            return Err(LichenError::BadCode);
+        }
+        let name = i
+            .core
+            .contacts()
+            .find(|k| k.key == c.node)
+            .map_or(c.name.clone(), |k| k.name.clone());
+        let path = i
+            .core
+            .contacts()
+            .find(|k| k.key == c.node)
+            .and_then(|k| k.out_path.clone());
+        i.core.add_contact(c.node, &name, path);
+        i.core.set_identity(&c.node, c.identity, true);
+        i.save_contacts();
+        let out = i
+            .core
+            .contacts()
+            .find(|k| k.key == c.node)
+            .map(ContactInfo::of)
+            .ok_or(LichenError::UnknownContact)?;
+        i.extra.push_back(LichenEvent::ContactsUpdated);
+        Ok(out)
+    }
+
+    /// The safety number with contact `node` (6 groups of 5 digits), once its identity is known.
+    pub fn safety_number(&self, node: Vec<u8>) -> Result<Vec<String>, LichenError> {
+        let k = key(&node)?;
+        let i = self.lock();
+        let peer = i
+            .core
+            .contacts()
+            .find(|c| c.key == k)
+            .ok_or(LichenError::UnknownContact)?
+            .identity
+            .ok_or(LichenError::IdentityUnknown)?;
+        let me = i.core.key().ok_or(LichenError::NoIdentity)?;
+        Ok(lc_core::identity::safety_number(me, &peer).to_vec())
+    }
+
+    /// Marks contact `node` verified (safety numbers matched) or not (they differ).
+    pub fn set_verified(&self, node: Vec<u8>, verified: bool) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        i.core.set_verified(&k, verified);
+        i.save_contacts();
+        Ok(())
     }
 
     pub fn radio(&self) -> Radio {
@@ -987,16 +1116,7 @@ impl LichenCore {
     }
 
     pub fn contacts(&self) -> Vec<ContactInfo> {
-        let mut v: Vec<ContactInfo> = self
-            .lock()
-            .core
-            .contacts()
-            .map(|c| ContactInfo {
-                key: c.key.to_vec(),
-                name: c.name.clone(),
-                hops: c.out_path.as_ref().map(lc_core::OwnedPath::hops),
-            })
-            .collect();
+        let mut v: Vec<ContactInfo> = self.lock().core.contacts().map(ContactInfo::of).collect();
         v.sort_by_key(|c| c.name.to_lowercase());
         v
     }
@@ -1009,14 +1129,25 @@ impl LichenCore {
             .map(|g| GroupInfo {
                 gid: g.gid.to_vec(),
                 name: g.name.clone(),
-                admin: g.admin.to_vec(),
+                admin: g
+                    .members
+                    .iter()
+                    .find(|m| m.key == g.admin)
+                    .map_or(g.admin, |m| m.node)
+                    .to_vec(),
                 members: g
                     .members
                     .iter()
-                    .map(|m| ContactInfo {
-                        key: m.key.to_vec(),
-                        name: m.name.clone(),
-                        hops: None,
+                    .map(|m| {
+                        let contact = i.core.contacts().find(|c| c.key == m.node);
+                        ContactInfo {
+                            key: m.node.to_vec(),
+                            name: m.name.clone(),
+                            hops: None,
+                            identity: Some(m.key.to_vec()),
+                            verified: contact
+                                .is_some_and(|c| c.verified && c.identity == Some(m.key)),
+                        }
                     })
                     .collect(),
                 keys_known: g.keys_known() as u32,
@@ -1363,6 +1494,21 @@ impl LichenCore {
     }
 }
 
+/// The seed of a 24-word recovery phrase, to restore an identity (§2).
+#[uniffi::export]
+pub fn seed_from_phrase(words: Vec<String>) -> Result<Vec<u8>, LichenError> {
+    lc_core::identity::seed_from_phrase(&words)
+        .map(|s| s.to_vec())
+        .ok_or(LichenError::BadCode)
+}
+
+/// The fingerprint of an identity key (6 groups of 4 hexadecimal digits).
+#[uniffi::export]
+pub fn fingerprint_of(identity: Vec<u8>) -> Result<Vec<String>, LichenError> {
+    let k = key(&identity)?;
+    Ok(lc_core::identity::fingerprint(&k).to_vec())
+}
+
 /// A voice message ready to send.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct PreparedVoice {
@@ -1448,11 +1594,12 @@ mod tests {
 
     #[test]
     fn constructs_and_connects() {
-        let core = LichenCore::new("test".into(), vec![1; 32], None, None).unwrap();
+        let core = LichenCore::new("test".into(), vec![1; 32], vec![2; 32], None).unwrap();
         core.connect(0);
         let first = core.poll_companion(0).unwrap();
         assert_eq!(first[0], 1, "APP_START comes first");
-        assert!(LichenCore::new("x".into(), vec![1; 31], None, None).is_err());
+        assert!(LichenCore::new("x".into(), vec![1; 31], vec![2; 32], None).is_err());
+        assert!(LichenCore::new("x".into(), vec![1; 32], vec![2; 31], None).is_err());
         assert_eq!(
             core.send_text(vec![0; 3], "x".into(), 0, 0),
             Err(LichenError::InvalidKey)

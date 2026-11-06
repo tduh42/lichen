@@ -27,10 +27,12 @@ Facts that constrain the protocol:
 6. The companion does not report when a frame has left: `SEND_RAW_DATA` answers OK as soon as it is queued. Pacing is our job (§7.3).
 7. Hash of an identity = `pub[0]` (A:§3).
 
-## 2. Identity and static secret
+## 2. Identity and static secret (ADR-0013)
 
-- A user's lichen identity is their MeshCore node identity: `prv` (64 bytes, exported once, kept in the Keychain or Keystore) and `pub` (32 bytes, Ed25519). ADR-0004.
-- **Static secret** `S` (32 bytes) with a contact of key `pub_P`: MeshCore's ECDH (A:§2), `S = X25519(clamp(prv[0..32]), u(pub_P))`, `u` being the Montgomery coordinate of the Ed25519 point `pub_P`. A `pub_P` that does not decompress, or an all-zero `S`, is rejected.
+- A user's lichen **identity** is a key generated on the phone: a random 32-byte `seed`, kept in the Keychain or Keystore, expanded the MeshCore way into `prv` (64 bytes, A:§2) and `id` (32 bytes, Ed25519). The seed never leaves the phone; its backup is the 24-word BIP-39 phrase (English list) of the seed.
+- The MeshCore **node key** `node` only routes: frame headers carry node hashes (§3.1), and the companion's private key is never used.
+- A **contact** is a node key plus, once known, an identity key and a verified flag (§4.7).
+- **Static secret** `S` (32 bytes) with a contact of identity `id_P`: MeshCore's ECDH (A:§2) between identities, `S = X25519(clamp(prv[0..32]), u(id_P))`, `u` being the Montgomery coordinate of the Ed25519 point `id_P`. An `id_P` that does not decompress, or an all-zero `S`, is rejected.
 - The static secret **never** encrypts data directly: it only feeds the handshake (§4).
 
 ## 3. lichen frame
@@ -41,8 +43,8 @@ A lichen frame is the payload of a `RAW_CUSTOM` packet.
 
 | Byte | Field | Content |
 |---|---|---|
-| 0 | `dst` | `pub[0]` of the recipient |
-| 1 | `src` | `pub[0]` of the sender |
+| 0 | `dst` | `node[0]` of the recipient |
+| 1 | `src` | `node[0]` of the sender |
 | 2-3 | `tag` | u16: datagram number within the session and direction (§5), or handshake identifier |
 | 4 | `kind ‖ index` | bits 7-6: `kind`; bits 5-0: `index` |
 | 5 | `total` | 1..64 |
@@ -53,9 +55,9 @@ A lichen frame is the payload of a `RAW_CUSTOM` packet.
 | 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..157) ‖ AEAD tag (8)` |
 | 1 | ACK | 0 | `total` of the acknowledged datagram | ACK sequence for this `tag` | `ciphertext (9) ‖ tag (8)` |
 | 2 | ABORT | 0: "I give up my datagram"; 1: "I refuse yours" | `total` of the datagram | sequence | `ciphertext (1) ‖ tag (8)` |
-| 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; 2: PATH_REPLY; others reserved, ignored | 1 | try | §4 |
+| 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; 2: PATH_REPLY; 3: INTRO; 4: INTRO_ACK; 5: INTRO_FIN; others reserved, ignored | 1 | try | §4 |
 
-Decoding (otherwise silently dropped): length ≥ 7 + 1 + 8; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = 24; ABORT: `index ∈ {0, 1}` and length = 16; CONTROL: `total = 1`, `index ∈ {0, 1, 2}`. `dst` must be our hash.
+Decoding (otherwise silently dropped): length ≥ 7 + 1 + 8; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = 24; ABORT: `index ∈ {0, 1}` and length = 16; CONTROL: `total = 1`, `index ≤ 5`. `dst` must be our hash.
 
 ### 3.2 Useful size (ADR-0002)
 
@@ -70,7 +72,7 @@ A datagram is at most `64 × chunk` bytes (10,048 bytes up to 2 path bytes). All
 
 Every session starts with HELLO → HELLO_ACK. Both messages are encrypted under **single-use** keys derived from the static secret and a random salt; session keys add forward secrecy (ephemeral X25519 on both sides, always).
 
-Notation: `I` = initiator, `R` = responder; `HKDF(salt, ikm, info, L)` = HKDF-SHA256 (RFC 5869); `info` strings start with the ASCII `"lichen/1 "`.
+Notation: `I` = initiator, `R` = responder; `HKDF(salt, ikm, info, L)` = HKDF-SHA256 (RFC 5869); `info` strings start with the ASCII `"lichen/1 "`. `pub_I`, `pub_R` are the **identity** keys `id_I`, `id_R` (§2). This handshake needs both identities known; a first contact starts with the introduction (§4.6), which ends with a session too.
 
 ### 4.1 HELLO (I → R)
 
@@ -130,9 +132,11 @@ frame   = header ‖ [tc0 ‖ tc1] ‖ path_len (0) ‖ payload
 header  = FLOOD | GRP_DATA << 2 = 0x19, or TRANSPORT_FLOOD | GRP_DATA << 2 = 0x18 with the transport
           codes of the companion's default flood scope (tc0 = code(region key, 6, payload), tc1 = 0)
 payload = 0x7C (channel hash, ADR-0008) ‖ 0x01 (probe version) ‖ dst (1) ‖ src (1) ‖ id (8, random) ‖ mac (8)
-K_p     = HKDF(id, S, "lichen/1 probe" ‖ pub_src ‖ pub_dst, 32)
+K_p     = HKDF(id, S, "lichen/1 probe" ‖ id_src ‖ id_dst, 32)
 mac     = ChaCha20-Poly1305 tag (8) under K_p, nonce 0, empty plaintext, AAD = payload[0..12]
 ```
+
+`dst` and `src` are node hashes. When the prober does not know the target's identity yet, the probe is **anonymous**: `K_p = HKDF(id, 0×32, "lichen/1 probe-anon" ‖ node_src ‖ node_dst, 32)`, which anyone can compute; the answer to an anonymous probe is anonymous too (`K_pr` below with `0×32`, `"lichen/1 path-reply-anon"` and the node keys). It is not authenticated: a forged answer can only send the following handshake down a wrong path, which then fails and probes again.
 
 The payload is 20 bytes: after the 2-byte "MAC" a stock node would read, 17 bytes remain, not a multiple of 16 (§1 fact 9). Repeaters forward it as any flood, appending their hash to the path.
 
@@ -144,11 +148,47 @@ The payload is 20 bytes: after the 2-byte "MAC" a stock node would read, 17 byte
 header = kind 3, index 2, total 1, tag = id[0..2], attempt 0
 body   = id (8, in clear) ‖ ciphertext ‖ tag (8)
 plain  = path_len (1) ‖ path (the sender-to-us path, as received)
-K_pr   = HKDF(id, S, "lichen/1 path-reply" ‖ pub_us ‖ pub_sender, 32)
+K_pr   = HKDF(id, S, "lichen/1 path-reply" ‖ id_us ‖ id_sender, 32)
 AAD    = header (7) ‖ id
 ```
 
 The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`. Because `id` makes every key single-use, nonces never repeat.
+
+### 4.6 Introduction (first contact, ADR-0013)
+
+When I does not know R's identity, it introduces itself in three messages on the Noise XX pattern: identities travel encrypted under ephemeral keys, and each side proves it holds its identity key. Notation: `e_X` ephemeral X25519 keys, `x_X = clamp(prv_X[0..32])` the identity's X25519 secret, `u(id)` as in §2; every DH that gives zero is rejected.
+
+```
+salt   = salt_I ‖ salt_R
+ee     = X25519(e_I, e_R)
+es     = X25519(e_I, u(id_R)) = X25519(x_R, e_I)
+se     = X25519(x_I, e_R)     = X25519(e_R, u(id_I))
+K_1    = HKDF(salt, ee,           "lichen/1 intro r"  ‖ e_I ‖ e_R, 32)
+K_2    = HKDF(salt, ee ‖ es,      "lichen/1 intro r2" ‖ e_I ‖ e_R ‖ id_R, 32)
+K_3    = HKDF(salt, ee ‖ es,      "lichen/1 intro i"  ‖ e_I ‖ e_R ‖ id_R, 32)
+K_4    = HKDF(salt, ee ‖ es ‖ se, "lichen/1 intro i2" ‖ e_I ‖ e_R ‖ id_R ‖ id_I, 32)
+K_{I→R} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_I ‖ id_R, 32)
+K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
+```
+
+| Message | Header | Body |
+|---|---|---|
+| INTRO (I → R) | `index 3`, `tag = h` (random), `attempt` = try | `salt_I (16) ‖ e_I (32) ‖ return_path_len (1) ‖ return_path (0..64)`, in clear |
+| INTRO_ACK (R → I) | `index 4`, `tag = h`, `attempt` copied | `salt_R (16) ‖ e_R (32) ‖ seal(K_1, id_R) (32 + 8) ‖ seal(K_2, flags (1)) (1 + 8)` |
+| INTRO_FIN (I → R) | `index 5`, `tag = h`, `attempt` = try | `seal(K_3, id_I) (32 + 8) ‖ seal(K_4, flags (1)) (1 + 8)` |
+
+- `seal` is the AEAD of §5 with the frame's header nonce, and as AAD the header followed by everything before the sealed part (for INTRO_ACK, `salt_R ‖ e_R`, then also the first sealed part for the second); each key is used once.
+- INTRO carries nothing secret: the return path is public routing information. Anyone can send one; R answers each `(src, h, salt_I)` with the same `(salt_R, e_R)` for 10 minutes, so a resend gets the same answer.
+- I checks INTRO_ACK's second tag, which only the holder of `id_R` could produce, then sends INTRO_FIN and holds the session (`K_{I→R}`, `K_{R→I}`). R checks INTRO_FIN's second tag and holds the session too, pending until I's first message (§4.4): the introduction replaces HELLO / HELLO_ACK for this first session.
+- I resends INTRO until INTRO_ACK (as HELLO, §4.4). Until something from R arrives under the new session, I resends INTRO_FIN (re-sealed with the next `attempt`) whenever its data waits for an acknowledgement. A session set up by HELLO / HELLO_ACK in the meantime cancels a pending introduction to the same peer.
+- **Trust**: an identity learned this way is new to the receiver and **to verify** (§4.7). If the contact already had another identity, the new one replaces it, unverified, and the app is told (a reinstalled app, or an attack).
+- A peer whose identity is known but who answers no HELLO (8 tries) is introduced again on the next attempt: it may have a new identity.
+
+### 4.7 Verification
+
+- **Fingerprint** of an identity: the first 12 bytes of `SHA-256("lichen/1 fingerprint" ‖ id)`, shown as 6 groups of 4 hexadecimal digits.
+- **Safety number** of two identities `a < b` (lexicographic): `h = SHA-512("lichen/1 safety" ‖ a ‖ b)`; group `i` (0..5) is the big-endian integer of `h[5i..5i+5]` modulo 100,000, shown with 5 digits. Both phones show the same 30 digits.
+- **Contact card** (QR code): `lichen:1:` followed by the unpadded base64url of `id (32) ‖ node (32) ‖ name (UTF-8, ≤ 32 bytes)`. Scanning it in person adds the contact **verified**; comparing safety numbers aloud verifies it too.
 
 ## 5. Nonces and AAD (ADR-0003)
 
@@ -259,9 +299,11 @@ A group is a set of members who each hold the **sender key** of every other memb
 ### 10.1 Group state (pairwise datagram, type 0x11 GROUP_STATE)
 
 ```
-gid (16, random) ‖ epoch u32 ‖ admin pub (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 2..32)
-‖ n × (pub (32) ‖ name_len (1) ‖ name (≤ 32))
+gid (16, random) ‖ epoch u32 ‖ admin id (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 2..32)
+‖ n × (id (32) ‖ node (32) ‖ name_len (1) ‖ name (≤ 32))
 ```
+
+Members are identities (§2); `node` is where to reach them (MeshCore routing).
 
 - The creator is the **admin**. Only the admin sends GROUP_STATE. A receiver accepts it when it comes from the group's admin with a higher `epoch` than the one it holds, or, for an unknown `gid`, from any contact that lists itself as admin and lists the receiver (joining is reported to the app).
 - Members who are not contacts yet are added as contacts from the list (their pairwise traffic needs a path, found by §4.5).
@@ -285,7 +327,7 @@ Sent with `SEND_RAW_PACKET` as a `GRP_DATA` flood (transport codes of the defaul
 payload = 0x7C ‖ type (1) ‖ gid_hash (2) ‖ sender (1) ‖ key_epoch (1) ‖ counter u32 ‖ frag (1)
           ‖ ciphertext ‖ tag (8) ‖ [0x00 if type = 0x03]
 type    = 0x02, or 0x03 when a trailing pad byte is present
-gid_hash = SHA256(gid)[0..2];  sender = pub[0] of the sender
+gid_hash = SHA256(gid)[0..2];  sender = id[0] of the sender's identity
 frag    = index << 4 | copy << 3 | total, total ∈ {1, 2}, index < total, copy ∈ {0, 1}, bit 2 = 0
 nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  key = sender key
 ```
@@ -295,7 +337,7 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 - **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 70 bytes in one fragment, 209 in two.
 - **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces.
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
-- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's public key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
+- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's identity key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
 - **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept, 16 at most, for 10 minutes, and tried again when a new sender key arrives. Sender keys travel pairwise over several hops and often arrive after a member's first post.
 - **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006).
 
@@ -339,7 +381,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 `ts u32 ‖ mode u8 ‖ frames u16 ‖ data`
 
-- `mode`: 0 = Codec2 700C (28 bits per 40 ms frame), 1 = Codec2 1200 (48 bits per 40 ms frame). Audio is 8 kHz mono.
+- `mode`: 0 = Codec2 700C (28 bits per 40 ms frame, what lichen sends), 1 = Codec2 1200 (48 bits per 40 ms frame, still decoded). Audio is 8 kHz mono.
 - `data`: the frames' bits back to back, most significant bit first, `⌈frames × bits / 8⌉` bytes; anything else is rejected.
 - At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200. Ten seconds is 875 bytes (6 fragments on one hop) in 700C, 1,500 (10 fragments) in 1200.
 

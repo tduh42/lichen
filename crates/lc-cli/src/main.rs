@@ -109,10 +109,20 @@ fn describe(core: &Core, e: &Event) -> String {
             radio.sf,
             radio.cr
         ),
-        Event::IdentityReady => "node key available, end-to-end encryption ready".into(),
-        Event::KeyExportRefused => {
-            "the companion refuses EXPORT_PRIVATE_KEY: lichen cannot derive keys (ADR-0004)".into()
-        }
+        Event::IdentityLearned {
+            node,
+            identity,
+            changed,
+        } => format!(
+            "{} is identity {}{}",
+            name_of(core, node),
+            lc_core::identity::fingerprint(identity).join(" "),
+            if *changed {
+                " (CHANGED: verify again)"
+            } else {
+                " (to verify)"
+            }
+        ),
         Event::ContactsUpdated => format!("{} contacts", core.contacts().count()),
         Event::SessionEstablished { peer } => {
             format!("secure session with {}", name_of(core, peer))
@@ -251,27 +261,29 @@ fn find_contact(core: &Core, to: &str) -> Result<PubKey, String> {
     }
 }
 
-/// Connects and waits for the identity and the contact list.
+/// Connects and waits for the node and the contact list.
 fn connect(port: &str, verbose: bool) -> Result<Device, String> {
     let mut dev = Device::open(port)?;
     dev.verbose = verbose;
-    let (mut identity, mut contacts) = (false, false);
+    if let Some(id) = dev.core.key() {
+        println!("identity {}", lc_core::identity::fingerprint(id).join(" "));
+    }
+    let (mut node, mut contacts) = (false, false);
     let ok = dev.run(Duration::from_secs(20), |core, e, _| {
         println!("{}", describe(core, &e));
         match e {
-            Event::IdentityReady => identity = true,
+            Event::Connected { .. } => node = true,
             Event::ContactsUpdated => contacts = true,
-            Event::KeyExportRefused => return Flow::Stop,
             _ => {}
         }
-        if identity && contacts {
+        if node && contacts {
             Flow::Stop
         } else {
             Flow::Continue
         }
     })?;
-    if !ok || !identity {
-        return Err("the companion did not give its identity and contacts".into());
+    if !ok || !node {
+        return Err("the companion did not answer with its node and contacts".into());
     }
     Ok(dev)
 }

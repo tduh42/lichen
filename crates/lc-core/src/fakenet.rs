@@ -225,12 +225,32 @@ impl Net {
             .unwrap_or_default()
     }
 
+    /// Replaces the companion's app by a fresh one with a **new identity** and no stored
+    /// contacts (the app reinstalled without its recovery phrase, ADR-0013).
+    pub fn reinstall_app(&mut self, i: usize, seed: u8) {
+        self.attach_app(i, seed);
+        let mut rng_seed = [seed; 32];
+        rng_seed[1] ^= 0x33;
+        let mut id_seed = self.nodes.get(i).map_or([seed; 32], |n| n.key);
+        id_seed[0] ^= 0xA5;
+        id_seed[1] ^= seed | 1;
+        let mut core = Core::new(Config::new("lichen-sim", id_seed, rng_seed));
+        core.set_clock(EPOCH_MS + self.now, self.now);
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.core = Some(core);
+        }
+    }
+
     /// Replaces the companion's app by a fresh one (an app restart: sessions are lost).
     pub fn attach_app(&mut self, i: usize, seed: u8) {
         let mut rng_seed = [seed; 32];
         rng_seed[0] ^= 0x5A;
         rng_seed[1] = self.rng.next_u32() as u8;
-        let mut core = Core::new(Config::new("lichen-sim", rng_seed));
+        // The phone identity (ADR-0013) depends on the node only: a restarted app keeps it, as
+        // the real app keeps its seed in the Keychain.
+        let mut id_seed = self.nodes.get(i).map_or([seed; 32], |n| n.key);
+        id_seed[0] ^= 0xA5;
+        let mut core = Core::new(Config::new("lichen-sim", id_seed, rng_seed));
         core.set_clock(EPOCH_MS + self.now, self.now);
         if let Some(n) = self.nodes.get_mut(i) {
             n.core = Some(core);
@@ -306,6 +326,35 @@ impl Net {
         if let Some(n) = self.nodes.get_mut(a) {
             n.contacts.retain(|(k, _, _)| *k != key);
             n.contacts.push((key, name.unwrap_or_default(), path));
+        }
+    }
+
+    /// The apps of `a` and `b` learn each other's identity, verified, as if they had scanned
+    /// each other's contact card in person (§4.7). Call once both are ready.
+    pub fn introduce(&mut self, a: usize, b: usize) {
+        let id = |net: &Self, i: usize| {
+            net.nodes
+                .get(i)
+                .and_then(|n| n.core.as_ref())
+                .and_then(|c| c.key().copied())
+        };
+        let (Some(ia), Some(ib)) = (id(self, a), id(self, b)) else {
+            return;
+        };
+        for (me, other, other_id) in [(a, b, ib), (b, a, ia)] {
+            let node = self.key(other);
+            let name = self
+                .nodes
+                .get(other)
+                .map(|n| n.name.clone())
+                .unwrap_or_default();
+            let path = self.route(me, other);
+            self.with_core(me, |c, _| {
+                if !c.contacts().any(|k| k.key == node) {
+                    c.add_contact(node, &name, path);
+                }
+                c.set_identity(&node, other_id, true);
+            });
         }
     }
 
@@ -506,8 +555,8 @@ impl Net {
                     && let Ok((h, _)) = lc_proto::Header::decode(payload)
                 {
                     eprintln!(
-                        "{:>8} tx@{i} {:?} tag={} idx={} tot={} att={}",
-                        self.now, h.kind, h.tag, h.index, h.total, h.attempt
+                        "{:>8} tx@{i} {:?} tag={} idx={} tot={} att={} {:02x}>{:02x}",
+                        self.now, h.kind, h.tag, h.index, h.total, h.attempt, h.src, h.dst
                     );
                 }
                 let mut air = vec![((PayloadType::RawCustom as u8) << 2) | Route::Direct as u8];
@@ -718,8 +767,8 @@ impl Net {
                 && let Ok((h, _)) = lc_proto::Header::decode(p.payload)
             {
                 eprintln!(
-                    "{:>8} rx@{r} {:?} tag={} idx={} tot={} att={}",
-                    self.now, h.kind, h.tag, h.index, h.total, h.attempt
+                    "{:>8} rx@{r} {:?} tag={} idx={} tot={} att={} {:02x}>{:02x}",
+                    self.now, h.kind, h.tag, h.index, h.total, h.attempt, h.src, h.dst
                 );
             }
             let mut push = vec![resp::RAW_DATA, 40, (-90i8) as u8, 0xFF];

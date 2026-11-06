@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn stale_and_replayed_positions_are_dropped() {
         use crate::core::Config;
-        let mut core = Core::new(Config::new("t", [1; 32]));
+        let mut core = Core::new(Config::new("t", [2; 32], [1; 32]));
         let fix = Fix {
             lat: 45.0,
             lon: 5.0,

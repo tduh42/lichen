@@ -11,3 +11,6 @@
 /apps/ios/Lichen.xcodeproj/
 /apps/ios/LichenCore.xcframework/
 /apps/ios/Generated/
+
+# Agent worktrees (Claude Code)
+/.claude/worktrees/

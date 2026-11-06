@@ -28,7 +28,7 @@ fn setup(seed: u64, loss_milli: u32) -> (World, Vec<App>) {
     assert!(run(&mut w, &mut apps, 10_000, |apps| apps
         .iter()
         .all(|a| a.events.contains(&Event::ContactsUpdated)
-            && a.events.contains(&Event::IdentityReady))));
+            && a.events.iter().any(|e| matches!(e, Event::Connected { .. })))));
     for app in &apps {
         assert_eq!(
             app.core.contacts().count(),

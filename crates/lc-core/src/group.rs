@@ -25,8 +25,8 @@ pub const COPIES: u8 = 2;
 const PARTIAL_MS: Millis = 300_000;
 /// Keys that arrived before their group state are kept this long.
 const PENDING_KEY_MS: Millis = 600_000;
-/// Version byte of [`Group::snapshot`].
-const SNAPSHOT_VERSION: u8 = 1;
+/// Version byte of [`Group::snapshot`]: 2 since members are identities with a node (ADR-0013).
+const SNAPSHOT_VERSION: u8 = 2;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
 /// And at most this many.
@@ -41,10 +41,13 @@ pub(crate) struct Held {
     at: Millis,
 }
 
-/// A member as listed in the group state.
+/// A member as listed in the group state: an identity (ADR-0013) and the node that reaches it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Member {
+    /// The member's identity.
     pub key: PubKey,
+    /// Its node (routing).
+    pub node: PubKey,
     pub name: String,
 }
 
@@ -157,6 +160,7 @@ impl Group {
         v.push(self.members.len() as u8);
         for m in &self.members {
             v.extend_from_slice(&m.key);
+            v.extend_from_slice(&m.node);
             put_name(&mut v, &m.name);
         }
         v.push(self.my_epoch);
@@ -197,8 +201,10 @@ impl Group {
         let mut members = Vec::with_capacity(n);
         for _ in 0..n {
             let key: PubKey = take(b, 32)?.try_into().ok()?;
+            let node: PubKey = take(b, 32)?.try_into().ok()?;
             members.push(Member {
                 key,
+                node,
                 name: take_name(b)?,
             });
         }
@@ -252,6 +258,11 @@ impl Group {
 
     fn is_member(&self, k: &PubKey) -> bool {
         self.members.iter().any(|m| m.key == *k)
+    }
+
+    /// The member reached through node `node`.
+    pub fn member_by_node(&self, node: &PubKey) -> Option<&Member> {
+        self.members.iter().find(|m| m.node == *node)
     }
 }
 
@@ -316,6 +327,7 @@ impl State {
         v.push(self.members.len() as u8);
         for m in &self.members {
             v.extend_from_slice(&m.key);
+            v.extend_from_slice(&m.node);
             put_name(&mut v, &m.name);
         }
         v
@@ -337,8 +349,10 @@ impl State {
         let mut members = Vec::with_capacity(n);
         for _ in 0..n {
             let key: PubKey = take(&mut b, 32)?.try_into().ok()?;
+            let node: PubKey = take(&mut b, 32)?.try_into().ok()?;
             members.push(Member {
                 key,
+                node,
                 name: take_name(&mut b)?,
             });
         }
@@ -409,15 +423,28 @@ impl Core {
             return false;
         };
         let gid = g.gid;
-        let me = self.key;
-        for m in &g.members {
-            if Some(m.key) != me && !self.contacts.contains_key(&m.key) {
-                self.add_contact(m.key, &m.name, None);
-            }
-        }
+        let members = g.members.clone();
         self.groups.insert(gid, g);
+        self.learn_members(&members);
         self.dirty_groups.insert(gid);
         true
+    }
+
+    /// Members of a group become contacts (their node), with the identity the group gives
+    /// when the contact has none yet.
+    fn learn_members(&mut self, members: &[Member]) {
+        let me = self.key;
+        for m in members {
+            if Some(m.key) == me {
+                continue;
+            }
+            if !self.contacts.contains_key(&m.node) {
+                self.add_contact(m.node, &m.name, None);
+            }
+            if self.identity_of(&m.node).is_none() {
+                self.learn_identity(&m.node, m.key);
+            }
+        }
     }
 
     /// How many times each group message is flooded (1 or 2).
@@ -443,16 +470,22 @@ impl Core {
         members: &[PubKey],
         now: Millis,
     ) -> Result<GroupId, Error> {
-        let me = self.key.ok_or(Error::NoIdentity)?;
+        let (me, node) = (
+            self.key.ok_or(Error::NoIdentity)?,
+            self.node.ok_or(Error::NoIdentity)?,
+        );
         let mut list = vec![Member {
             key: me,
+            node,
             name: self.name.clone(),
         }];
         for k in members {
             let c = self.contacts.get(k).ok_or(Error::UnknownContact)?;
-            if list.iter().all(|m| m.key != *k) {
+            let id = c.identity.ok_or(Error::IdentityUnknown)?;
+            if list.iter().all(|m| m.key != id) {
                 list.push(Member {
-                    key: *k,
+                    key: id,
+                    node: *k,
                     name: c.name.clone(),
                 });
             }
@@ -494,12 +527,16 @@ impl Core {
     ) -> Result<(), Error> {
         let me = self.key.ok_or(Error::NoIdentity)?;
         let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
-        if g.admin != me || *member == me || !g.is_member(member) {
+        // `member` is the node of the member (as the app knows its contacts).
+        let Some(id) = g.member_by_node(member).map(|m| m.key) else {
+            return Err(Error::NotAllowed);
+        };
+        if g.admin != me || id == me {
             return Err(Error::NotAllowed);
         }
-        g.members.retain(|m| m.key != *member);
+        g.members.retain(|m| m.key != id);
         g.epoch += 1;
-        g.keys.remove(member);
+        g.keys.remove(&id);
         self.dirty_groups.insert(*gid);
         self.broadcast_state(gid, &[*member]);
         self.rotate_my_key(gid);
@@ -508,7 +545,7 @@ impl Core {
         Ok(())
     }
 
-    /// Sends the group state to every other member, and to `also` (removed members).
+    /// Sends the group state to every other member, and to `also` (nodes of removed members).
     fn broadcast_state(&mut self, gid: &GroupId, also: &[PubKey]) {
         let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
             return;
@@ -524,16 +561,16 @@ impl Core {
         let targets: Vec<PubKey> = g
             .members
             .iter()
-            .map(|m| m.key)
+            .filter(|m| m.key != me)
+            .map(|m| m.node)
             .chain(also.iter().copied())
-            .filter(|k| *k != me)
             .collect();
         for k in targets {
             self.enqueue_internal(&k, state.clone());
         }
     }
 
-    /// Sends our current sender key to `only`, or to every other member.
+    /// Sends our current sender key to `only` (identities), or to every other member.
     fn send_my_key(&mut self, gid: &GroupId, only: Option<&[PubKey]>) {
         let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
             return;
@@ -542,8 +579,8 @@ impl Core {
         let targets: Vec<PubKey> = g
             .members
             .iter()
-            .map(|m| m.key)
-            .filter(|k| *k != me && only.is_none_or(|o| o.contains(k)))
+            .filter(|m| m.key != me && only.is_none_or(|o| o.contains(&m.key)))
+            .map(|m| m.node)
             .collect();
         for k in targets {
             self.enqueue_internal(&k, datagram.clone());
@@ -561,8 +598,13 @@ impl Core {
         self.send_my_key(gid, None);
     }
 
-    /// A GROUP_STATE or SENDER_KEY datagram from `from` (§10.1, §10.2).
+    /// A GROUP_STATE or SENDER_KEY datagram from node `from` (§10.1, §10.2): whose identity
+    /// the session proved.
     pub(crate) fn on_group_control(&mut self, from: &PubKey, datagram: &[u8], now: Millis) {
+        let Some(from) = self.identity_of(from) else {
+            return;
+        };
+        let from = &from;
         match datagram.first() {
             Some(&content::GROUP_STATE) => {
                 if let Some(state) = State::decode(datagram) {
@@ -588,10 +630,8 @@ impl Core {
         let listed = state.members.iter().any(|m| m.key == me);
         let gid = state.gid;
         self.dirty_groups.insert(gid);
-        for m in &state.members {
-            if m.key != me && !self.contacts.contains_key(&m.key) {
-                self.add_contact(m.key, &m.name, None);
-            }
+        if listed {
+            self.learn_members(&state.members);
         }
         match self.groups.get_mut(&gid) {
             None => {
@@ -841,13 +881,14 @@ impl Core {
             let Some(g) = self.groups.get_mut(&gid) else {
                 continue;
             };
-            let candidates: Vec<PubKey> = g
+            // Members by identity, with the node the app knows them by.
+            let candidates: Vec<(PubKey, PubKey)> = g
                 .members
                 .iter()
-                .map(|m| m.key)
-                .filter(|k| k[0] == h.sender && *k != me)
+                .filter(|m| m.key[0] == h.sender && m.key != me)
+                .map(|m| (m.key, m.node))
                 .collect();
-            for member in candidates {
+            for (member, member_node) in candidates {
                 let has_key = g.keys.get(&member).is_some_and(|mk| {
                     [&mk.current, &mk.previous]
                         .iter()
@@ -936,7 +977,7 @@ impl Core {
                         crate::location::receive(
                             &mut self.loc,
                             &mut self.events,
-                            member,
+                            member_node,
                             Some(gid),
                             p,
                             snr4,
@@ -945,7 +986,7 @@ impl Core {
                     } else if let Some(content) = Content::decode(body) {
                         self.events.push_back(Event::GroupMessage {
                             gid,
-                            from: member,
+                            from: member_node,
                             content,
                             snr4,
                             rssi,

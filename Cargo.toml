@@ -44,6 +44,8 @@ rusqlite = { version = "0.41", features = ["bundled"] }
 # Media (ADR-0012): Codec2 voice (pure Rust, LGPL-2.1), AVIF thumbnails (rav1e, no assembly).
 codec2 = "0.3"
 ravif = { version = "0.13", default-features = false }
+# Recovery phrase of the phone identity (ADR-0013), English list only.
+bip39 = { version = "3.0", default-features = false, features = ["std"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
