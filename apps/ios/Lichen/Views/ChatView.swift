@@ -404,7 +404,7 @@ private struct Composer: View {
                 recordingBar
             } else {
                 HStack(spacing: 8) {
-                    if isContact || model.bridgeOnline {
+                    if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
                         Button { picking = true } label: {
                             Image(systemName: preparing ? "hourglass" : "plus")
                                 .font(.system(size: 18, weight: .semibold))
@@ -586,7 +586,7 @@ private struct SendPhotoSheet: View {
     @Environment(AppModel.self) private var model
     @State private var mode: Mode?
 
-    enum Mode { case lora, iroh }
+    enum Mode { case lora, iroh, tor }
 
     private var isGroup: Bool {
         if case .group = chat { return true }
@@ -594,9 +594,42 @@ private struct SendPhotoSheet: View {
     }
 
     private var irohOK: Bool { model.bridgeOnline && original != nil }
+    private var torOK: Bool { model.torStatus == .ready && original != nil }
 
     /// LoRa previews go to contacts only; groups get the announcement (§14.1).
-    private var chosen: Mode { mode ?? (isGroup ? .iroh : .lora) }
+    private var chosen: Mode {
+        if let mode { return mode }
+        if !isGroup { return .lora }
+        return irohOK || !torOK ? .iroh : .tor
+    }
+
+    private var bridgeChosen: Bool { chosen != .lora }
+    private var sendable: Bool {
+        switch chosen {
+        case .lora: !isGroup
+        case .iroh: irohOK
+        case .tor: torOK
+        }
+    }
+
+    private var size: String {
+        ByteCountFormatter.string(fromByteCount: Int64(original?.count ?? 0), countStyle: .file)
+    }
+
+    private var irohDetail: String {
+        if irohOK { return String(localized: "1-packet LoRa announcement, peer-to-peer transfer (\(size))") }
+        if !model.irohEnabled { return String(localized: "iroh is off in Settings") }
+        return String(localized: "Needs an Internet connection")
+    }
+
+    private var torDetail: String {
+        switch model.torStatus {
+        case .ready: return String(localized: "Anonymous, slower: they fetch it from your onion service (\(size))")
+        case .connecting, .publishing: return String(localized: "Connecting to Tor…")
+        case .failed: return String(localized: "Tor could not connect")
+        case .off: return String(localized: "Turn Tor on in Settings")
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -628,31 +661,29 @@ private struct SendPhotoSheet: View {
                         badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
                     )
                     .onTapGesture { if !isGroup { mode = .lora } }
-                    option(title: String(localized: "Full resolution via iroh"),
-                           detail: irohOK
-                               ? String(localized: "1-packet LoRa announcement, peer-to-peer transfer (\(ByteCountFormatter.string(fromByteCount: Int64(original?.count ?? 0), countStyle: .file)))")
-                               : String(localized: "Needs an Internet connection"),
+                    option(title: String(localized: "Full resolution via iroh"), detail: irohDetail,
                            badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
                     .onTapGesture { if irohOK { mode = .iroh } }
-                    option(title: String(localized: "Full resolution via Tor"),
-                           detail: String(localized: "Anonymous, slower"),
-                           badge: String(localized: "1 packet"), kind: .tor, selected: false, enabled: false)
+                    option(title: String(localized: "Full resolution via Tor"), detail: torDetail,
+                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                    .onTapGesture { if torOK { mode = .tor } }
                     option(title: String(localized: "Thumbnail now, full resolution later"),
                            detail: String(localized: "Sent when the Internet comes back"),
                            badge: costBadge, kind: .lora, selected: false, enabled: false)
-                    LaterNote(text: "Tor and later sending come with the second part of the Internet bridge (L7b).")
+                    LaterNote(text: "Sending later comes in a later version.")
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. Images are never flooded.")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.tx2)
-                    Button(chosen == .iroh ? String(localized: "Send the announcement") : String(localized: "Send the preview")) {
-                        if chosen == .iroh, let original {
-                            done(model.sendViaIroh(original, name: Self.name(of: original), to: chat))
+                    Button(bridgeChosen ? String(localized: "Send the announcement") : String(localized: "Send the preview")) {
+                        if bridgeChosen, let original {
+                            done(model.sendOverBridge(original, name: Self.name(of: original), to: chat,
+                                                      anonymous: chosen == .tor))
                         } else {
                             done(model.sendImage(image, to: chat))
                         }
                     }
                     .buttonStyle(.primary)
-                    .disabled(chosen == .iroh ? !irohOK : isGroup)
+                    .disabled(!sendable)
                     .padding(.top, 8)
                 }
                 .padding(16)
@@ -756,15 +787,20 @@ private struct BridgeSection: View {
                     Text(error).font(.system(size: 12)).foregroundStyle(Theme.sosFg)
                 }
                 if file == nil && !announce.outgoing {
-                    if model.fetching.contains(hash) {
+                    if let via = model.fetching[hash] {
                         HStack(spacing: 8) {
                             ProgressView()
-                            Text("Downloading over iroh…").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                            Text(via == 2 ? String(localized: "Downloading over Tor: it can take a minute…")
+                                          : String(localized: "Downloading over iroh…"))
+                                .font(.system(size: 13)).foregroundStyle(Theme.tx2)
                         }
                     } else {
+                        let route = model.fetchRoute(providers)
+                        let torOnly = route.first?.transport == 2
                         Button("Download in full resolution") { model.fetch(announce) }
-                            .buttonStyle(SecondaryButtonStyle(background: Theme.irohBg, foreground: Theme.irohFg, height: 40))
-                            .disabled(!model.bridgeOnline)
+                            .buttonStyle(SecondaryButtonStyle(background: torOnly ? Theme.torBg : Theme.irohBg,
+                                                              foreground: torOnly ? Theme.torFg : Theme.irohFg, height: 40))
+                            .disabled(route.isEmpty)
                     }
                 }
             }

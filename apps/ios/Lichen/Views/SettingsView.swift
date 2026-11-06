@@ -7,6 +7,7 @@ struct SettingsView: View {
     @AppStorage("onboarded") private var onboarded = true
 
     var body: some View {
+        @Bindable var model = model
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -27,15 +28,26 @@ struct SettingsView: View {
                     }
                     SectionLabel("Internet transports").padding(.top, 10)
                     CardList {
-                        CardRow(title: String(localized: "iroh (direct P2P)"),
-                                subtitle: String(localized: "Fast; the peer sees your IP")) { disabledToggle }
+                        CardRow(title: String(localized: "iroh (direct P2P)"), subtitle: irohLine) {
+                            Toggle("", isOn: $model.irohEnabled).labelsHidden()
+                        }
                         CardDivider()
-                        CardRow(title: String(localized: "Tor"), subtitle: String(localized: "Anonymous, slower")) { disabledToggle }
+                        CardRow(title: String(localized: "Tor"), subtitle: torLine) {
+                            Toggle("", isOn: $model.torEnabled).labelsHidden()
+                        }
                         CardDivider()
                         CardRow(title: String(localized: "Relay only"),
-                                subtitle: String(localized: "Never expose your IP")) { disabledToggle }
+                                subtitle: String(localized: "iroh through relays: contacts never see your IP")) {
+                            Toggle("", isOn: $model.relayOnly).labelsHidden()
+                        }
+                        .opacity(model.irohEnabled ? 1 : 0.5)
+                        .disabled(!model.irohEnabled)
                     }
-                    LaterNote(text: "With the Internet bridge (L7).").padding(.horizontal, 4)
+                    Text("Photos and files go over the Internet when both phones have it; LoRa only carries a one-packet announcement. iroh first, Tor when iroh cannot reach the sender.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.tx2)
+                        .padding(.horizontal, 4)
+                        .fixedSize(horizontal: false, vertical: true)
                     SectionLabel("Position").padding(.top, 10)
                     CardList {
                         CardRow(title: String(localized: "Send threshold"),
@@ -155,8 +167,20 @@ struct SettingsView: View {
         .card(padding: 16)
     }
 
-    private var disabledToggle: some View {
-        Toggle("", isOn: .constant(false)).labelsHidden().disabled(true)
+    private var irohLine: String {
+        guard model.irohEnabled else { return String(localized: "Off") }
+        if !model.bridgeOnline { return String(localized: "Connecting…") }
+        return model.relayOnly ? String(localized: "Online, through relays") : String(localized: "Fast; the peer sees your IP")
+    }
+
+    private var torLine: String {
+        switch model.torStatus {
+        case .off: String(localized: "Anonymous, slower")
+        case .connecting: String(localized: "Connecting to Tor…")
+        case .publishing: String(localized: "Publishing your onion service…")
+        case .ready: String(localized: "Your onion service is reachable")
+        case .failed: String(localized: "Tor could not connect")
+        }
     }
 
     private var preset: String {

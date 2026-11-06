@@ -24,47 +24,88 @@ const CAMILLE_VOICE: &[u8] = include_bytes!("../../../testdata/voice/camille-ref
 /// Camille's photo id: her LoRa preview and her announcement share it.
 const CAMILLE_PHOTO: [u8; 8] = [0xCA, 0x31, 0x11, 0xE0, 0, 0, 0, 1];
 
-/// An offer on the bridge: endpoint id, BLAKE3 hash, size.
-type Offer = ([u8; 32], [u8; 32], u32);
+/// Camille's full-resolution photo on her bridge: what her announcement carries.
+#[derive(Clone, Debug, Default)]
+struct CamilleOffer {
+    hash: [u8; 32],
+    size: u32,
+    iroh: Option<[u8; 32]>,
+    onion: Option<[u8; 32]>,
+    /// Tor folders, when the app asked for Tor and Camille has not started it yet.
+    tor_wanted: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    /// Tor asked for and not given up: her announcement waits for the onion service.
+    tor_pending: bool,
+}
 
-/// Camille's full-resolution photo on a real iroh endpoint, started once per process in
-/// the background: the demo's bridge needs the Internet.
-fn camille_offer() -> &'static Mutex<Option<Offer>> {
-    static OFFER: OnceLock<Mutex<Option<Offer>>> = OnceLock::new();
+/// Camille's bridge: a real iroh endpoint (and an onion service when the app has Tor on),
+/// started once per process in the background: the demo's bridge needs the Internet.
+fn camille_offer() -> &'static Mutex<CamilleOffer> {
+    static OFFER: OnceLock<Mutex<CamilleOffer>> = OnceLock::new();
     static STARTED: OnceLock<()> = OnceLock::new();
-    let slot = OFFER.get_or_init(|| Mutex::new(None));
+    let slot = OFFER.get_or_init(|| Mutex::new(CamilleOffer::default()));
     STARTED.get_or_init(|| {
         std::thread::spawn(|| {
             let Ok(rt) = tokio::runtime::Runtime::new() else {
                 return;
             };
-            rt.block_on(async {
-                let (w, h) = (1280, 960);
-                let Ok(photo) = lc_media::image::encode_avif(
-                    &lc_media::image::sample_landscape(w, h),
-                    w,
-                    h,
-                    70.0,
-                ) else {
-                    return;
-                };
-                let key = lc_bridge::derive_key(&[0xCA; 32], "lichen/1 iroh");
-                let Ok(bridge) =
-                    lc_bridge::Bridge::start(key, None, lc_bridge::Network::Default).await
-                else {
-                    return;
-                };
-                if let Ok((hash, size)) = bridge.offer(photo)
-                    && let Ok(mut s) = camille_offer().lock()
-                {
-                    *s = Some((bridge.id(), hash, size as u32));
-                }
-                // Serve for as long as the app runs.
-                std::future::pending::<()>().await;
-            });
+            rt.block_on(camille_serves());
         });
     });
     slot
+}
+
+async fn camille_serves() {
+    let (w, h) = (1280, 960);
+    let Ok(photo) =
+        lc_media::image::encode_avif(&lc_media::image::sample_landscape(w, h), w, h, 70.0)
+    else {
+        return;
+    };
+    let seed = [0xCA; 32];
+    let Ok(bridge) = lc_bridge::Bridge::new(None) else {
+        return;
+    };
+    let Ok((hash, size)) = bridge.offer(photo) else {
+        return;
+    };
+    let iroh = bridge
+        .start_iroh(
+            lc_bridge::derive_key(&seed, "lichen/1 iroh"),
+            lc_bridge::Network::Default,
+        )
+        .await
+        .ok();
+    if let Ok(mut s) = camille_offer().lock() {
+        s.hash = hash;
+        s.size = size as u32;
+        s.iroh = iroh;
+    }
+    // Serve for as long as the app runs; start Tor when the app asks.
+    loop {
+        let wanted = camille_offer()
+            .lock()
+            .ok()
+            .and_then(|mut s| s.tor_wanted.take());
+        if let Some((state, cache)) = wanted {
+            let limit = std::time::Duration::from_secs(180);
+            let mut onion = None;
+            if bridge.start_tor(&state, &cache, limit).await.is_ok()
+                && let Ok(id) = bridge
+                    .publish_onion(lc_bridge::derive_key(&seed, "lichen/1 onion"))
+                    .await
+                && bridge
+                    .onion_reachable(std::time::Duration::from_secs(300))
+                    .await
+            {
+                onion = Some(id);
+            }
+            if let Ok(mut s) = camille_offer().lock() {
+                s.onion = onion;
+                s.tor_pending = false;
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -299,19 +340,31 @@ impl Demo {
         let app_key = self.net.key(self.app);
         // Once her photo's preview went out and the bridge is up, Camille announces the full
         // resolution (one LoRa frame).
+        let offer = camille_offer()
+            .lock()
+            .ok()
+            .map(|s| s.clone())
+            .filter(|s| s.iroh.is_some() && !s.tor_pending);
         if !self.announced
             && self.camille_full.is_some()
-            && let Some((id, hash, size)) = camille_offer().lock().ok().and_then(|s| *s)
+            && let Some(offer) = offer
         {
             self.announced = true;
+            let mut providers = Vec::new();
+            if let Some(id) = offer.iroh {
+                providers.push((lc_core::content::transport::IROH, id));
+            }
+            if let Some(id) = offer.onion {
+                providers.push((lc_core::content::transport::TOR, id));
+            }
             let ts = (self.unix_s() & 0xFFFF_FFFF) as u32;
             let announce = Content::Announce(lc_core::Announce {
                 sent_at: ts,
                 media_id: CAMILLE_PHOTO,
                 kind: 1,
-                hash,
-                size,
-                providers: vec![(lc_core::content::transport::IROH, id)],
+                hash: offer.hash,
+                size: offer.size,
+                providers,
                 name: "refuge-dusk.avif".into(),
             })
             .encode();
@@ -443,6 +496,18 @@ impl Demo {
 
 #[uniffi::export]
 impl DemoNetwork {
+    /// Camille also offers her photo over Tor (the app has Tor on): she starts a Tor client
+    /// in these folders, publishes her onion service, and announces once it is reachable.
+    pub fn camille_over_tor(&self, state_dir: String, cache_dir: String) {
+        if let Ok(mut s) = camille_offer().lock()
+            && s.onion.is_none()
+            && !s.tor_pending
+        {
+            s.tor_wanted = Some((state_dir.into(), cache_dir.into()));
+            s.tor_pending = true;
+        }
+    }
+
     #[uniffi::constructor]
     pub fn new() -> Arc<Self> {
         let radio = LoRaParams::meshcore(8, 62_500, 5).unwrap_or(LoRaParams {
@@ -841,7 +906,10 @@ mod bridge {
             let key: [u8; 32] = providers[0].key.as_slice().try_into().unwrap();
             let hash: [u8; 32] = hash.as_slice().try_into().unwrap();
             let t = std::time::Instant::now();
-            let got = me.fetch(key, hash, u64::from(size)).await.unwrap();
+            let got = me
+                .fetch(lc_bridge::transport::IROH, key, hash, u64::from(size))
+                .await
+                .unwrap();
             eprintln!("{} bytes over iroh in {:?}", got.len(), t.elapsed());
             got
         });

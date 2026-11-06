@@ -21,11 +21,30 @@ final class AppModel {
         didSet { UserDefaults.standard.set(phraseBackedUp, forKey: "lichen.phraseBackedUp") }
     }
     // Internet bridge (ADR-0015).
+    /// iroh reachable (a relay answered).
     var bridgeOnline = false
+    /// iroh on (direct peer to peer, or through relays only).
+    var irohEnabled = UserDefaults.standard.object(forKey: "lichen.iroh") == nil || UserDefaults.standard.bool(forKey: "lichen.iroh") {
+        didSet { UserDefaults.standard.set(irohEnabled, forKey: "lichen.iroh"); applyIroh() }
+    }
+    /// iroh through relays only: contacts never see our IP address.
+    var relayOnly = UserDefaults.standard.bool(forKey: "lichen.relayOnly") {
+        didSet { UserDefaults.standard.set(relayOnly, forKey: "lichen.relayOnly"); applyIroh(restart: true) }
+    }
+    /// Tor on: our onion service offers what we send, and downloads can go over Tor.
+    var torEnabled = UserDefaults.standard.bool(forKey: "lichen.tor") {
+        didSet { UserDefaults.standard.set(torEnabled, forKey: "lichen.tor"); applyTor() }
+    }
+    var torStatus = TorStatus.off
+    /// Our onion service identity, once published.
+    var onionId: Data?
     /// Content fetched or offered over the bridge, by BLAKE3 hash.
     var downloads: [Data: URL] = [:]
-    var fetching: Set<Data> = []
+    /// Downloads in progress: the transport each one uses (1 iroh, 2 Tor).
+    var fetching: [Data: UInt8] = [:]
     var fetchErrors: [Data: String] = [:]
+
+    enum TorStatus: Equatable { case off, connecting, publishing, ready, failed }
 
     /// The name we give on our contact card.
     var myName = UserDefaults.standard.string(forKey: "lichen.myName") ?? "" {
@@ -147,6 +166,10 @@ final class AppModel {
         let net = DemoNetwork()
         demo = net
         isDemo = true
+        // Camille offers her photo over Tor too when Tor is on (her own client and onion service).
+        if torEnabled, let state = Self.folder("demo-tor-state")?.path, let cache = Self.folder("demo-tor-cache")?.path {
+            net.camilleOverTor(stateDir: state, cacheDir: cache)
+        }
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
         demoTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
@@ -581,14 +604,75 @@ final class AppModel {
         return dir
     }
 
-    /// Starts this phone's iroh endpoint; `bridgeOnline` once a relay answers.
+    /// This phone's bridge, keyed from the identity: iroh and Tor as the settings say.
     func startBridge() {
-        let seed = Keychain.identitySeed()
-        let dir = Self.folder("offers")?.path
+        bridge = try? LichenBridge(identitySeed: Keychain.identitySeed(), dir: Self.folder("offers")?.path)
+        applyIroh()
+        applyTor()
+    }
+
+    /// A new identity, new bridge keys.
+    private func restartBridge() {
+        let old = bridge
+        bridge = nil
+        bridgeOnline = false
+        torStatus = .off
+        onionId = nil
         Task {
-            guard let b = try? await LichenBridge.start(identitySeed: seed, dir: dir) else { return }
-            bridge = b
-            bridgeOnline = await b.online(limitS: 30)
+            await old?.stopIroh()
+            await old?.stopTor()
+            startBridge()
+        }
+    }
+
+    /// Starts or stops iroh as the settings say; `bridgeOnline` once a relay answers.
+    private func applyIroh(restart: Bool = false) {
+        guard let bridge else { return }
+        let (on, relayOnly) = (irohEnabled, relayOnly)
+        Task {
+            if !on || restart {
+                await bridge.stopIroh()
+                bridgeOnline = false
+            }
+            guard on else { return }
+            if bridge.endpointId() == nil { _ = try? await bridge.startIroh(relayOnly: relayOnly) }
+            bridgeOnline = await bridge.online(limitS: 30)
+        }
+    }
+
+    private static var torDirs: (String, String) {
+        (folder("tor-state")?.path ?? "", folder("tor-cache")?.path ?? "")
+    }
+
+    /// Connects to Tor and publishes our onion service, or stops Tor, as the settings say.
+    private func applyTor() {
+        guard let bridge else { return }
+        guard torEnabled else {
+            if torStatus != .off {
+                torStatus = .off
+                onionId = nil
+                Task { await bridge.stopTor() }
+            }
+            return
+        }
+        guard torStatus == .off || torStatus == .failed else { return }
+        torStatus = .connecting
+        if isDemo, let demo, let state = Self.folder("demo-tor-state")?.path, let cache = Self.folder("demo-tor-cache")?.path {
+            demo.camilleOverTor(stateDir: state, cacheDir: cache)
+        }
+        let (state, cache) = Self.torDirs
+        Task {
+            do {
+                let id = try await bridge.startTor(stateDir: state, cacheDir: cache, publish: true, limitS: 180)
+                guard torEnabled else { return }
+                onionId = id
+                torStatus = .publishing
+                let reachable = await bridge.onionReachable(limitS: 300)
+                guard torEnabled else { return }
+                torStatus = reachable ? .ready : .failed
+            } catch {
+                if torEnabled { torStatus = .failed }
+            }
         }
     }
 
@@ -611,15 +695,28 @@ final class AppModel {
         return url
     }
 
-    /// Offers a photo on the bridge and announces it in one LoRa frame (§14.1).
-    func sendViaIroh(_ original: Data, name: String, to chat: ChatID) -> String? {
-        guard let bridge, bridgeOnline else { return String(localized: "No Internet connection: the photo cannot be offered.") }
+    /// The providers we can put in an announcement: iroh unless `anonymous`, Tor when our
+    /// onion service is reachable.
+    func bridgeProviders(anonymous: Bool) -> [Provider] {
+        var out: [Provider] = []
+        if !anonymous, bridgeOnline, let id = bridge?.endpointId() { out.append(Provider(transport: 1, key: id)) }
+        if torStatus == .ready, let onionId { out.append(Provider(transport: 2, key: onionId)) }
+        return out
+    }
+
+    /// Offers a photo on the bridge and announces it in one LoRa frame (§14.1); `anonymous`:
+    /// over Tor only, so the recipient never learns our IP address.
+    func sendOverBridge(_ original: Data, name: String, to chat: ChatID, anonymous: Bool) -> String? {
+        let providers = bridgeProviders(anonymous: anonymous)
+        guard let bridge, !providers.isEmpty else {
+            return String(localized: "No Internet connection: the photo cannot be offered.")
+        }
         do {
             let offered = try bridge.offer(bytes: original)
             _ = keep(original, hash: offered.hash, name: name)
             let m = try core.sendAnnounce(
                 chat: chat, mediaId: Data(), kind: 1, hash: offered.hash, size: offered.size,
-                providers: [Provider(transport: 1, key: bridge.endpointId())], name: name,
+                providers: providers, name: name,
                 sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now()
             )
             if chats[chat] == nil { load(chat) } else { upsert(m) }
@@ -633,24 +730,50 @@ final class AppModel {
         }
     }
 
-    /// Fetches announced content over iroh, verified against its hash.
+    /// The providers of an announcement we would try, in order: iroh (when on), then Tor.
+    func fetchRoute(_ providers: [Provider]) -> [Provider] {
+        let iroh = irohEnabled && bridgeOnline ? providers.first { $0.transport == 1 } : nil
+        let tor = providers.first { $0.transport == 2 }
+        return [iroh, tor].compactMap { $0 }
+    }
+
+    /// Fetches announced content, verified against its hash: over iroh first, over Tor when
+    /// iroh cannot reach the sender (Tor connects on demand).
     func fetch(_ m: StoredMessage) {
         guard case let .announce(_, _, _, hash, size, providers, name) = m.message,
-              let p = providers.first(where: { $0.transport == 1 }), let bridge,
-              !fetching.contains(hash)
+              let bridge, fetching[hash] == nil
         else { return }
-        fetching.insert(hash)
+        let route = fetchRoute(providers)
+        guard let first = route.first else {
+            fetchErrors[hash] = String(localized: "No transport reaches the sender: turn iroh or Tor on.")
+            return
+        }
+        fetching[hash] = first.transport
         fetchErrors[hash] = nil
         Task {
-            defer { fetching.remove(hash) }
-            do {
-                let bytes = try await bridge.fetch(provider: p.key, hash: hash, size: UInt64(size))
-                _ = keep(bytes, hash: hash, name: name)
-            } catch let e as BridgeError {
-                fetchErrors[hash] = e.display
-            } catch {
-                fetchErrors[hash] = String(localized: "Download failed.")
+            defer { fetching[hash] = nil }
+            var failure = String(localized: "Download failed.")
+            for p in route {
+                fetching[hash] = p.transport
+                do {
+                    if p.transport == 2 {
+                        let (state, cache) = Self.torDirs
+                        _ = try await bridge.startTor(stateDir: state, cacheDir: cache, publish: false, limitS: 180)
+                    }
+                    let bytes = try await bridge.fetch(transport: p.transport, provider: p.key, hash: hash, size: UInt64(size))
+                    _ = keep(bytes, hash: hash, name: name)
+                    return
+                } catch let e as BridgeError {
+                    failure = e.display
+                    // Only an unreachable sender is worth another transport.
+                    if case .Unreachable = e { continue }
+                    if case .Timeout = e { continue }
+                    break
+                } catch {
+                    break
+                }
             }
+            fetchErrors[hash] = failure
         }
     }
 
@@ -733,6 +856,7 @@ final class AppModel {
             conversations = core.conversations()
             phraseBackedUp = true
             if isConnected { core.connect(nowMs: now()) }
+            restartBridge()
             pump()
             return nil
         } catch let e as LichenError {

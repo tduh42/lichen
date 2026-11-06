@@ -18,7 +18,7 @@ use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
 mod bridge;
 mod demo;
 
-pub use bridge::{BridgeError, LichenBridge, Offered};
+pub use bridge::{BridgeError, LichenBridge, Offered, OnionStatus, onion_address};
 pub use demo::DemoNetwork;
 
 uniffi::setup_scaffolding!();

@@ -1,4 +1,4 @@
-# ADR-0015 — Internet bridge: announcements over LoRa, content over iroh (then Tor), our own blob protocol
+# ADR-0015 — Internet bridge: announcements over LoRa, content over iroh or Tor, our own blob protocol
 
 - Status: accepted
 - Date: 2026-11-06
@@ -13,13 +13,16 @@ The design moves media to the Internet whenever it is available: an encrypted an
 - **Our own blob protocol** (`lichen/blob/1`, §14.2) instead of `iroh-blobs`: version 0.104 says it is not production quality yet (0.35 is, but only with iroh 0.35). Request a hash, receive length and bytes, verify BLAKE3: a few lines, the same over iroh and over a Tor stream. Streaming verification (bao) is not needed for media of a few megabytes, held in memory and checked before use.
 - **ANNOUNCE** (§14.1) carries one key per transport, the hash, the size, a name and the `media_id` that links it to a LoRa preview.
 - **Groups**: an announcement is an ordinary group message, so groups get media without flooding them.
-- **Tor**: Arti 0.48 hosts onion services as a stable feature (`onion-service-service`); it comes in a second step (L7b), with the same blob protocol.
+- **Tor** (L7b): Arti 0.48 hosts onion services as a stable feature (`onion-service-service`). Our onion service is keyed from the identity seed (§14.3), which needs `launch_onion_service_with_hsid`, an experimental API: Arti is pinned to `=0.48.0`. Its keystore is the in-memory one (`ephemeral-keystore`): the onion key is derived again at every start and never written by Arti. A recipient fetches over Tor when iroh cannot reach the sender, connecting to Tor on demand.
+- **Relay only**: iroh without IP transports (`clear_ip_transports`), for users who do not want contacts to see their IP address.
 - The bridge lives in its own crate (`lc-bridge`, async, tokio), outside the IO-free core: the app runs it next to the core.
 
 ## Consequences
 
 - Full-resolution photos and files reach contacts and groups as soon as both phones have Internet access; LoRa only carries the announcement (one frame).
 - Synchronous mode only: the sender's app must be running when the recipient fetches. The asynchronous mode of the design (content left on storage with a key in the announcement) is later.
-- The iroh relays see connections (encrypted) and endpoint ids, not contents nor lichen identities; a relay-only or Tor-only setting addresses users who do not want to expose their IP (relay-only with iroh, Tor in L7b).
-- The app grows by the size of iroh (QUIC, TLS) and links SystemConfiguration (DNS and proxy settings).
+- The iroh relays see connections (encrypted) and endpoint ids, not contents nor lichen identities; users who do not want to expose their IP turn on relay only (the relay still sees it) or turn iroh off and use Tor only.
+- The app grows by the size of iroh (QUIC, TLS) and Arti, and links SystemConfiguration (DNS and proxy settings).
+- Arti's directory cache uses SQLite through `rusqlite` < 0.41, and only one SQLite can be linked: the store moved to `rusqlite` 0.40 (same API for our use).
+- Tor costs a directory download on first start (a few MB, cached after) and keeps circuits open while on: it is off by default, a setting. An onion address derived from the seed is stable: anyone holding an old announcement can check whether the phone is online, as with the iroh endpoint id. Announcements are encrypted to their recipients, which limits who can.
 - iOS build: libc 0.2.191 limits the routing-socket API (`RTAX_*`, `RTM_*`, `in6_ifreq`) to macOS, which breaks iroh's `netwatch` 0.19 and `netdev` 0.46 for iOS. `lc-bridge` holds libc at `=0.2.189` (iOS target dependency, for the resolver) until they follow; `netdev` 0.47 already has.

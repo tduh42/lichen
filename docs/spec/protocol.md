@@ -417,11 +417,11 @@ LoRa carries an authenticated **announcement**; the content travels over the Int
 - `media_id` links the announcement to a LoRa preview of the same image (§13.2), when one was sent.
 - Sent like any datagram (direct) or as a group message (§10.3, two fragments at most): **media reach groups this way**, never flooded themselves.
 
-One announcement over iroh with a 20-byte name is 105 bytes: one fragment on any path.
+One announcement over iroh with a 20-byte name is 105 bytes: one fragment on any path. With both iroh and Tor, 138 bytes.
 
 ### 14.2 Blob protocol
 
-Over a bidirectional stream (iroh ALPN `lichen/blob/1`; the same bytes over a Tor stream to the onion service):
+Over a bidirectional stream (iroh ALPN `lichen/blob/1`; the same bytes over a Tor stream to the provider's onion service, virtual port **1**):
 
 ```
 request  = 0x01 ‖ hash [32]
@@ -432,8 +432,15 @@ response = 0x00 ‖ size u64 ‖ content     (found)
 - The requester reads at most the announced `size` (and never more than 64 MiB), computes BLAKE3 and drops the content unless it matches `hash`.
 - The provider serves whoever asks for a hash it offers: the hash is the capability, and it only travels inside encrypted announcements. iroh authenticates the provider by its endpoint id (TLS 1.3, end to end even through a relay).
 - The provider offers a blob while the app runs (synchronous mode), for 7 days after the announcement.
+- An onion service accepts only `BEGIN` to port 1 and answers anything else with `END` (reason `DONE`), as other onion services do.
 
 ### 14.3 Keys
 
-The iroh key is `HKDF(seed, "lichen/1 iroh")` (§2): stable for a phone, so connections reuse what the network learned, but distinct from the lichen identity. The Tor key is derived the same way with `"lichen/1 onion"`.
+The iroh key is `HKDF(seed, "lichen/1 iroh")` (§2): stable for a phone, so connections reuse what the network learned, but distinct from the lichen identity. The Tor key is derived the same way with `"lichen/1 onion"`: those 32 bytes are the Ed25519 secret of the onion service, whose public key is the Tor `key` of announcements (the `.onion` address follows from it, rend-spec-v3 §6). Neither key is stored: both are derived again from the seed at every start.
+
+### 14.4 Choosing a transport
+
+- **Sender**: an announcement lists iroh (when on and reachable) and Tor (when our onion service is reachable). Sending "via Tor" lists Tor only: the recipient never learns the sender's IP address.
+- **Recipient**: tries iroh first (when on), then Tor, moving on only when the provider is unreachable or too slow; any other failure (unknown hash, size, hash mismatch) ends the fetch. A recipient without Tor connects to it on demand, without publishing an onion service.
+- **Relay only**: iroh without direct paths; contacts see the relay, never our IP address (the relay does).
 

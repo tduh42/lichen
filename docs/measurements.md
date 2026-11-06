@@ -174,3 +174,18 @@ The demo network showed a cost of congestion: an introduction still retrying aft
 The announcement is one LoRa datagram: 52 + 33 per provider + name bytes of content, 101 bytes for Camille's (one iroh provider, a 16-byte name), against 975 bytes for the full 160 × 120 thumbnail over LoRa. Substituted content (a provider answering other bytes) is dropped by the hash check (`substitution_is_caught`).
 
 iOS simulator, demo network (`-demo YES -open Camille -media YES`): the announcement arrives after the LoRa preview, the app fetches over iroh and shows the full-resolution photo with "hash verified" (`docs/screenshots/ios-announce-en.png`, `ios-iroh-fetched-en.png`).
+
+## 2026-11-06 — Internet bridge over Tor (L7b)
+
+`cargo test -p lc-bridge --release -- --ignored tor --nocapture`: two bridges in one process, each with its own Arti 0.48 client, from a home connection (France).
+
+| Step | Time |
+|---|---|
+| Two Tor clients bootstrapped, fresh directories | 2.2 s and 19.9 s (two runs) |
+| Onion service reachable (descriptors published) | 6.0 s |
+| 300 kB fetched over Tor, BLAKE3 checked | 3.9 s |
+| A second request on the same circuit (unknown hash) | 0.75 s |
+
+Relay only (`--ignored relay_only`): no direct address published, 300 kB through n0's relays in 343 ms (135 ms with direct paths, L7a).
+
+iOS simulator, demo network with iroh off and Tor on (`-demo YES -open Camille -media YES -lichen.tor YES -lichen.iroh NO`): Camille publishes her own onion service, announces with both providers (138 bytes of content), and the app fetches her 9 KB photo over Tor, hash verified (`docs/screenshots/ios-tor-fetched-en.png`).

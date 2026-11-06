@@ -170,11 +170,14 @@ struct RadioCard: View {
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.tx2)
                 Spacer()
-                Text("iroh and Tor: with the Internet bridge")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.tx2)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                if model.bridgeOnline { TransportBadge(kind: .iroh, label: "iroh") }
+                if model.torStatus == .ready { TransportBadge(kind: .tor, label: "Tor") }
+                if !model.bridgeOnline && model.torStatus != .ready {
+                    Text("No Internet bridge")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.tx2)
+                        .lineLimit(1)
+                }
             }
         }
         .card(padding: 16)

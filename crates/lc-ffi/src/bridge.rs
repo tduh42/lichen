@@ -1,10 +1,10 @@
-//! The Internet bridge for the apps (protocol.md §14, ADR-0015): an iroh endpoint that offers
-//! content and fetches it, verified by BLAKE3. Async: Swift sees `async` methods.
+//! The Internet bridge for the apps (protocol.md §14, ADR-0015): offers content and fetches
+//! it over iroh or Tor, verified by BLAKE3. Async: Swift sees `async` methods.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use lc_bridge::{Bridge, FetchError, Network, derive_key};
+use lc_bridge::{Bridge, FetchError, Network, OnionState, derive_key};
 
 #[derive(Debug, PartialEq, Eq, uniffi::Error)]
 pub enum BridgeError {
@@ -52,47 +52,146 @@ pub struct Offered {
     pub size: u64,
 }
 
-/// The iroh endpoint of this phone.
+/// Our onion service (Tor).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum OnionStatus {
+    /// Not published.
+    Off,
+    /// Publishing, or recovering.
+    Starting,
+    /// Reachable by others.
+    Reachable,
+    /// Failed; restarting Tor may help.
+    Broken,
+}
+
+impl From<OnionState> for OnionStatus {
+    fn from(s: OnionState) -> Self {
+        match s {
+            OnionState::Off => Self::Off,
+            OnionState::Starting => Self::Starting,
+            OnionState::Reachable => Self::Reachable,
+            OnionState::Broken => Self::Broken,
+        }
+    }
+}
+
+/// The `.onion` address of an onion service identity (an announcement's Tor key).
+#[uniffi::export]
+pub fn onion_address(key: Vec<u8>) -> Option<String> {
+    lc_bridge::onion_address(&<[u8; 32]>::try_from(key).ok()?)
+}
+
+fn bytes32(v: Vec<u8>) -> Result<[u8; 32], BridgeError> {
+    <[u8; 32]>::try_from(v).map_err(|_| BridgeError::Failed {
+        reason: "keys and hashes are 32 bytes".into(),
+    })
+}
+
+/// This phone's bridge: its iroh endpoint and its Tor client, each started on demand.
 #[derive(Debug, uniffi::Object)]
 pub struct LichenBridge {
     bridge: Bridge,
+    iroh_key: [u8; 32],
+    onion_key: [u8; 32],
 }
 
 #[uniffi::export(async_runtime = "tokio")]
 impl LichenBridge {
-    /// Starts the endpoint: its key derives from the identity seed (§14.3); offered content is
-    /// kept in `dir` (7 days).
+    /// A bridge for the identity of `identity_seed` (its keys derive from it, §14.3), with
+    /// no transport yet; offered content is kept in `dir` (7 days).
     #[uniffi::constructor]
-    pub async fn start(
-        identity_seed: Vec<u8>,
-        dir: Option<String>,
-    ) -> Result<Arc<Self>, BridgeError> {
-        let seed: [u8; 32] =
-            identity_seed
-                .as_slice()
-                .try_into()
-                .map_err(|_| BridgeError::Failed {
-                    reason: "identity seed of 32 bytes".into(),
-                })?;
-        let bridge = Bridge::start(
-            derive_key(&seed, "lichen/1 iroh"),
-            dir.map(Into::into),
-            Network::Default,
-        )
-        .await
-        .map_err(|reason| BridgeError::Failed { reason })?;
-        Ok(Arc::new(Self { bridge }))
+    pub fn new(identity_seed: Vec<u8>, dir: Option<String>) -> Result<Arc<Self>, BridgeError> {
+        let seed = bytes32(identity_seed)?;
+        let bridge =
+            Bridge::new(dir.map(Into::into)).map_err(|reason| BridgeError::Failed { reason })?;
+        Ok(Arc::new(Self {
+            bridge,
+            iroh_key: derive_key(&seed, "lichen/1 iroh"),
+            onion_key: derive_key(&seed, "lichen/1 onion"),
+        }))
     }
 
-    /// Our iroh endpoint id: the key of the iroh transport in announcements.
-    pub fn endpoint_id(&self) -> Vec<u8> {
-        self.bridge.id().to_vec()
+    /// Starts the iroh endpoint; returns its endpoint id, the key of the iroh transport.
+    /// With `relay_only`, every connection goes through a relay: peers never see our IP.
+    pub async fn start_iroh(&self, relay_only: bool) -> Result<Vec<u8>, BridgeError> {
+        let network = if relay_only {
+            Network::RelayOnly
+        } else {
+            Network::Default
+        };
+        let id = self
+            .bridge
+            .start_iroh(self.iroh_key, network)
+            .await
+            .map_err(|reason| BridgeError::Failed { reason })?;
+        Ok(id.to_vec())
     }
 
-    /// True once a relay answers (within `limit_s` seconds): the phone is reachable.
+    /// Stops the iroh endpoint (iroh off, or before switching relay only).
+    pub async fn stop_iroh(&self) {
+        self.bridge.stop_iroh().await;
+    }
+
+    /// Our iroh endpoint id, while iroh runs.
+    pub fn endpoint_id(&self) -> Option<Vec<u8>> {
+        self.bridge.iroh_id().map(|id| id.to_vec())
+    }
+
+    /// True once a relay answers (within `limit_s` seconds): reachable over iroh.
     pub async fn online(&self, limit_s: u32) -> bool {
         self.bridge
             .online(Duration::from_secs(u64::from(limit_s)))
+            .await
+    }
+
+    /// Connects to Tor (within `limit_s` seconds), keeping its state and directory cache in
+    /// the given folders; with `publish`, also publishes our onion service and returns its
+    /// identity, the key of the Tor transport.
+    pub async fn start_tor(
+        &self,
+        state_dir: String,
+        cache_dir: String,
+        publish: bool,
+        limit_s: u32,
+    ) -> Result<Option<Vec<u8>>, BridgeError> {
+        self.bridge
+            .start_tor(
+                state_dir.as_ref(),
+                cache_dir.as_ref(),
+                Duration::from_secs(u64::from(limit_s)),
+            )
+            .await
+            .map_err(|reason| BridgeError::Unreachable { reason })?;
+        if !publish {
+            return Ok(None);
+        }
+        let id = self
+            .bridge
+            .publish_onion(self.onion_key)
+            .await
+            .map_err(|reason| BridgeError::Failed { reason })?;
+        Ok(Some(id.to_vec()))
+    }
+
+    /// Stops Tor: our onion service and the client.
+    pub async fn stop_tor(&self) {
+        self.bridge.stop_tor().await;
+    }
+
+    /// Our onion service identity, once published.
+    pub async fn onion_id(&self) -> Option<Vec<u8>> {
+        self.bridge.onion_id().await.map(|id| id.to_vec())
+    }
+
+    pub async fn onion_status(&self) -> OnionStatus {
+        self.bridge.onion_state().await.into()
+    }
+
+    /// True once our onion service is reachable (within `limit_s` seconds).
+    pub async fn onion_reachable(&self, limit_s: u32) -> bool {
+        self.bridge
+            .onion_reachable(Duration::from_secs(u64::from(limit_s)))
             .await
     }
 
@@ -105,19 +204,16 @@ impl LichenBridge {
         })
     }
 
-    /// Fetches announced content from its provider, verified against its hash.
+    /// Fetches announced content from one of its providers (`transport` 1 iroh, 2 Tor),
+    /// verified against its hash.
     pub async fn fetch(
         &self,
+        transport: u8,
         provider: Vec<u8>,
         hash: Vec<u8>,
         size: u64,
     ) -> Result<Vec<u8>, BridgeError> {
-        let (Ok(provider), Ok(hash)) = (<[u8; 32]>::try_from(provider), <[u8; 32]>::try_from(hash))
-        else {
-            return Err(BridgeError::Failed {
-                reason: "keys and hashes are 32 bytes".into(),
-            });
-        };
-        Ok(self.bridge.fetch(provider, hash, size).await?)
+        let (provider, hash) = (bytes32(provider)?, bytes32(hash)?);
+        Ok(self.bridge.fetch(transport, provider, hash, size).await?)
     }
 }

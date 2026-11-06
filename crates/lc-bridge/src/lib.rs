@@ -1,16 +1,22 @@
-//! lichen's Internet bridge (protocol.md §14, ADR-0015): offers blobs and fetches them over
-//! iroh with the `lichen/blob/1` protocol, verified against their BLAKE3 hash.
+//! lichen's Internet bridge (protocol.md §14, ADR-0015): offers blobs and fetches them with
+//! the `lichen/blob/1` protocol, over iroh (peer to peer) or Tor (onion services), verified
+//! against their BLAKE3 hash.
 //!
 //! Async (tokio), unlike the IO-free core: the app runs it next to the core.
 
+mod tor;
+
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use iroh::endpoint::{Connection, presets};
 use iroh::protocol::{AcceptError, ProtocolHandler, Router};
 use iroh::{Endpoint, EndpointAddr, EndpointId, SecretKey};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+
+pub use tor::{ONION_PORT, OnionState, onion_address};
 
 /// ALPN of the blob protocol (§14.2).
 pub const ALPN: &[u8] = b"lichen/blob/1";
@@ -18,6 +24,12 @@ pub const ALPN: &[u8] = b"lichen/blob/1";
 pub const MAX_SIZE: u64 = 64 << 20;
 /// How long an offered blob stays available.
 pub const OFFER_DAYS: u64 = 7;
+
+/// Transports in announcements (§14.1).
+pub mod transport {
+    pub const IROH: u8 = 1;
+    pub const TOR: u8 = 2;
+}
 
 pub type Hash = [u8; 32];
 
@@ -41,6 +53,9 @@ pub fn derive_key(identity_seed: &[u8; 32], label: &str) -> [u8; 32] {
 pub enum Network {
     /// n0's relays and address lookup: reachable from anywhere.
     Default,
+    /// n0's relays only, no direct connection: peers never see our IP address (the relay
+    /// does).
+    RelayOnly,
     /// No relay, no lookup: local addresses only (tests).
     Local,
 }
@@ -109,7 +124,71 @@ impl Offers {
     }
 }
 
-/// The provider side of `lichen/blob/1`.
+/// The provider side of `lichen/blob/1` (§14.2), on any byte stream: reads one request,
+/// answers it.
+async fn serve<R, W>(offers: &Offers, r: &mut R, w: &mut W) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut req = [0u8; 33];
+    r.read_exact(&mut req).await?;
+    let (op, h) = req.split_at(1);
+    let found = match (op, <Hash>::try_from(h)) {
+        ([1], Ok(h)) => offers.get(&h),
+        _ => None,
+    };
+    match found {
+        Some(bytes) => {
+            let mut head = [0u8; 9];
+            head[1..].copy_from_slice(&(bytes.len() as u64).to_le_bytes());
+            w.write_all(&head).await?;
+            w.write_all(&bytes).await?;
+        }
+        None => w.write_all(&[1]).await?,
+    }
+    w.flush().await
+}
+
+/// The requester side: asks for `hash`.
+async fn write_request<W: AsyncWrite + Unpin>(w: &mut W, hash: &Hash) -> Result<(), FetchError> {
+    let mut req = [0u8; 33];
+    req[0] = 1;
+    req[1..].copy_from_slice(hash);
+    w.write_all(&req).await.map_err(protocol)?;
+    w.flush().await.map_err(protocol)
+}
+
+/// The requester side: reads at most `max` bytes and keeps them only if they hash to `hash`.
+async fn read_response<R: AsyncRead + Unpin>(
+    r: &mut R,
+    hash: &Hash,
+    max: u64,
+) -> Result<Vec<u8>, FetchError> {
+    let mut status = [0u8; 1];
+    r.read_exact(&mut status).await.map_err(protocol)?;
+    if status[0] != 0 {
+        return Err(FetchError::NotFound);
+    }
+    let mut len = [0u8; 8];
+    r.read_exact(&mut len).await.map_err(protocol)?;
+    let size = u64::from_le_bytes(len);
+    if size > max.min(MAX_SIZE) {
+        return Err(FetchError::TooLarge);
+    }
+    let mut bytes = vec![0u8; size as usize];
+    r.read_exact(&mut bytes).await.map_err(protocol)?;
+    if crate::hash(&bytes) != *hash {
+        return Err(FetchError::Mismatch);
+    }
+    Ok(bytes)
+}
+
+fn protocol(e: impl std::fmt::Display) -> FetchError {
+    FetchError::Protocol(e.to_string())
+}
+
+/// `lichen/blob/1` on iroh.
 #[derive(Debug, Clone)]
 struct Provider {
     offers: Arc<Offers>,
@@ -118,27 +197,7 @@ struct Provider {
 impl ProtocolHandler for Provider {
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
         let (mut send, mut recv) = connection.accept_bi().await?;
-        let mut req = [0u8; 33];
-        if recv.read_exact(&mut req).await.is_err() {
-            return Ok(());
-        }
-        let (op, h) = req.split_at(1);
-        let found = match (op, <Hash>::try_from(h)) {
-            ([1], Ok(h)) => self.offers.get(&h),
-            _ => None,
-        };
-        let r = match found {
-            Some(bytes) => {
-                let mut head = [0u8; 9];
-                head[1..].copy_from_slice(&(bytes.len() as u64).to_le_bytes());
-                match send.write_all(&head).await {
-                    Ok(()) => send.write_all(&bytes).await,
-                    Err(e) => Err(e),
-                }
-            }
-            None => send.write_all(&[1]).await,
-        };
-        if r.is_ok() {
+        if serve(&self.offers, &mut recv, &mut send).await.is_ok() {
             let _ = send.finish();
             connection.closed().await;
         }
@@ -146,64 +205,168 @@ impl ProtocolHandler for Provider {
     }
 }
 
-/// An iroh endpoint that offers and fetches blobs.
-#[derive(Debug)]
+/// This phone's bridge: the blobs it offers, its iroh endpoint and its Tor client, each
+/// started on demand (a "Tor only" phone never starts iroh).
 pub struct Bridge {
-    router: Router,
     offers: Arc<Offers>,
+    iroh: Mutex<Option<Router>>,
+    tor: tokio::sync::Mutex<Option<tor::Tor>>,
+}
+
+impl std::fmt::Debug for Bridge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Bridge")
+            .field("iroh", &self.iroh_id().map(hex::encode))
+            .finish_non_exhaustive()
+    }
 }
 
 impl Bridge {
-    /// Starts the endpoint with key `secret` (from [`derive_key`]); offered blobs are kept in
-    /// `dir` when given.
+    /// A bridge with no transport yet; offered blobs are kept in `dir` when given.
+    pub fn new(dir: Option<PathBuf>) -> Result<Self, String> {
+        if let Some(d) = &dir {
+            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        }
+        Ok(Self {
+            offers: Arc::new(Offers {
+                dir,
+                mem: Mutex::default(),
+            }),
+            iroh: Mutex::new(None),
+            tor: tokio::sync::Mutex::new(None),
+        })
+    }
+
+    /// A bridge with its iroh endpoint started (key `secret`, from [`derive_key`]).
     pub async fn start(
         secret: [u8; 32],
         dir: Option<PathBuf>,
         network: Network,
     ) -> Result<Self, String> {
-        if let Some(d) = &dir {
-            std::fs::create_dir_all(d).map_err(|e| e.to_string())?;
+        let b = Self::new(dir)?;
+        b.start_iroh(secret, network).await?;
+        Ok(b)
+    }
+
+    fn router(&self) -> Option<Router> {
+        self.iroh.lock().ok().and_then(|r| r.clone())
+    }
+
+    /// Starts the iroh endpoint (once); returns its endpoint id.
+    pub async fn start_iroh(&self, secret: [u8; 32], network: Network) -> Result<[u8; 32], String> {
+        if let Some(id) = self.iroh_id() {
+            return Ok(id);
         }
-        let key = SecretKey::from_bytes(&secret);
         let endpoint = match network {
             Network::Default => Endpoint::builder(presets::N0),
+            Network::RelayOnly => Endpoint::builder(presets::N0).clear_ip_transports(),
             Network::Local => Endpoint::builder(presets::Minimal),
         }
-        .secret_key(key)
+        .secret_key(SecretKey::from_bytes(&secret))
         .alpns(vec![ALPN.to_vec()])
         .bind()
         .await
         .map_err(|e| e.to_string())?;
-        let offers = Arc::new(Offers {
-            dir,
-            mem: Mutex::default(),
-        });
         let router = Router::builder(endpoint)
             .accept(
                 ALPN,
                 Provider {
-                    offers: offers.clone(),
+                    offers: self.offers.clone(),
                 },
             )
             .spawn();
-        Ok(Self { router, offers })
+        let id = *router.endpoint().id().as_bytes();
+        if let Ok(mut r) = self.iroh.lock() {
+            *r = Some(router);
+        }
+        Ok(id)
+    }
+
+    /// Stops the iroh endpoint ("Tor only").
+    pub async fn stop_iroh(&self) {
+        let router = self.iroh.lock().ok().and_then(|mut r| r.take());
+        if let Some(r) = router {
+            let _ = r.shutdown().await;
+        }
     }
 
     /// Our endpoint id: the `key` of the iroh transport in announcements.
-    pub fn id(&self) -> [u8; 32] {
-        *self.router.endpoint().id().as_bytes()
+    pub fn iroh_id(&self) -> Option<[u8; 32]> {
+        self.router().map(|r| *r.endpoint().id().as_bytes())
     }
 
-    /// Our addresses (direct and relay), for tests on a local network.
-    pub fn addr(&self) -> EndpointAddr {
-        self.router.endpoint().addr()
+    /// Our iroh addresses (direct and relay), for tests on a local network.
+    pub fn addr(&self) -> Option<EndpointAddr> {
+        self.router().map(|r| r.endpoint().addr())
     }
 
-    /// Waits until the endpoint is reachable (a relay connected); at most `limit`.
+    /// Waits until the iroh endpoint is reachable (a relay connected); at most `limit`.
     pub async fn online(&self, limit: Duration) -> bool {
-        tokio::time::timeout(limit, self.router.endpoint().online())
+        let Some(r) = self.router() else {
+            return false;
+        };
+        tokio::time::timeout(limit, r.endpoint().online())
             .await
             .is_ok()
+    }
+
+    /// Connects to Tor (once), keeping its state and directory cache in the given folders;
+    /// gives up after `limit`.
+    pub async fn start_tor(
+        &self,
+        state: &Path,
+        cache: &Path,
+        limit: Duration,
+    ) -> Result<(), String> {
+        let mut t = self.tor.lock().await;
+        if t.is_none() {
+            let started = tokio::time::timeout(limit, tor::Tor::start(state, cache))
+                .await
+                .map_err(|_| "Tor did not connect in time".to_string())??;
+            *t = Some(started);
+        }
+        Ok(())
+    }
+
+    /// Publishes our onion service (once), keyed by `secret` (from [`derive_key`] with
+    /// `"lichen/1 onion"`); returns its identity, the `key` of the Tor transport.
+    pub async fn publish_onion(&self, secret: [u8; 32]) -> Result<[u8; 32], String> {
+        let mut t = self.tor.lock().await;
+        let tor = t.as_mut().ok_or("Tor is not started")?;
+        tor.publish(secret, self.offers.clone())
+    }
+
+    /// Our onion service identity, once published.
+    pub async fn onion_id(&self) -> Option<[u8; 32]> {
+        self.tor.lock().await.as_ref().and_then(tor::Tor::onion_id)
+    }
+
+    pub async fn onion_state(&self) -> OnionState {
+        match self.tor.lock().await.as_ref() {
+            Some(t) => t.state(),
+            None => OnionState::Off,
+        }
+    }
+
+    /// Waits until our onion service is reachable; at most `limit`.
+    pub async fn onion_reachable(&self, limit: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + limit;
+        loop {
+            match self.onion_state().await {
+                OnionState::Reachable => return true,
+                OnionState::Off | OnionState::Broken => return false,
+                OnionState::Starting => {}
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    /// Stops Tor: the onion service and the client.
+    pub async fn stop_tor(&self) {
+        self.tor.lock().await.take();
     }
 
     /// Offers `bytes`: returns their hash and size for the announcement.
@@ -215,23 +378,49 @@ impl Bridge {
         Ok((self.offers.put(bytes), size))
     }
 
-    /// Fetches `hash` from provider `id` (by its endpoint id), at most `max` bytes.
-    pub async fn fetch(&self, id: [u8; 32], hash: Hash, max: u64) -> Result<Vec<u8>, FetchError> {
-        let id = EndpointId::from_bytes(&id).map_err(|e| FetchError::Protocol(e.to_string()))?;
-        self.fetch_from(EndpointAddr::from(id), hash, max).await
+    /// Fetches `hash` from a provider of an announcement (`transport`, `key`), at most `max`
+    /// bytes.
+    pub async fn fetch(
+        &self,
+        transport: u8,
+        key: [u8; 32],
+        hash: Hash,
+        max: u64,
+    ) -> Result<Vec<u8>, FetchError> {
+        match transport {
+            transport::IROH => {
+                let id = EndpointId::from_bytes(&key).map_err(protocol)?;
+                self.fetch_from(EndpointAddr::from(id), hash, max).await
+            }
+            transport::TOR => {
+                let client = self
+                    .tor
+                    .lock()
+                    .await
+                    .as_ref()
+                    .map(tor::Tor::client)
+                    .ok_or_else(|| FetchError::Unreachable("Tor is not started".into()))?;
+                let work = tor::fetch(&client, key, hash, max);
+                tokio::time::timeout(tor::FETCH_LIMIT, work)
+                    .await
+                    .map_err(|_| FetchError::Timeout)?
+            }
+            _ => Err(FetchError::Protocol("unknown transport".into())),
+        }
     }
 
-    /// Fetches from a full address (tests, or an address learned otherwise).
+    /// Fetches over iroh from a full address (tests, or an address learned otherwise).
     pub async fn fetch_from(
         &self,
         addr: EndpointAddr,
         hash: Hash,
         max: u64,
     ) -> Result<Vec<u8>, FetchError> {
-        let max = max.min(MAX_SIZE);
+        let router = self
+            .router()
+            .ok_or_else(|| FetchError::Unreachable("iroh is not started".into()))?;
         let work = async {
-            let conn = self
-                .router
+            let conn = router
                 .endpoint()
                 .connect(addr, ALPN)
                 .await
@@ -240,37 +429,11 @@ impl Bridge {
                 .open_bi()
                 .await
                 .map_err(|e| FetchError::Unreachable(e.to_string()))?;
-            let mut req = [0u8; 33];
-            req[0] = 1;
-            req[1..].copy_from_slice(&hash);
-            send.write_all(&req)
-                .await
-                .map_err(|e| FetchError::Protocol(e.to_string()))?;
+            write_request(&mut send, &hash).await?;
             let _ = send.finish();
-            let mut status = [0u8; 1];
-            recv.read_exact(&mut status)
-                .await
-                .map_err(|e| FetchError::Protocol(e.to_string()))?;
-            if status[0] != 0 {
-                return Err(FetchError::NotFound);
-            }
-            let mut len = [0u8; 8];
-            recv.read_exact(&mut len)
-                .await
-                .map_err(|e| FetchError::Protocol(e.to_string()))?;
-            let size = u64::from_le_bytes(len);
-            if size > max {
-                return Err(FetchError::TooLarge);
-            }
-            let mut bytes = vec![0u8; size as usize];
-            recv.read_exact(&mut bytes)
-                .await
-                .map_err(|e| FetchError::Protocol(e.to_string()))?;
+            let bytes = read_response(&mut recv, &hash, max).await;
             conn.close(0u32.into(), b"done");
-            if crate::hash(&bytes) != hash {
-                return Err(FetchError::Mismatch);
-            }
-            Ok(bytes)
+            bytes
         };
         tokio::time::timeout(Duration::from_secs(120), work)
             .await
@@ -278,6 +441,7 @@ impl Bridge {
     }
 
     pub async fn shutdown(self) {
-        let _ = self.router.shutdown().await;
+        self.stop_tor().await;
+        self.stop_iroh().await;
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "lc-bridge"
-description = "lichen's Internet bridge (ADR-0015): offers and fetches blobs over iroh, verified by BLAKE3."
+description = "lichen's Internet bridge (ADR-0015): offers and fetches blobs over iroh and Tor, verified by BLAKE3."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -13,6 +13,20 @@ tokio.workspace = true
 hkdf = { version = "0.13" }
 sha2.workspace = true
 hex.workspace = true
+arti-client.workspace = true
+tor-hsservice.workspace = true
+tor-hscrypto.workspace = true
+tor-llcrypto.workspace = true
+tor-cell.workspace = true
+tor-proto.workspace = true
+tor-keymgr.workspace = true
+tor-config.workspace = true
+tor-rtcompat.workspace = true
+safelog.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+tor-llcrypto.workspace = true
 
 # libc 0.2.191 limits the routing-socket API (RTAX_*, RTM_*, in6_ifreq) to macOS, which
 # breaks iroh's netwatch 0.19 and netdev 0.46 on iOS. Held at 0.2.189 until they follow

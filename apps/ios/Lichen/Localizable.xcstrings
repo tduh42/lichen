@@ -701,6 +701,16 @@
         }
       }
     },
+    "Anonymous, slower: they fetch it from your onion service (%@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anonyme, plus lent : on la récupère sur ton service onion (%@)"
+          }
+        }
+      }
+    },
     "Appearance": {
       "localizations": {
         "fr": {
@@ -907,6 +917,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connexion à %@…"
+          }
+        }
+      }
+    },
+    "Connecting to Tor…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à Tor…"
+          }
+        }
+      }
+    },
+    "Connecting…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion…"
           }
         }
       }
@@ -1247,6 +1277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les zones téléchargées marchent sans réseau."
+          }
+        }
+      }
+    },
+    "Downloading over Tor: it can take a minute…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Téléchargement via Tor : ça peut prendre une minute…"
           }
         }
       }
@@ -2151,16 +2191,6 @@
         }
       }
     },
-    "Never expose your IP": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ne jamais exposer ton IP"
-          }
-        }
-      }
-    },
     "Never flooded: a LoRa announcement, the content over iroh or Tor (L7)": {
       "localizations": {
         "fr": {
@@ -2207,6 +2237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nouveau message"
+          }
+        }
+      }
+    },
+    "No Internet bridge": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de pont Internet"
           }
         }
       }
@@ -2311,6 +2351,16 @@
         }
       }
     },
+    "No transport reaches the sender: turn iroh or Tor on.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun transport ne joint l'expéditeur : active iroh ou Tor."
+          }
+        }
+      }
+    },
     "Nobody yet: share your position with a contact or join a group.": {
       "localizations": {
         "fr": {
@@ -2411,6 +2461,16 @@
         }
       }
     },
+    "Online, through relays": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En ligne, via les relais"
+          }
+        }
+      }
+    },
     "Only the group admin can do this.": {
       "localizations": {
         "fr": {
@@ -2487,6 +2547,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Photo : %@"
+          }
+        }
+      }
+    },
+    "Photos and files go over the Internet when both phones have it; LoRa only carries a one-packet announcement. iroh first, Tor when iroh cannot reach the sender.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les photos et fichiers passent par Internet quand les deux téléphones y ont accès ; LoRa ne porte qu'une annonce d'un paquet. iroh d'abord, Tor quand iroh ne joint pas l'expéditeur."
           }
         }
       }
@@ -2587,6 +2657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Preset"
+          }
+        }
+      }
+    },
+    "Publishing your onion service…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publication de ton service onion…"
           }
         }
       }
@@ -2957,6 +3037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoi %lld / %lld fragments"
+          }
+        }
+      }
+    },
+    "Sending later comes in a later version.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'envoi différé arrive dans une prochaine version."
           }
         }
       }
@@ -3341,12 +3431,12 @@
         }
       }
     },
-    "Tor and later sending come with the second part of the Internet bridge (L7b).": {
+    "Tor could not connect": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tor et l'envoi différé arrivent avec la seconde partie du pont Internet (L7b)."
+            "value": "Tor n'a pas pu se connecter"
           }
         }
       }
@@ -3377,6 +3467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Active le Bluetooth pour joindre ta radio."
+          }
+        }
+      }
+    },
+    "Turn Tor on in Settings": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Active Tor dans les Réglages"
           }
         }
       }
@@ -3521,16 +3621,6 @@
         }
       }
     },
-    "With the Internet bridge (L7).": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Avec le pont Internet (L7)."
-          }
-        }
-      }
-    },
     "Without a backup, losing this phone means losing your identity and your verified contacts.": {
       "localizations": {
         "fr": {
@@ -3631,6 +3721,16 @@
         }
       }
     },
+    "Your onion service is reachable": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton service onion est joignable"
+          }
+        }
+      }
+    },
     "Your position is not known yet": {
       "localizations": {
         "fr": {
@@ -3701,12 +3801,22 @@
         }
       }
     },
-    "iroh and Tor: with the Internet bridge": {
+    "iroh is off in Settings": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "iroh et Tor : avec le pont Internet"
+            "value": "iroh est désactivé dans les Réglages"
+          }
+        }
+      }
+    },
+    "iroh through relays: contacts never see your IP": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iroh via les relais : tes contacts ne voient jamais ton IP"
           }
         }
       }

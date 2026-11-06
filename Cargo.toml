@@ -41,7 +41,8 @@ clap = { version = "4.6", features = ["derive"] }
 serialport = { version = "4.10", default-features = false }
 getrandom = "0.4"
 uniffi = "0.32"
-rusqlite = { version = "0.41", features = ["bundled"] }
+# 0.40: Arti's directory cache (tor-dirmgr) needs < 0.41, and only one SQLite can be linked.
+rusqlite = { version = "0.40", features = ["bundled"] }
 # Media (ADR-0012): Codec2 voice (pure Rust, LGPL-2.1), AVIF thumbnails (rav1e, no assembly).
 codec2 = "0.3"
 ravif = { version = "0.13", default-features = false }
@@ -51,6 +52,19 @@ bip39 = { version = "3.0", default-features = false, features = ["std"] }
 iroh = "1.4"
 blake3 = "1.8"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "fs", "io-util", "sync"] }
+# Tor (L7b): Arti, pinned exactly: onion services keyed by us need its experimental API
+# (launch_onion_service_with_hsid) and the in-memory keystore.
+arti-client = { version = "=0.48.0", default-features = false, features = ["tokio", "rustls", "compression", "onion-service-client", "onion-service-service", "experimental-api", "ephemeral-keystore"] }
+tor-hsservice = "=0.48.0"
+tor-hscrypto = "=0.48.0"
+tor-llcrypto = "=0.48.0"
+tor-cell = "=0.48.0"
+tor-proto = { version = "=0.48.0", default-features = false }
+tor-keymgr = { version = "=0.48.0", default-features = false, features = ["ephemeral-keystore"] }
+tor-config = "=0.48.0"
+tor-rtcompat = { version = "=0.48.0", default-features = false, features = ["tokio", "rustls"] }
+safelog = "0.10"
+futures = "0.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
