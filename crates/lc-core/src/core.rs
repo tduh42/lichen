@@ -179,6 +179,12 @@ pub enum Event {
     },
     /// A share ended on its own (expiry, or its contact or group is gone).
     SharesChanged,
+    /// `from` asks for a variant of an image we sent (§13.3).
+    MediaRequested {
+        from: PubKey,
+        media_id: crate::content::MediaId,
+        full: bool,
+    },
 }
 
 /// Why a request was refused right away.
@@ -192,6 +198,11 @@ pub enum Error {
     UnknownGroup,
     /// Only the group admin may do this.
     NotAllowed,
+    /// A medium whose airtime does not fit in the budget left; it would fit in `wait_ms`
+    /// (§13.4).
+    OverBudget {
+        wait_ms: Millis,
+    },
 }
 
 /// Core configuration.
@@ -584,6 +595,49 @@ impl Core {
             });
         self.tick(now);
         Ok(id)
+    }
+
+    /// Queues a medium (§13): direct only, and refused when its first round does not fit in
+    /// the airtime left this hour.
+    pub fn send_media(
+        &mut self,
+        to: &PubKey,
+        datagram: Vec<u8>,
+        now: Millis,
+    ) -> Result<MsgId, Error> {
+        if !self.contacts.contains_key(to) {
+            return Err(Error::UnknownContact);
+        }
+        // What is already queued will spend its airtime first.
+        let (_, airtime) = self.estimate_send(to, datagram.len());
+        let queued = self.queued_airtime();
+        let at = self.budget.opportunity_after(now, queued, airtime);
+        if at > now {
+            return Err(Error::OverBudget { wait_ms: at - now });
+        }
+        self.send_datagram(to, datagram, now)
+    }
+
+    /// Airtime (first round) of every datagram queued or in flight, counted whole.
+    fn queued_airtime(&self) -> Millis {
+        self.peers
+            .iter()
+            .flat_map(|(k, p)| {
+                p.queue
+                    .iter()
+                    .map(|m| m.datagram.len())
+                    .chain(p.in_flight.as_ref().map(|f| f.msg.datagram.len()))
+                    .map(move |len| (k, len))
+            })
+            .map(|(k, len)| self.estimate_send(k, len).1)
+            .sum()
+    }
+
+    /// Random bytes from the core's generator (media ids).
+    pub fn random_id(&mut self) -> crate::content::MediaId {
+        let mut id = [0u8; 8];
+        self.rng.fill_bytes(&mut id);
+        id
     }
 
     /// Queues a datagram sent by the core itself (not reported to the app).
@@ -1496,6 +1550,14 @@ impl Core {
                 {
                     if let Content::Location(p) = content {
                         self.on_position(c, None, p, snr4, now);
+                        return;
+                    }
+                    if let Content::MediaRequest { media_id, full } = content {
+                        self.events.push_back(Event::MediaRequested {
+                            from: c,
+                            media_id,
+                            full,
+                        });
                         return;
                     }
                     self.events.push_back(Event::Received {

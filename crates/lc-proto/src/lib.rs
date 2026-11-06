@@ -71,6 +71,7 @@ pub mod content {
     pub const LOCATION: u8 = 0x03;
     pub const ANNOUNCE: u8 = 0x04;
     pub const VOICE: u8 = 0x05;
+    pub const MEDIA_REQUEST: u8 = 0x06;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
 }

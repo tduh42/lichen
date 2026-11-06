@@ -40,6 +40,10 @@ final class AppModel {
     var locationDenied = false
     /// The latest SOS heard, until dismissed or ended.
     var incomingSos: PeerPosition?
+    /// Image previews whose full variant we asked for.
+    var requestedFull: Set<Int64> = []
+    let recorder = VoiceRecorder()
+    let player = VoicePlayer()
     /// The map is on screen: our position is needed even without a share.
     var mapVisible = false {
         didSet { if mapVisible != oldValue { updateLocator() } }
@@ -51,6 +55,7 @@ final class AppModel {
     @ObservationIgnored private var demo: DemoNetwork?
     @ObservationIgnored private var demoTimer: Timer?
     @ObservationIgnored private var debugSay: String?
+    @ObservationIgnored private var debugVoiceSent = false
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
     @ObservationIgnored let locator = Locator()
     @ObservationIgnored private var lastFed: UInt64?
@@ -241,6 +246,18 @@ final class AppModel {
                let c = contacts.first(where: { $0.name == name }) {
                 _ = setShare(.contact(key: c.key), precision: .m100, hours: 1.25)
             }
+            // -media YES: a 4 s voice message to Camille (she answers with hers).
+            if UserDefaults.standard.bool(forKey: "media"), !debugVoiceSent,
+               let c = contacts.first(where: { $0.name == "Camille" }) {
+                debugVoiceSent = true
+                let pcm = (0..<32_000).map { i -> Int16 in
+                    let t = Double(i) / 8_000
+                    return Int16(6_000 * sin(2 * .pi * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9)))
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                    _ = self?.sendVoice(prepareVoice(pcm: pcm), to: .contact(key: c.key))
+                }
+            }
             #endif
         case let .sessionEstablished(peer):
             secured.insert(peer)
@@ -268,6 +285,13 @@ final class AppModel {
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
+            #if DEBUG
+            // -media YES: ask for full images as their previews arrive.
+            if UserDefaults.standard.bool(forKey: "media"), !m.outgoing,
+               case .image(_, _, false, _, _, _, _) = m.message, !requestedFull.contains(m.id) {
+                _ = requestFull(m)
+            }
+            #endif
         case let .location(position, end):
             positions = core.positions(nowMs: now())
             if position.sos && !end {
@@ -278,6 +302,8 @@ final class AppModel {
         case .sharesChanged:
             shares = core.shares()
             updateLocator()
+        case .mediaRequested:
+            break
         }
     }
 
@@ -329,6 +355,50 @@ final class AppModel {
             }
             if chats[chat] == nil { load(chat) } else { upsert(m) }
             conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    // MARK: media (protocol.md §13)
+
+    func estimate(_ chat: ChatID, datagramLen: UInt32) -> Estimate? {
+        guard case let .contact(key) = chat else { return nil }
+        return try? core.estimateDatagram(to: key, len: datagramLen)
+    }
+
+    func sendVoice(_ voice: PreparedVoice, to chat: ChatID) -> String? {
+        guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
+        return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
+    }
+
+    func sendImage(_ image: PreparedImage, to chat: ChatID) -> String? {
+        guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
+        return sendMedia(chat) { try core.sendImage(to: key, image: image, sentAt: $0, nowMs: $1) }
+    }
+
+    private func sendMedia(_ chat: ChatID, _ send: (UInt32, UInt64) throws -> StoredMessage) -> String? {
+        do {
+            let m = try send(UInt32(Date().timeIntervalSince1970), now())
+            if chats[chat] == nil { load(chat) } else { upsert(m) }
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    func requestFull(_ message: StoredMessage) -> String? {
+        do {
+            try core.requestFullImage(messageId: message.id, nowMs: now())
+            requestedFull.insert(message.id)
             pump()
             return nil
         } catch let e as LichenError {
@@ -469,14 +539,20 @@ extension Message {
     var display: String {
         switch self {
         case let .text(_, text): return text
+        case let .voice(_, _, _, durationMs, _):
+            return String(localized: "Voice message (\(clock(TimeInterval(durationMs) / 1000)))")
+        case .image: return String(localized: "Photo")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
         case let .other(type, body): return String(localized: "Unsupported content (type \(String(type)), \(String(body.count)) bytes)")
         }
     }
 
     var date: Date {
-        if case let .text(sentAt, _) = self, sentAt > 0 {
-            return Date(timeIntervalSince1970: TimeInterval(sentAt))
+        switch self {
+        case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _):
+            if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
+        case .other:
+            break
         }
         return Date()
     }
@@ -505,6 +581,13 @@ extension LichenError {
         case .NoIdentity: return String(localized: "The node's key is not available yet.")
         case .NotAllowed: return String(localized: "Only the group admin can do this.")
         case .InvalidKey: return String(localized: "Invalid key.")
+        case let .OverBudget(waitS):
+            let minutes = max(1, Int((Double(waitS) / 60).rounded(.up)))
+            return String(localized: "Not enough airtime left this hour: it fits in \(minutes) min.")
+        case .MediaInGroup:
+            return String(localized: "Photos and voice messages go to contacts only: in a group they would have to be flooded.")
+        case .BadImage: return String(localized: "This image could not be read.")
+        case .NotAPreview: return String(localized: "There is no full version to ask for.")
         }
     }
 }

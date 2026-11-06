@@ -32,6 +32,16 @@ pub enum LichenError {
     NotAllowed,
     /// A key or id does not have the expected length.
     InvalidKey,
+    /// The medium does not fit in the airtime left this hour; it would in `wait_s` seconds.
+    OverBudget {
+        wait_s: u64,
+    },
+    /// Media go to contacts only (groups wait for the Internet bridge).
+    MediaInGroup,
+    /// The image could not be made into a thumbnail.
+    BadImage,
+    /// Not an image preview that can be asked for in full.
+    NotAPreview,
 }
 
 impl std::fmt::Display for LichenError {
@@ -51,6 +61,9 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::TooLarge => Self::TooLarge,
             lc_core::Error::NoIdentity => Self::NoIdentity,
             lc_core::Error::NotAllowed => Self::NotAllowed,
+            lc_core::Error::OverBudget { wait_ms } => Self::OverBudget {
+                wait_s: wait_ms.div_ceil(1000),
+            },
         }
     }
 }
@@ -96,8 +109,33 @@ pub struct Estimate {
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Message {
-    Text { sent_at: u32, text: String },
-    Other { content_type: u8, body: Vec<u8> },
+    Text {
+        sent_at: u32,
+        text: String,
+    },
+    /// Codec2 frames (§13.1); `mode` 0 = 700C, 1 = 1200. Play with [`decode_voice`].
+    Voice {
+        sent_at: u32,
+        mode: u8,
+        frames: u16,
+        duration_ms: u32,
+        data: Vec<u8>,
+    },
+    /// An AVIF thumbnail (§13.2): the preview, or (`full`) the full variant.
+    Image {
+        sent_at: u32,
+        media_id: Vec<u8>,
+        full: bool,
+        width: u16,
+        height: u16,
+        /// Bytes of the full variant (0: none).
+        full_len: u16,
+        data: Vec<u8>,
+    },
+    Other {
+        content_type: u8,
+        body: Vec<u8>,
+    },
 }
 
 /// How long a received position stays on the map, in seconds.
@@ -111,6 +149,43 @@ impl From<Content> for Message {
                 content_type: lc_proto::content::LOCATION,
                 body: p.encode().to_vec(),
             },
+            Content::Voice {
+                sent_at,
+                mode,
+                frames,
+                data,
+            } => Self::Voice {
+                sent_at,
+                mode,
+                frames,
+                duration_ms: lc_media::voice::duration_ms(frames),
+                data,
+            },
+            Content::Image {
+                sent_at,
+                media_id,
+                full,
+                width,
+                height,
+                full_len,
+                data,
+            } => Self::Image {
+                sent_at,
+                media_id: media_id.to_vec(),
+                full,
+                width,
+                height,
+                full_len,
+                data,
+            },
+            c @ Content::MediaRequest { .. } => {
+                let mut v = c.encode();
+                let content_type = v.remove(0);
+                Self::Other {
+                    content_type,
+                    body: v,
+                }
+            }
             Content::Other { content_type, body } => Self::Other { content_type, body },
         }
     }
@@ -319,6 +394,11 @@ pub enum LichenEvent {
     },
     /// One of our shares ended on its own.
     SharesChanged,
+    /// `from` asked for the full variant of one of our images; it is on its way (when we still
+    /// have it and the budget allows).
+    MediaRequested {
+        from: Vec<u8>,
+    },
 }
 
 fn snr(snr4: i8) -> f32 {
@@ -406,6 +486,9 @@ impl LichenEvent {
                 ),
             },
             Event::SharesChanged => Self::SharesChanged,
+            Event::MediaRequested { from, .. } => Self::MediaRequested {
+                from: from.to_vec(),
+            },
         }
     }
 }
@@ -517,6 +600,8 @@ struct Inner {
     inflight: HashMap<u64, i64>,
     /// Events to hand out after the current one (`MessageChanged`).
     extra: VecDeque<LichenEvent>,
+    /// The latest `now_ms` the app gave (to answer requests from inside event handling).
+    last_now: u64,
 }
 
 impl Inner {
@@ -578,6 +663,42 @@ impl Inner {
         }
     }
 
+    /// Stores a message we just queued and tracks its delivery.
+    fn stored_outgoing(
+        &mut self,
+        to: PubKey,
+        content: Content,
+        id: u64,
+        (fragments, airtime_ms): (u8, u64),
+    ) -> StoredMessage {
+        let row = store::Message {
+            id: 0,
+            chat: Chat::Contact(to),
+            outgoing: true,
+            author: None,
+            content,
+            at_ms: unix_ms(),
+            status: Status::Sending {
+                sent: 0,
+                total: fragments,
+            },
+            fragments,
+            airtime_ms,
+            snr4: None,
+            read: true,
+        };
+        let stored = self
+            .store
+            .as_ref()
+            .and_then(|s| s.insert(&row).ok())
+            .unwrap_or(row);
+        if stored.id != 0 {
+            self.inflight.insert(id, stored.id);
+        }
+        self.persist();
+        stored.into()
+    }
+
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
         let row = self.store.as_ref()?.insert(&m).ok()?;
         let out = StoredMessage::from(row);
@@ -615,6 +736,47 @@ impl Inner {
             }
             Event::ContactsUpdated | Event::GroupJoined { .. } | Event::GroupUpdated { .. } => {
                 self.save_contacts();
+            }
+            Event::Received {
+                from,
+                content:
+                    content @ Content::Image {
+                        full: true,
+                        media_id,
+                        ..
+                    },
+                ..
+            } if self
+                .store
+                .as_ref()
+                .and_then(|s| s.find_image(&Chat::Contact(*from), media_id).ok().flatten())
+                .is_some() =>
+            {
+                // The full variant replaces its preview.
+                let chat = Chat::Contact(*from);
+                if let Some(m) = self.store.as_ref().and_then(|s| {
+                    let row = s.find_image(&chat, media_id).ok().flatten()?;
+                    s.set_content(row, content).ok().flatten()
+                }) {
+                    self.extra
+                        .push_back(LichenEvent::MessageChanged { message: m.into() });
+                }
+            }
+            Event::MediaRequested {
+                from,
+                media_id,
+                full: true,
+            } => {
+                let chat = Chat::Contact(*from);
+                if let Some((to, datagram)) = self
+                    .store
+                    .as_ref()
+                    .and_then(|s| s.media(media_id).ok().flatten())
+                    && to == chat
+                {
+                    let now = self.last_now;
+                    let _ = self.core.send_media(from, datagram, now);
+                }
             }
             Event::Received {
                 from,
@@ -744,6 +906,7 @@ impl LichenCore {
             data_dir: data_dir.map(PathBuf::from),
             inflight: HashMap::new(),
             extra: VecDeque::new(),
+            last_now: 0,
         };
         // With a known identity the history is available before the node connects.
         if let Some(node) = inner.core.key().copied() {
@@ -762,6 +925,7 @@ impl LichenCore {
 
     pub fn on_companion_frame(&self, frame: Vec<u8>, now_ms: u64) {
         let mut i = self.lock();
+        i.last_now = now_ms;
         i.core.on_companion_frame(&frame, now_ms);
         i.persist();
     }
@@ -773,6 +937,7 @@ impl LichenCore {
 
     pub fn tick(&self, now_ms: u64) {
         let mut i = self.lock();
+        i.last_now = now_ms;
         i.core.tick(now_ms);
         i.persist();
     }
@@ -880,35 +1045,118 @@ impl LichenCore {
         now_ms: u64,
     ) -> Result<StoredMessage, LichenError> {
         let k = key(&to)?;
+        let content = Content::Text { sent_at, text };
         let mut i = self.lock();
-        let (fragments, airtime_ms) = i.core.estimate_send(&k, 5 + text.len());
-        let id = i.core.send_text(&k, &text, sent_at, now_ms)?;
-        let row = store::Message {
-            id: 0,
-            chat: Chat::Contact(k),
-            outgoing: true,
-            author: None,
-            content: Content::Text { sent_at, text },
-            at_ms: unix_ms(),
-            status: Status::Sending {
-                sent: 0,
-                total: fragments,
+        let datagram = content.encode();
+        let estimate = i.core.estimate_send(&k, datagram.len());
+        let id = i.core.send_text(
+            &k,
+            match &content {
+                Content::Text { text, .. } => text,
+                _ => "",
             },
+            sent_at,
+            now_ms,
+        )?;
+        Ok(i.stored_outgoing(k, content, id, estimate))
+    }
+
+    /// Fragments and airtime (first round) of a datagram of `len` bytes to `to`.
+    pub fn estimate_datagram(&self, to: Vec<u8>, len: u32) -> Result<Estimate, LichenError> {
+        let k = key(&to)?;
+        let (fragments, airtime_ms) = self.lock().core.estimate_send(&k, len as usize);
+        Ok(Estimate {
             fragments,
             airtime_ms,
-            snr4: None,
-            read: true,
+        })
+    }
+
+    /// Sends a voice message prepared by [`prepare_voice`] (refused when over budget).
+    pub fn send_voice(
+        &self,
+        to: Vec<u8>,
+        voice: PreparedVoice,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let k = key(&to)?;
+        let content = Content::Voice {
+            sent_at,
+            mode: voice.mode,
+            frames: voice.frames,
+            data: voice.data,
         };
-        let stored = i
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let datagram = content.encode();
+        let estimate = i.core.estimate_send(&k, datagram.len());
+        let id = i.core.send_media(&k, datagram, now_ms)?;
+        Ok(i.stored_outgoing(k, content, id, estimate))
+    }
+
+    /// Sends the preview of an image prepared by [`prepare_image`]; its full variant goes out
+    /// when the receiver asks (§13.2). Refused when over budget.
+    pub fn send_image(
+        &self,
+        to: Vec<u8>,
+        image: PreparedImage,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let k = key(&to)?;
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let media_id = i.core.random_id();
+        let variant = |full: bool, data: Vec<u8>| Content::Image {
+            sent_at,
+            media_id,
+            full,
+            width: image.width,
+            height: image.height,
+            full_len: image.full.len() as u16,
+            data,
+        };
+        let full = variant(true, image.full.clone());
+        let preview = variant(false, image.preview.clone());
+        let datagram = preview.encode();
+        let estimate = i.core.estimate_send(&k, datagram.len());
+        let id = i.core.send_media(&k, datagram, now_ms)?;
+        if let Some(st) = &i.store {
+            let _ = st.put_media(&media_id, &Chat::Contact(k), &full.encode());
+        }
+        // What we keep in our history is the full image.
+        Ok(i.stored_outgoing(k, full, id, estimate))
+    }
+
+    /// Asks the sender of image preview `message_id` for its full variant.
+    pub fn request_full_image(&self, message_id: i64, now_ms: u64) -> Result<(), LichenError> {
+        let mut i = self.lock();
+        let m = i
             .store
             .as_ref()
-            .and_then(|s| s.insert(&row).ok())
-            .unwrap_or(row);
-        if stored.id != 0 {
-            i.inflight.insert(id, stored.id);
+            .and_then(|s| s.get(message_id).ok().flatten())
+            .ok_or(LichenError::NotAPreview)?;
+        let (
+            Chat::Contact(from),
+            Content::Image {
+                media_id,
+                full: false,
+                full_len,
+                ..
+            },
+        ) = (m.chat, &m.content)
+        else {
+            return Err(LichenError::NotAPreview);
+        };
+        if m.outgoing || *full_len == 0 {
+            return Err(LichenError::NotAPreview);
         }
-        i.persist();
-        Ok(stored.into())
+        let request = Content::MediaRequest {
+            media_id: *media_id,
+            full: true,
+        };
+        i.core.send_datagram(&from, request.encode(), now_ms)?;
+        Ok(())
     }
 
     pub fn create_group(
@@ -1113,6 +1361,66 @@ impl LichenCore {
         }
         Ok(())
     }
+}
+
+/// A voice message ready to send.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct PreparedVoice {
+    pub mode: u8,
+    pub frames: u16,
+    pub duration_ms: u32,
+    pub data: Vec<u8>,
+}
+
+/// Encodes 8 kHz mono samples (at most 15 s are kept).
+#[uniffi::export]
+pub fn prepare_voice(pcm: Vec<i16>) -> PreparedVoice {
+    let e = lc_media::voice::encode(&pcm);
+    PreparedVoice {
+        mode: e.mode.code(),
+        frames: e.frames,
+        duration_ms: lc_media::voice::duration_ms(e.frames),
+        data: e.data,
+    }
+}
+
+/// 8 kHz mono samples of a voice message; none when this build does not support its mode.
+#[uniffi::export]
+pub fn decode_voice(mode: u8, frames: u16, data: Vec<u8>) -> Option<Vec<i16>> {
+    lc_media::voice::decode(mode, frames, &data)
+}
+
+/// Bytes of a VOICE datagram for `voice` (for estimates).
+#[uniffi::export]
+pub fn voice_datagram_len(voice: &PreparedVoice) -> u32 {
+    8 + voice.data.len() as u32
+}
+
+/// An image made into a thumbnail: a preview (sent) and a full variant (on request).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct PreparedImage {
+    pub width: u16,
+    pub height: u16,
+    pub preview: Vec<u8>,
+    pub full: Vec<u8>,
+}
+
+/// Thumbnails of an RGBA8 image (`width × height × 4` bytes).
+#[uniffi::export]
+pub fn prepare_image(rgba: Vec<u8>, width: u32, height: u32) -> Result<PreparedImage, LichenError> {
+    let t = lc_media::image::thumbnail(&rgba, width, height).map_err(|_| LichenError::BadImage)?;
+    Ok(PreparedImage {
+        width: t.width,
+        height: t.height,
+        preview: t.preview,
+        full: t.full,
+    })
+}
+
+/// Bytes of the FILE datagram carrying `image`'s preview (for estimates).
+#[uniffi::export]
+pub fn image_datagram_len(image: &PreparedImage) -> u32 {
+    21 + image.preview.len() as u32
 }
 
 /// UUIDs of the MeshCore companion's Bluetooth service (Nordic UART).

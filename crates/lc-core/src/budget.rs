@@ -87,6 +87,27 @@ impl Budget {
         self.log.push_back((now, airtime_ms));
     }
 
+    /// Earliest time `airtime_ms` more fits when `pending_ms` is still to be spent from `now`
+    /// on (it frees up one window after `now` at the earliest).
+    pub fn opportunity_after(
+        &mut self,
+        now: Millis,
+        pending_ms: Millis,
+        airtime_ms: Millis,
+    ) -> Millis {
+        let total = self.used_ms(now) + pending_ms + airtime_ms;
+        let Some(mut excess) = total.checked_sub(self.limit_ms).filter(|&e| e > 0) else {
+            return now;
+        };
+        for &(t, a) in &self.log {
+            if a >= excess {
+                return t + self.window_ms;
+            }
+            excess -= a;
+        }
+        now + self.window_ms
+    }
+
     /// Earliest time a transmission of `airtime_ms` fits.
     pub fn next_opportunity(&mut self, now: Millis, airtime_ms: Millis) -> Millis {
         let mut used = self.used_ms(now);

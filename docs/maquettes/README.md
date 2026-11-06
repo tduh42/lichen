@@ -1,4 +1,6 @@
-# Mockups
+# Mockups (first round)
+
+**Superseded by [`../design/`](../design/)** (Tanguy's full design handoff, 2026-11-06): kept for history.
 
 Tanguy's app mockups (2026-11-06), 390×844 screens:
 

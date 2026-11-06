@@ -15,8 +15,8 @@ func draw(_ path: String, background: NSColor?, mark: NSColor) {
         cg.setFillColor(background.cgColor)
         cg.fill(CGRect(x: 0, y: 0, width: size, height: size))
     }
-    // The 64-unit grid takes 70 % of the tile (140 of 200 in the reference), centred; y down.
-    let scale = size * 0.7 / 64
+    // The 64-unit grid at scale 11 on 1024, centred (docs/design/assets/app-icon-1024.svg); y down.
+    let scale = 11.0 * size / 1024
     let offset = (size - 64 * scale) / 2
     cg.translateBy(x: offset, y: size - offset)
     cg.scaleBy(x: scale, y: -scale)

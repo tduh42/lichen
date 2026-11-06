@@ -8,7 +8,14 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::content::Content;
+use crate::content::{Content, MediaId};
+
+fn media_id(c: &Content) -> Option<MediaId> {
+    match c {
+        Content::Image { media_id, .. } => Some(*media_id),
+        _ => None,
+    }
+}
 use crate::core::{Contact, FailReason, OwnedPath, PubKey};
 use crate::group::GroupId;
 use crate::location::{Precision, Share};
@@ -18,7 +25,8 @@ pub use rusqlite::Error;
 
 /// Schema version (`PRAGMA user_version`).
 /// 2: location shares and positions (tables added, nothing migrated).
-const VERSION: i32 = 2;
+/// 3: images (`messages.media_id`, added to older databases; `media` table).
+const VERSION: i32 = 3;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -162,9 +170,16 @@ CREATE TABLE IF NOT EXISTS messages (
     fragments INTEGER NOT NULL,
     airtime_ms INTEGER NOT NULL,
     snr4 INTEGER,
-    read INTEGER NOT NULL
+    read INTEGER NOT NULL,
+    media_id BLOB
 );
 CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
+CREATE TABLE IF NOT EXISTS media (
+    id BLOB PRIMARY KEY,
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    datagram BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS shares (
     chat_kind INTEGER NOT NULL,
     chat BLOB NOT NULL,
@@ -239,6 +254,16 @@ impl Store {
             return Err(Error::InvalidQuery);
         }
         conn.execute_batch(SCHEMA)?;
+        // Databases from before version 3.
+        let has_media_id = conn
+            .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'media_id'")?
+            .exists([])?;
+        if !has_media_id {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN media_id BLOB")?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS messages_by_media ON messages (chat_kind, chat, media_id)",
+        )?;
         conn.pragma_update(None, "user_version", VERSION)?;
         Ok(Self { conn })
     }
@@ -402,8 +427,8 @@ impl Store {
         let (s, a, b) = m.status.columns();
         self.conn.execute(
             "INSERT INTO messages (chat_kind, chat, outgoing, author, content, at_ms, status,
-             status_a, status_b, fragments, airtime_ms, snr4, read)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+             status_a, status_b, fragments, airtime_ms, snr4, read, media_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 m.chat.kind(),
                 m.chat.bytes(),
@@ -418,11 +443,62 @@ impl Store {
                 i64::try_from(m.airtime_ms).unwrap_or(i64::MAX),
                 m.snr4,
                 m.read,
+                media_id(&m.content).as_ref().map(|i| i.as_slice()),
             ],
         )?;
         let mut out = m.clone();
         out.id = self.conn.last_insert_rowid();
         Ok(out)
+    }
+
+    /// The message of `chat` that holds image `media_id`.
+    pub fn find_image(&self, chat: &Chat, id: &MediaId) -> Result<Option<i64>, Error> {
+        self.conn
+            .query_row(
+                "SELECT id FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND media_id = ?3
+                 ORDER BY id DESC LIMIT 1",
+                params![chat.kind(), chat.bytes(), id.as_slice()],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
+    /// Replaces the content of message `id` (an image's preview by its full variant).
+    pub fn set_content(&self, id: i64, content: &Content) -> Result<Option<Message>, Error> {
+        self.conn.execute(
+            "UPDATE messages SET content = ?2, media_id = ?3 WHERE id = ?1",
+            params![
+                id,
+                content.encode(),
+                media_id(content).as_ref().map(|i| i.as_slice())
+            ],
+        )?;
+        self.get(id)
+    }
+
+    /// Keeps the full variant of an image we sent (its whole datagram), for whoever we sent
+    /// it to.
+    pub fn put_media(&self, id: &MediaId, chat: &Chat, datagram: &[u8]) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO media (id, chat_kind, chat, datagram) VALUES (?1, ?2, ?3, ?4)",
+            params![id.as_slice(), chat.kind(), chat.bytes(), datagram],
+        )?;
+        Ok(())
+    }
+
+    /// The full variant of image `id` and the conversation it was sent to.
+    pub fn media(&self, id: &MediaId) -> Result<Option<(Chat, Vec<u8>)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT chat_kind, chat, datagram FROM media WHERE id = ?1",
+                params![id.as_slice()],
+                |r| {
+                    let bytes: Vec<u8> = r.get(1)?;
+                    Ok(Chat::from_row(r.get(0)?, &bytes).map(|c| (c, r.get(2))))
+                },
+            )
+            .optional()
+            .map(|o| o.flatten().and_then(|(c, d)| d.ok().map(|d| (c, d))))
     }
 
     /// Updates the status of message `id` and returns it.
@@ -524,6 +600,60 @@ mod tests {
             snr4: Some(24),
             read: outgoing,
         }
+    }
+
+    #[test]
+    fn images_and_migration() {
+        let dir = std::env::temp_dir().join(format!("lichen-store-v2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("old.sqlite");
+        // A version 2 database: no media_id column.
+        {
+            let c = Connection::open(&path).unwrap();
+            c.execute_batch(&SCHEMA.replace(",\n    media_id BLOB", ""))
+                .unwrap();
+            c.pragma_update(None, "user_version", 2).unwrap();
+            c.execute(
+                "INSERT INTO messages (chat_kind, chat, outgoing, content, at_ms, status, status_a,
+                 status_b, fragments, airtime_ms, read) VALUES (0, ?1, 0, ?2, 1, 0, 0, 0, 0, 0, 1)",
+                params![
+                    [1u8; 32].as_slice(),
+                    Content::Text {
+                        sent_at: 1,
+                        text: "old".into()
+                    }
+                    .encode()
+                ],
+            )
+            .unwrap();
+        }
+        let s = Store::open(&path).unwrap();
+        let a = Chat::Contact([1; 32]);
+        assert_eq!(s.history(&a, None, 10).unwrap().len(), 1);
+        let image = |full: bool, len: usize| Content::Image {
+            sent_at: 2,
+            media_id: [7; 8],
+            full,
+            width: 160,
+            height: 120,
+            full_len: 900,
+            data: vec![1; len],
+        };
+        let mut m = text(a, false, "", 3);
+        m.content = image(false, 400);
+        let row = s.insert(&m).unwrap();
+        assert_eq!(s.find_image(&a, &[7; 8]).unwrap(), Some(row.id));
+        assert_eq!(
+            s.find_image(&Chat::Contact([2; 32]), &[7; 8]).unwrap(),
+            None
+        );
+        let up = s.set_content(row.id, &image(true, 900)).unwrap().unwrap();
+        assert_eq!(up.content, image(true, 900));
+        s.put_media(&[7; 8], &a, b"datagram").unwrap();
+        assert_eq!(s.media(&[7; 8]).unwrap(), Some((a, b"datagram".to_vec())));
+        assert_eq!(s.media(&[8; 8]).unwrap(), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -127,3 +127,17 @@ With 25 % loss per link (Alice and Bob around one repeater, 40 min zigzag at 2 m
 
 **Fuzz** `location_decode`: 362 M runs in 20 min, no crash.
 
+## 2026-11-06 — Media over LoRa (L6)
+
+`cargo test -p lc-core --release --test media -- --nocapture` and `cargo test -p lc-media --release -- --nocapture`, SF8 / 62.5 kHz / CR 4/5, one hop.
+
+| Medium | Bytes | Fragments | Airtime (ours, first round) |
+|---|---|---|---|
+| Voice, 10 s, Codec2 1200 | 1,500 (+ 8) | 10 | 10.7 s |
+| Voice, 10 s, Codec2 700C (when available) | 875 (+ 8) | 6 | — |
+| Voice, 6.2 s (demo, macOS speech synthesis) | 924 | 6 | — |
+| Image preview, 160 × 120 AVIF (synthetic landscape) | 409 (+ 21) | 3 | — |
+| Image full, 160 × 120 AVIF (same) | 975 (+ 21) | 7 | — |
+
+Budget: 15-second voice messages to one contact, back to back: 22 accepted (16 s of airtime each, 352 s of the 360 s an hour), the 23rd refused with "fits in 60 min" (nothing sent yet, so the queued airtime frees up an hour from now); after 30 minutes, the refusal points to one hour after the first transmission.
+

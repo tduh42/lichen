@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%@ / %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ / %@"
+          }
+        }
+      }
+    },
     "%@ connected": {
       "localizations": {
         "fr": {
@@ -57,6 +67,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · SNR %@ dB"
+          }
+        }
+      }
+    },
+    "%@ · ≈ %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · ≈ %@ s d'antenne"
+          }
+        }
+      }
+    },
+    "%lld fragments": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fragment"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fragments"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fragment"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld fragments"
+                }
+              }
+            }
           }
         }
       }
@@ -201,6 +261,16 @@
         }
       }
     },
+    "Allow it in Settings to record voice messages.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autorise-le dans les Réglages pour enregistrer des messages vocaux."
+          }
+        }
+      }
+    },
     "BLE · SF%@ / %@": {
       "localizations": {
         "fr": {
@@ -237,6 +307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annuler"
+          }
+        }
+      }
+    },
+    "Codec2 700C: not playable yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codec2 700C : pas encore lisible"
           }
         }
       }
@@ -651,6 +731,26 @@
         }
       }
     },
+    "Full image requested…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image complète demandée…"
+          }
+        }
+      }
+    },
+    "Full image: %@, ≈ %@ s from their node": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image complète : %@, ≈ %@ s depuis son nœud"
+          }
+        }
+      }
+    },
     "Group": {
       "localizations": {
         "fr": {
@@ -841,6 +941,16 @@
         }
       }
     },
+    "Load the full image": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger l'image complète"
+          }
+        }
+      }
+    },
     "Location access is off: allow it in Settings.": {
       "localizations": {
         "fr": {
@@ -927,6 +1037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Messages"
+          }
+        }
+      }
+    },
+    "Microphone access is off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'accès au micro est coupé"
           }
         }
       }
@@ -1021,6 +1141,16 @@
         }
       }
     },
+    "Not enough airtime left this hour: it fits in %lld min.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus assez de temps d'antenne cette heure : ça passera dans %lld min."
+          }
+        }
+      }
+    },
     "Not sent": {
       "localizations": {
         "fr": {
@@ -1101,6 +1231,36 @@
         }
       }
     },
+    "Photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        }
+      }
+    },
+    "Photos and voice messages go to contacts only: in a group they would have to be flooded.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder."
+          }
+        }
+      }
+    },
+    "Play": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire"
+          }
+        }
+      }
+    },
     "Position": {
       "localizations": {
         "fr": {
@@ -1121,6 +1281,26 @@
         }
       }
     },
+    "Preview": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu"
+          }
+        }
+      }
+    },
+    "Preview: %lld bytes · %@ · ≈ %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu : %lld octets · %@ · ≈ %@ s d'antenne"
+          }
+        }
+      }
+    },
     "Radio": {
       "localizations": {
         "fr": {
@@ -1137,6 +1317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Prêt"
+          }
+        }
+      }
+    },
+    "Record a voice message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer un message vocal"
           }
         }
       }
@@ -1221,12 +1411,32 @@
         }
       }
     },
+    "Send a photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer une photo"
+          }
+        }
+      }
+    },
     "Send an SOS?": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Envoyer un SOS ?"
+          }
+        }
+      }
+    },
+    "Send preview": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer l'aperçu"
           }
         }
       }
@@ -1301,6 +1511,16 @@
         }
       }
     },
+    "Stop": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter"
+          }
+        }
+      }
+    },
     "Stop SOS": {
       "localizations": {
         "fr": {
@@ -1327,6 +1547,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter le partage"
+          }
+        }
+      }
+    },
+    "The full thumbnail (%lld bytes) goes out only if they ask for it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La miniature complète (%lld octets) ne part que si on te la demande."
           }
         }
       }
@@ -1367,6 +1597,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sa position exacte est sur la carte."
+          }
+        }
+      }
+    },
+    "There is no full version to ask for.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il n'y a pas de version complète à demander."
+          }
+        }
+      }
+    },
+    "This image could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de lire cette image."
           }
         }
       }
@@ -1437,6 +1687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version"
+          }
+        }
+      }
+    },
+    "Voice message (%@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message vocal (%@)"
           }
         }
       }

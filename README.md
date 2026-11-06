@@ -18,6 +18,7 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 | `lc-core` | sessions, contacts, paths, airtime budget, storage; fake MeshCore network for tests |
 | `lc-cli` | `lichen` command-line client over USB |
 | `lc-ffi` | UniFFI bindings for Swift and Kotlin, and a demo network for the apps |
+| `lc-media` | voice (Codec2) and image thumbnails (AVIF) for LoRa |
 
 ## iOS app
 

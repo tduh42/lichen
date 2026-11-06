@@ -11,6 +11,8 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 lc-meshcore = { path = "../crates/lc-meshcore" }
 lc-proto = { path = "../crates/lc-proto" }
+lc-core = { path = "../crates/lc-core" }
+lc-media = { path = "../crates/lc-media" }
 
 # Separate workspace: nightly toolchain and instrumentation specific to fuzzing.
 [workspace]
@@ -71,3 +73,18 @@ path = "fuzz_targets/location_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "content_decode"
+path = "fuzz_targets/content_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "voice_decode"
+path = "fuzz_targets/voice_decode.rs"
+test = false
+doc = false
+bench = false
+

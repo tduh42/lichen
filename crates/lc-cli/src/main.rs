@@ -126,6 +126,23 @@ fn describe(core: &Core, e: &Event) -> String {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
                 Content::Location(p) => describe_position(p),
+                Content::Voice { frames, data, .. } => format!(
+                    "voice message, {:.1} s, {} bytes",
+                    f32::from(*frames) * 0.04,
+                    data.len()
+                ),
+                Content::Image {
+                    full,
+                    width,
+                    height,
+                    data,
+                    ..
+                } => format!(
+                    "image {width}x{height}, {} ({} bytes)",
+                    if *full { "full" } else { "preview" },
+                    data.len()
+                ),
+                Content::MediaRequest { .. } => "media request".into(),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }
@@ -152,6 +169,23 @@ fn describe(core: &Core, e: &Event) -> String {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
                 Content::Location(p) => describe_position(p),
+                Content::Voice { frames, data, .. } => format!(
+                    "voice message, {:.1} s, {} bytes",
+                    f32::from(*frames) * 0.04,
+                    data.len()
+                ),
+                Content::Image {
+                    full,
+                    width,
+                    height,
+                    data,
+                    ..
+                } => format!(
+                    "image {width}x{height}, {} ({} bytes)",
+                    if *full { "full" } else { "preview" },
+                    data.len()
+                ),
+                Content::MediaRequest { .. } => "media request".into(),
                 Content::Other { content_type, body } => {
                     format!("{} bytes of type 0x{content_type:02x}", body.len())
                 }
@@ -178,6 +212,11 @@ fn describe(core: &Core, e: &Event) -> String {
             describe_position(position)
         ),
         Event::SharesChanged => "a location share ended".into(),
+        Event::MediaRequested { from, full, .. } => format!(
+            "{} asks for the {} image",
+            name_of(core, from),
+            if *full { "full" } else { "preview" }
+        ),
         Event::Delivered { id } => format!("message {id} delivered"),
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
     }

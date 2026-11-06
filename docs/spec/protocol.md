@@ -175,10 +175,11 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | Type | Name | Body | Milestone |
 |---|---|---|---|
 | 0x01 | TEXT | `ts u32 (sender's Unix seconds) ‖ UTF-8 text (≥ 1 byte)` | L2 |
-| 0x02 | FILE | reserved | L6 |
+| 0x02 | FILE | §13.2 (images) | L6 |
 | 0x03 | LOCATION | §12 (14 bytes) | L5 |
 | 0x04 | ANNOUNCE | reserved (blob announcement, `design.md`) | L7 |
-| 0x05 | VOICE | reserved (Codec2 700C) | L6 |
+| 0x05 | VOICE | §13.1 | L6 |
+| 0x06 | MEDIA_REQUEST | §13.3 | L6 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 
@@ -300,7 +301,7 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 
 ## 11. Parts taken as is from `design.md`
 
-Media, Internet bridge (iroh, Tor), search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
+Internet bridge (iroh, Tor), search mode, regulatory constraints and threat model: `design.md` is authoritative until their milestone. Each will be detailed here before being coded.
 
 ## 12. Location (ADR-0011)
 
@@ -329,3 +330,34 @@ A **share** is a target (a contact or a group), a precision and an end time.
 - **End.** At the end time, or when the user stops, one last position goes out with flag "end of sharing", and the receiver removes the marker.
 - **SOS.** While on, the exact position goes to every share and every group every 2 minutes, with the SOS flag, whatever their precision. When it is turned off, the shares go back to their precision at once, and groups without a share get the end flag.
 - Never in MeshCore adverts (`design.md`).
+
+## 13. Media over LoRa (ADR-0012)
+
+Small media only, direct sessions only (never flooded: in a group they wait for the Internet bridge, L7). Integers little-endian.
+
+### 13.1 VOICE (0x05)
+
+`ts u32 ‖ mode u8 ‖ frames u16 ‖ data`
+
+- `mode`: 0 = Codec2 700C (28 bits per 40 ms frame), 1 = Codec2 1200 (48 bits per 40 ms frame). Audio is 8 kHz mono.
+- `data`: the frames' bits back to back, most significant bit first, `⌈frames × bits / 8⌉` bytes; anything else is rejected.
+- At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200. Ten seconds is 875 bytes (6 fragments on one hop) in 700C, 1,500 (10 fragments) in 1200.
+
+### 13.2 FILE (0x02): images
+
+`ts u32 ‖ kind u8 ‖ media_id [8] ‖ variant u8 ‖ width u16 ‖ height u16 ‖ full_len u16 ‖ data`
+
+- `kind` 1: an AVIF image (other kinds: later).
+- `media_id`: random, chosen by the sender; the same for both variants.
+- `variant` 0: the **preview**, at most 450 bytes of AVIF (3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
+- `full_len`: size of the full variant, so the receiver can show its cost before asking; 0 when there is none.
+- The sender sends the preview only. The full variant goes out when the receiver asks for it (§13.3), and the receiver replaces the preview with it.
+
+### 13.3 MEDIA_REQUEST (0x06)
+
+`media_id [8] ‖ variant u8`: "send me this variant". The sender answers with the FILE of that variant if it still has it, and ignores the request otherwise. Not shown as a message.
+
+### 13.4 Airtime
+
+Before sending a medium, the core estimates the airtime of its first round on the current path. When it does not fit in what is left of the sliding hour (§9), the send is refused with the time at which it would fit; nothing is queued. Text and positions are never refused this way (they are deferred frame by frame, §9).
+

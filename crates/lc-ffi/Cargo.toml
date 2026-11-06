@@ -21,6 +21,7 @@ cli = ["uniffi/cli"]
 lc-core.workspace = true
 lc-meshcore.workspace = true
 lc-proto.workspace = true
+lc-media.workspace = true
 uniffi.workspace = true
 
 [lints]

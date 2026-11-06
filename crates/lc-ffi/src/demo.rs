@@ -4,6 +4,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use lc_core::content::MediaId;
 use lc_core::fakenet::Net;
 use lc_core::{Chat, Content, Event, Fix, GroupId, Precision};
 use lc_meshcore::airtime::LoRaParams;
@@ -17,6 +18,9 @@ const COL: (f64, f64) = (44.9150, 5.4620);
 const YOU: (f64, f64) = (44.8885, 5.4985);
 /// Julien's walking speed, m/s.
 const WALK: f64 = 1.3;
+/// Camille's voice message: `mode u8 ‖ frames u16 ‖ Codec2 data` (macOS speech synthesis,
+/// encoded by `cargo run -p lc-media --example encode_voice`).
+const CAMILLE_VOICE: &[u8] = include_bytes!("../../../testdata/voice/camille-refuge.c2");
 
 #[derive(Clone, Debug)]
 enum Action {
@@ -27,6 +31,12 @@ enum Action {
     CreateGroup,
     /// Camille shares her exact position with the app's user for two hours.
     CamilleShares,
+    /// Camille sends the preview of a photo of the refuge.
+    CamillePhoto,
+    /// Camille answers with a voice message.
+    CamilleVoice,
+    /// Camille asks for the full variant of the user's image.
+    CamilleWantsFull(MediaId),
     GroupPost {
         from: usize,
         text: String,
@@ -47,6 +57,8 @@ struct Demo {
     next_fix: u64,
     /// Wall clock at simulated time 0, Unix milliseconds.
     wall0: u64,
+    /// The full variant of Camille's photo, kept for when it is asked for.
+    camille_full: Option<(MediaId, Vec<u8>)>,
 }
 
 fn unix_now_ms() -> u64 {
@@ -144,6 +156,53 @@ impl Demo {
                     c.start_share(Chat::Contact(app_key), Precision::Exact, until, now)
                 });
             }
+            Action::CamillePhoto => {
+                let (w, h) = (640, 480);
+                let Ok(t) =
+                    lc_media::image::thumbnail(&lc_media::image::sample_landscape(w, h), w, h)
+                else {
+                    return;
+                };
+                let media_id = [0xCA, 0x31, 0x11, 0xE0, 0, 0, 0, 1];
+                let variant = |full: bool, data: Vec<u8>| Content::Image {
+                    sent_at: ts,
+                    media_id,
+                    full,
+                    width: t.width,
+                    height: t.height,
+                    full_len: t.full.len() as u16,
+                    data,
+                };
+                self.camille_full = Some((media_id, variant(true, t.full.clone()).encode()));
+                let preview = variant(false, t.preview.clone()).encode();
+                let _ = self.net.with_core(self.camille, |c, now| {
+                    c.send_text(&app_key, "The view from the refuge tonight:", ts, now)?;
+                    c.send_media(&app_key, preview, now)
+                });
+            }
+            Action::CamilleVoice => {
+                if let Some((head, data)) = CAMILLE_VOICE.split_first_chunk::<3>() {
+                    let voice = Content::Voice {
+                        sent_at: ts,
+                        mode: head[0],
+                        frames: u16::from_le_bytes([head[1], head[2]]),
+                        data: data.to_vec(),
+                    };
+                    let _ = self.net.with_core(self.camille, |c, now| {
+                        c.send_media(&app_key, voice.encode(), now)
+                    });
+                }
+            }
+            Action::CamilleWantsFull(media_id) => {
+                let request = Content::MediaRequest {
+                    media_id,
+                    full: true,
+                }
+                .encode();
+                let _ = self.net.with_core(self.camille, |c, now| {
+                    c.send_datagram(&app_key, request, now)
+                });
+            }
             Action::GroupPost { from, text } => {
                 if let Some(gid) = self.group {
                     let _ = self
@@ -188,6 +247,40 @@ impl Demo {
                                 text: reply,
                             },
                         ));
+                    }
+                    Event::Received {
+                        from,
+                        content: Content::Voice { .. },
+                        ..
+                    } if from == app_key && bot == self.camille => {
+                        self.pending.push((now + 6 * SEC, Action::CamilleVoice));
+                    }
+                    Event::Received {
+                        from,
+                        content: Content::Image { full, media_id, .. },
+                        ..
+                    } if from == app_key && bot == self.camille => {
+                        let next = if full {
+                            Action::Dm {
+                                from: bot,
+                                text: "Got the full picture, thanks!".into(),
+                            }
+                        } else {
+                            Action::CamilleWantsFull(media_id)
+                        };
+                        self.pending.push((now + 4 * SEC, next));
+                    }
+                    Event::MediaRequested { from, media_id, .. }
+                        if from == app_key && bot == self.camille =>
+                    {
+                        if let Some((id, datagram)) = &self.camille_full
+                            && *id == media_id
+                        {
+                            let datagram = datagram.clone();
+                            let _ = self
+                                .net
+                                .with_core(bot, |c, t| c.send_media(&app_key, datagram, t));
+                        }
                     }
                     Event::GroupMessage { from, .. } if from == app_key && bot == self.camille => {
                         self.pending.push((
@@ -297,6 +390,7 @@ impl DemoNetwork {
             ),
             (60 * SEC, Action::CreateGroup),
             (90 * SEC, Action::CamilleShares),
+            (150 * SEC, Action::CamillePhoto),
         ];
         Arc::new(Self {
             inner: Mutex::new(Demo {
@@ -311,6 +405,7 @@ impl DemoNetwork {
                 julien_walk: None,
                 next_fix: 0,
                 wall0: wall,
+                camille_full: None,
             }),
         })
     }
@@ -484,6 +579,108 @@ mod location {
 }
 
 #[cfg(test)]
+mod media {
+    use super::*;
+    use crate::{LichenCore, LichenEvent, Message, StoredMessage};
+
+    /// Voice both ways, Camille's photo loaded in full on request, ours sent in full when
+    /// Camille asks.
+    #[test]
+    fn voice_and_images_with_camille() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![5; 32], None, None).unwrap();
+        core.connect(0);
+        let mut changed: Vec<StoredMessage> = Vec::new();
+        let mut step = 0;
+        let mut now = 0;
+        while now < 9 * 60_000 {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::MessageChanged { message } = e {
+                    changed.push(message);
+                }
+            }
+            let camille = core.contacts().into_iter().find(|c| c.name == "Camille");
+            if let Some(c) = camille {
+                if step == 0 && now > 40_000 {
+                    let pcm: Vec<i16> = (0..24_000).map(|i| ((i % 80) as i16 - 40) * 200).collect();
+                    let v = crate::prepare_voice(pcm);
+                    assert_eq!((v.mode, v.frames, v.data.len()), (1, 75, 450));
+                    core.send_voice(c.key.clone(), v, 1, now).unwrap();
+                    step = 1;
+                }
+                if step == 1
+                    && let Some(p) = changed.iter().find(|m| {
+                        matches!(m.message, Message::Image { full: false, .. }) && !m.outgoing
+                    })
+                {
+                    core.request_full_image(p.id, now).unwrap();
+                    step = 2;
+                }
+                if step == 2 && now > 6 * 60_000 {
+                    let (w, h) = (320, 240);
+                    let img = crate::prepare_image(lc_media::image::sample_landscape(w, h), w, h)
+                        .unwrap();
+                    core.send_image(c.key, img, 2, now).unwrap();
+                    step = 3;
+                }
+            }
+            now += 100;
+        }
+        assert_eq!(step, 3);
+        // Camille's voice message, playable.
+        let voice = changed
+            .iter()
+            .find_map(|m| match &m.message {
+                Message::Voice {
+                    mode, frames, data, ..
+                } if !m.outgoing => Some((*mode, *frames, data.clone())),
+                _ => None,
+            })
+            .expect("Camille's voice message");
+        assert_eq!(voice.1, 154);
+        assert_eq!(
+            crate::decode_voice(voice.0, voice.1, voice.2)
+                .unwrap()
+                .len(),
+            154 * 320
+        );
+        // Her photo: the preview, then the same message in full.
+        let preview = changed
+            .iter()
+            .find(|m| matches!(m.message, Message::Image { full: false, .. }))
+            .unwrap();
+        let full = changed
+            .iter()
+            .find(|m| m.id == preview.id && matches!(m.message, Message::Image { full: true, .. }))
+            .expect("the full photo replaced the preview");
+        match (&preview.message, &full.message) {
+            (
+                Message::Image {
+                    data: p, full_len, ..
+                },
+                Message::Image { data: f, .. },
+            ) => {
+                assert!(p.len() <= 450);
+                assert_eq!(f.len(), usize::from(*full_len));
+            }
+            _ => unreachable!(),
+        }
+        // She asked for ours in full and said so.
+        assert!(changed.iter().any(|m| matches!(
+            &m.message,
+            Message::Text { text, .. } if text == "Got the full picture, thanks!"
+        )));
+    }
+}
+
+#[cfg(test)]
 mod persistence {
     use super::*;
     use crate::{ChatRef, LichenCore, LichenEvent, Message, MessageStatus};
@@ -517,7 +714,7 @@ mod persistence {
     fn text(m: &Message) -> &str {
         match m {
             Message::Text { text, .. } => text,
-            Message::Other { .. } => "",
+            Message::Voice { .. } | Message::Image { .. } | Message::Other { .. } => "",
         }
     }
 

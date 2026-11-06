@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Android · Déclencher un SOS</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&amp;family=Space+Grotesk:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+a{color:#FB923C}a:hover{color:#FDBA74}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style>
+</head>
+<body style="background:#2A2A27;display:flex;justify-content:center;padding:24px">
+<div style="width: 390px; height: 844px; box-sizing: border-box; position: relative; background: #0E0E0D; font-family: Roboto, system-ui, sans-serif; color: #F4F4F0; display: flex; flex-direction: column; overflow: hidden">
+<div style="position: absolute; inset: 0; background: #1A0B0B"></div>
+<div style="position: relative; flex-grow: 1; padding: 48px 24px 32px; display: flex; flex-direction: column; gap: 20px">
+  <div style="display: flex; justify-content: space-between; align-items: center"><span style="font-size: 15px; color: #FCA5A5; font-weight: 600">Alerte de détresse</span><a href="carte.html" aria-label="Annuler" style="width: 44px; height: 44px; border-radius: 22px; background: #3F1414; display: flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FCA5A5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg></a></div>
+  <div style="align-self: center; margin-top: 12px; width: 220px; height: 220px; border-radius: 110px; border: 8px solid #3F1414; box-sizing: border-box; position: relative; display: flex; align-items: center; justify-content: center">
+    <div aria-hidden="true" style="position: absolute; inset: -8px; border-radius: 110px; border: 8px solid transparent; border-top-color: #EF4444; border-right-color: #EF4444; transform: rotate(20deg)"></div>
+    <button style="width: 168px; height: 168px; border-radius: 84px; border: none; background: #DC2626; color: #FFFFFF; font-family: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px"><span style="font-family: 'Space Grotesk', Inter, sans-serif; font-weight: 700; font-size: 40px">SOS</span><span style="font-size: 14px">Maintenir 3 s</span></button>
+  </div>
+  <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 8px">
+    <div style="background: #2A1212; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; "><span style="font-size: 13px; color: #FCA5A5">Ce qui sera envoyé</span><span style="font-size: 15px">Position GPS précise, batterie, puis une balise toutes les 60 s</span></div>
+    <div style="background: #2A1212; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; "><span style="font-size: 13px; color: #FCA5A5">À qui</span><span style="font-size: 15px">Rando Vercors (5), Équipe recherche (3) et 4 contacts de confiance</span></div>
+    <div style="background: #2A1212; border-radius: 16px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; "><span style="font-size: 13px; color: #FCA5A5">Comment</span><span style="font-size: 15px">Flood exceptionnel en SF12 pour la portée. Ta radio répond aux pings des chercheurs.</span></div>
+  </div>
+  <span style="margin-top: auto; font-size: 12px; color: #ABABA3; text-align: center">Le SOS reste actif jusqu’à ce que tu l’arrêtes. Il ne remplace pas le 112.</span>
+</div>
+</div>
+</body>
+</html>

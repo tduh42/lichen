@@ -9,6 +9,14 @@
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen parle à ton nœud MeshCore en Bluetooth." } }
       }
     },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Microphone permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen records your voice messages, encoded with Codec2 to fit on LoRa." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen enregistre tes messages vocaux, encodés en Codec2 pour tenir sur LoRa." } }
+      }
+    },
     "NSLocationWhenInUseUsageDescription" : {
       "comment" : "Location permission prompt",
       "extractionState" : "manual",

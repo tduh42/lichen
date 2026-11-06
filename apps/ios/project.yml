@@ -41,6 +41,7 @@ targets:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSBluetoothAlwaysUsageDescription: lichen talks to your MeshCore node over Bluetooth.
+        NSMicrophoneUsageDescription: lichen records your voice messages, encoded with Codec2 to fit on LoRa.
         NSLocationWhenInUseUsageDescription: lichen sends your position, encrypted, to the people and groups you share it with, and shows you on the map.
         UIBackgroundModes: [bluetooth-central, location]
     settings:
