@@ -57,3 +57,29 @@ Bugs the fake network found, all fixed: HELLO retries on fixed timers collided f
 
 - First run: `NoPath`. MeshCore's `SEND_PATH_DISCOVERY_REQ` is a flooded telemetry request, and a node answers only when its owner allows base telemetry, off by default. lichen's own fake network had answered discovery from the topology and hidden this. Hence ADR-0008: lichen floods its own PROBE as `GRP_DATA` and reads it through `LOG_RX_DATA`.
 - With the probe: text delivered 26 s into the simulation (probe from alice, re-flooded by the relay with its hash, PATH_REPLY, handshake, data, all in direct mode); 3 KB delivered at 5 % random loss.
+
+## 2026-11-06 — Groups, shared radio slot, timing jitter (L3)
+
+**Group of five** (`cargo test -p lc-core --release --test groups -- --nocapture`): five companions each linked only to one repeater (none hears another), every member knowing only the admin. Creating the group (state to 4 members, 20 sender-key datagrams, path discovery and handshakes between members who had no session) took 534 s until every member held every other member's key. All posts arrived, including a two-fragment one; after removing a member, the four others rotated their keys and the removed member could no longer read.
+
+First attempt: two members never joined and the setup stalled after 206 transmissions with 36 % of receptions lost to collisions. Two causes: each session paced itself as if it had the radio alone (the admin ran four transfers at once), and a failed internal datagram (group state, sender key) was dropped for good. Fixed by one shared transmit slot per node (round robin between sessions, ACKs exempt, protocol.md §7.3) and by retrying internal datagrams after 1, 2, 4, 8, 16 minutes.
+
+**Jitter.** Both sides of a conversation behind one repeater, running the same deterministic pacing and ACK wait, stayed in lockstep and collided at the repeater on every round (the crossing test). Every gap now gets `U[0, t_frame)` and the ACK wait `U[0, W/2)`. Cost, same 10 KB measurement as above:
+
+| Repeaters | Loss per link | Delivered | Mean time | Frames | Collisions |
+|---|---|---|---|---|---|
+| 0 | 0 % | 50/50 | 109 s | 66 | 0.0 % |
+| 0 | 10 % | 50/50 | 130 s | 77 | 0.0 % |
+| 0 | 15 % | 50/50 | 140 s | 82 | 0.0 % |
+| 1 | 0 % | 50/50 | 250 s | 132 | 0.0 % |
+| 1 | 10 % | 50/50 | 342 s | 169 | 0.3 % |
+| 1 | 15 % | 50/50 | 403 s | 194 | 0.7 % |
+| 3 | 0 % | 50/50 | 533 s | 264 | 0.0 % |
+| 3 | 10 % | 48/50 | 981 s | 412 | 0.8 % |
+| 3 | 15 % | 38/50 | 1216 s | 433 | 1.0 % |
+
+About half a frame time more per gap, and slightly fewer deliveries at the harshest settings, in exchange for no deadlock in two-way traffic.
+
+**Against oxymesh** (`sim/tests/groups.rs`): a group of three on oxymesh's MeshCore node logic, next to a stock node that follows a named channel whose hash is `0x7C`. The message reached both other members; the relay re-flooded the envelopes; the stock node pushed no channel message, channel data or "message waiting" to its app.
+
+**Fuzz** `discovery_open`: 96.7 M runs in 20 min, no crash.

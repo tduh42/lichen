@@ -18,6 +18,7 @@
 
 pub mod aead;
 pub mod discovery;
+pub mod group;
 pub mod handshake;
 pub mod header;
 pub mod kdf;
@@ -70,4 +71,5 @@ pub mod content {
     pub const ANNOUNCE: u8 = 0x04;
     pub const VOICE: u8 = 0x05;
     pub const SENDER_KEY: u8 = 0x10;
+    pub const GROUP_STATE: u8 = 0x11;
 }

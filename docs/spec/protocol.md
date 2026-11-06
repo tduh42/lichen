@@ -179,7 +179,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x03 | LOCATION | reserved (13 bytes, `design.md`) | L5 |
 | 0x04 | ANNOUNCE | reserved (blob announcement, `design.md`) | L7 |
 | 0x05 | VOICE | reserved (Codec2 700C) | L6 |
-| 0x10 | SENDER_KEY | reserved | L3 |
+| 0x10 | SENDER_KEY | §10.2 | L3 |
+| 0x11 | GROUP_STATE | §10.1 | L3 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network.
 
@@ -222,7 +223,9 @@ The companion does not say when a frame has left, and repeaters are half duplex.
 Δ = t_frame × k + 100 ms,   k = 1 (0 repeaters), 3 (1 repeater), 7 (2 repeaters or more)
 ```
 
-`t_frame` = airtime of the whole frame (`2 + path_bytes + payload`) with the preset read from `SELF_INFO` (§9). With 2 repeaters or more, the worst case is the second repeater still forwarding fragment `i` (MeshCore repeaters wait up to `1.5 × t` before forwarding) when fragment `i + 1` reaches the first one, which cannot hear it: about `6 t`. Measured on the fake network, `k = 5` loses 12 % of receptions to collisions, `k = 7` less than 1 %, and is not slower (`docs/measurements.md`).
+`t_frame` = airtime of the whole frame (`2 + path_bytes + payload`) with the preset read from `SELF_INFO` (§9). Every gap gets a fresh random jitter `U[0, t_frame)`, and the ACK wait `W` (§7.4) a jitter `U[0, W/2)`: two senders that cannot hear each other (both sides of a conversation behind one repeater) would otherwise keep the same rhythm and collide at the repeater on every round.
+
+**One radio, several sessions.** A node sends one data frame at a time across all its sessions, in turn (round robin). After any frame of airtime `t` on a path of `h` repeaters, the next data frame waits `t × k(h) + 100 ms` (`k` as above; `k = 10` after a flood). ACKs and ABORTs do not wait for this slot. With 2 repeaters or more, the worst case is the second repeater still forwarding fragment `i` (MeshCore repeaters wait up to `1.5 × t` before forwarding) when fragment `i + 1` reaches the first one, which cannot hear it: about `6 t`. Measured on the fake network, `k = 5` loses 12 % of receptions to collisions, `k = 7` less than 1 %, and is not slower (`docs/measurements.md`).
 
 **ACKs are sent twice.** The copy goes `7 × t_ack + 200 ms` after the first, with the next sequence number (so a new nonce and new bytes for the duplicate filter); it carries the current bitmap. When an ACK starts a new round, the sender waits `9 × t_ack + 200 ms` before its first fragment, so that the copy does not collide with it at a repeater that both hear but that cannot hear each other. The sender ignores a copy that confirms nothing new while it is already resending.
 
@@ -248,9 +251,50 @@ Per session and receive direction:
 - Example, 869.618 MHz / 62.5 kHz / SF8, 255-byte frame: 1.51 s at CR 4/5; 2.31 s at CR 4/8 (French preset). The original design counted 1.4 s with a short preamble.
 - The budget follows the `config/eu868.toml` rule that contains the frequency (g3: 10 %, i.e. 360 s per sliding hour). The host counts its own transmissions and only refuses or defers costly sends (ADR-0007).
 
-## 10. Groups (L3, to be detailed)
+## 10. Groups (ADR-0009)
 
-From `design.md`, with the limits of §1: the `GRP_DATA` envelope = `channel_hash ‖ our data`, sent with `SEND_RAW_PACKET`, received through `LOG_RX_DATA`. It fits in `171 − hops` bytes, 4 fewer with transport codes. There is one sender key per member, distributed pairwise (type 0x10), and a rekey when a member leaves. The `channel_hash` value will be chosen away from known public channels (ADR to write in L3).
+A group is a set of members who each hold the **sender key** of every other member. A message is encrypted once with the sender's key, **signed** with the sender's identity, and flooded. Group state and sender keys travel over the pairwise sessions (§4–§8), which are authenticated and forward-secret.
+
+### 10.1 Group state (pairwise datagram, type 0x11 GROUP_STATE)
+
+```
+gid (16, random) ‖ epoch u32 ‖ admin pub (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 2..32)
+‖ n × (pub (32) ‖ name_len (1) ‖ name (≤ 32))
+```
+
+- The creator is the **admin**. Only the admin sends GROUP_STATE. A receiver accepts it when it comes from the group's admin with a higher `epoch` than the one it holds, or, for an unknown `gid`, from any contact that lists itself as admin and lists the receiver (joining is reported to the app).
+- Members who are not contacts yet are added as contacts from the list (their pairwise traffic needs a path, found by §4.5).
+- A receiver that is no longer listed forgets the group (reported to the app).
+
+### 10.2 Sender keys (pairwise datagram, type 0x10 SENDER_KEY)
+
+```
+gid (16) ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32
+```
+
+- Every member draws a random sender key per group and sends it to every other member. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows.
+- Sender keys and their counters live in memory: after a restart, the app draws a new key (`key_epoch + 1`) and sends it again, so a counter is never reused under a key (as for sessions, ADR-0003).
+- A receiver keeps the current and the previous key of each member (messages in flight during a rekey), and drops keys of members who left.
+
+### 10.3 Group message (flooded envelope)
+
+Sent with `SEND_RAW_PACKET` as a `GRP_DATA` flood (transport codes of the default flood scope when set), read through `LOG_RX_DATA`.
+
+```
+payload = 0x7C ‖ type (1) ‖ gid_hash (2) ‖ sender (1) ‖ key_epoch (1) ‖ counter u32 ‖ frag (1)
+          ‖ ciphertext ‖ tag (8) ‖ [0x00 if type = 0x03]
+type    = 0x02, or 0x03 when a trailing pad byte is present
+gid_hash = SHA256(gid)[0..2];  sender = pub[0] of the sender
+frag    = index << 4 | total, total ∈ {1, 2}, index < total
+nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  key = sender key
+```
+
+- **Length rule** (§1 fact 9): a stock node reads a 2-byte MAC after the channel hash, so the rest of the payload must not be a non-empty multiple of 16. When `len(payload) − 3` would be one, the sender appends the pad byte and uses type 0x03 (the type byte is in the AAD).
+- **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 139 bytes of plaintext.
+- **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 70 bytes in one fragment, 209 in two.
+- **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces.
+- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's public key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
+- **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006).
 
 ## 11. Parts taken as is from `design.md`
 

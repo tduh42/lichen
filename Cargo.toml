@@ -23,6 +23,7 @@ hkdf = { version = "0.13", default-features = false }
 hmac = { version = "0.13", default-features = false }
 sha2 = { version = "0.11", default-features = false }
 curve25519-dalek = { version = "5.0", default-features = false }
+ed25519-dalek = { version = "3.0", default-features = false, features = ["hazmat"] }
 subtle = { version = "2.6", default-features = false }
 
 # std only (application core, CLI, tests)

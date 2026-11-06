@@ -9,7 +9,9 @@ pub mod budget;
 pub mod content;
 pub mod core;
 pub mod fakenet;
+pub mod group;
 
 pub use crate::core::{Config, Contact, Core, Error, Event, FailReason, MsgId, OwnedPath, PubKey};
 pub use content::Content;
+pub use group::{Group, GroupId, Member};
 pub use lc_proto::Millis;

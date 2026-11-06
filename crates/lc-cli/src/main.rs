@@ -138,6 +138,28 @@ fn describe(core: &Core, e: &Event) -> String {
         Event::Progress { sent, total, .. } => {
             format!("fragment {sent} sent ({total} in the datagram)")
         }
+        Event::GroupJoined { gid, name, admin } => format!(
+            "added to group \"{name}\" ({}) by {}",
+            hex::encode(&gid[..4]),
+            name_of(core, admin)
+        ),
+        Event::GroupUpdated { gid } => format!("group {} updated", hex::encode(&gid[..4])),
+        Event::GroupLeft { gid } => format!("removed from group {}", hex::encode(&gid[..4])),
+        Event::GroupMessage {
+            gid, from, content, ..
+        } => {
+            let body = match content {
+                Content::Text { text, .. } => format!("\"{text}\""),
+                Content::Other { content_type, body } => {
+                    format!("{} bytes of type 0x{content_type:02x}", body.len())
+                }
+            };
+            format!(
+                "[group {}] {}: {body}",
+                hex::encode(&gid[..4]),
+                name_of(core, from)
+            )
+        }
         Event::Delivered { id } => format!("message {id} delivered"),
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
     }

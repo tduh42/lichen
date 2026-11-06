@@ -49,6 +49,45 @@ fn identities_and_ecdh() {
     }
 }
 
+/// Adverts are signed by the Python oracle with MeshCore's expanded keys: Ed25519 is
+/// deterministic, so our signatures must match byte for byte.
+#[test]
+fn advert_signatures() {
+    let t = load("air.toml");
+    let ids: std::collections::HashMap<String, [u8; 64]> = entries(&t, "identity")
+        .iter()
+        .map(|v| (s(v, "name").to_owned(), arr::<64>(&h(v, "prv"))))
+        .collect();
+    let packets: std::collections::HashMap<String, Vec<u8>> = entries(&t, "packet")
+        .iter()
+        .map(|v| (s(v, "name").to_owned(), h(v, "raw")))
+        .collect();
+    let mut n = 0;
+    for v in entries(&t, "advert") {
+        let prv = ids[s(v, "identity")];
+        let raw = &packets[s(v, "packet")];
+        let p = Packet::decode(raw).unwrap();
+        let (key, rest) = p.payload.split_at(32);
+        let (ts, rest) = rest.split_at(4);
+        let (sig, app) = rest.split_at(64);
+        let sig: [u8; 64] = sig.try_into().unwrap();
+        assert_eq!(lc_meshcore::ecdh::sign(&prv, &[key, ts, app]).unwrap(), sig);
+        let key: [u8; 32] = key.try_into().unwrap();
+        assert!(lc_meshcore::ecdh::verify(
+            &key,
+            &[key.as_slice(), ts, app],
+            &sig
+        ));
+        assert!(!lc_meshcore::ecdh::verify(
+            &key,
+            &[key.as_slice(), ts, b"x"],
+            &sig
+        ));
+        n += 1;
+    }
+    assert_eq!(n, 3);
+}
+
 #[test]
 fn packets_round_trip() {
     let t = load("air.toml");

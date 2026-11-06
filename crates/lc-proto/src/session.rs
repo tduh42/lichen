@@ -305,6 +305,11 @@ impl Session {
     /// Writes the next frame due at `now` into `out` (at least [`crate::FRAME_MAX`] bytes) and
     /// returns its length. ACKs and ABORTs go before data.
     pub fn poll_transmit(&mut self, now: Millis, out: &mut [u8]) -> Option<usize> {
+        self.poll_ack(now, out).or_else(|| self.poll_data(now, out))
+    }
+
+    /// Like [`Session::poll_transmit`], receiver side only: ACKs and the receiver's ABORT.
+    pub fn poll_ack(&mut self, now: Millis, out: &mut [u8]) -> Option<usize> {
         let timing = self.timing;
         if let Some(r) = self.rx.as_mut() {
             let tag = r.tag();
@@ -338,6 +343,12 @@ impl Session {
                 return seal_frame(&self.keys.send, &header, plain.get(..len)?, out);
             }
         }
+        None
+    }
+
+    /// Like [`Session::poll_transmit`], sender side only: DATA fragments and the sender's ABORT.
+    pub fn poll_data(&mut self, now: Millis, out: &mut [u8]) -> Option<usize> {
+        let timing = self.timing;
         let s = self.sender.as_mut()?;
         let emit = s.poll(now, &timing);
         let (tag, total) = (s.tag(), s.total());
@@ -374,6 +385,16 @@ impl Session {
             total,
             attempt,
         }
+    }
+
+    /// When [`Session::poll_ack`] should be called next.
+    pub fn next_ack_wakeup(&self) -> Option<Millis> {
+        self.rx.as_ref().and_then(Reassembly::next_wakeup)
+    }
+
+    /// When [`Session::poll_data`] should be called next.
+    pub fn next_data_wakeup(&self) -> Option<Millis> {
+        self.sender.as_ref().and_then(Sender::next_wakeup)
     }
 
     /// When `poll_transmit` should be called next (`Some(0)` = now).

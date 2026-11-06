@@ -10,6 +10,7 @@ publish = false
 lc-core = { path = "../crates/lc-core" }
 mc-sim = { path = "../../oxymesh/crates/mc-sim" }
 mc-core = { path = "../../oxymesh/crates/mc-core" }
+sha2 = "0.11"
 
 [workspace]
 members = ["."]

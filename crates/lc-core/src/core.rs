@@ -28,6 +28,7 @@ use sha2::{Digest, Sha256};
 
 use crate::budget::{Budget, EU868};
 use crate::content::Content;
+use crate::group::{Group, GroupId, PendingKey};
 
 pub type PubKey = [u8; 32];
 pub type MsgId = u64;
@@ -143,6 +144,27 @@ pub enum Event {
         id: MsgId,
         reason: FailReason,
     },
+    /// Someone added us to a group.
+    GroupJoined {
+        gid: GroupId,
+        name: String,
+        admin: PubKey,
+    },
+    /// A group's name or members changed (or we created it).
+    GroupUpdated {
+        gid: GroupId,
+    },
+    /// We were removed from a group.
+    GroupLeft {
+        gid: GroupId,
+    },
+    GroupMessage {
+        gid: GroupId,
+        from: PubKey,
+        content: Content,
+        snr4: i8,
+        rssi: i8,
+    },
 }
 
 /// Why a request was refused right away.
@@ -151,6 +173,11 @@ pub enum Error {
     UnknownContact,
     Empty,
     TooLarge,
+    /// The node's key is not known yet.
+    NoIdentity,
+    UnknownGroup,
+    /// Only the group admin may do this.
+    NotAllowed,
 }
 
 /// Core configuration.
@@ -194,6 +221,12 @@ struct Outgoing {
     id: MsgId,
     datagram: Vec<u8>,
     retried: bool,
+    /// Sent by the core itself (group state, sender keys): not reported to the app, and
+    /// retried with a backoff when it fails.
+    internal: bool,
+    /// Not before this time (retry backoff).
+    not_before: Millis,
+    tries: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -247,8 +280,14 @@ struct Peer {
 }
 
 impl Peer {
-    fn has_work(&self) -> bool {
-        !self.queue.is_empty() || self.in_flight.is_some()
+    /// Something to send now (a message in flight, or one whose backoff has passed).
+    fn has_work(&self, now: Millis) -> bool {
+        self.in_flight.is_some() || self.queue.iter().any(|m| m.not_before <= now)
+    }
+
+    /// When the next queued message becomes sendable.
+    fn next_ready(&self) -> Option<Millis> {
+        self.queue.iter().map(|m| m.not_before).min()
     }
 
     /// The session to send with: the confirmed one, else the pending one.
@@ -282,28 +321,38 @@ impl Peer {
 /// The application core.
 pub struct Core {
     app_name: String,
-    rng: ChaCha20Rng,
+    pub(crate) rng: ChaCha20Rng,
     regulatory: String,
-    prv: Option<[u8; 64]>,
-    key: Option<PubKey>,
-    name: String,
+    pub(crate) prv: Option<[u8; 64]>,
+    pub(crate) key: Option<PubKey>,
+    pub(crate) name: String,
     freq_khz: u32,
-    radio: LoRaParams,
+    pub(crate) radio: LoRaParams,
     budget: Budget,
-    contacts: HashMap<PubKey, Contact>,
+    pub(crate) contacts: HashMap<PubKey, Contact>,
     secrets: HashMap<PubKey, [u8; 32]>,
     peers: HashMap<PubKey, Peer>,
     commands: VecDeque<(Vec<u8>, Expect)>,
     awaiting: Option<(Expect, Millis)>,
-    events: VecDeque<Event>,
-    next_id: MsgId,
+    pub(crate) events: VecDeque<Event>,
+    pub(crate) next_id: MsgId,
     deferred_until: Option<Millis>,
     /// Hashes of datagrams received recently, per peer, to drop resends (§6).
     recent: HashMap<PubKey, VecDeque<([u8; 16], Millis)>>,
     /// Key of the companion's default flood scope, for our floods' transport codes.
-    scope: Option<[u8; 16]>,
+    pub(crate) scope: Option<[u8; 16]>,
     /// Probes already answered (a flood arrives several times, by several paths).
     seen_probes: VecDeque<ProbeId>,
+    /// Groups we belong to (§10).
+    pub(crate) groups: HashMap<GroupId, Group>,
+    /// Sender keys that came before their group state.
+    pub(crate) pending_keys: Vec<PendingKey>,
+    /// Group frames waiting for their time (the second fragment is spaced out).
+    pub(crate) group_tx: VecDeque<(Millis, Vec<u8>)>,
+    /// The radio is shared by every session: the next data frame may go at this time.
+    pub(crate) next_slot: Millis,
+    /// Peer served last, for round-robin between sessions.
+    rr_last: Option<PubKey>,
 }
 
 impl std::fmt::Debug for Core {
@@ -351,6 +400,11 @@ impl Core {
             recent: HashMap::new(),
             scope: None,
             seen_probes: VecDeque::new(),
+            groups: HashMap::new(),
+            pending_keys: Vec::new(),
+            group_tx: VecDeque::new(),
+            next_slot: 0,
+            rr_last: None,
         }
     }
 
@@ -466,9 +520,41 @@ impl Core {
                 id,
                 datagram,
                 retried: false,
+                internal: false,
+                not_before: 0,
+                tries: 0,
             });
         self.tick(now);
         Ok(id)
+    }
+
+    /// Queues a datagram sent by the core itself (not reported to the app).
+    pub(crate) fn enqueue_internal(&mut self, to: &PubKey, datagram: Vec<u8>) {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.peers
+            .entry(*to)
+            .or_default()
+            .queue
+            .push_back(Outgoing {
+                id,
+                datagram,
+                retried: false,
+                internal: true,
+                not_before: 0,
+                tries: 0,
+            });
+    }
+
+    /// Hands a raw on-air frame to the companion (`SEND_RAW_PACKET`), and counts its airtime.
+    pub(crate) fn send_raw_packet(&mut self, raw: &[u8], now: Millis) {
+        if raw.is_empty() {
+            return;
+        }
+        self.command(&Command::SendRawPacket { priority: 1, raw }, Expect::Ok);
+        let airtime = self.radio.airtime_us(raw.len()) / 1000;
+        self.budget.record(now, airtime);
+        self.occupy(now, airtime, None);
     }
 
     // ----- runner interface ------------------------------------------------------------
@@ -505,7 +591,7 @@ impl Core {
                 let key = *key;
                 self.command(&Command::GetContactByKey { key: &key }, Expect::Contact);
             }
-            Response::LogRxData { raw, .. } => self.on_log_rx(raw, now),
+            Response::LogRxData { snr4, rssi, raw } => self.on_log_rx(raw, snr4, rssi, now),
             Response::NewAdvert(_) | Response::MsgWaiting | Response::SendConfirmed { .. } => {}
             Response::Other { code, .. } if code >= 0x80 => {}
             r => self.on_reply(r, now),
@@ -521,7 +607,16 @@ impl Core {
         if self.key.is_none() || self.prv.is_none() {
             return;
         }
-        let keys: Vec<PubKey> = self.peers.keys().copied().collect();
+        self.tick_groups(now);
+        // Round robin: start after the peer served last, so that sessions share the radio.
+        let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
+        keys.sort_unstable();
+        if let Some(pos) = self
+            .rr_last
+            .and_then(|last| keys.iter().position(|k| *k == last))
+        {
+            keys.rotate_left(pos + 1);
+        }
         for k in keys {
             self.pump_peer(k, now);
         }
@@ -537,13 +632,20 @@ impl Core {
         if let Some(d) = self.deferred_until {
             consider(d);
         }
+        if let Some(d) = self.next_group_wakeup() {
+            consider(d);
+        }
+        let slot = self.next_slot.max(self.deferred_until.unwrap_or(0));
         for p in self.peers.values() {
             for s in [p.session.as_deref(), p.pending.as_deref()]
                 .into_iter()
                 .flatten()
             {
-                if let Some(w) = s.next_wakeup() {
+                if let Some(w) = s.next_ack_wakeup() {
                     consider(w);
+                }
+                if let Some(w) = s.next_data_wakeup() {
+                    consider(w.max(slot));
                 }
             }
             if let Some(i) = &p.initiating {
@@ -552,9 +654,10 @@ impl Core {
             if let Some(pr) = &p.probing {
                 consider(pr.next_try);
             }
-            if p.has_work() && p.session.is_none() && p.pending.is_none() && p.initiating.is_none()
+            if p.in_flight.is_none()
+                && let Some(r) = p.next_ready()
             {
-                consider(0);
+                consider(r);
             }
         }
         t
@@ -680,6 +783,20 @@ impl Core {
         Timing::for_path(t_frame, t_ack, path.hops())
     }
 
+    /// Timing with fresh random jitter (§7.3): `Δ + U[0, t_frame)` and `W + U[0, W/2)`. Two
+    /// senders that cannot hear each other would otherwise stay in lockstep and collide at the
+    /// repeater between them on every round.
+    fn jittered(&mut self, mut t: Timing, path_bytes: usize) -> Timing {
+        let t_frame = (self
+            .radio
+            .airtime_us(2 + path_bytes + raw_payload_max(path_bytes))
+            / 1000)
+            .max(1);
+        t.pace_ms += Millis::from(self.rng.next_u32()) % t_frame;
+        t.ack_wait_ms += Millis::from(self.rng.next_u32()) % (t.ack_wait_ms / 2).max(1);
+        t
+    }
+
     /// Wait before resending a HELLO: uniform in `[W, 2W)`. Fixed timers keep two hidden
     /// nodes that started together colliding at the repeater between them forever.
     fn hello_backoff(&mut self, path: &OwnedPath) -> Millis {
@@ -707,14 +824,41 @@ impl Core {
         );
         let airtime = self.radio.airtime_us(2 + path.bytes.len() + frame.len()) / 1000;
         self.budget.record(now, airtime);
+        self.occupy(now, airtime, Some(path.hops()));
     }
 
-    /// Reports every queued message of `peer` as failed.
-    fn fail_queue(&mut self, peer: &mut Peer, reason: FailReason) {
+    /// Reports every queued message of `peer` as failed; internal ones are retried later.
+    fn fail_queue(&mut self, peer: &mut Peer, reason: FailReason, now: Millis) {
         peer.requeue_in_flight();
-        for m in peer.queue.drain(..) {
-            self.events.push_back(Event::Failed { id: m.id, reason });
+        let msgs: Vec<Outgoing> = peer.queue.drain(..).collect();
+        for m in msgs {
+            self.fail_message(peer, m, reason, now);
         }
+    }
+
+    /// One message failed: report it, or, for an internal one, try again later (1, 2, 4, 8,
+    /// 16 minutes).
+    fn fail_message(&mut self, peer: &mut Peer, mut m: Outgoing, reason: FailReason, now: Millis) {
+        if !m.internal {
+            self.events.push_back(Event::Failed { id: m.id, reason });
+        } else if m.tries < 5 {
+            m.not_before = now + (60_000 << m.tries);
+            m.tries += 1;
+            m.retried = false;
+            peer.queue.push_back(m);
+        }
+    }
+
+    /// The radio is busy with a frame of `airtime_ms` until it has cleared the path (`hops`
+    /// repeaters, `None` for a flood): the next data frame waits (§7.3).
+    fn occupy(&mut self, now: Millis, airtime_ms: Millis, hops: Option<u8>) {
+        let k = match hops {
+            Some(0) => 1,
+            Some(1) => 3,
+            Some(_) => 7,
+            None => 10,
+        };
+        self.next_slot = self.next_slot.max(now) + airtime_ms * k + 100;
     }
 
     // ----- per-peer engine -------------------------------------------------------------
@@ -734,7 +878,7 @@ impl Core {
         {
             if init.attempt + 1 >= HELLO_TRIES {
                 peer.initiating = None;
-                self.fail_queue(peer, FailReason::Unreachable);
+                self.fail_queue(peer, FailReason::Unreachable, now);
             } else {
                 init.attempt += 1;
                 let init = init.clone();
@@ -747,7 +891,7 @@ impl Core {
         }
 
         let Some(path) = self.path_for(k, peer) else {
-            if !peer.has_work() {
+            if !peer.has_work(now) {
                 peer.probing = None;
                 return;
             }
@@ -755,7 +899,7 @@ impl Core {
                 None => self.probe(k, peer, 1, now),
                 Some((tries, true)) if tries >= PROBE_TRIES => {
                     peer.probing = None;
-                    self.fail_queue(peer, FailReason::NoPath);
+                    self.fail_queue(peer, FailReason::NoPath, now);
                 }
                 Some((tries, true)) => self.probe(k, peer, tries + 1, now),
                 Some((_, false)) => {}
@@ -765,13 +909,13 @@ impl Core {
         peer.probing = None;
 
         if peer.session.is_none() && peer.pending.is_none() {
-            if peer.has_work() && peer.initiating.is_none() {
+            if peer.has_work(now) && peer.initiating.is_none() {
                 self.start_handshake(k, peer, path, now);
             }
             return;
         }
 
-        let timing = self.timing_for(&path);
+        let timing = self.jittered(self.timing_for(&path), path.bytes.len());
         let chunk = chunk_for_path(path.bytes.len());
         let Some(session) = peer.active() else {
             return;
@@ -780,7 +924,8 @@ impl Core {
 
         // Next datagram.
         if peer.in_flight.is_none()
-            && let Some(msg) = peer.queue.pop_front()
+            && let Some(i) = peer.queue.iter().position(|m| m.not_before <= now)
+            && let Some(msg) = peer.queue.remove(i)
         {
             let Some(session) = peer.active() else {
                 return;
@@ -794,10 +939,14 @@ impl Core {
                         on_pending: peer.session.is_none(),
                     });
                 }
-                Err(SendError::TooLarge) => self.events.push_back(Event::Failed {
-                    id: msg.id,
-                    reason: FailReason::TooLarge,
-                }),
+                Err(SendError::TooLarge) => {
+                    if !msg.internal {
+                        self.events.push_back(Event::Failed {
+                            id: msg.id,
+                            reason: FailReason::TooLarge,
+                        });
+                    }
+                }
                 Err(SendError::Exhausted) => {
                     peer.queue.push_front(msg);
                     peer.session = None;
@@ -808,34 +957,35 @@ impl Core {
             }
         }
 
-        // Due frames, within the budget.
-        let worst = self.radio.airtime_us(2 + path.bytes.len() + FRAME_MAX) / 1000;
+        // Due frames. ACKs go at once; data takes the shared radio slot, within the budget.
         let mut buf = [0u8; FRAME_MAX];
-        loop {
+        while let Some(len) = peer.active().and_then(|s| s.poll_ack(now, &mut buf)) {
+            let frame = buf.get(..len).unwrap_or(&[]).to_vec();
+            self.send_raw(&path, &frame, now);
+        }
+        let worst = self.radio.airtime_us(2 + path.bytes.len() + FRAME_MAX) / 1000;
+        if now >= self.next_slot {
             if !self.budget.can_transmit(now, worst) {
                 self.deferred_until = Some(self.budget.next_opportunity(now, worst));
-                break;
+            } else if let Some(len) = peer.active().and_then(|s| s.poll_data(now, &mut buf)) {
+                let frame = buf.get(..len).unwrap_or(&[]).to_vec();
+                if let Ok((h, _)) = Header::decode(&frame)
+                    && h.kind == Kind::Data
+                    && let Some(f) = peer.in_flight.as_mut()
+                    && f.tag == h.tag
+                {
+                    f.sent += 1;
+                    if !f.msg.internal {
+                        self.events.push_back(Event::Progress {
+                            id: f.msg.id,
+                            sent: f.sent,
+                            total: h.total,
+                        });
+                    }
+                }
+                self.send_raw(&path, &frame, now);
+                self.rr_last = Some(*k);
             }
-            let Some(session) = peer.active() else {
-                break;
-            };
-            let Some(len) = session.poll_transmit(now, &mut buf) else {
-                break;
-            };
-            let frame = buf.get(..len).unwrap_or(&[]).to_vec();
-            if let Ok((h, _)) = Header::decode(&frame)
-                && h.kind == Kind::Data
-                && let Some(f) = peer.in_flight.as_mut()
-                && f.tag == h.tag
-            {
-                f.sent += 1;
-                self.events.push_back(Event::Progress {
-                    id: f.msg.id,
-                    sent: f.sent,
-                    total: h.total,
-                });
-            }
-            self.send_raw(&path, &frame, now);
         }
 
         // Session events.
@@ -850,13 +1000,13 @@ impl Core {
                 && peer.in_flight.as_ref().is_some_and(|f| f.tag == tag)
                 && let Some(f) = peer.in_flight.take()
             {
-                self.events.push_back(match failure {
-                    None => Event::Delivered { id: f.msg.id },
-                    Some(reason) => Event::Failed {
-                        id: f.msg.id,
-                        reason,
-                    },
-                });
+                match failure {
+                    None if !f.msg.internal => {
+                        self.events.push_back(Event::Delivered { id: f.msg.id });
+                    }
+                    None => {}
+                    Some(reason) => self.fail_message(peer, f.msg, reason, now),
+                }
             }
         }
 
@@ -904,15 +1054,7 @@ impl Core {
         let mut raw = [0u8; 64];
         if let Ok(n) = packet.encode(&mut raw) {
             let raw = raw.get(..n).unwrap_or(&[]).to_vec();
-            self.command(
-                &Command::SendRawPacket {
-                    priority: 1,
-                    raw: &raw,
-                },
-                Expect::Ok,
-            );
-            let airtime = self.radio.airtime_us(raw.len()) / 1000;
-            self.budget.record(now, airtime);
+            self.send_raw_packet(&raw, now);
         }
         let wait = PROBE_WAIT_MS + Millis::from(self.rng.next_u32()) % PROBE_WAIT_MS;
         peer.probing = Some(Probing {
@@ -992,9 +1134,9 @@ impl Core {
         v
     }
 
-    /// Every frame the companion hears: we only look for path discovery probes addressed to
-    /// us (§4.5).
-    fn on_log_rx(&mut self, raw: &[u8], now: Millis) {
+    /// Every frame the companion hears: we look for path discovery probes addressed to us
+    /// (§4.5) and group messages (§10.3).
+    fn on_log_rx(&mut self, raw: &[u8], snr4: i8, rssi: i8, now: Millis) {
         let (Some(me), true) = (self.key, self.prv.is_some()) else {
             return;
         };
@@ -1007,6 +1149,7 @@ impl Core {
             return;
         }
         let Some(probe) = discovery::parse_probe(p.payload) else {
+            self.on_group_envelope(p.payload, snr4, rssi, now);
             return;
         };
         if probe.dst != me[0] || self.seen_probes.contains(&probe.id) {
@@ -1251,7 +1394,14 @@ impl Core {
             }
             self.peers.insert(c, peer);
             if let Some((result, _)) = outcome {
-                if let Ok(Some(datagram)) = result
+                if let Ok(Some(datagram)) = &result
+                    && matches!(
+                        datagram.first(),
+                        Some(&lc_proto::content::GROUP_STATE | &lc_proto::content::SENDER_KEY)
+                    )
+                {
+                    self.on_group_control(&c, datagram, now);
+                } else if let Ok(Some(datagram)) = result
                     && self.first_time(&c, &datagram, now)
                     && let Some(content) = Content::decode(&datagram)
                 {
