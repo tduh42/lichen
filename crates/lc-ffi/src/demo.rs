@@ -438,3 +438,32 @@ mod persistence {
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
+
+#[cfg(test)]
+mod unread {
+    use super::*;
+    use crate::LichenCore;
+
+    #[test]
+    fn unread_counts_received_messages() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![3; 32], None, None).unwrap();
+        core.connect(0);
+        let mut now = 0;
+        while now < 60_000 {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while core.poll_event().is_some() {}
+            now += 100;
+        }
+        let conv = core.conversations();
+        assert_eq!(conv.first().map(|c| c.unread), Some(1));
+        core.mark_read(conv[0].chat.clone()).unwrap();
+        assert_eq!(core.conversations()[0].unread, 0);
+    }
+}
