@@ -146,13 +146,13 @@ The payload is 20 bytes: after the 2-byte "MAC" a stock node would read, 17 byte
 
 ```
 header = kind 3, index 2, total 1, tag = id[0..2], attempt 0
-body   = id (8, in clear) ‖ ciphertext ‖ tag (8)
+body   = id (8, in clear) ‖ r (8, random, in clear) ‖ ciphertext ‖ tag (8)
 plain  = path_len (1) ‖ path (the sender-to-us path, as received)
-K_pr   = HKDF(id, S, "lichen/1 path-reply" ‖ id_us ‖ id_sender, 32)
-AAD    = header (7) ‖ id
+K_pr   = HKDF(id ‖ r, S, "lichen/1 path-reply" ‖ id_us ‖ id_sender, 32)
+AAD    = header (7) ‖ id ‖ r
 ```
 
-The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`. Because `id` makes every key single-use, nonces never repeat.
+`r` is drawn for every reply, so a probe answered twice (a copy by another path, or a replay after the cache of answered probes forgot it) never reuses a key: the path differs between answers, and a repeated key and nonce would leak it and allow forged replies (review of 2026-11-06, PR-01). The prober matches `id` with its pending probe, stores the path and goes on (handshake, data). Without an answer, it probes again with a new `id` after a random wait uniform in `[20 s, 40 s)`, 3 probes at most, then reports `NoPath`. Because `id` makes every key single-use, nonces never repeat.
 
 ### 4.6 Introduction (first contact, ADR-0013)
 
@@ -181,7 +181,7 @@ K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
 - INTRO carries nothing secret: the return path is public routing information. Anyone can send one; R answers each `(src, h, salt_I)` with the same `(salt_R, e_R)` for 10 minutes, so a resend gets the same answer.
 - I checks INTRO_ACK's second tag, which only the holder of `id_R` could produce, then sends INTRO_FIN and holds the session (`K_{I→R}`, `K_{R→I}`). R checks INTRO_FIN's second tag and holds the session too, pending until I's first message (§4.4): the introduction replaces HELLO / HELLO_ACK for this first session.
 - I resends INTRO until INTRO_ACK (as HELLO, §4.4). Until something from R arrives under the new session, I resends INTRO_FIN (re-sealed with the next `attempt`) whenever its data waits for an acknowledgement. A session set up by HELLO / HELLO_ACK in the meantime cancels a pending introduction to the same peer.
-- **Trust**: an identity learned this way is new to the receiver and **to verify** (§4.7). If the contact already had another identity, the new one replaces it, unverified, and the app is told (a reinstalled app, or an attack).
+- **Trust**: an identity learned this way is new to the receiver and **to verify** (§4.7). A different identity for a contact whose identity is **unverified** replaces it, and the app is told (a reinstalled app, or an attack). For a **verified** contact, a different identity is **not adopted**: the introduction ends without a session, the app is told, and nothing goes to the new identity until the user accepts it; it then starts unverified (review of 2026-11-06, PR-03).
 - A peer whose identity is known but who answers no HELLO (8 tries) is introduced again on the next attempt: it may have a new identity.
 
 ### 4.7 Verification
@@ -198,7 +198,7 @@ nonce (12 bytes) = header[2..7] ‖ 00 00 00 00 00 00 00
 AAD              = header (7)                 (DATA, ACK, ABORT)
 ```
 
-AEAD: ChaCha20-Poly1305 (RFC 8439), tag truncated to its **first 8 bytes** and compared in constant time.
+AEAD: ChaCha20-Poly1305 with the tag truncated to its **first 8 bytes**, compared in constant time. This is a variant of RFC 8439, which requires the full tag; its bounds (forgery about `2^-64` per attempt, attempts rate-limited by the radio, short-lived keys) are in ADR-0014.
 
 Uniqueness under a session key (one direction):
 - DATA: a `tag` serves a single datagram (strictly increasing counter); within a datagram, each fragment is sent at most once per round, and the round is in `attempt`.

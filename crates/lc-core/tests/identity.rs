@@ -2,7 +2,7 @@
 //! first contact, a contact card scanned on one side only, an identity that changes.
 
 use lc_core::fakenet::Net;
-use lc_core::{Content, Event};
+use lc_core::{Content, Event, FailReason};
 use lc_meshcore::airtime::LoRaParams;
 
 const S: u64 = 1_000;
@@ -143,13 +143,12 @@ fn one_sided_card() {
     assert_eq!(known(&net, b, a), (Some(identity(&net, a)), false));
 }
 
-/// Bob reinstalls without his phrase: a new identity. Alice is told it changed and the
-/// contact is to verify again; messages flow again.
+/// Bob reinstalls without his phrase: a new identity. Alice had only met him over the air
+/// (unverified): she is told it changed, the contact is to verify again, messages flow.
 #[test]
 fn changed_identity_is_reported() {
     let (mut net, a, b) = pair(3, 0);
     let bob = net.key(b);
-    net.introduce(a, b);
     let old = identity(&net, b);
     net.with_core(a, |c, now| c.send_text(&bob, "before", 1, now))
         .unwrap()
@@ -157,6 +156,7 @@ fn changed_identity_is_reported() {
     net.run_until(net.now + 2 * MIN, |_| false);
     assert_eq!(texts(&net.take_events(b)), vec!["before"]);
     net.take_events(a);
+    assert_eq!(known(&net, a, b), (Some(old), false));
 
     net.reinstall_app(b, 42);
     net.connect(b);
@@ -171,6 +171,67 @@ fn changed_identity_is_reported() {
     assert_eq!(learned(&ea), vec![true], "{ea:?}");
     assert_eq!(known(&net, a, b), (Some(new), false));
     assert_eq!(texts(&eb), vec!["after"]);
+}
+
+/// Review of 2026-11-06, PR-03: Bob was verified in person; whoever answers for his node now
+/// with another identity (his reinstalled app, or an attacker) gets nothing until Alice
+/// accepts it.
+#[test]
+fn verified_identity_is_not_replaced_without_consent() {
+    let (mut net, a, b) = pair(4, 0);
+    let bob = net.key(b);
+    net.introduce(a, b);
+    let old = identity(&net, b);
+    net.reinstall_app(b, 43);
+    net.connect(b);
+    net.run_until(net.now + 20 * S, |_| false);
+    let new = identity(&net, b);
+    net.with_core(a, |c, now| c.send_text(&bob, "secret", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 30 * MIN, |_| false);
+    let (ea, eb) = (net.take_events(a), net.take_events(b));
+    assert!(texts(&eb).is_empty(), "nothing reached the new identity");
+    assert!(ea.iter().any(|e| matches!(
+        e,
+        Event::IdentityConflict { identity, .. } if *identity == new
+    )));
+    assert!(
+        ea.iter().any(|e| matches!(e, Event::Failed { .. })),
+        "{ea:?}"
+    );
+    assert_eq!(known(&net, a, b), (Some(old), true));
+    assert_eq!(
+        net.nodes[a].core.as_ref().unwrap().pending_identity(&bob),
+        Some(&new)
+    );
+    // While it waits, a new message fails at once, saying why.
+    net.with_core(a, |c, now| c.send_text(&bob, "still secret", 2, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + MIN, |_| false);
+    let ea = net.take_events(a);
+    assert!(
+        ea.iter().any(|e| matches!(
+            e,
+            Event::Failed {
+                reason: FailReason::IdentityChanged,
+                ..
+            }
+        )),
+        "{ea:?}"
+    );
+    assert!(texts(&net.take_events(b)).is_empty());
+
+    // Alice compares numbers with Bob and accepts: the new identity, unverified, and messages
+    // flow.
+    assert!(net.with_core(a, |c, _| c.accept_identity(&bob)).unwrap());
+    assert_eq!(known(&net, a, b), (Some(new), false));
+    net.with_core(a, |c, now| c.send_text(&bob, "hello again", 2, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert_eq!(texts(&net.take_events(b)), vec!["hello again"]);
 }
 
 /// Strangers on lossy links: introductions retry, and every message arrives once.

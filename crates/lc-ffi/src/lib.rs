@@ -343,6 +343,8 @@ pub enum FailReason {
     TooLarge,
     /// The app stopped before delivery.
     Interrupted,
+    /// The contact, verified, now presents another identity: accept or reject it first.
+    IdentityChanged,
 }
 
 impl From<CoreFail> for FailReason {
@@ -354,6 +356,7 @@ impl From<CoreFail> for FailReason {
             CoreFail::Refused => Self::Refused,
             CoreFail::TooLarge => Self::TooLarge,
             CoreFail::Interrupted => Self::Interrupted,
+            CoreFail::IdentityChanged => Self::IdentityChanged,
         }
     }
 }
@@ -371,6 +374,12 @@ pub enum LichenEvent {
         node: Vec<u8>,
         identity: Vec<u8>,
         changed: bool,
+    },
+    /// Contact `node`, verified, presented another identity, not adopted: ask the user to
+    /// compare safety numbers, then `accept_identity` or `reject_identity`.
+    IdentityConflict {
+        node: Vec<u8>,
+        identity: Vec<u8>,
     },
     ContactsUpdated,
     SessionEstablished {
@@ -465,6 +474,10 @@ impl LichenEvent {
                 node: node.to_vec(),
                 identity: identity.to_vec(),
                 changed,
+            },
+            Event::IdentityConflict { node, identity } => Self::IdentityConflict {
+                node: node.to_vec(),
+                identity: identity.to_vec(),
             },
             Event::ContactsUpdated => Self::ContactsUpdated,
             Event::SessionEstablished { peer } => Self::SessionEstablished {
@@ -1086,6 +1099,36 @@ impl LichenCore {
             .ok_or(LichenError::UnknownContact)?
             .identity
             .ok_or(LichenError::IdentityUnknown)?;
+        let me = i.core.key().ok_or(LichenError::NoIdentity)?;
+        Ok(lc_core::identity::safety_number(me, &peer).to_vec())
+    }
+
+    /// The new identity a verified contact presented, waiting for the user.
+    pub fn pending_identity(&self, node: Vec<u8>) -> Result<Option<Vec<u8>>, LichenError> {
+        let k = key(&node)?;
+        Ok(self.lock().core.pending_identity(&k).map(|i| i.to_vec()))
+    }
+
+    /// Accepts contact `node`'s new identity (it replaces the old one, unverified).
+    pub fn accept_identity(&self, node: Vec<u8>) -> Result<bool, LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        let done = i.core.accept_identity(&k);
+        i.save_contacts();
+        Ok(done)
+    }
+
+    /// Rejects contact `node`'s new identity: the verified one stays.
+    pub fn reject_identity(&self, node: Vec<u8>) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        self.lock().core.reject_identity(&k);
+        Ok(())
+    }
+
+    /// The safety number between us and an identity (for a pending one, before accepting it).
+    pub fn safety_number_with(&self, identity: Vec<u8>) -> Result<Vec<String>, LichenError> {
+        let peer = key(&identity)?;
+        let i = self.lock();
         let me = i.core.key().ok_or(LichenError::NoIdentity)?;
         Ok(lc_core::identity::safety_number(me, &peer).to_vec())
     }

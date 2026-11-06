@@ -122,6 +122,9 @@ pub enum FailReason {
     Refused,
     /// The datagram does not fit in 64 fragments on this path.
     TooLarge,
+    /// The contact, verified, now presents another identity: nothing goes out until the user
+    /// accepts or rejects it (§4.6).
+    IdentityChanged,
 }
 
 /// What the app should know about.
@@ -141,6 +144,12 @@ pub enum Event {
         node: PubKey,
         identity: PubKey,
         changed: bool,
+    },
+    /// Contact `node`, verified, presented another identity: it is **not** adopted; the user
+    /// accepts it ([`Core::accept_identity`]) or rejects it (§4.6).
+    IdentityConflict {
+        node: PubKey,
+        identity: PubKey,
     },
     SessionEstablished {
         peer: PubKey,
@@ -446,6 +455,8 @@ pub struct Core {
     rr_last: Option<PubKey>,
     /// Location sharing (§12).
     pub(crate) loc: Locations,
+    /// New identities presented by verified contacts, waiting for the user (§4.6).
+    pending_identities: HashMap<PubKey, PubKey>,
 }
 
 impl std::fmt::Debug for Core {
@@ -503,6 +514,7 @@ impl Core {
             next_slot: 0,
             rr_last: None,
             loc: Locations::default(),
+            pending_identities: HashMap::new(),
         }
     }
 
@@ -537,6 +549,34 @@ impl Core {
             c.identity = Some(identity);
             c.verified = verified;
         }
+    }
+
+    /// The new identity a verified contact presented, waiting for the user (§4.6).
+    pub fn pending_identity(&self, node: &PubKey) -> Option<&PubKey> {
+        self.pending_identities.get(node)
+    }
+
+    /// The user accepts contact `node`'s new identity: it replaces the old one, unverified.
+    pub fn accept_identity(&mut self, node: &PubKey) -> bool {
+        let Some(identity) = self.pending_identities.remove(node) else {
+            return false;
+        };
+        let old = self.identity_of(node);
+        self.set_identity(node, identity, false);
+        if let Some(p) = self.peers.get_mut(node) {
+            p.intro_needed = false;
+        }
+        self.events.push_back(Event::IdentityLearned {
+            node: *node,
+            identity,
+            changed: old.is_some(),
+        });
+        true
+    }
+
+    /// The user rejects contact `node`'s new identity: the verified one stays.
+    pub fn reject_identity(&mut self, node: &PubKey) {
+        self.pending_identities.remove(node);
     }
 
     /// Marks contact `node` verified or not (safety numbers compared, §4.7).
@@ -1305,8 +1345,13 @@ impl Core {
         }
     }
 
-    /// A HELLO when we know the peer's identity, an introduction otherwise (§4.6).
+    /// A HELLO when we know the peer's identity, an introduction otherwise (§4.6); nothing
+    /// while a new identity of a verified contact waits for the user.
     fn begin_session(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
+        if self.pending_identities.contains_key(k) {
+            self.fail_queue(peer, FailReason::IdentityChanged, now);
+            return;
+        }
         if self.identity_of(k).is_some() && !peer.intro_needed {
             self.start_handshake(k, peer, path, now);
         } else {
@@ -1373,15 +1418,25 @@ impl Core {
         }
     }
 
-    /// The identity behind contact `node` is `identity` (§4.6): new, confirmed, or replacing
-    /// another one (then to verify again).
-    pub(crate) fn learn_identity(&mut self, node: &PubKey, identity: PubKey) {
+    /// The identity behind contact `node` is `identity` (§4.6): new, confirmed, or replacing an
+    /// unverified one (then reported). A verified contact's identity is never replaced here:
+    /// the new one waits for the user and this returns false (no session with it).
+    pub(crate) fn learn_identity(&mut self, node: &PubKey, identity: PubKey) -> bool {
         let Some(c) = self.contacts.get_mut(node) else {
-            return;
+            return false;
         };
         let known = c.identity;
         if known == Some(identity) {
-            return;
+            return true;
+        }
+        if known.is_some() && c.verified {
+            if self.pending_identities.insert(*node, identity) != Some(identity) {
+                self.events.push_back(Event::IdentityConflict {
+                    node: *node,
+                    identity,
+                });
+            }
+            return false;
         }
         c.identity = Some(identity);
         c.verified = false;
@@ -1391,6 +1446,7 @@ impl Core {
             identity,
             changed: known.is_some(),
         });
+        true
     }
 
     /// Floods a path discovery PROBE for `k` (§4.5): keyed by our identities when we know the
@@ -1576,11 +1632,15 @@ impl Core {
             let forward = OwnedPath::from_path(p.path);
             let back = forward.reversed();
             let mut buf = [0u8; FRAME_MAX];
+            // Fresh for every reply: a probe answered twice never reuses a key (§4.5).
+            let mut r = [0u8; 8];
+            self.rng.fill_bytes(&mut r);
             if let Ok(n) = discovery::seal_path_reply(
                 &keying,
                 node[0],
                 c[0],
                 &probe.id,
+                &r,
                 forward.len_byte,
                 &forward.bytes,
                 &mut buf,
@@ -1727,7 +1787,15 @@ impl Core {
             else {
                 return;
             };
-            self.learn_identity(&c, ack.identity);
+            if !self.learn_identity(&c, ack.identity) {
+                // A verified contact with another identity: no session with it (§4.6).
+                if let Some(mut p) = self.peers.remove(&c) {
+                    p.introducing = None;
+                    self.fail_queue(&mut p, FailReason::IdentityChanged, now);
+                    self.peers.insert(c, p);
+                }
+                return;
+            }
             let session = Session::new(keys, node[0], c[0], self.timing_for(&intro.path));
             let fin = Fin {
                 salt_i: intro.salt,
@@ -1779,7 +1847,10 @@ impl Core {
             let Some(keys) = intro::responder_keys(&prv, &me, &answered.answer, &id_i) else {
                 return;
             };
-            self.learn_identity(&c, id_i);
+            if !self.learn_identity(&c, id_i) {
+                // A verified contact with another identity: no session with it (§4.6).
+                return;
+            }
             let Some(mut peer) = self.peers.remove(&c) else {
                 return;
             };

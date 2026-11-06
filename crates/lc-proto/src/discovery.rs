@@ -59,13 +59,20 @@ fn probe_key(k: &Keying<'_>, id: &ProbeId) -> Key {
     hkdf(id, k.s, &[label, k.prober, k.target])
 }
 
-fn reply_key(k: &Keying<'_>, id: &ProbeId) -> Key {
+/// Fresh randomness of a PATH_REPLY (§4.5): a probe answered twice never reuses a key.
+pub type ReplyNonce = [u8; 8];
+
+fn reply_key(k: &Keying<'_>, id: &ProbeId, r: &ReplyNonce) -> Key {
     let label: &[u8] = if k.anonymous {
         b"lichen/1 path-reply-anon"
     } else {
         b"lichen/1 path-reply"
     };
-    hkdf(id, k.s, &[label, k.target, k.prober])
+    let mut salt = [0u8; 16];
+    let (a, b) = salt.split_at_mut(8);
+    a.copy_from_slice(id);
+    b.copy_from_slice(r);
+    hkdf(&salt, k.s, &[label, k.target, k.prober])
 }
 
 /// The `GRP_DATA` payload of a PROBE from node `prober_node` to node `target_node`.
@@ -116,13 +123,15 @@ pub fn verify_probe(k: &Keying<'_>, prober_node: u8, target_node: u8, payload: &
 }
 
 /// Builds the PATH_REPLY from us (`target_node`) to the prober for probe `id`, carrying the
-/// path the probe took (prober → us). Returns the frame length.
+/// path the probe took (prober → us). `r` must be fresh random bytes for every reply.
+/// Returns the frame length.
 #[allow(clippy::too_many_arguments)]
 pub fn seal_path_reply(
     k: &Keying<'_>,
     target_node: u8,
     prober_node: u8,
     id: &ProbeId,
+    r: &ReplyNonce,
     path_len: u8,
     path: &[u8],
     out: &mut [u8],
@@ -139,17 +148,19 @@ pub fn seal_path_reply(
         total: 1,
         attempt: 0,
     };
-    let len = HEADER_LEN + ID_LEN + 1 + path.len() + TAG_LEN;
+    let len = HEADER_LEN + 2 * ID_LEN + 1 + path.len() + TAG_LEN;
     let frame = out.get_mut(..len).ok_or(FrameError::Overflow)?;
-    let (aad, rest) = frame.split_at_mut(HEADER_LEN + ID_LEN);
-    let (head, id_slot) = aad.split_at_mut(HEADER_LEN);
+    let (aad, rest) = frame.split_at_mut(HEADER_LEN + 2 * ID_LEN);
+    let (head, ids) = aad.split_at_mut(HEADER_LEN);
     head.copy_from_slice(&header.encode());
+    let (id_slot, r_slot) = ids.split_at_mut(ID_LEN);
     id_slot.copy_from_slice(id);
+    r_slot.copy_from_slice(r);
     let (ct, tag_slot) = rest.split_at_mut(1 + path.len());
     let (l, p) = ct.split_at_mut(1);
     l.copy_from_slice(&[path_len]);
     p.copy_from_slice(path);
-    let tag = aead::seal(&reply_key(k, id), &header.nonce(), aad, ct);
+    let tag = aead::seal(&reply_key(k, id, r), &header.nonce(), aad, ct);
     tag_slot.copy_from_slice(&tag);
     Ok(len)
 }
@@ -170,12 +181,16 @@ pub fn open_path_reply<'a>(
     if header.dst != prober_node || header.src != target_node {
         return Err(FrameError::NotForUs);
     }
-    if frame.len() < HEADER_LEN + ID_LEN + 1 + TAG_LEN {
+    if frame.len() < HEADER_LEN + 2 * ID_LEN + 1 + TAG_LEN {
         return Err(FrameError::Length);
     }
-    let (aad, rest) = frame.split_at_mut(HEADER_LEN + ID_LEN);
+    let (aad, rest) = frame.split_at_mut(HEADER_LEN + 2 * ID_LEN);
     let id: ProbeId = aad
-        .get(HEADER_LEN..)
+        .get(HEADER_LEN..HEADER_LEN + ID_LEN)
+        .and_then(|b| b.try_into().ok())
+        .ok_or(FrameError::Length)?;
+    let r: ReplyNonce = aad
+        .get(HEADER_LEN + ID_LEN..)
         .and_then(|b| b.try_into().ok())
         .ok_or(FrameError::Length)?;
     if header.tag != u16::from_le_bytes([id[0], id[1]]) {
@@ -184,7 +199,8 @@ pub fn open_path_reply<'a>(
     let ct_len = rest.len() - TAG_LEN;
     let (ct, tag) = rest.split_at_mut(ct_len);
     let tag: &[u8; TAG_LEN] = (&*tag).try_into().map_err(|_| FrameError::Length)?;
-    aead::open(&reply_key(k, &id), &header.nonce(), aad, ct, tag).map_err(|_| FrameError::Auth)?;
+    aead::open(&reply_key(k, &id, &r), &header.nonce(), aad, ct, tag)
+        .map_err(|_| FrameError::Auth)?;
     let ct: &[u8] = ct;
     let (&len_byte, path) = ct.split_first().ok_or(FrameError::Malformed)?;
     if path_bytes(len_byte) != Some(path.len()) {

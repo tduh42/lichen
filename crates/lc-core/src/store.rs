@@ -82,6 +82,7 @@ fn fail_code(r: FailReason) -> i64 {
         FailReason::Refused => 4,
         FailReason::TooLarge => 5,
         FailReason::Interrupted => 6,
+        FailReason::IdentityChanged => 7,
     }
 }
 
@@ -92,6 +93,7 @@ fn fail_reason(c: i64) -> FailReason {
         4 => FailReason::Refused,
         5 => FailReason::TooLarge,
         6 => FailReason::Interrupted,
+        7 => FailReason::IdentityChanged,
         _ => FailReason::Timeout,
     }
 }

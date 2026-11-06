@@ -917,8 +917,9 @@ impl Core {
                         continue;
                     };
                     if !ks.accepts(h.counter) {
-                        // Another copy of the same flood, or a replay.
-                        return;
+                        // Another copy of the same flood, or a replay, for this candidate: another
+                        // member sharing the sender byte may still own the envelope.
+                        continue;
                     }
                     let mut buf = payload.to_vec();
                     let Ok((hdr, plain)) = group::open(&ks.key, &mut buf) else {
@@ -960,8 +961,8 @@ impl Core {
                     let Some(message) = message else {
                         return;
                     };
-                    ks.mark(hdr.counter);
-                    self.dirty_groups.insert(gid);
+                    // The signature first: every member holds this sender key, only the sender
+                    // can sign. A forgery must not move the sender's replay window.
                     let Some((body, sig)) = message.split_last_chunk::<SIGNATURE_LEN>() else {
                         return;
                     };
@@ -973,6 +974,8 @@ impl Core {
                     ) {
                         return;
                     }
+                    ks.mark(hdr.counter);
+                    self.dirty_groups.insert(gid);
                     if let Some(Content::Location(p)) = Content::decode(body) {
                         crate::location::receive(
                             &mut self.loc,
@@ -996,5 +999,156 @@ impl Core {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::Config;
+    use lc_meshcore::ecdh::{expand_seed, public_key};
+
+    /// Two identities whose public keys share their first byte (the sender byte of envelopes):
+    /// seeds counted up until two collide, about 20 tries.
+    fn colliding_pair() -> [([u8; 64], PubKey); 2] {
+        let mut seen: HashMap<u8, ([u8; 64], PubKey)> = HashMap::new();
+        for i in 0u32.. {
+            let mut seed = [0u8; 32];
+            seed[..4].copy_from_slice(&i.to_le_bytes());
+            let prv = expand_seed(&seed);
+            let id = public_key(&prv);
+            if let Some(first) = seen.insert(id[0], (prv, id)) {
+                return [first, (prv, id)];
+            }
+        }
+        unreachable!()
+    }
+
+    /// A core that belongs to group `GID` with `members` (identity, sender key, replay floor),
+    /// holding each one's sender key at epoch 0.
+    fn core_with_group(members: &[(PubKey, [u8; 32], u32)]) -> Core {
+        let mut core = Core::new(Config::new("t", [200; 32], [1; 32]));
+        core.node = Some([0xEE; 32]);
+        let me = *core.key().unwrap();
+        let mut list = vec![Member {
+            key: me,
+            node: [0xEE; 32],
+            name: "me".into(),
+        }];
+        let mut keys = HashMap::new();
+        for (i, &(id, key, floor)) in members.iter().enumerate() {
+            list.push(Member {
+                key: id,
+                node: [i as u8 + 1; 32],
+                name: format!("m{i}"),
+            });
+            keys.insert(
+                id,
+                MemberKeys {
+                    current: Some(KeyState::new(0, key, floor)),
+                    previous: None,
+                },
+            );
+        }
+        core.groups.insert(
+            GID,
+            Group {
+                gid: GID,
+                name: "g".into(),
+                admin: me,
+                epoch: 1,
+                members: list,
+                my_key: [0; 32],
+                my_epoch: 0,
+                my_counter: 0,
+                keys,
+                partials: Vec::new(),
+                announce_key: false,
+            },
+        );
+        core
+    }
+
+    const GID: GroupId = [5; 16];
+
+    /// The flooded payload of a text from `sender` (identity, sender key) at `counter`,
+    /// signed by `signer`.
+    fn envelope(
+        sender: &PubKey,
+        key: &[u8; 32],
+        counter: u32,
+        signer: &[u8; 64],
+        text: &str,
+    ) -> Vec<u8> {
+        let body = Content::Text {
+            sent_at: 1,
+            text: text.into(),
+        }
+        .encode();
+        let (epoch_b, counter_b) = ([0u8], counter.to_le_bytes());
+        let sig = sign(signer, &signed_parts(&GID, &epoch_b, &counter_b, &body)).unwrap();
+        let mut plain = body;
+        plain.extend_from_slice(&sig);
+        let header = GroupHeader {
+            gid_hash: gid_hash(&GID),
+            sender: sender[0],
+            key_epoch: 0,
+            counter,
+            index: 0,
+            total: 1,
+            copy: 0,
+        };
+        let mut out = [0u8; group::PAYLOAD_MAX];
+        let n = group::seal(key, &header, &plain, &mut out).unwrap();
+        out[..n].to_vec()
+    }
+
+    fn texts(core: &mut Core) -> Vec<String> {
+        let mut v = Vec::new();
+        while let Some(e) = core.poll_event() {
+            if let Event::GroupMessage {
+                content: Content::Text { text, .. },
+                ..
+            } = e
+            {
+                v.push(text);
+            }
+        }
+        v
+    }
+
+    /// A member who holds Bob's sender key (every member does) forges a message in Bob's name
+    /// with a huge counter: the signature fails, and Bob's next message still arrives.
+    #[test]
+    fn forgery_does_not_move_the_replay_window() {
+        let [(bob_prv, bob), (mallory_prv, mallory)] = colliding_pair();
+        let mut core = core_with_group(&[(bob, [10; 32], 0), (mallory, [20; 32], 0)]);
+        let forged = envelope(&bob, &[10; 32], u32::MAX - 1, &mallory_prv, "forged");
+        core.on_group_envelope(&forged, 0, 0, 0);
+        assert!(texts(&mut core).is_empty());
+        let real = envelope(&bob, &[10; 32], 3, &bob_prv, "real");
+        core.on_group_envelope(&real, 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["real"]);
+        // And it is not delivered twice.
+        core.on_group_envelope(&real, 0, 0, 0);
+        assert!(texts(&mut core).is_empty());
+    }
+
+    /// Two members whose identities share the sender byte, with different replay histories:
+    /// each one's messages arrive, in either order.
+    #[test]
+    fn colliding_senders_are_both_heard() {
+        // A has already received counters up to 100; B starts at 0.
+        let [(a_prv, a), (b_prv, b)] = colliding_pair();
+        assert_eq!(a[0], b[0]);
+        let mut core = core_with_group(&[(a, [30; 32], 101), (b, [40; 32], 0)]);
+        let from_b = envelope(&b, &[40; 32], 0, &b_prv, "from b");
+        let from_a = envelope(&a, &[30; 32], 101, &a_prv, "from a");
+        core.on_group_envelope(&from_b, 0, 0, 0);
+        core.on_group_envelope(&from_a, 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["from b", "from a"]);
+        let from_b2 = envelope(&b, &[40; 32], 1, &b_prv, "b again");
+        core.on_group_envelope(&from_b2, 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["b again"]);
     }
 }

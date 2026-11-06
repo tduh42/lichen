@@ -222,6 +222,11 @@ fn describe(core: &Core, e: &Event) -> String {
             describe_position(position)
         ),
         Event::SharesChanged => "a location share ended".into(),
+        Event::IdentityConflict { node, identity } => format!(
+            "{} (verified) now presents identity {}: NOT adopted, verify before accepting",
+            name_of(core, node),
+            lc_core::identity::fingerprint(identity).join(" ")
+        ),
         Event::MediaRequested { from, full, .. } => format!(
             "{} asks for the {} image",
             name_of(core, from),
