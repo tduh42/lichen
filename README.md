@@ -14,5 +14,7 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 | `lc-cli` | `lichen` command-line client over USB |
 
 ```sh
-scripts/check.sh
+scripts/check.sh                                               # all checks
+cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10   # a transfer on the fake network
+cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101  # a real companion over USB
 ```

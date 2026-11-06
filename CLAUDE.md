@@ -51,7 +51,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 
 - Unit tests, `proptest` (round trips, unique nonces, forged fragment rejected), vectors (`testdata/`).
 - Fake network in `lc-core`: chain of repeaters, losses, half-duplex collisions, 160-entry duplicate filter on `SHA256(type ‖ payload)`.
-- Hardware: Heltec V4 (MeshCore C++ v1.18, USB, `/dev/cu.usbmodem141101`) and ThinkNode M5 (`/dev/cu.wchusbserial120`). The Heltec also runs loranet's echo bot: ask Tanguy before stopping it.
+- Hardware: Heltec V4 (MeshCore C++ v1.18, USB) and ThinkNode M5 (CH340 bridge); port names change between sessions (`ls /dev/cu.*`, e.g. `/dev/cu.usbmodem2141101`, `/dev/cu.wchusbserial2120`). Both are shared with oxymesh and loranet (echo bot): check `lsof` and ask Tanguy before using them.
 - Measurements go to `docs/measurements.md`.
 
 ## 5. Roadmap
@@ -68,4 +68,10 @@ Each milestone is committed once finished and tested. Nothing is pushed without 
 scripts/check.sh                  # fmt, clippy -D warnings, tests, no_std build, no floats (CHECK_SKIP_FUZZ=1)
 scripts/fuzz.sh N [target…]       # fuzz, N seconds per target
 cargo test --workspace
+cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10 --bytes 10000   # fake network
+cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101                # a real companion
+cargo run --release -p lc-cli -- send /dev/cu.usbmodem2141101 --to bob --text "hello"
+cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
+cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # measurements
+cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 ```
