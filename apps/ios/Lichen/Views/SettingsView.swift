@@ -1,82 +1,171 @@
 import SwiftUI
 
-/// Node pairing and status, airtime budget.
+/// Radio, airtime, transports, position, appearance (mockup `reglages`).
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    @AppStorage("appearance") private var appearance = Appearance.dark
+    @AppStorage("onboarded") private var onboarded = true
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    if model.isConnected {
-                        LabeledContent("Name", value: model.nodeName)
-                        if let k = model.nodeKey {
-                            LabeledContent("Key", value: k.prefix(8).hex)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Settings")
+                        .font(.system(size: 34, weight: .bold))
+                        .tracking(-0.5)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 8)
+                    radioCard
+                    SectionLabel("Radio").padding(.top, 10)
+                    CardList {
+                        CardRow(title: String(localized: "Preset"), subtitle: preset)
+                        CardDivider()
+                        CardRow(title: String(localized: "Sub-band"), subtitle: subBand)
+                        CardDivider()
+                        CardRow(title: String(localized: "Relay for others"),
+                                subtitle: String(localized: "Stock companion firmware does not repeat: a repeater node does that."))
+                    }
+                    SectionLabel("Internet transports").padding(.top, 10)
+                    CardList {
+                        CardRow(title: String(localized: "iroh (direct P2P)"),
+                                subtitle: String(localized: "Fast; the peer sees your IP")) { disabledToggle }
+                        CardDivider()
+                        CardRow(title: String(localized: "Tor"), subtitle: String(localized: "Anonymous, slower")) { disabledToggle }
+                        CardDivider()
+                        CardRow(title: String(localized: "Relay only"),
+                                subtitle: String(localized: "Never expose your IP")) { disabledToggle }
+                    }
+                    LaterNote(text: "With the Internet bridge (L7).").padding(.horizontal, 4)
+                    SectionLabel("Position").padding(.top, 10)
+                    CardList {
+                        CardRow(title: String(localized: "Send threshold"),
+                                subtitle: String(localized: "Distance from the predicted track")) {
+                            Text("50 m").font(.system(size: 15)).foregroundStyle(Theme.tx2)
                         }
-                        if let r = model.radio {
-                            LabeledContent("Radio", value: "\(String(format: "%.3f", Double(r.freqKhz) / 1000)) MHz · \(bandwidth(r.bwHz)) · SF\(r.sf) · CR 4/\(r.cr)")
+                        CardDivider()
+                        CardRow(title: String(localized: "Heartbeat when still"),
+                                subtitle: String(localized: "Contacts; groups every 30 min")) {
+                            Text("15 min").font(.system(size: 15)).foregroundStyle(Theme.tx2)
                         }
-                        LabeledContent("End-to-end encryption", value: identityStatus)
+                    }
+                    SectionLabel("Appearance").padding(.top, 10)
+                    Picker("Appearance", selection: $appearance) {
+                        ForEach(Appearance.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    SectionLabel("Demo").padding(.top, 10)
+                    CardList {
                         if model.isDemo {
-                            Button("Leave the demo", role: .destructive) { model.stopDemo() }
-                        } else {
-                            Button("Disconnect", role: .destructive) { model.companion.disconnect() }
-                        }
-                    } else {
-                        Button(isScanning ? "Stop looking" : "Find nodes") {
-                            if isScanning { model.companion.stopScan() } else { model.companion.scan() }
-                        }
-                        ForEach(model.found) { f in
-                            Button { model.companion.connect(f.id) } label: {
-                                HStack {
-                                    Text(f.name).foregroundStyle(.primary)
-                                    Spacer()
-                                    Text("\(String(f.rssi)) dBm").foregroundStyle(Theme.secondaryText)
-                                }
+                            Button { model.stopDemo() } label: {
+                                CardRow(title: String(localized: "Leave the demo"))
                             }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button { model.startDemo() } label: {
+                                CardRow(title: String(localized: "Try the demo network"),
+                                        subtitle: String(localized: "A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.")) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
+                        CardDivider()
+                        Button { onboarded = false } label: {
+                            CardRow(title: String(localized: "Show the welcome screens again"))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                     }
-                } header: {
-                    Text("MeshCore node")
-                } footer: {
-                    Text("Pairing asks for the PIN shown on the node. Messages arrive only while the phone is connected to it.")
-                }
-                if !model.isConnected {
-                    Section {
-                        Button("Try the demo network") { model.startDemo() }
-                    } footer: {
-                        Text("A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.")
+                    SectionLabel("About").padding(.top, 10)
+                    CardList {
+                        CardRow(title: String(localized: "Version")) {
+                            Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                                .foregroundStyle(Theme.tx2)
+                        }
+                        CardDivider()
+                        CardRow(title: String(localized: "End-to-end encryption"), subtitle: identityStatus)
                     }
                 }
-                Section {
-                    LabeledContent("Used this hour", value: "\(seconds(model.budget.usedMs)) s / \(seconds(model.budget.limitMs)) s")
-                } header: {
-                    Text("Airtime")
-                } footer: {
-                    Text("EU rules cap each node's time on air. lichen counts its own transmissions and waits when the budget is spent.")
-                }
-                Section("About") {
-                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
-                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
             }
-            .navigationTitle("Settings")
+            .screen()
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 
-    private var isScanning: Bool { model.companionState == .scanning }
+    // MARK: radio card
+
+    private var radioCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if model.isConnected {
+                HStack(spacing: 12) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .foregroundStyle(Theme.lora)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.nodeName.isEmpty ? String(localized: "MeshCore radio") : model.nodeName)
+                            .font(.system(size: 17, weight: .semibold))
+                        Text(model.isDemo ? String(localized: "Demo network · simulated companion") :
+                                String(localized: "BLE · MeshCore companion"))
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.tx2)
+                    }
+                    Spacer()
+                    Badge(text: String(localized: "connected"), background: Theme.okBg, foreground: Theme.okFg)
+                }
+            } else {
+                NavigationLink {
+                    PairingView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .foregroundStyle(Theme.tx2)
+                            .frame(width: 40, height: 40)
+                            .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Pair a radio").font(.system(size: 17, weight: .semibold))
+                            Text("No radio connected").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Airtime left").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                AirtimeMeter(usedMs: model.budget.usedMs, limitMs: model.budget.limitMs, large: true)
+            }
+            if model.isConnected && !model.isDemo {
+                Button("Disconnect") { model.companion.disconnect() }
+                    .buttonStyle(.destructive)
+            }
+        }
+        .card(padding: 16)
+    }
+
+    private var disabledToggle: some View {
+        Toggle("", isOn: .constant(false)).labelsHidden().disabled(true)
+    }
+
+    private var preset: String {
+        guard let r = model.radio else { return String(localized: "Read from the radio once connected") }
+        return "SF\(r.sf) / \(bandwidth(r.bwHz)) · CR 4/\(r.cr) · \(String(format: "%.3f", Double(r.freqKhz) / 1000)) MHz"
+    }
+
+    private var subBand: String {
+        let duty = Double(model.budget.limitMs) / 36_000
+        let khz = model.radio?.freqKhz ?? 869_618
+        let band = (869_400...869_650).contains(khz) ? "869.4–869.65 MHz" : String(format: "%.3f MHz", Double(khz) / 1000)
+        return "\(band) · \(String(format: "%.0f", duty)) %"
+    }
 
     private var identityStatus: String {
         if model.keyExportRefused { return String(localized: "Key export refused by the node") }
         return model.identityReady ? String(localized: "Ready") : String(localized: "Waiting for the node's key")
-    }
-}
-
-struct SearchPlaceholderView: View {
-    var body: some View {
-        ContentUnavailableView(
-            "Search mode",
-            systemImage: "scope",
-            description: Text("Coming with milestone L8: find a group member with RSSI, bearings and SOS beacons.")
-        )
     }
 }

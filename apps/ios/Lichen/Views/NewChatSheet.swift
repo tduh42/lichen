@@ -20,9 +20,9 @@ struct NewChatSheet: View {
                         Button { open(.contact(key: c.key)) } label: {
                             HStack(spacing: 12) {
                                 Avatar(name: c.name, key: c.key, size: 32)
-                                Text(c.name).foregroundStyle(.primary)
+                                Text(c.name).foregroundStyle(Theme.tx)
                                 Spacer()
-                                Text(hopsBadge(c.hops)).font(.caption).foregroundStyle(Theme.secondaryText)
+                                TransportBadge(kind: .lora, label: hopsBadge(c.hops))
                             }
                         }
                     }
@@ -52,6 +52,9 @@ struct NewChatSheet: View {
                     Text(error).foregroundStyle(Theme.danger)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
+            .listRowBackground(Theme.s1)
             .navigationTitle("New conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

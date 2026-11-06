@@ -1,22 +1,23 @@
 import MapLibre
 import SwiftUI
 
-/// "Map": positions shared with us, ours, SOS, and our shares (mockup ios-carte).
+/// "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`).
 struct MapScreen: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.colorScheme) private var scheme
     @State private var offline = OfflineMaps()
-    @AppStorage("map.style") private var style = MapStyle.liberty
+    @AppStorage("map.style") private var style = MapStyle.auto
     @State private var recenter = 0
     /// Who was on the map already: someone new reframes the map around everyone.
     @State private var seen: Set<String> = []
     @State private var camera: (MLNCoordinateBounds, Double)?
-    @State private var confirmSos = false
+    @State private var showingSos = false
     @State private var editing = false
     @State private var refresh: Timer?
 
     var body: some View {
         ZStack(alignment: .top) {
-            MapLibreView(items: items, style: style, recenter: recenter) { bounds, zoom in
+            MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter) { bounds, zoom in
                 camera = (bounds, zoom)
             }
             .ignoresSafeArea(edges: .top)
@@ -32,11 +33,7 @@ struct MapScreen: View {
             SharePanel(editing: $editing)
         }
         .sheet(isPresented: $editing) { ShareSheet() }
-        .confirmationDialog("Send an SOS?", isPresented: $confirmSos, titleVisibility: .visible) {
-            Button("Send SOS", role: .destructive) { model.setSos(true) }
-        } message: {
-            Text("Your exact position goes to every contact you share with and every group, every 2 minutes, until you stop it.")
-        }
+        .fullScreenCover(isPresented: $showingSos) { SosView() }
         .onAppear {
             model.mapVisible = true
             model.refreshPositions()
@@ -45,6 +42,9 @@ struct MapScreen: View {
             }
             seen = Set(items.map(\.id))
             if !items.isEmpty { recenter += 1 }
+            #if DEBUG
+            if model.debugScreen == "sos" { showingSos = true }
+            #endif
         }
         .onDisappear {
             model.mapVisible = false
@@ -59,22 +59,23 @@ struct MapScreen: View {
         }
     }
 
+    private var dark: Bool { scheme == .dark }
+
     private var topBar: some View {
         HStack {
-            Button {
-                if model.sos { model.setSos(false) } else { confirmSos = true }
-            } label: {
-                Label(model.sos ? "Stop SOS" : "SOS", systemImage: "exclamationmark.triangle.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .labelStyle(SosLabelStyle())
-                    .padding(.horizontal, 18)
-                    .frame(height: 44)
-                    .background(Theme.danger, in: Capsule())
-                    .foregroundStyle(.white)
-                    .overlay(Capsule().stroke(.white, lineWidth: model.sos ? 3 : 0))
-                    .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+            Button { showingSos = true } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text(model.sos ? "SOS on" : "SOS")
+                }
+                .font(.system(size: 15, weight: .bold))
+                .padding(.horizontal, 18)
+                .frame(height: 44)
+                .background(Theme.sosBtn, in: Capsule())
+                .foregroundStyle(.white)
+                .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: model.sos ? 3 : 0))
             }
-            .accessibilityLabel(model.sos ? "Stop SOS" : "Send SOS")
+            .accessibilityLabel(model.sos ? "SOS on: open" : "SOS")
             Spacer()
             Menu {
                 Picker("Map style", selection: $style) {
@@ -82,7 +83,7 @@ struct MapScreen: View {
                 }
                 Section {
                     Button {
-                        if let (b, z) = camera { offline.download(b, zoom: z, style: style) }
+                        if let (b, z) = camera { offline.download(b, zoom: z, style: style.resolved(dark: dark)) }
                     } label: {
                         Label("Download this area", systemImage: "arrow.down.circle")
                     }
@@ -97,11 +98,11 @@ struct MapScreen: View {
                     Text("Downloaded areas work without a network.")
                 }
             } label: {
-                RoundIcon(systemName: "square.3.layers.3d")
+                MapIcon(systemName: "map")
             }
             .accessibilityLabel("Map layers")
             Button { recenter += 1 } label: {
-                RoundIcon(systemName: "location.fill", tint: Color(hex: 0x1E40AF))
+                MapIcon(systemName: "scope", tint: Theme.me)
             }
             .accessibilityLabel("Show everyone")
         }
@@ -110,10 +111,11 @@ struct MapScreen: View {
     // MARK: items
 
     private var items: [MapItem] {
+        let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
         var out: [MapItem] = []
         for p in model.positions {
             let name = model.name(of: p.from)
-            let (_, fg) = Theme.avatar(for: p.from)
+            let color = p.sos ? Theme.sosBtn : Theme.marker(for: p.from)
             out.append(MapItem(
                 id: p.from.hex,
                 kind: p.sos ? .sos : .peer,
@@ -122,21 +124,17 @@ struct MapScreen: View {
                 radius: p.radiusM,
                 initials: initials(name),
                 label: label(p, name: name),
-                color: p.sos ? UIColor(Theme.danger) : UIColor(fg)
+                color: UIColor(color).resolvedColor(with: traits),
+                dark: dark
             ))
         }
         if let me = model.myFix {
             out.append(MapItem(
                 id: "me", kind: .me, lat: me.lat, lon: me.lon, radius: me.accuracyM,
-                initials: "", label: "", color: UIColor(Color(hex: 0x1E40AF))
+                initials: "", label: "", color: UIColor(Theme.me).resolvedColor(with: traits), dark: dark
             ))
         }
         return out
-    }
-
-    private func initials(_ name: String) -> String {
-        let letters = name.split(separator: " ").prefix(2).compactMap(\.first).map(String.init).joined()
-        return letters.isEmpty ? "?" : letters.uppercased()
     }
 
     private func label(_ p: PeerPosition, name: String) -> String {
@@ -154,27 +152,18 @@ struct MapScreen: View {
     }
 }
 
-/// Icon then title, tight.
-private struct SosLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 8) {
-            configuration.icon
-            configuration.title
-        }
-    }
-}
-
-private struct RoundIcon: View {
+/// A 44 pt round button on the map (`s2`).
+private struct MapIcon: View {
     let systemName: String
-    var tint: Color = .primary
+    var tint: Color = Theme.tx
 
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: 18, weight: .medium))
             .foregroundStyle(tint)
             .frame(width: 44, height: 44)
-            .background(Color(.systemBackground), in: Circle())
-            .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+            .background(Theme.s2, in: Circle())
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
     }
 }
 
@@ -185,13 +174,14 @@ private struct DownloadBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             ProgressView(value: Double(done), total: Double(max(total, 1)))
+                .tint(Theme.tx)
                 .frame(width: 80)
             Text("Downloading the map: \(Int(done)) / \(Int(total))")
-                .font(.caption.weight(.medium))
+                .font(.system(size: 12, weight: .medium))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.regularMaterial, in: Capsule())
+        .background(Theme.s1, in: Capsule())
     }
 }
 
@@ -218,7 +208,7 @@ enum PrecisionText {
 
 // MARK: - sharing panel
 
-/// Bottom card: our shares, their precision, stop (mockup ios-carte).
+/// Bottom card: our shares and their precision (mockup `carte`).
 struct SharePanel: View {
     @Environment(AppModel.self) private var model
     @Binding var editing: Bool
@@ -227,22 +217,23 @@ struct SharePanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Capsule()
-                .fill(Color(.systemGray4))
+                .fill(Theme.line)
                 .frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 12)
                 .contentShape(Rectangle())
                 .onTapGesture { withAnimation(.snappy) { expanded.toggle() } }
+                .accessibilityAddTraits(.isButton)
                 .accessibilityLabel(expanded ? "Collapse" : "Expand")
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Location sharing")
                         .font(.system(size: 20, weight: .bold))
                     Text(status)
-                        .font(.footnote)
-                        .foregroundStyle(model.sos ? Theme.danger : Theme.secondaryText)
+                        .font(.system(size: 13))
+                        .foregroundStyle(model.sos ? Theme.sosFg : Theme.tx2)
                 }
                 Spacer()
-                Toggle("On", isOn: Binding(
+                Toggle("Location sharing", isOn: Binding(
                     get: { !model.shares.isEmpty },
                     set: { on in if on { editing = true } else { model.stopAllShares() } }
                 ))
@@ -251,59 +242,46 @@ struct SharePanel: View {
             }
             if expanded {
                 if model.locationDenied && !model.isDemo {
-                    Button {
-                        if let url = URL(string: UIApplication.openSettingsURLString) {
-                            UIApplication.shared.open(url)
-                        }
-                    } label: {
-                        Label("Location access is off: allow it in Settings.", systemImage: "location.slash")
-                            .font(.footnote)
-                    }
+                    Banner(kind: .warn, title: String(localized: "Location access is off"),
+                           message: String(localized: "Allow it in Settings to share your position."),
+                           action: (label: String(localized: "Settings"), run: {
+                               if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                           }))
                 }
-                if !model.shares.isEmpty {
-                    VStack(spacing: 0) {
-                        ForEach(model.shares, id: \.chat) { s in
-                            ShareRow(share: s)
-                                .contentShape(Rectangle())
-                                .onTapGesture { editing = true }
-                            if s.chat != model.shares.last?.chat {
-                                Divider().padding(.leading, 58)
-                            }
-                        }
+                VStack(spacing: 0) {
+                    ForEach(Array(model.shares.enumerated()), id: \.element.chat) { i, s in
+                        if i > 0 { CardDivider() }
+                        Button { editing = true } label: { ShareRow(share: s) }
+                            .buttonStyle(.plain)
                     }
-                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-                }
-                HStack(spacing: 8) {
+                    if !model.shares.isEmpty { CardDivider() }
                     Button { editing = true } label: {
-                        Text("Precision per contact")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                        HStack(spacing: 12) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(width: 32, height: 32)
+                                .background(Theme.s1, in: Circle())
+                            Text(model.shares.isEmpty ? "Share my position…" : "Precision per contact")
+                                .font(.system(size: 16))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(.primary)
-                    Button { model.stopAllShares() } label: {
-                        Text("Stop sharing")
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(Color(hex: 0xFEE2E2), in: RoundedRectangle(cornerRadius: 12))
-                    }
-                    .foregroundStyle(Color(hex: 0x991B1B))
-                    .disabled(model.shares.isEmpty)
-                    .opacity(model.shares.isEmpty ? 0.45 : 1)
+                    .buttonStyle(.plain)
                 }
-                .font(.system(size: 15, weight: .semibold))
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
                 Text("Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 12)
-        .background(
-            Color(.systemBackground),
-            in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20)
-        )
-        .shadow(color: .black.opacity(0.08), radius: 8, y: -2)
+        .padding(.bottom, 16)
+        .background(Theme.s1, in: UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20))
     }
 
     private var status: String {
@@ -325,18 +303,16 @@ private struct ShareRow: View {
         HStack(spacing: 12) {
             Avatar(name: model.title(of: share.chat), key: avatarKey, size: 32)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.title(of: share.chat))
-                    .font(.system(size: 15, weight: .semibold))
-                Text(detail)
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondaryText)
+                Text(model.title(of: share.chat)).font(.system(size: 16))
+                Text(detail).font(.system(size: 13)).foregroundStyle(Theme.tx2)
             }
             Spacer()
             Text(PrecisionText.name(share.precision))
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
     }
 
     private var avatarKey: Data {
@@ -372,49 +348,53 @@ struct ShareSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionLabel("Duration")
                     Picker("Duration", selection: $hours) {
                         Text("1 h").tag(1.0)
                         Text("8 h").tag(8.0)
                         Text("24 h").tag(24.0)
                     }
                     .pickerStyle(.segmented)
-                } header: {
-                    Text("Duration")
-                } footer: {
                     Text("Sharing stops on its own at the end; the others see your marker disappear.")
-                }
-                if !model.contacts.isEmpty {
-                    Section("Contacts") {
-                        ForEach(model.contacts, id: \.key) { c in
-                            row(.contact(key: c.key), name: c.name, key: c.key)
+                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    if !model.contacts.isEmpty {
+                        SectionLabel("Contacts").padding(.top, 8)
+                        CardList {
+                            ForEach(Array(model.contacts.enumerated()), id: \.element.key) { i, c in
+                                if i > 0 { CardDivider(inset: 60) }
+                                row(.contact(key: c.key), name: c.name, key: c.key)
+                            }
                         }
                     }
-                }
-                if !model.groups.isEmpty {
-                    Section {
-                        ForEach(model.groups, id: \.gid) { g in
-                            row(.group(gid: g.gid), name: g.name, key: g.gid)
+                    if !model.groups.isEmpty {
+                        SectionLabel("Groups").padding(.top, 8)
+                        CardList {
+                            ForEach(Array(model.groups.enumerated()), id: \.element.gid) { i, g in
+                                if i > 0 { CardDivider(inset: 60) }
+                                row(.group(gid: g.gid), name: g.name, key: g.gid)
+                            }
                         }
-                    } header: {
-                        Text("Groups")
-                    } footer: {
                         Text("A group gets at most one position every 5 minutes.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.tx2)
                     }
-                }
-                if model.contacts.isEmpty && model.groups.isEmpty {
-                    Text("No contacts yet: connect your MeshCore node, or try the demo network in Settings.")
-                        .foregroundStyle(Theme.secondaryText)
-                }
-                Section {
+                    if model.contacts.isEmpty && model.groups.isEmpty {
+                        Text("No contacts yet: connect your MeshCore node, or try the demo network in Settings.")
+                            .foregroundStyle(Theme.tx2)
+                    }
                     Text("A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.")
-                        .font(.footnote)
-                        .foregroundStyle(Theme.secondaryText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.tx2)
+                        .padding(.top, 8)
                 }
+                .padding(16)
             }
+            .screen()
             .navigationTitle("Precision per contact")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.s1, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
@@ -432,7 +412,7 @@ struct ShareSheet: View {
         let current = model.share(of: chat)?.precision
         return HStack(spacing: 12) {
             Avatar(name: name, key: key, size: 32)
-            Text(name)
+            Text(name).font(.system(size: 16))
             Spacer()
             Menu {
                 Button("Not shared") { set(chat, nil) }
@@ -440,11 +420,17 @@ struct ShareSheet: View {
                     Button(PrecisionText.name(p)) { set(chat, p) }
                 }
             } label: {
-                Text(current.map(PrecisionText.name) ?? String(localized: "Not shared"))
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(current == nil ? Theme.secondaryText : Theme.accent)
+                HStack(spacing: 4) {
+                    Text(current.map(PrecisionText.name) ?? String(localized: "Not shared"))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
+                }
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(current == nil ? Theme.tx2 : Theme.tx)
+                .frame(minHeight: 44)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
     }
 
     private func set(_ chat: ChatID, _ p: SharePrecision?) {
