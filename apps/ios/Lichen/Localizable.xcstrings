@@ -721,12 +721,12 @@
         }
       }
     },
-    "Attach a photo": {
+    "Attach": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Joindre une photo"
+            "value": "Joindre"
           }
         }
       }
@@ -2701,6 +2701,16 @@
         }
       }
     },
+    "Precision": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Précision"
+          }
+        }
+      }
+    },
     "Precision per contact": {
       "localizations": {
         "fr": {
@@ -3191,6 +3201,26 @@
         }
       }
     },
+    "Share": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager"
+          }
+        }
+      }
+    },
+    "Share my location": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager ma position"
+          }
+        }
+      }
+    },
     "Share my position…": {
       "localizations": {
         "fr": {
@@ -3207,6 +3237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le partage s'arrête tout seul à la fin ; les autres voient ton marqueur disparaître."
+          }
+        }
+      }
+    },
+    "Sharing your location (%@) until %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu partages ta position (%1$@) jusqu’à %2$@"
           }
         }
       }
@@ -3287,6 +3327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter"
+          }
+        }
+      }
+    },
+    "Stop sharing": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter le partage"
           }
         }
       }
@@ -3637,6 +3687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contenu non pris en charge (type %@, %@ octets)"
+          }
+        }
+      }
+    },
+    "Update": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre à jour"
           }
         }
       }

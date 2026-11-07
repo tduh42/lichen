@@ -394,9 +394,18 @@ private struct Composer: View {
     @State private var image: PreparedImage?
     @State private var original: Data?
     @State private var preparing = false
+    @State private var locating = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let share = model.share(of: chat) {
+                Button { locating = true } label: {
+                    Label(sharingText(share), systemImage: "location.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.tx2)
+                }
+                .padding(.leading, 52)
+            }
             if let line = costLine {
                 Text(line).font(.system(size: 11)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
@@ -404,17 +413,23 @@ private struct Composer: View {
                 recordingBar
             } else {
                 HStack(spacing: 8) {
-                    if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
-                        Button { picking = true } label: {
-                            Image(systemName: preparing ? "hourglass" : "plus")
-                                .font(.system(size: 18, weight: .semibold))
-                                .frame(width: 44, height: 44)
-                                .background(Theme.s2, in: Circle())
-                                .foregroundStyle(Theme.tx)
+                    Menu {
+                        if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
+                            Button { picking = true } label: { Label("Photo", systemImage: "photo") }
+                                .disabled(!model.isConnected)
                         }
-                        .disabled(!model.isConnected || preparing)
-                        .accessibilityLabel("Attach a photo")
+                        Button { locating = true } label: {
+                            Label("Share my location", systemImage: "location")
+                        }
+                    } label: {
+                        Image(systemName: preparing ? "hourglass" : "plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .background(Theme.s2, in: Circle())
+                            .foregroundStyle(Theme.tx)
                     }
+                    .disabled(preparing)
+                    .accessibilityLabel("Attach")
                     TextField("Message", text: $draft, axis: .vertical)
                         .lineLimit(1...5)
                         .font(.system(size: 16))
@@ -478,6 +493,8 @@ private struct Composer: View {
         }
         .onAppear {
             #if DEBUG
+            // -screen share: the location sheet.
+            if model.debugScreen == "share" { locating = true }
             // -screen media: the photo sheet with the demo landscape.
             if model.debugScreen == "media", isContact, image == nil,
                let ui = UIImage(named: "AppIcon") ?? Self.sampleImage(), let (rgba, w, h) = ui.rgba() {
@@ -485,6 +502,7 @@ private struct Composer: View {
             }
             #endif
         }
+        .sheet(isPresented: $locating) { ChatShareSheet(chat: chat) }
         .sheet(item: Binding(get: { image.map(ImageDraft.init) }, set: { image = $0?.image })) { draft in
             SendPhotoSheet(chat: chat, image: draft.image, original: original) { e in
                 image = nil
@@ -563,11 +581,93 @@ private struct Composer: View {
         .frame(minHeight: 44)
     }
 
+    private func sharingText(_ share: ShareInfo) -> String {
+        let until = Date(timeIntervalSince1970: TimeInterval(share.untilS)).formatted(date: .omitted, time: .shortened)
+        return String(localized: "Sharing your location (\(PrecisionText.name(share.precision))) until \(until)")
+    }
+
     private var costLine: String? {
         if case .group = chat { return String(localized: "Flooded to every member, without acknowledgement") }
         guard let e = model.estimate(chat, text: draft) else { return nil }
         let s = String(format: "%.1f", Double(e.airtimeMs) / 1000)
         return String(localized: "Estimated cost: \(fragmentsText(e.fragments)) · ≈ \(s) s of airtime")
+    }
+}
+
+/// Our position for this chat, from the composer's menu: the same shares as the map's panel.
+private struct ChatShareSheet: View {
+    let chat: ChatID
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var precision: SharePrecision = .exact
+    @State private var hours = 1.0
+    @State private var error: String?
+
+    var body: some View {
+        let current = model.share(of: chat)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    SectionLabel("Precision")
+                    Picker("Precision", selection: $precision) {
+                        ForEach([SharePrecision.exact, .m100, .km1, .km10], id: \.self) { p in
+                            Text(PrecisionText.name(p)).tag(p)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    SectionLabel("Duration").padding(.top, 8)
+                    Picker("Duration", selection: $hours) {
+                        Text("1 h").tag(1.0)
+                        Text("8 h").tag(8.0)
+                        Text("24 h").tag(24.0)
+                    }
+                    .pickerStyle(.segmented)
+                    Text("Sharing stops on its own at the end; the others see your marker disappear.")
+                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    if case .group = chat {
+                        Text("A group gets at most one position every 5 minutes.")
+                            .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    }
+                    Button(current == nil ? "Share" : "Update") { apply(precision) }
+                        .buttonStyle(.primary)
+                        .padding(.top, 8)
+                    if current != nil {
+                        Button("Stop sharing") { apply(nil) }
+                            .buttonStyle(.destructive)
+                    }
+                }
+                .padding(16)
+            }
+            .screen()
+            .navigationTitle("Share my location")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.s1, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .alert("Could not share", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK") { error = nil }
+            } message: {
+                Text(error ?? "")
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .onAppear {
+            if let p = current?.precision { precision = p }
+        }
+    }
+
+    private func apply(_ p: SharePrecision?) {
+        if let e = model.setShare(chat, precision: p, hours: hours) {
+            error = e
+        } else {
+            dismiss()
+        }
     }
 }
 
