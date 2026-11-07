@@ -34,7 +34,7 @@ use lc_proto::Millis;
 use rand_chacha::ChaCha8Rng;
 use rand_core::{Rng, SeedableRng};
 
-use crate::core::{Config, Core, Event, OwnedPath, PubKey};
+use crate::core::{Config, Core, Event, OwnedPath, PubKey, contact_kind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -52,7 +52,8 @@ pub struct Node {
     pub core: Option<Core>,
     /// Whether the app is connected (pushes are lost otherwise).
     pub connected: bool,
-    contacts: Vec<(PubKey, String, Option<OwnedPath>)>,
+    /// Key, name, path, MeshCore contact type (`contact_kind`).
+    contacts: Vec<(PubKey, String, Option<OwnedPath>, u8)>,
     dedup: VecDeque<[u8; 8]>,
     txq: VecDeque<(Millis, Vec<u8>)>,
     tx_until: Millis,
@@ -324,8 +325,18 @@ impl Net {
         let path = if with_path { self.route(a, b) } else { None };
         let (key, name) = (self.key(b), self.nodes.get(b).map(|n| n.name.clone()));
         if let Some(n) = self.nodes.get_mut(a) {
-            n.contacts.retain(|(k, _, _)| *k != key);
-            n.contacts.push((key, name.unwrap_or_default(), path));
+            n.contacts.retain(|(k, ..)| *k != key);
+            n.contacts
+                .push((key, name.unwrap_or_default(), path, contact_kind::CHAT));
+        }
+    }
+
+    /// Puts a node outside the simulation in `a`'s companion contact table (no path): a
+    /// repeater or another companion sharing a hash byte with a simulated node.
+    pub fn know_other(&mut self, a: usize, key: PubKey, name: &str, kind: u8) {
+        if let Some(n) = self.nodes.get_mut(a) {
+            n.contacts.retain(|(k, ..)| *k != key);
+            n.contacts.push((key, name.to_owned(), None, kind));
         }
     }
 
@@ -477,10 +488,16 @@ impl Net {
         self.wake(i, now);
     }
 
-    fn contact_frame(code: u8, key: &PubKey, name: &str, path: Option<&OwnedPath>) -> Vec<u8> {
+    fn contact_frame(
+        code: u8,
+        key: &PubKey,
+        name: &str,
+        path: Option<&OwnedPath>,
+        kind: u8,
+    ) -> Vec<u8> {
         let mut v = vec![code];
         v.extend_from_slice(key);
-        v.extend_from_slice(&[1, 0]);
+        v.extend_from_slice(&[kind, 0]);
         let mut raw_path = [0u8; 64];
         match path {
             Some(p) => {
@@ -530,16 +547,18 @@ impl Net {
                     v.extend_from_slice(&(node.contacts.len() as u32).to_le_bytes());
                     v
                 }];
-                for (k, n, p) in &node.contacts {
-                    out.push(Self::contact_frame(resp::CONTACT, k, n, p.as_ref()));
+                for (k, n, p, t) in &node.contacts {
+                    out.push(Self::contact_frame(resp::CONTACT, k, n, p.as_ref(), *t));
                 }
                 out.push(vec![resp::END_OF_CONTACTS, 0, 0, 0, 0]);
                 out
             }
             cmd::GET_CONTACT_BY_KEY => {
                 let k = frame.get(1..33);
-                match node.contacts.iter().find(|(c, _, _)| Some(&c[..]) == k) {
-                    Some((c, n, p)) => vec![Self::contact_frame(resp::CONTACT, c, n, p.as_ref())],
+                match node.contacts.iter().find(|(c, ..)| Some(&c[..]) == k) {
+                    Some((c, n, p, t)) => {
+                        vec![Self::contact_frame(resp::CONTACT, c, n, p.as_ref(), *t)]
+                    }
                     None => vec![vec![resp::ERR, 2]],
                 }
             }

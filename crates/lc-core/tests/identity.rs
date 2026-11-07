@@ -124,6 +124,50 @@ fn first_contact_introduces_both() {
     assert!(learned(&ea).is_empty() && learned(&eb).is_empty());
 }
 
+/// INTRO names its sender by one hash byte (§4.6). Bob's companion knows a repeater and another
+/// companion sharing Alice's byte, both sorted before her: neither is taken for her (seen in
+/// Paris, where a repeater shared the phone's node byte).
+#[test]
+fn introduction_picks_the_sender_among_hash_collisions() {
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 3);
+    let a = net.add_companion(1, "alice");
+    let b = net.add_companion(2, "bob");
+    let hub = net.add_repeater(50, "hub");
+    net.link(a, hub);
+    net.link(b, hub);
+    net.know(a, b, true);
+    net.know(b, a, true);
+    let mut repeater = net.key(a);
+    repeater[1..].fill(0);
+    let mut other = repeater;
+    other[31] = 1;
+    net.know_other(b, repeater, "repeater", lc_core::contact_kind::REPEATER);
+    net.know_other(b, other, "other", lc_core::contact_kind::CHAT);
+    net.connect(a);
+    net.connect(b);
+    assert!(net.run_until(20 * S, |n| {
+        [a, b]
+            .iter()
+            .all(|&i| n.nodes[i].core.as_ref().is_some_and(|c| c.ready()))
+    }));
+    let bob = net.key(b);
+    net.with_core(a, |c, now| c.send_text(&bob, "hello stranger", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 2 * MIN, |_| false);
+    let eb = net.take_events(b);
+    assert_eq!(texts(&eb), vec!["hello stranger"]);
+    assert!(
+        eb.iter()
+            .any(|e| matches!(e, Event::Received { from, .. } if *from == net.key(a)))
+    );
+    assert_eq!(known(&net, b, a), (Some(identity(&net, a)), false));
+    let core = net.nodes[b].core.as_ref().unwrap();
+    for k in [repeater, other] {
+        assert_eq!(core.contacts().find(|c| c.key == k).unwrap().identity, None);
+    }
+}
+
 /// Alice scanned Bob's card, Bob did not scan hers: her HELLO is unreadable for Bob, who
 /// introduces himself; the message goes through and Alice's verification stands.
 #[test]

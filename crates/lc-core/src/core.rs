@@ -1657,12 +1657,14 @@ impl Core {
         }
     }
 
+    /// The contacts a frame from hash byte `src` may come from: people only (repeaters, rooms
+    /// and sensors never run lichen, §4.6), in key order.
     fn candidates(&self, src: u8) -> Vec<PubKey> {
         let mut v: Vec<PubKey> = self
             .contacts
-            .keys()
-            .filter(|k| k[0] == src)
-            .copied()
+            .iter()
+            .filter(|(k, c)| k[0] == src && c.is_person())
+            .map(|(k, _)| *k)
             .collect();
         v.sort_unstable();
         v
@@ -1790,7 +1792,18 @@ impl Core {
         let Ok((src, msg)) = intro::open_intro(node[0], payload) else {
             return;
         };
-        let Some(c) = self.candidates(src).into_iter().next() else {
+        // INTRO names its sender by one byte only: among the people sharing it, the one whose
+        // known path is the return path, else the first (§4.6).
+        let candidates = self.candidates(src);
+        let on_path = candidates.iter().find(|k| {
+            self.contacts
+                .get(*k)
+                .and_then(|c| c.out_path.as_ref())
+                .is_some_and(|p| {
+                    p.len_byte == msg.return_path_len && p.bytes.as_slice() == msg.return_path
+                })
+        });
+        let Some(c) = on_path.or(candidates.first()).copied() else {
             return;
         };
         let mut peer = self.peers.remove(&c).unwrap_or_default();
