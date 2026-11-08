@@ -50,6 +50,10 @@ private val TabRoutes = mapOf(
 /** The four tabs, and the chats above them. */
 @Composable
 fun RootScreen(model: AppModel) {
+    model.identityProblem?.let {
+        IdentityProblemScreen(model, it)
+        return
+    }
     if (!model.onboarded) {
         Onboarding(model)
         return

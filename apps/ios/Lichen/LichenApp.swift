@@ -22,7 +22,9 @@ struct RootView: View {
     var body: some View {
         @Bindable var model = model
         Group {
-            if onboarded {
+            if let problem = model.identityProblem {
+                IdentityProblemView(problem: problem)
+            } else if onboarded {
                 tabs
             } else {
                 OnboardingView { onboarded = true }

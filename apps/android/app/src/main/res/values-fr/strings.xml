@@ -192,6 +192,16 @@
     <string name="wrote_them_down">Je les ai notés</string>
     <string name="restore_intro">Tape les 24 mots de l\'identité à restaurer, séparés par des espaces. Elle remplace l\'identité de ce téléphone.</string>
     <string name="words_count">%1$d / 24 mots</string>
+    <string name="identity_problem_title">Ton identité est inutilisable pour le moment</string>
+    <string name="identity_problem_unavailable">Le stockage sécurisé du téléphone est illisible pour le moment. Rien n’a été modifié : déverrouille le téléphone, puis réessaie.</string>
+    <string name="identity_problem_corrupt">Ce qui est enregistré sur ce téléphone n’est pas une identité valide. Restaure-la depuis ses 24 mots, ou crée une nouvelle identité.</string>
+    <string name="identity_problem_not_saved">Ta nouvelle identité n’a pas pu être enregistrée sur ce téléphone. Réessaie.</string>
+    <string name="identity_not_saved">L’identité n’a pas pu être enregistrée sur ce téléphone. Réessaie.</string>
+    <string name="try_again">Réessayer</string>
+    <string name="restore_from_words">Restaurer depuis mes 24 mots</string>
+    <string name="new_identity">Créer une nouvelle identité</string>
+    <string name="new_identity_confirm">Créer une nouvelle identité ?</string>
+    <string name="new_identity_warning">Tes contacts verront une nouvelle identité et devront te vérifier à nouveau. Si tu as tes 24 mots, restaure-les plutôt.</string>
     <string name="restore">Restaurer</string>
     <string name="add_contact">Ajouter un contact</string>
     <string name="my_code">Mon code</string>

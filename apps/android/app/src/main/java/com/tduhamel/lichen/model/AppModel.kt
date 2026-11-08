@@ -86,7 +86,21 @@ class AppModel(private val app: Application) {
         val sosDemo: Boolean = false,
         /** The welcome screens: shown (true), skipped (false), or as saved (null). */
         val onboarding: Boolean? = null,
+        /** The identity failure screen: `unavailable`, `corrupt` or `notsaved`. */
+        val identityProblem: String? = null,
     )
+
+    /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
+    enum class IdentityProblem {
+        /** The Keystore cannot be used now: nothing was changed, try again. */
+        UNAVAILABLE,
+
+        /** What is stored is not an identity. */
+        CORRUPT,
+
+        /** A first identity could not be saved. */
+        NOT_SAVED,
+    }
 
     enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
 
@@ -206,7 +220,13 @@ class AppModel(private val app: Application) {
     private var bridge: LichenBridge? = null
     private var onionId: ByteArray? = null
 
-    var core: LichenCore = makeCore(identityStore.seed(), persistent = true)
+    /** Set while our identity cannot be used: the core is then a throwaway one that stores
+     * nothing and never connects. */
+    var identityProblem by mutableStateOf<IdentityProblem?>(null)
+        private set
+    private var identitySeed: ByteArray? = null
+
+    var core: LichenCore = identityCore()
         private set
     var link: RadioLink? = null
 
@@ -263,6 +283,62 @@ class AppModel(private val app: Application) {
         updateLocator()
     }
 
+    /** The stored identity, or a new one on a first launch; never a silent replacement of an
+     * identity that cannot be read. `null` sets [identityProblem]. */
+    private fun loadIdentity(): ByteArray? = when (val r = identityStore.read()) {
+        is IdentityRead.Found -> r.seed
+        IdentityRead.Absent -> runCatching { identityStore.create() }.getOrElse {
+            identityProblem = IdentityProblem.NOT_SAVED
+            null
+        }
+        is IdentityRead.Unavailable -> null.also { identityProblem = IdentityProblem.UNAVAILABLE }
+        IdentityRead.Corrupt -> null.also { identityProblem = IdentityProblem.CORRUPT }
+    }
+
+    /** A core for our identity, or a throwaway one while it cannot be used. */
+    private fun identityCore(): LichenCore {
+        val seed = loadIdentity()
+        identitySeed = seed
+        if (seed == null) return makeCore(IdentityStore.randomBytes(32), persistent = false)
+        identityProblem = null
+        return makeCore(seed, persistent = true)
+    }
+
+    /** Reads the identity again ([IdentityProblemScreen]); the app starts with it once it is back. */
+    fun retryIdentity() {
+        val seed = loadIdentity() ?: return
+        useIdentity(seed)
+    }
+
+    /** A new identity, chosen by the user when the stored one is unreadable for good: contacts
+     * will have to verify it again. */
+    fun startNewIdentity(): String? = try {
+        val seed = IdentityStore.randomBytes(32)
+        identityStore.replace(seed)
+        phraseBackedUp = false
+        prefs.edit { putBoolean(BACKED_UP, false) }
+        useIdentity(seed)
+        null
+    } catch (_: IdentityWriteException) {
+        res.getString(R.string.identity_not_saved)
+    }
+
+    /** The core restarts with [seed], our identity from now on. */
+    private fun useIdentity(seed: ByteArray) {
+        if (isDemo) stopDemo()
+        resetState()
+        identitySeed = seed
+        identityProblem = null
+        replaceCore(makeCore(seed, persistent = true))
+        refreshAll()
+        shares = core.shares()
+        positions = core.positions(now())
+        restartBridge()
+        updateLocator()
+        radioChanged(radioState)
+        pump()
+    }
+
     private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
         "lichen-android",
         IdentityStore.randomBytes(32),
@@ -298,6 +374,11 @@ class AppModel(private val app: Application) {
         debugApplied = true
         debug = options
         debugScreen = options.screen
+        when (options.identityProblem) {
+            "unavailable" -> identityProblem = IdentityProblem.UNAVAILABLE
+            "corrupt" -> identityProblem = IdentityProblem.CORRUPT
+            "notsaved" -> identityProblem = IdentityProblem.NOT_SAVED
+        }
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
             "map" -> tab = Tab.MAP
@@ -342,7 +423,7 @@ class AppModel(private val app: Application) {
         demo = null
         isDemo = false
         resetState()
-        replaceCore(makeCore(identityStore.seed(), persistent = true))
+        replaceCore(identityCore())
         radioState = RadioState.Idle
         refreshAll()
         shares = core.shares()
@@ -388,7 +469,8 @@ class AppModel(private val app: Application) {
     private fun radioChanged(state: RadioState) {
         if (isDemo) return
         radioState = state
-        if (state is RadioState.Connected) {
+        // No radio session with a throwaway identity (identityProblem).
+        if (state is RadioState.Connected && identityProblem == null) {
             // Receive with the screen off (ADR-0006); stops when the user disconnects.
             RadioService.start(app, state.name, sharing = shares.isNotEmpty() || sos)
             core.connect(now())
@@ -851,7 +933,7 @@ class AppModel(private val app: Application) {
 
     /** This phone's bridge, keyed from the identity: iroh and Tor as the settings say. */
     private fun startBridge() {
-        bridge = runCatching { LichenBridge(identityStore.seed(), folder("offers").path) }.getOrNull()
+        bridge = identitySeed?.let { seed -> runCatching { LichenBridge(seed, folder("offers").path) }.getOrNull() }
         applyIroh()
         applyTor()
     }
@@ -1122,18 +1204,15 @@ class AppModel(private val app: Application) {
     /** Restores an identity from its 24 words: the core restarts with it. */
     fun restore(words: List<String>): String? = try {
         val seed = seedFromPhrase(words)
-        identityStore.save(seed)
-        if (isDemo) stopDemo()
-        resetState()
-        replaceCore(makeCore(seed, persistent = true))
-        refreshAll()
+        // Saved and read back before the app switches to it.
+        identityStore.replace(seed)
         markBackedUp()
-        if (isConnected) core.connect(now())
-        restartBridge()
-        pump()
+        useIdentity(seed)
         null
     } catch (e: LichenException) {
         e.display(res)
+    } catch (_: IdentityWriteException) {
+        res.getString(R.string.identity_not_saved)
     }
 
     // ----- groups -----

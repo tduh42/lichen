@@ -181,3 +181,64 @@ struct RestoreSheet: View {
         }
     }
 }
+
+/// Our identity cannot be read or saved (the Keychain is locked, or holds something else):
+/// nothing is replaced on its own. Retry, restore from the 24 words, or, when what is stored is
+/// unreadable for good, start a new identity deliberately.
+struct IdentityProblemView: View {
+    @Environment(AppModel.self) private var model
+    let problem: AppModel.IdentityProblem
+    @State private var restoring = false
+    @State private var confirmNew = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Spacer()
+            Image(systemName: "person.badge.key")
+                .font(.system(size: 40, weight: .regular))
+                .foregroundStyle(Theme.sos)
+            Text("Your identity can’t be used right now")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Theme.tx)
+            Text(explanation)
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error {
+                Banner(kind: .sos, title: error)
+            }
+            Spacer()
+            Button("Try again") { model.retryIdentity() }
+                .buttonStyle(.primary)
+            Button("Restore from my 24 words") { restoring = true }
+                .buttonStyle(.secondary)
+            if problem == .corrupt {
+                Button("Start a new identity", role: .destructive) { confirmNew = true }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
+            }
+        }
+        .padding(24)
+        .screen()
+        .sheet(isPresented: $restoring) { RestoreSheet() }
+        .confirmationDialog(
+            "Start a new identity?", isPresented: $confirmNew, titleVisibility: .visible
+        ) {
+            Button("Start a new identity", role: .destructive) { error = model.startNewIdentity() }
+        } message: {
+            Text("Your contacts will see a new identity and will have to verify you again. Restore your 24 words instead if you have them.")
+        }
+    }
+
+    private var explanation: String {
+        switch problem {
+        case .unavailable:
+            String(localized: "The phone’s secure storage can’t be read at the moment, often before the first unlock. Nothing was changed: unlock the phone, then try again.")
+        case .corrupt:
+            String(localized: "What is stored on this phone is not a valid identity. Restore it from its 24 words, or start a new identity.")
+        case .notSaved:
+            String(localized: "Your new identity could not be saved on this phone. Try again.")
+        }
+    }
+}

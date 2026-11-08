@@ -2991,6 +2991,16 @@
         }
       }
     },
+    "Restore from my 24 words": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer depuis mes 24 mots"
+          }
+        }
+      }
+    },
     "Retry": {
       "localizations": {
         "fr": {
@@ -3411,6 +3421,26 @@
         }
       }
     },
+    "Start a new identity": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une nouvelle identité"
+          }
+        }
+      }
+    },
+    "Start a new identity?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Créer une nouvelle identité ?"
+          }
+        }
+      }
+    },
     "Start the search": {
       "localizations": {
         "fr": {
@@ -3521,6 +3551,16 @@
         }
       }
     },
+    "The identity could not be saved on this phone. Try again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’identité n’a pas pu être enregistrée sur ce téléphone. Réessaie."
+          }
+        }
+      }
+    },
     "The message is empty.": {
       "localizations": {
         "fr": {
@@ -3547,6 +3587,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les chiffres correspondent"
+          }
+        }
+      }
+    },
+    "The phone’s secure storage can’t be read at the moment, often before the first unlock. Nothing was changed: unlock the phone, then try again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le stockage sécurisé du téléphone est illisible pour le moment, souvent avant le premier déverrouillage. Rien n’a été modifié : déverrouille le téléphone, puis réessaie."
           }
         }
       }
@@ -3727,6 +3777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tor n'a pas pu se connecter"
+          }
+        }
+      }
+    },
+    "Try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réessayer"
           }
         }
       }
@@ -3931,6 +3991,16 @@
         }
       }
     },
+    "What is stored on this phone is not a valid identity. Restore it from its 24 words, or start a new identity.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce qui est enregistré sur ce téléphone n’est pas une identité valide. Restaure-la depuis ses 24 mots, ou crée une nouvelle identité."
+          }
+        }
+      }
+    },
     "When someone sends an SOS, follow it from here: bearing and distance from your position.": {
       "localizations": {
         "fr": {
@@ -4021,6 +4091,16 @@
         }
       }
     },
+    "Your contacts will see a new identity and will have to verify you again. Restore your 24 words instead if you have them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes contacts verront une nouvelle identité et devront te vérifier à nouveau. Si tu as tes 24 mots, restaure-les plutôt."
+          }
+        }
+      }
+    },
     "Your exact GPS position, again every 2 minutes": {
       "localizations": {
         "fr": {
@@ -4041,6 +4121,16 @@
         }
       }
     },
+    "Your identity can’t be used right now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton identité est inutilisable pour le moment"
+          }
+        }
+      }
+    },
     "Your key's fingerprint": {
       "localizations": {
         "fr": {
@@ -4057,6 +4147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ton nom"
+          }
+        }
+      }
+    },
+    "Your new identity could not be saved on this phone. Try again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta nouvelle identité n’a pas pu être enregistrée sur ce téléphone. Réessaie."
           }
         }
       }

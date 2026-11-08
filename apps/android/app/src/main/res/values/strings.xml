@@ -189,6 +189,16 @@
     <string name="wrote_them_down">I wrote them down</string>
     <string name="restore_intro">Type the 24 words of the identity to restore, separated by spaces. It replaces the identity on this phone.</string>
     <string name="words_count">%1$d / 24 words</string>
+    <string name="identity_problem_title">Your identity can’t be used right now</string>
+    <string name="identity_problem_unavailable">The phone’s secure storage can’t be read at the moment. Nothing was changed: unlock the phone, then try again.</string>
+    <string name="identity_problem_corrupt">What is stored on this phone is not a valid identity. Restore it from its 24 words, or start a new identity.</string>
+    <string name="identity_problem_not_saved">Your new identity could not be saved on this phone. Try again.</string>
+    <string name="identity_not_saved">The identity could not be saved on this phone. Try again.</string>
+    <string name="try_again">Try again</string>
+    <string name="restore_from_words">Restore from my 24 words</string>
+    <string name="new_identity">Start a new identity</string>
+    <string name="new_identity_confirm">Start a new identity?</string>
+    <string name="new_identity_warning">Your contacts will see a new identity and will have to verify you again. Restore your 24 words instead if you have them.</string>
     <string name="restore">Restore</string>
     <string name="add_contact">Add a contact</string>
     <string name="my_code">My code</string>

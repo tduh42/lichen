@@ -5,6 +5,10 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.view.WindowManager
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -197,7 +201,7 @@ private fun RecoveryPhraseSheet(model: AppModel, dismiss: () -> Unit) {
 /** Restore an identity from its 24 words. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun RestoreSheet(model: AppModel, dismiss: () -> Unit) {
+internal fun RestoreSheet(model: AppModel, dismiss: () -> Unit) {
     val t = lichen
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
@@ -224,5 +228,61 @@ private fun RestoreSheet(model: AppModel, dismiss: () -> Unit) {
                 if (error == null) dismiss()
             }
         }
+    }
+}
+
+/**
+ * Our identity cannot be read or saved (the Keystore is unavailable, or holds something else):
+ * nothing is replaced on its own. Retry, restore from the 24 words, or, when what is stored is
+ * unreadable for good, start a new identity deliberately.
+ */
+@Composable
+fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
+    val t = lichen
+    var restoring by remember { mutableStateOf(false) }
+    var confirmNew by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Column(
+        Modifier.fillMaxSize().background(t.bg).windowInsetsPadding(WindowInsets.systemBars).padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Spacer(Modifier.weight(1f))
+        Icon(Icons.Outlined.Key, null, tint = t.sos, modifier = Modifier.size(40.dp))
+        Text(stringResource(R.string.identity_problem_title), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = t.tx)
+        Text(
+            stringResource(
+                when (problem) {
+                    AppModel.IdentityProblem.UNAVAILABLE -> R.string.identity_problem_unavailable
+                    AppModel.IdentityProblem.CORRUPT -> R.string.identity_problem_corrupt
+                    AppModel.IdentityProblem.NOT_SAVED -> R.string.identity_problem_not_saved
+                },
+            ),
+            fontSize = 15.sp, color = t.tx2,
+        )
+        error?.let { Banner(BannerKind.SOS, it) }
+        Spacer(Modifier.weight(1f))
+        PrimaryButton(stringResource(R.string.try_again), Modifier.fillMaxWidth()) { model.retryIdentity() }
+        SecondaryButton(stringResource(R.string.restore_from_words)) { restoring = true }
+        if (problem == AppModel.IdentityProblem.CORRUPT) {
+            TextButton({ confirmNew = true }, Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.new_identity), color = t.sos, fontSize = 15.sp)
+            }
+        }
+    }
+    if (restoring) RestoreSheet(model) { restoring = false }
+    if (confirmNew) {
+        AlertDialog(
+            onDismissRequest = { confirmNew = false },
+            title = { Text(stringResource(R.string.new_identity_confirm)) },
+            text = { Text(stringResource(R.string.new_identity_warning)) },
+            confirmButton = {
+                TextButton({
+                    confirmNew = false
+                    error = model.startNewIdentity()
+                }) { Text(stringResource(R.string.new_identity), color = t.sos) }
+            },
+            dismissButton = { TextButton({ confirmNew = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
     }
 }

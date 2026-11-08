@@ -96,6 +96,19 @@ final class AppModel {
     }
 
     @ObservationIgnored private(set) var core: LichenCore
+    /// Why our identity cannot be used: the app shows `IdentityProblemView` instead, with a
+    /// throwaway core that stores nothing and never connects.
+    var identityProblem: IdentityProblem?
+    @ObservationIgnored private var identitySeed: Data?
+
+    enum IdentityProblem: Error, Equatable {
+        /// The Keychain cannot be read now: nothing was changed, try again.
+        case unavailable
+        /// What is stored is not an identity.
+        case corrupt
+        /// A first identity could not be saved.
+        case notSaved
+    }
     @ObservationIgnored let companion = Companion()
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var demo: DemoNetwork?
@@ -111,7 +124,14 @@ final class AppModel {
     private static let nodeKeyDefault = "lichen.nodeKey"
 
     init() {
-        core = Self.makeCore(seed: Keychain.identitySeed())
+        switch Self.loadIdentity() {
+        case let .success(seed):
+            identitySeed = seed
+            core = Self.makeCore(seed: seed)
+        case let .failure(problem):
+            identityProblem = problem
+            core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
+        }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
         conversations = core.conversations()
@@ -142,8 +162,74 @@ final class AppModel {
         default: break
         }
         debugScreen = args.string(forKey: "screen")
+        // -identityProblem unavailable|corrupt|notSaved: the identity failure screen.
+        switch args.string(forKey: "identityProblem") {
+        case "unavailable": identityProblem = .unavailable
+        case "corrupt": identityProblem = .corrupt
+        case "notSaved": identityProblem = .notSaved
+        default: break
+        }
 
         #endif
+    }
+
+    /// The stored identity, or a new one on a first launch; never a silent replacement of an
+    /// identity that cannot be read.
+    private static func loadIdentity() -> Result<Data, IdentityProblem> {
+        switch Keychain.readIdentity() {
+        case let .found(seed):
+            return .success(seed)
+        case .absent:
+            guard let seed = try? Keychain.createIdentitySeed() else { return .failure(.notSaved) }
+            return .success(seed)
+        case .unavailable:
+            return .failure(.unavailable)
+        case .corrupt:
+            return .failure(.corrupt)
+        }
+    }
+
+    /// Reads the identity again (`IdentityProblemView`); the app starts with it once it is back.
+    func retryIdentity() {
+        switch Self.loadIdentity() {
+        case let .success(seed): useIdentity(seed)
+        case let .failure(problem): identityProblem = problem
+        }
+    }
+
+    /// A new identity, chosen by the user when the stored one is unreadable for good: contacts
+    /// will have to verify it again.
+    func startNewIdentity() -> String? {
+        do {
+            let seed = try Keychain.secureRandom(32)
+            try Keychain.replaceIdentitySeed(seed)
+            phraseBackedUp = false
+            useIdentity(seed)
+            return nil
+        } catch {
+            return String(localized: "The identity could not be saved on this phone. Try again.")
+        }
+    }
+
+    /// The core restarts with `seed`, our identity from now on.
+    private func useIdentity(_ seed: Data) {
+        if isDemo {
+            leaveDemo()
+            companionState = companion.state
+        }
+        resetState()
+        identitySeed = seed
+        identityProblem = nil
+        core = Self.makeCore(seed: seed)
+        contacts = core.contacts().filter(\.person)
+        groups = core.groups()
+        conversations = core.conversations()
+        shares = core.shares()
+        positions = core.positions(nowMs: now())
+        if isConnected { core.connect(nowMs: now()) }
+        restartBridge()
+        updateLocator()
+        pump()
     }
 
     private static func makeCore(seed: Data, persistent: Bool = true) -> LichenCore {
@@ -191,16 +277,27 @@ final class AppModel {
     }
 
     func stopDemo() {
+        leaveDemo()
+        resetState()
+        switch Self.loadIdentity() {
+        case let .success(seed):
+            identitySeed = seed
+            core = Self.makeCore(seed: seed)
+        case let .failure(problem):
+            identityProblem = problem
+            core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
+        }
+        companionState = companion.state
+        shares = core.shares()
+        updateLocator()
+    }
+
+    private func leaveDemo() {
         demoTimer?.invalidate()
         demoFixTimer?.invalidate()
         demoFixTimer = nil
         demo = nil
         isDemo = false
-        resetState()
-        core = Self.makeCore(seed: Keychain.identitySeed())
-        companionState = companion.state
-        shares = core.shares()
-        updateLocator()
     }
 
     private func demoStep() {
@@ -247,7 +344,8 @@ final class AppModel {
     private func companionChanged(_ s: Companion.State) {
         if isDemo { return }
         companionState = s
-        if case .connected = s {
+        // No radio session with a throwaway identity (`identityProblem`).
+        if case .connected = s, identityProblem == nil {
             core.connect(nowMs: now())
             pump()
         }
@@ -647,7 +745,11 @@ final class AppModel {
 
     /// This phone's bridge, keyed from the identity: iroh and Tor as the settings say.
     func startBridge() {
-        bridge = try? LichenBridge(identitySeed: Keychain.identitySeed(), dir: Self.folder("offers")?.path)
+        guard let identitySeed else {
+            bridge = nil
+            return
+        }
+        bridge = try? LichenBridge(identitySeed: identitySeed, dir: Self.folder("offers")?.path)
         applyIroh()
         applyTor()
     }
@@ -904,18 +1006,13 @@ final class AppModel {
     func restore(words: [String]) -> String? {
         do {
             let seed = try seedFromPhrase(words: words)
-            Keychain.setIdentitySeed(seed)
-            if isDemo { stopDemo() }
-            resetState()
-            core = Self.makeCore(seed: seed)
-            contacts = core.contacts().filter(\.person)
-            groups = core.groups()
-            conversations = core.conversations()
+            // Saved and read back before the app switches to it.
+            try Keychain.replaceIdentitySeed(seed)
             phraseBackedUp = true
-            if isConnected { core.connect(nowMs: now()) }
-            restartBridge()
-            pump()
+            useIdentity(seed)
             return nil
+        } catch is IdentityWriteError {
+            return String(localized: "The identity could not be saved on this phone. Try again.")
         } catch let e as LichenError {
             return e.display
         } catch {
