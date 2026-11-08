@@ -16,7 +16,9 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    // Not lazy: at most 200 messages, and exact heights let the view open on the
+                    // last one (a lazy stack estimates photos and voice notes, and lands short).
+                    VStack(spacing: 10) {
                         sessionLine
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
                             // A separator when the day changes: "Today", "Yesterday", the date.
@@ -29,14 +31,22 @@ struct ChatView: View {
                             FailureBanner(message: failed) { error = model.resend(failed) }
                                 .padding(.top, 4)
                         }
+                        Color.clear.frame(height: 1).id(Self.bottom)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
-                // Opens on the latest messages; later ones scroll into view.
                 .defaultScrollAnchor(.bottom)
+                // Opens on the latest messages, once the history is loaded (onAppear) and again
+                // once images are laid out; later ones scroll into view.
+                .task(id: chat) {
+                    await Task.yield()
+                    proxy.scrollTo(Self.bottom, anchor: .bottom)
+                    try? await Task.sleep(for: .milliseconds(250))
+                    proxy.scrollTo(Self.bottom, anchor: .bottom)
+                }
                 .onChange(of: messages.count) {
-                    if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
                     model.markRead(chat)
                 }
             }
@@ -98,6 +108,9 @@ struct ChatView: View {
     }
 
     private var messages: [StoredMessage] { model.chats[chat] ?? [] }
+
+    /// The end of the conversation, to scroll to.
+    private static let bottom = "bottom"
 
     /// The last message we sent, when it failed: a banner offers to send it again.
     private var lastFailure: StoredMessage? {
