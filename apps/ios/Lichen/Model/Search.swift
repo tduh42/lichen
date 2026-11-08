@@ -235,6 +235,17 @@ extension SearchEstimate {
         return UIImage(cgImage: image)
     }
 
+    /// Whether a point lies inside the 68 % ellipse.
+    func contains68(lat p: Double, lon q: Double) -> Bool {
+        let th = azimuthDeg * .pi / 180
+        let east = (q - lon) * 111_320 * max(0.01, cos(lat * .pi / 180))
+        let north = (p - lat) * 111_320
+        let u = east * sin(th) + north * cos(th)
+        let v = east * cos(th) - north * sin(th)
+        let a = max(major68M, 1), b = max(minor68M, 1)
+        return (u / a) * (u / a) + (v / b) * (v / b) <= 1
+    }
+
     /// The ellipse with semi-axes `major`, `minor` (metres) around the estimate.
     func ellipse(major: Double, minor: Double) -> [CLLocationCoordinate2D] {
         let th = azimuthDeg * .pi / 180

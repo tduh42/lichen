@@ -1,6 +1,9 @@
 package com.tduhamel.lichen.ui
 
+import android.Manifest
 import android.view.HapticFeedbackConstants
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -29,7 +32,9 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,9 +61,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tduhamel.lichen.R
-import com.tduhamel.lichen.core.PeerPosition
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.SosIncident
+import com.tduhamel.lichen.model.search
+import com.tduhamel.lichen.model.searchGroup
+import com.tduhamel.lichen.model.startSearch
+import com.tduhamel.lichen.model.unhex
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -96,6 +105,7 @@ fun SosScreen(model: AppModel, close: () -> Unit) {
                 }
             }
             PrimaryButton(stringResource(R.string.stop_sos)) { model.changeSos(false) }
+            SosStatusBanner(model)
         } else {
             SosHoldButton { model.changeSos(true) }
         }
@@ -103,6 +113,35 @@ fun SosScreen(model: AppModel, close: () -> Unit) {
         SosCard(stringResource(R.string.to_whom), recipients(model))
         SosCard(stringResource(R.string.how), stringResource(R.string.how_detail))
         Text(stringResource(R.string.sos_note), fontSize = 12.sp, color = t.tx2, textAlign = TextAlign.Center)
+    }
+}
+
+/** What the SOS really does now: never a delivery claim (nobody acknowledges a flood). */
+@Composable
+private fun SosStatusBanner(model: AppModel) {
+    val st = model.sosStatus
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
+    when {
+        !model.isConnected -> Banner(BannerKind.WARN, stringResource(R.string.radio_disconnected), stringResource(R.string.sos_no_radio))
+        st?.recipients == 0u -> Banner(BannerKind.WARN, stringResource(R.string.sos_nobody), stringResource(R.string.sos_nobody_note))
+        st?.beaconOnly == true -> Banner(
+            BannerKind.WARN,
+            stringResource(if (model.locationDenied) R.string.location_off else R.string.waiting_gps),
+            stringResource(R.string.sos_beacons_meanwhile),
+            if (model.locationDenied) {
+                stringResource(R.string.allow) to {
+                    askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                }
+            } else {
+                null
+            },
+        )
+        st?.lastQueuedS != null -> Banner(
+            BannerKind.OK,
+            stringResource(R.string.sos_sent_to, ago(st.lastQueuedS!!), st.recipients.toInt()),
+            stringResource(R.string.sos_sent_note),
+        )
+        else -> Banner(BannerKind.OK, stringResource(R.string.sos_starting), stringResource(R.string.sos_starting_note))
     }
 }
 
@@ -174,12 +213,25 @@ fun SosHoldButton(holdSeconds: Float = 3f, fire: () -> Unit) {
     }
 }
 
-/** Someone sent an SOS: full-screen alert (mockup `sos-recu`). */
+/** Someone sent an SOS: full-screen alert (mockup `sos-recu`), live while it is up. */
 @Composable
-fun SosReceivedDialog(model: AppModel, sos: PeerPosition, search: () -> Unit, reply: () -> Unit, map: () -> Unit) {
+fun SosReceivedDialog(model: AppModel, from: String, search: () -> Unit, reply: () -> Unit, map: () -> Unit) {
     val t = lichen
+    val sos = model.incidents[from] ?: return
+    var error by remember { mutableStateOf<String?>(null) }
+    var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5_000)
+            clock = System.currentTimeMillis()
+        }
+    }
     // Our position, for the distance and bearing.
-    LaunchedEffect(Unit) { model.mapVisible = true }
+    DisposableEffect(Unit) {
+        model.needsLocation("sosAlert", true)
+        onDispose { model.needsLocation("sosAlert", false) }
+    }
+    val node = from.unhex()
     Dialog(onDismissRequest = { model.sosAlert = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
@@ -194,44 +246,66 @@ fun SosReceivedDialog(model: AppModel, sos: PeerPosition, search: () -> Unit, re
             Box(Modifier.padding(top = 24.dp).size(72.dp).background(t.sosBtn, CircleShape), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.WarningAmber, null, tint = Color.White, modifier = Modifier.size(32.dp))
             }
-            Text(stringResource(R.string.sos_alert_ago, ago(sos.atS)), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.sosFg)
-            Text(model.name(sos.from), fontSize = 40.sp, fontWeight = FontWeight.Bold, color = t.tx, textAlign = TextAlign.Center)
+            @Suppress("UNUSED_EXPRESSION") clock
+            Text(stringResource(R.string.sos_alert_ago, ago((sos.started / 1000).toULong())), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.sosFg)
+            Text(model.name(node), fontSize = 40.sp, fontWeight = FontWeight.Bold, color = t.tx, textAlign = TextAlign.Center)
             val via = sos.group?.let { gid -> model.group(ChatId.group(gid))?.name ?: stringResource(R.string.group) }
             Text(
                 if (via != null) stringResource(R.string.received_group, via) else stringResource(R.string.received_direct),
                 fontSize = 15.sp, color = t.tx2,
             )
             CardList {
-                CardRow(
-                    stringResource(R.string.last_gps),
-                    "${ago(sos.atS)} · ±${sos.radiusM.roundToInt()} m · ${"%.4f, %.4f".format(sos.lat, sos.lon)}",
-                )
-                CardDivider()
-                val d = model.distanceTo(sos)
-                if (d != null) {
-                    CardRow(stringResource(R.string.from_you)) {
-                        Text("${distanceText(d.first)} · ${d.second.roundToInt()}°", style = figure(18.sp), color = t.tx)
+                val p = sos.position
+                if (p != null) {
+                    CardRow(
+                        stringResource(R.string.last_gps),
+                        "${ago(p.atS)} · ±${p.radiusM.roundToInt()} m · ${"%.4f, %.4f".format(p.lat, p.lon)}",
+                    )
+                    CardDivider()
+                    val d = model.distanceTo(p)
+                    if (d != null) {
+                        CardRow(stringResource(R.string.from_you)) {
+                            Text("${distanceText(d.first)} · ${d.second.roundToInt()}°", style = figure(18.sp), color = t.tx)
+                        }
+                    } else {
+                        CardRow(stringResource(R.string.from_you), stringResource(R.string.position_unknown)) {
+                            Badge(stringResource(R.string.unknown), t.warnBg, t.warnFg)
+                        }
                     }
                 } else {
-                    CardRow(stringResource(R.string.from_you), stringResource(R.string.position_unknown)) {
-                        Badge(stringResource(R.string.unknown), t.warnBg, t.warnFg)
-                    }
+                    CardRow(stringResource(R.string.no_gps), stringResource(R.string.no_gps_note))
                 }
                 CardDivider()
-                CardRow(stringResource(R.string.beacon), stringResource(R.string.beacon_note)) {
-                    Badge(stringResource(R.string.active), t.loraBg, t.loraFg)
+                val heard = stringResource(R.string.heard_cap, ago((sos.lastHeard / 1000).toULong())) +
+                    (sos.battery?.let { stringResource(R.string.battery_suffix, it.toInt()) } ?: "")
+                CardRow(stringResource(R.string.beacon), heard) {
+                    when (sos.state()) {
+                        SosIncident.State.ACTIVE -> Badge(stringResource(R.string.active), t.loraBg, t.loraFg)
+                        SosIncident.State.STALE -> Badge(stringResource(R.string.silent), t.warnBg, t.warnFg)
+                        SosIncident.State.ENDED -> Badge(stringResource(R.string.ended), t.okBg, t.okFg)
+                    }
                 }
             }
-            PrimaryButton(stringResource(R.string.start_search)) {
+            error?.let { Banner(BannerKind.WARN, it) }
+            val searching = model.search(from) != null
+            PrimaryButton(stringResource(if (searching) R.string.follow_search else R.string.start_search)) {
+                if (!searching && model.searchGroup(from) != null) {
+                    val e = model.startSearch(node)
+                    if (e != null) {
+                        error = e
+                        return@PrimaryButton
+                    }
+                }
+                model.searchTarget = from
                 model.sosAlert = null
                 search()
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecondaryButton(stringResource(R.string.reply), Modifier.weight(1f), enabled = model.contact(sos.from) != null) {
+                SecondaryButton(stringResource(R.string.reply), Modifier.weight(1f), enabled = model.contact(node) != null) {
                     model.sosAlert = null
                     reply()
                 }
-                SecondaryButton(stringResource(R.string.show_on_map), Modifier.weight(1f)) {
+                SecondaryButton(stringResource(R.string.show_on_map), Modifier.weight(1f), enabled = sos.position != null) {
                     model.sosAlert = null
                     map()
                 }

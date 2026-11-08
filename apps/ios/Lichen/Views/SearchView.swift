@@ -181,14 +181,14 @@ struct SearchView: View {
             ?? incident?.position.map { ($0.lat, $0.lon, $0.radiusM) }
             ?? search?.lastFix.map { ($0.lat, $0.lon, $0.radiusM) }
         let d = goal.flatMap { model.distanceTo(lat: $0.lat, lon: $0.lon) }
-        // Inside the likely zone (a ring around us, two places), there is no direction to give.
-        let unknownWay = estimate != nil && (d.map { $0.meters <= (goal?.radius ?? 0) } ?? false)
+        // Inside the 68 % ellipse (a ring around us, two places), there is no direction to give.
+        let unknownWay = estimate.map { e in model.myFix.map { e.contains68(lat: $0.lat, lon: $0.lon) } ?? false } ?? false
         let relative = d.flatMap { d in model.heading.map { (d.bearing - $0 + 360).truncatingRemainder(dividingBy: 360) } }
         return HStack(spacing: 16) {
-            Image(systemName: unknownWay ? "questionmark" : "location.north.fill")
+            Image(systemName: unknownWay || goal == nil ? "questionmark" : "location.north.fill")
                 .font(.system(size: 30))
                 .foregroundStyle(Theme.sos)
-                .rotationEffect(.degrees(unknownWay ? 0 : relative ?? d?.bearing ?? 0))
+                .rotationEffect(.degrees(unknownWay || goal == nil ? 0 : relative ?? d?.bearing ?? 0))
                 .frame(width: 64, height: 64)
                 .background(Theme.s2, in: Circle())
                 .accessibilityHidden(true)

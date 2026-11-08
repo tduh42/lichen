@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +43,10 @@ import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.GroupInfo
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.searchConsent
+import com.tduhamel.lichen.model.setSearchConsent
+import com.tduhamel.lichen.model.startSearch
 
 /** A group: members and their keys, diffusion (mockup `groupe`). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +56,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
     val g = model.group(chat)
     var removing by remember { mutableStateOf<ContactInfo?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var consent by remember(g?.gid?.hex()) { mutableStateOf(g?.let { model.searchConsent(it.gid) } ?: false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
@@ -75,12 +82,27 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
                 CardList {
                     g.members.forEachIndexed { i, m ->
                         if (i > 0) CardDivider(inset = 68.dp)
-                        MemberRow(model, m, g, removable = isAdmin) { removing = m }
+                        MemberRow(model, m, g, removable = isAdmin, remove = { removing = m }) {
+                            // Search for a member: the Search tab opens on them.
+                            error = model.startSearch(m.key)
+                            if (error == null) model.openSearch = m.key.hex()
+                        }
                     }
                 }
             }
             if (isAdmin) {
                 item { Text(stringResource(R.string.remove_hint), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp)) }
+            }
+            item { SectionLabel(stringResource(R.string.location), Modifier.padding(top = 10.dp)) }
+            item {
+                CardList {
+                    CardRow(stringResource(R.string.let_group_locate), stringResource(R.string.let_group_locate_note)) {
+                        LichenSwitch(consent, {
+                            consent = it
+                            model.setSearchConsent(g.gid, it)
+                        })
+                    }
+                }
             }
             item { SectionLabel(stringResource(R.string.diffusion), Modifier.padding(top = 10.dp)) }
             item {
@@ -133,15 +155,22 @@ private fun KeysBanner(g: GroupInfo) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: Boolean, remove: () -> Unit) {
+private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: Boolean, remove: () -> Unit, search: () -> Unit) {
     val t = lichen
     val me = model.nodeKey?.contentEquals(m.key) == true
     val admin = m.key.contentEquals(g.admin)
     val name = if (me) stringResource(R.string.you) else m.name
+    var menu by remember { mutableStateOf(false) }
+    DropdownMenu(menu, { menu = false }) {
+        DropdownMenuItem({ Text(stringResource(R.string.search_for, m.name)) }, {
+            menu = false
+            search()
+        })
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = {}, onLongClick = { if (removable && !me) remove() })
+            .combinedClickable(onClick = { if (!me) menu = true }, onLongClick = { if (removable && !me) remove() })
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

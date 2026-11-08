@@ -325,6 +325,16 @@ fun StatusBanners(model: AppModel, pair: () -> Unit) {
                 stringResource(R.string.connect) to pair,
             )
         }
+        // Someone is searching for us (protocol.md §11): our phone answers their pings.
+        if (model.searchedBy.isNotEmpty()) {
+            val names = model.searchedBy.map { model.name(it.by) }.distinct().joinToString(", ")
+            val power = model.loweredPower
+            Banner(
+                BannerKind.SOS,
+                stringResource(R.string.searching_for_you, names),
+                if (power != null) stringResource(R.string.power_lowered, power.toInt()) else stringResource(R.string.searched_note),
+            )
+        }
         if (model.isConnected && model.airtimeLeftMs < 10_000uL) {
             Banner(BannerKind.LORA, stringResource(R.string.budget_spent), stringResource(R.string.budget_spent_note))
         }

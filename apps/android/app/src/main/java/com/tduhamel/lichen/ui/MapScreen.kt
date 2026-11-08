@@ -124,12 +124,12 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
     var layers by remember { mutableStateOf(false) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
     DisposableEffect(Unit) {
-        model.mapVisible = true
+        model.needsLocation("map", true)
         model.refreshPositions()
         if (!model.isDemo && model.locationDenied) {
             askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
-        onDispose { model.mapVisible = false }
+        onDispose { model.needsLocation("map", false) }
     }
     LaunchedEffect(Unit) {
         while (true) {

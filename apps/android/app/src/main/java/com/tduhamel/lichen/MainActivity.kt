@@ -70,6 +70,8 @@ class MainActivity : ComponentActivity() {
     /** A notification's conversation, or a radio plugged in over USB. */
     private fun handle(intent: Intent?) {
         intent?.getStringExtra(Notifications.EXTRA_CHAT)?.let(ChatId::fromRoute)?.let { model.openChat = it }
+        // An SOS notification opens its search.
+        intent?.getStringExtra(Notifications.EXTRA_SOS)?.let { model.openSearch = it }
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)?.let { model.connectUsb(it) }
         }
@@ -91,6 +93,7 @@ class MainActivity : ComponentActivity() {
             media = e.getBoolean("media"),
             share = e.getString("share"),
             sosDemo = e.getBoolean("sosdemo"),
+            sosDemo2 = e.getBoolean("sosdemo2"),
             identityProblem = e.getString("identityProblem"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {

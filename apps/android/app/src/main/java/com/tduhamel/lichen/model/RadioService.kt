@@ -65,6 +65,7 @@ object Notifications {
     private const val MESSAGES = "messages"
     private const val SOS = "sos"
     const val EXTRA_CHAT = "chat"
+    const val EXTRA_SOS = "sos"
 
     fun channels(context: Context) {
         val m = context.getSystemService(NotificationManager::class.java) ?: return
@@ -83,20 +84,28 @@ object Notifications {
     }
 
     /** An SOS heard: on its own channel, as an alarm. */
-    fun sos(context: Context, chat: ChatId, name: String) {
+    fun sos(context: Context, sender: String, name: String, noGps: Boolean) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
         val n = NotificationCompat.Builder(context, SOS)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(context.getString(R.string.sos_notification_title, name))
-            .setContentText(context.getString(R.string.sos_notification_text))
+            .setContentText(context.getString(if (noGps) R.string.sos_notification_no_gps else R.string.sos_notification_text))
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true)
-            .setContentIntent(open(context, null))
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    context, ("sos" + sender).hashCode(),
+                    Intent(context, MainActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        .putExtra(EXTRA_SOS, sender),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
             .build()
-        NotificationManagerCompat.from(context).notify(("sos" + chat.hex).hashCode(), n)
+        NotificationManagerCompat.from(context).notify(("sos" + sender).hashCode(), n)
     }
 
     private fun open(context: Context, chat: ChatId?): PendingIntent {

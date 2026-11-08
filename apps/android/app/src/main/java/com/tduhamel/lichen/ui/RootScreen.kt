@@ -39,6 +39,8 @@ import com.tduhamel.lichen.R
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.AppModel.Tab
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.activeIncidents
+import com.tduhamel.lichen.model.unhex
 
 private val TabRoutes = mapOf(
     Tab.MESSAGES to "messages",
@@ -84,17 +86,24 @@ fun RootScreen(model: AppModel) {
         bottomBar = { if (onTab) TabBar(model, nav, route) },
     ) { padding ->
         // Someone sent an SOS: a full-screen alert, wherever we are.
-        model.sosAlert?.let { sos ->
-            fun tab(r: String) = nav.navigate(r) {
-                popUpTo(nav.graph.startDestinationId) { saveState = true }
-                launchSingleTop = true
-            }
+        fun tab(r: String) = nav.navigate(r) {
+            popUpTo(nav.graph.startDestinationId) { saveState = true }
+            launchSingleTop = true
+        }
+        model.sosAlert?.let { from ->
             SosReceivedDialog(
-                model, sos,
+                model, from,
                 search = { tab("search") },
-                reply = { model.openChat = ChatId.contact(sos.from) },
+                reply = { model.openChat = ChatId.contact(from.unhex()) },
                 map = { tab("map") },
             )
+        }
+        // An SOS notification, or the debug extra `screen search`: the Search tab on them.
+        LaunchedEffect(model.openSearch) {
+            val who = model.openSearch ?: return@LaunchedEffect
+            model.openSearch = null
+            model.searchTarget = who
+            tab("search")
         }
         NavHost(
             nav,
@@ -160,7 +169,7 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
                         when (tab) {
                             Tab.MESSAGES -> model.totalUnread
                             // A search to follow.
-                            Tab.SEARCH -> if (model.incomingSos != null) 1 else 0
+                            Tab.SEARCH -> model.activeIncidents.size
                             else -> 0
                         },
                     )

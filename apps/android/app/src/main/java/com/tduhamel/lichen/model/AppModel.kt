@@ -30,8 +30,11 @@ import com.tduhamel.lichen.core.Provider
 import com.tduhamel.lichen.core.prepareVoice
 import com.tduhamel.lichen.core.LocationFix
 import com.tduhamel.lichen.core.PeerPosition
+import com.tduhamel.lichen.core.SearchState
+import com.tduhamel.lichen.core.SearchedBy
 import com.tduhamel.lichen.core.ShareInfo
 import com.tduhamel.lichen.core.SharePrecision
+import com.tduhamel.lichen.core.SosStatus
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sqrt
@@ -52,7 +55,7 @@ enum class Appearance { SYSTEM, DARK, LIGHT }
 
 /** The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
  * The Kotlin counterpart of the iOS app's `AppModel`; everything runs on the main thread. */
-class AppModel(private val app: Application) {
+class AppModel(val app: Application) {
     enum class Tab { MESSAGES, MAP, SEARCH, SETTINGS }
 
     /** The link to the radio, as the radio card shows it. */
@@ -86,6 +89,8 @@ class AppModel(private val app: Application) {
         val sosDemo: Boolean = false,
         /** The welcome screens: shown (true), skipped (false), or as saved (null). */
         val onboarding: Boolean? = null,
+        /** Camille in SOS too, for five minutes (two incidents at once). */
+        val sosDemo2: Boolean = false,
         /** The identity failure screen: `unavailable`, `corrupt` or `notsaved`. */
         val identityProblem: String? = null,
     )
@@ -172,23 +177,49 @@ class AppModel(private val app: Application) {
     /** The location permission is not granted. */
     var locationDenied by mutableStateOf(false)
 
-    /** The latest SOS heard, until it ends (the Search tab follows it). */
-    var incomingSos by mutableStateOf<PeerPosition?>(null)
+    /** SOS incidents heard, by sender (hex): one alert each (Search.kt). */
+    var incidents by mutableStateOf(mapOf<String, SosIncident>())
 
-    /** The full-screen alert for an SOS just heard, until dismissed. */
-    var sosAlert by mutableStateOf<PeerPosition?>(null)
+    /** The sender (hex) whose full-screen SOS alert is up, until dismissed. */
+    var sosAlert by mutableStateOf<String?>(null)
 
-    /** Every SOS position heard, newest last (the Search tab's measurements). */
-    var sosLog by mutableStateOf(listOf<PeerPosition>())
+    /** The person (hex) the Search tab shows; `openSearch` asks the tab to open on them. */
+    var searchTarget by mutableStateOf<String?>(null)
+    var openSearch by mutableStateOf<String?>(null)
 
-    /** The map or the search is on screen: our position is needed even without a share. */
-    var mapVisible = false
-        set(value) {
-            if (field != value) {
-                field = value
-                updateLocator()
-            }
+    /** Searches we run (protocol.md §11); `searchVersion` changes with their estimates. */
+    var searches by mutableStateOf(listOf<SearchState>())
+    var searchVersion by mutableStateOf(0)
+
+    /** Members searching for us, and our radio's power while a search holds it lowered. */
+    var searchedBy by mutableStateOf(listOf<SearchedBy>())
+    var loweredPower by mutableStateOf<Byte?>(null)
+
+    /** What our SOS is doing. */
+    var sosStatus by mutableStateOf<SosStatus?>(null)
+
+    /** The compass heading (degrees from true north) while the Search tab is on screen. */
+    var heading by mutableStateOf<Double?>(null)
+    private val compass = Compass(app) { heading = it }
+    internal var lastBatteryReport = 0L
+
+    /** Screens that need our position while shown (map, search, SOS alert). */
+    private val locationUsers = mutableSetOf<String>()
+
+    fun needsLocation(who: String, on: Boolean) {
+        val changed = if (on) locationUsers.add(who) else locationUsers.remove(who)
+        if (changed) updateLocator()
+    }
+
+    /** The compass, while the Search tab is on screen. */
+    fun useHeading(on: Boolean) {
+        if (on && compass.available) {
+            compass.start()
+        } else {
+            compass.stop()
+            heading = null
         }
+    }
     private val locator = Locator(app) { gotFix(it) }
     private var lastFed: ULong? = null
     private var demoFixJob: Job? = null
@@ -399,6 +430,10 @@ class AppModel(private val app: Application) {
         demo = DemoNetwork().also { net ->
             // Camille offers her photo over Tor too when Tor is on (her own onion service).
             if (torEnabled) runCatching { net.camilleOverTor(folder("demo-tor-state").path, folder("demo-tor-cache").path) }
+            // Debug `sosdemo`: Julien in SOS without GPS once the group is set up (a real
+            // search); `sosdemo2`: Camille too, for five minutes.
+            if (debug.sosDemo || debug.sosDemo2) net.julienSos()
+            if (debug.sosDemo2) net.camilleSos(240uL, 300uL)
         }
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")
@@ -452,9 +487,13 @@ class AppModel(private val app: Application) {
         shares = emptyList()
         positions = emptyList()
         sos = false
-        incomingSos = null
+        incidents = emptyMap()
         sosAlert = null
-        sosLog = emptyList()
+        searchTarget = null
+        searches = emptyList()
+        searchedBy = emptyList()
+        loweredPower = null
+        sosStatus = null
         myFix = null
         lastFed = null
     }
@@ -562,6 +601,9 @@ class AppModel(private val app: Application) {
         val g = core.groups()
         if (signature(g) != signature(groups)) groups = g
         budget = core.budget(t)
+        val st = core.sosStatus(t)
+        if (st != sosStatus) sosStatus = st
+        if (searches.isNotEmpty() || sos) reportBattery()
         wake?.cancel()
         val next = core.nextWakeup() ?: return
         val wait = maxOf(20L, next.toLong() - t.toLong())
@@ -626,18 +668,10 @@ class AppModel(private val app: Application) {
             is LichenEvent.Location -> {
                 positions = core.positions(now())
                 val p = e.position
-                if (p.sos && !e.end) {
-                    if (incomingSos?.from?.contentEquals(p.from) != true) {
-                        sosAlert = p
-                        Notifications.sos(app, ChatId.contact(p.from), name(p.from))
-                    }
-                    incomingSos = p
-                    sosLog = sosLog + p
-                } else if (incomingSos?.from?.contentEquals(p.from) == true) {
-                    incomingSos = null
-                    sosAlert = null
-                }
+                if (p.sos && !e.end) heardSos(p.from, p.group, p, null) else endSos(p.from)
             }
+            // An SOS without GPS shows here (protocol.md §11.1).
+            is LichenEvent.Beacon -> if (e.sos) heardSos(e.from, e.gid, null, e.battery) else endSos(e.from)
             LichenEvent.SharesChanged -> {
                 shares = core.shares()
                 updateLocator()
@@ -647,9 +681,14 @@ class AppModel(private val app: Application) {
                 // A member asks where we are and we answer (SOS or this group's consent, §11).
                 val chat = ChatId.group(e.gid)
                 notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)))
+                searchedBy = core.searchedBy(now())
             }
-            // The search screen reads the estimate itself; lc-ffi keeps the power to restore.
-            is LichenEvent.SearchUpdated, is LichenEvent.TxPower -> Unit
+            is LichenEvent.SearchUpdated -> {
+                searchVersion++
+                refreshSearches()
+            }
+            // lc-ffi keeps the power to restore; we show it while it is lowered.
+            is LichenEvent.TxPower -> loweredPower = if (e.previous == null) null else e.dbm
         }
     }
 
@@ -659,22 +698,12 @@ class AppModel(private val app: Application) {
         if (!(inForeground && visibleChat == chat)) Notifications.message(app, chat, title, text)
     }
 
-    /** Debug extras `share` (100 m with that contact) and `sosDemo` (an SOS from Julien). */
+    /** Debug extra `share`: 100 m with that contact. */
     private fun debugLocation() {
         debug.share?.let { name ->
             val c = contacts.firstOrNull { it.name == name } ?: return@let
             debug = debug.copy(share = null)
             setShare(ChatId.contact(c.key), SharePrecision.M100, 1.25)
-        }
-        if (debug.sosDemo && incomingSos == null) {
-            val j = contacts.firstOrNull { it.name == "Julien" } ?: return
-            val p = PeerPosition(
-                j.key, null, 44.9065, 5.4745, 1_620.0, 6.0, null, null,
-                (System.currentTimeMillis() / 1000 - 40).toULong(), true, false,
-            )
-            incomingSos = p
-            sosAlert = if (debugScreen == "search") null else p
-            sosLog = listOf(p)
         }
     }
 
@@ -785,8 +814,9 @@ class AppModel(private val app: Application) {
     /** Location is needed while sharing, during SOS, or with the map on screen; in the demo it
      * comes from the simulated network. */
     fun updateLocator() {
-        val sharing = shares.isNotEmpty() || sos
-        val needed = sharing || mapVisible
+        // A search measures with our position: it must stay fresh, screen off too.
+        val sharing = shares.isNotEmpty() || sos || searches.isNotEmpty()
+        val needed = sharing || locationUsers.isNotEmpty()
         val d = demo
         if (d != null) {
             locator.stop()
@@ -819,6 +849,7 @@ class AppModel(private val app: Application) {
 
     /** A fix from the phone: shown at once, handed to the core every 5 seconds at most. */
     private fun gotFix(fix: LocationFix) {
+        if (myFix == null) compass.at(fix.lat, fix.lon, fix.altM ?: 0.0)
         myFix = fix
         val t = now()
         lastFed?.let { if (t < it + 5_000uL) return }
@@ -866,8 +897,15 @@ class AppModel(private val app: Application) {
     }
 
     /** Distance (m) and bearing (degrees from north) from us to `p`. */
-    fun distanceTo(p: PeerPosition): Pair<Double, Double>? {
+    fun distanceTo(p: PeerPosition): Pair<Double, Double>? = distanceTo(p.lat, p.lon)
+
+    /** Distance (m) and bearing (degrees from north) from us to a point. */
+    fun distanceTo(lat: Double, lon: Double): Pair<Double, Double>? {
         val me = myFix ?: return null
+        val p = object {
+            val lat = lat
+            val lon = lon
+        }
         val r = 6_371_000.0
         val la1 = Math.toRadians(me.lat)
         val lo1 = Math.toRadians(me.lon)
