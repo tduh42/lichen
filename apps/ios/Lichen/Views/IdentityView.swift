@@ -16,7 +16,7 @@ struct IdentityView: View {
                 Avatar(name: model.myName.isEmpty ? model.nodeName : model.myName, key: model.core.key() ?? Data(), size: 76)
                     .padding(.top, 8)
                 TextField("Your name", text: $model.myName)
-                    .font(.system(size: 18, weight: .medium))
+                    .font(.system(.body, weight: .medium))
                     .multilineTextAlignment(.center)
                     .padding(.vertical, 12)
                     .frame(maxWidth: 240)
@@ -26,12 +26,12 @@ struct IdentityView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Your key's fingerprint", systemImage: "key")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(.callout, weight: .semibold))
                         .labelStyle(TintedIconLabel(tint: Theme.ok))
                     KeyFingerprint(groups: model.fingerprint)
                         .frame(maxWidth: .infinity)
                     Text("An X25519 / Ed25519 key made on this phone. It never leaves it: your radio only carries the messages.")
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -92,17 +92,17 @@ struct RecoveryPhraseSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.")
-                        .font(.system(size: 15))
+                        .font(.system(.subheadline))
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
                         ForEach(Array(words.enumerated()), id: \.offset) { i, w in
                             HStack(spacing: 8) {
                                 Text("\(i + 1)")
-                                    .font(.system(size: 13).monospacedDigit())
+                                    .font(.system(.footnote).monospacedDigit())
                                     .foregroundStyle(Theme.tx2)
                                     .frame(width: 22, alignment: .trailing)
-                                Text(verbatim: w).font(.system(size: 17, weight: .semibold, design: .monospaced))
+                                Text(verbatim: w).font(.system(.body, design: .monospaced, weight: .semibold))
                             }
                             .padding(.vertical, 6)
                             .padding(.horizontal, 10)
@@ -146,11 +146,11 @@ struct RestoreSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Type the 24 words of the identity to restore, separated by spaces. It replaces the identity on this phone.")
-                    .font(.system(size: 14))
+                    .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $text)
-                    .font(.system(size: 16, design: .monospaced))
+                    .font(.system(.callout, design: .monospaced))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .scrollContentBackground(.hidden)
@@ -159,7 +159,7 @@ struct RestoreSheet: View {
                     .background(Theme.s1, in: RoundedRectangle(cornerRadius: 12))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
                 Text("\(words.count) / 24 words")
-                    .font(.system(size: 13).monospacedDigit())
+                    .font(.system(.footnote).monospacedDigit())
                     .foregroundStyle(words.count == 24 ? Theme.ok : Theme.tx2)
                 if let error {
                     Banner(kind: .sos, title: error)
@@ -201,10 +201,10 @@ struct IdentityProblemView: View {
                 .font(.system(size: 40, weight: .regular))
                 .foregroundStyle(Theme.sos)
             Text("Your identity can’t be used right now")
-                .font(.system(size: 24, weight: .bold))
+                .font(.system(.title2, weight: .bold))
                 .foregroundStyle(Theme.tx)
             Text(explanation)
-                .font(.system(size: 15))
+                .font(.system(.subheadline))
                 .foregroundStyle(Theme.tx2)
                 .fixedSize(horizontal: false, vertical: true)
             if let error {

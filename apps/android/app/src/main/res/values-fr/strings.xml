@@ -424,7 +424,7 @@
     <string name="no_cell_towers">Sans antenne relais</string>
     <string name="no_cell_towers_note">Les messages passent de radio en radio.</string>
     <string name="end_to_end">Chiffré de bout en bout</string>
-    <string name="end_to_end_note">Clés vérifiées, rien en clair sur les ondes.</string>
+    <string name="end_to_end_note">Seuls toi et les personnes à qui tu écris pouvez lire tes messages. Vérifie leur clé en personne.</string>
     <string name="find_your_people">Retrouver les siens</string>
     <string name="find_your_people_note">Position partagée et mode recherche.</string>
     <string name="connect_my_radio">Connecter ma radio</string>

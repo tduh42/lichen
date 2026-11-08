@@ -27,7 +27,7 @@ struct SearchView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     Text(target.map { String(localized: "Search · \(model.name(of: $0))") } ?? String(localized: "Search"))
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(.body, weight: .semibold))
                 }
             }
             .sheet(isPresented: $bearing) {
@@ -57,9 +57,9 @@ struct SearchView: View {
     private var empty: some View {
         VStack(spacing: 12) {
             Image(systemName: "scope").font(.system(size: 44)).foregroundStyle(Theme.tx2)
-            Text("No search under way").font(.system(size: 17, weight: .semibold))
+            Text("No search under way").font(.system(.body, weight: .semibold))
             Text("When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.")
-                .font(.system(size: 14))
+                .font(.system(.subheadline))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
         }
@@ -104,7 +104,7 @@ struct SearchView: View {
                             if let i = model.incidents[t], i.state() != .ended {
                                 Circle().fill(i.state() == .active ? Theme.sos : Theme.warn).frame(width: 8, height: 8)
                             }
-                            Text(model.name(of: t)).font(.system(size: 14, weight: .semibold))
+                            Text(model.name(of: t)).font(.system(.subheadline, weight: .semibold))
                         }
                         .padding(.horizontal, 14)
                         .frame(minHeight: 44)
@@ -186,7 +186,7 @@ struct SearchView: View {
         let relative = d.flatMap { d in model.heading.map { (d.bearing - $0 + 360).truncatingRemainder(dividingBy: 360) } }
         return HStack(spacing: 16) {
             Image(systemName: unknownWay || goal == nil ? "questionmark" : "location.north.fill")
-                .font(.system(size: 30))
+                .font(.system(.title))
                 .foregroundStyle(Theme.sos)
                 .rotationEffect(.degrees(unknownWay || goal == nil ? 0 : relative ?? d?.bearing ?? 0))
                 .frame(width: 64, height: 64)
@@ -194,24 +194,24 @@ struct SearchView: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 if unknownWay, let goal {
-                    Text("Direction not known yet").font(.system(size: 17, weight: .semibold))
+                    Text("Direction not known yet").font(.system(.body, weight: .semibold))
                     Text("Within \(distanceText(goal.radius)) of here, around you. Move a few hundred metres or add a bearing: other places narrow it down.")
-                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                 } else if let d, let goal {
                     Text("\(Int(d.bearing.rounded()))° · \(distanceText(d.meters))").font(Theme.figure(28))
                     Text(relative != nil
                          ? String(localized: "The arrow follows your phone · ±\(distanceText(goal.radius))")
                          : String(localized: "Bearing from north · ±\(distanceText(goal.radius))"))
-                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 } else if goal == nil {
-                    Text("Position unknown").font(.system(size: 17, weight: .semibold))
+                    Text("Position unknown").font(.system(.body, weight: .semibold))
                     Text("Start the search: every reception of their radio narrows it down.")
-                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 } else {
-                    Text("Waiting for your position").font(.system(size: 17, weight: .semibold))
+                    Text("Waiting for your position").font(.system(.body, weight: .semibold))
                     Text("The bearing and the distance appear with your GPS fix.")
-                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 }
             }
             Spacer(minLength: 0)
@@ -222,9 +222,9 @@ struct SearchView: View {
 
     private func startCard(_ t: Data) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Search by radio").font(.system(size: 17, weight: .semibold))
+            Text("Search by radio").font(.system(.body, weight: .semibold))
             Text("Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.")
-                .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Start the search") {
                 error = model.startSearch(t)
@@ -233,7 +233,7 @@ struct SearchView: View {
             .disabled(model.searchGroup(for: t) == nil)
             if model.searchGroup(for: t) == nil {
                 Text("A radio search needs a group you share with them.")
-                    .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                    .font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
         }
         .card(padding: 16)
@@ -251,7 +251,7 @@ struct SearchView: View {
                     VStack(spacing: 2) {
                         Text("Ping")
                         Text(wait > 0 ? String(localized: "in \(wait) s") : cost.map { String(localized: "≈ \($0) s air") } ?? "")
-                            .font(.system(size: 11, weight: .regular)).foregroundStyle(Theme.tx2)
+                            .font(.system(.caption2, weight: .regular)).foregroundStyle(Theme.tx2)
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle(height: 56))
@@ -264,7 +264,7 @@ struct SearchView: View {
                     Button("2 dBm for 10 min") { error = model.lowerPower(t, dbm: 2) }
                 } label: {
                     Text("Lower power")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 56)
                         .background(Theme.s2, in: RoundedRectangle(cornerRadius: 14))
                         .foregroundStyle(Theme.tx)
@@ -275,7 +275,7 @@ struct SearchView: View {
                 if let url = model.searchCSV(t) {
                     ShareLink(item: url) {
                         Label("Export", systemImage: "square.and.arrow.up")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(.subheadline, weight: .semibold))
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
                     .foregroundStyle(Theme.tx)
@@ -284,13 +284,13 @@ struct SearchView: View {
                     model.stopSearch(t)
                 } label: {
                     Text("Stop the search")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
             }
             if let tx = search.txDbm {
                 Text("Their radio transmits at \(tx) dBm.")
-                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -346,7 +346,7 @@ struct BearingSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Face where their signal seems strongest (the last readings below help), or point a directional antenna at it, then keep this direction.")
-                    .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                    .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
                     Spacer()
@@ -357,7 +357,7 @@ struct BearingSheet: View {
                             .accessibilityHidden(true)
                         Text("\(Int(direction.rounded()))°").font(Theme.figure(40))
                         Text(model.heading == nil ? String(localized: "No compass: set it by hand") : String(localized: "From the compass"))
-                            .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                            .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                     }
                     Spacer()
                 }
@@ -367,11 +367,11 @@ struct BearingSheet: View {
                 }
                 if let m = model.measurements(target).first(where: { $0.mine && $0.rssi != nil }), let r = m.rssi {
                     Text("Your last reading: \(r) dBm, \(MapScreen.ago(m.atS))")
-                        .font(.system(size: 14))
+                        .font(.system(.subheadline))
                 }
                 Toggle("Directional antenna", isOn: $yagi)
                 Text(yagi ? String(localized: "Trusted to ±15°.") : String(localized: "Trusted to ±40° (the body shadows the signal)."))
-                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    .font(.system(.caption)).foregroundStyle(Theme.tx2)
                 if let error { Banner(kind: .sos, title: error) }
                 Spacer()
                 Button("Use this direction") {

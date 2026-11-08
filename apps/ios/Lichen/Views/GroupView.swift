@@ -35,7 +35,7 @@ struct GroupView: View {
                             CardRow(title: String(localized: "Precision shared with the group")) {
                                 Text(model.share(of: .group(gid: gid)).map { PrecisionText.name($0.precision) }
                                      ?? String(localized: "Not shared"))
-                                    .font(.system(size: 15))
+                                    .font(.system(.subheadline))
                                     .foregroundStyle(Theme.tx2)
                             }
                             .contentShape(Rectangle())
@@ -63,9 +63,9 @@ struct GroupView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 2) {
-                    Text(group?.name ?? "").font(.system(size: 17, weight: .semibold))
+                    Text(group?.name ?? "").font(.system(.body, weight: .semibold))
                     Text("\(group?.members.count ?? 0) members · flood")
-                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                        .font(.system(.caption)).foregroundStyle(Theme.tx2)
                 }
             }
         }
@@ -99,9 +99,9 @@ struct GroupView: View {
         return HStack(spacing: 12) {
             Avatar(name: me ? String(localized: "You") : m.name, key: m.key, size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(me ? String(localized: "You") : m.name).font(.system(size: 16))
+                Text(me ? String(localized: "You") : m.name).font(.system(.callout))
                 Text(admin ? String(localized: "Admin") : String(localized: "Member"))
-                    .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                    .font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
             Spacer()
             if !me {

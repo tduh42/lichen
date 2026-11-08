@@ -71,7 +71,7 @@ struct AddContactView: View {
                     .frame(maxWidth: 240)
                     .accessibilityLabel("Your contact code")
                 Text("Have your contact scan this code, in person.")
-                    .font(.system(size: 14))
+                    .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
                     .multilineTextAlignment(.center)
             }
@@ -109,15 +109,15 @@ struct VerifyPanel: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("Compare these numbers with \(name)")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(.callout, weight: .semibold))
                 if let numbers {
                     SafetyNumber(groups: numbers).frame(maxWidth: .infinity)
                 } else {
                     Text("Their key is not known yet: exchange a message first, or scan their code.")
-                        .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                        .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                 }
                 Text("The same on both phones: nobody in between. Compare them aloud, or over another channel.")
-                    .font(.system(size: 13))
+                    .font(.system(.footnote))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -127,7 +127,7 @@ struct VerifyPanel: View {
             let verified = model.contact(node)?.verified == true && !isNew && !stale
             if numbers != nil, verified {
                 Text("Verified by the scan. Their phone shows the same numbers once it knows you: after your first message, or when they scan your code.")
-                    .font(.system(size: 13))
+                    .font(.system(.footnote))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Done") { done() }
@@ -145,7 +145,7 @@ struct VerifyPanel: View {
                     done()
                 } label: {
                     Text("They differ")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(.callout, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 50)
                         .background(Theme.sosBg, in: RoundedRectangle(cornerRadius: 14))
                         .foregroundStyle(Theme.sosFg)
@@ -156,7 +156,7 @@ struct VerifyPanel: View {
                     model.setVerified(node, identity: shown, false)
                     done()
                 }
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(Theme.sosFg)
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
@@ -208,13 +208,13 @@ private struct ScanPanel: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
                 Text("Point the camera at your contact's code.")
-                    .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                    .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
             }
             HStack {
                 TextField("Or paste a code: lichen:1:…", text: $pasted)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
-                    .font(.system(size: 14, design: .monospaced))
+                    .font(.system(.subheadline, design: .monospaced))
                     .padding(10)
                     .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
                 Button("Add") { found(pasted) }

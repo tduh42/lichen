@@ -35,7 +35,7 @@ struct NewChatSheet: View {
                                     Text(c.name).foregroundStyle(Theme.tx).lineLimit(1)
                                     Text(c.identity == nil ? String(localized: "MeshCore node: lichen not seen yet")
                                                            : String(localized: "lichen"))
-                                        .font(.system(size: 12))
+                                        .font(.system(.caption))
                                         .foregroundStyle(Theme.tx2)
                                 }
                                 Spacer()

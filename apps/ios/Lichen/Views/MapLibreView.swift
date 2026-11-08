@@ -344,7 +344,7 @@ struct MarkerBadge: View {
                     .overlay(Circle().stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 3))
             case .peer, .sos:
                 Text(item.initials)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(Color(hex: 0x141413))
                     .frame(width: Self.avatar, height: Self.avatar)
                     .background(Color(item.color), in: Circle())
@@ -352,7 +352,7 @@ struct MarkerBadge: View {
             }
             if !item.label.isEmpty {
                 Text(item.label)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .foregroundStyle(item.kind == .sos ? .white : Color(hex: item.dark ? 0xF4F4F0 : 0x141413))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)

@@ -32,17 +32,17 @@ struct AirtimeMeter: View {
                         .foregroundStyle(Theme.tx)
                     Spacer()
                     Text("of \(seconds(limitMs)) s / hour")
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                 }
             } else {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Airtime left this hour")
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                     Spacer()
                     Text("\(seconds(left)) s").font(Theme.figure(20)).foregroundStyle(Theme.tx)
-                        + Text(" / \(seconds(limitMs)) s").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        + Text(" / \(seconds(limitMs)) s").font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 }
             }
             Bar(fraction: Double(left) / Double(max(limitMs, 1)), color: Theme.lora)
@@ -83,7 +83,7 @@ struct FragmentProgress: View {
                 Spacer()
                 if retries > 0 { Text("\(retries) resent") }
             }
-            .font(.system(size: 12))
+            .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
         }
     }
@@ -101,24 +101,24 @@ struct Banner: View {
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .bold))
+                .font(.system(.footnote, weight: .bold))
                 .foregroundStyle(accent)
                 .frame(width: 18)
                 .padding(.top, 2)
                 .frame(maxHeight: .infinity, alignment: .top)
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(accent)
+                Text(title).font(.system(.subheadline, weight: .semibold)).foregroundStyle(accent)
                 if let message {
-                    Text(message).font(.system(size: 13)).foregroundStyle(Theme.tx)
+                    Text(message).font(.system(.footnote)).foregroundStyle(Theme.tx)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
             if let action {
                 Button(action.label, action: action.run)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .padding(.horizontal, 14)
-                    .frame(minHeight: 40)
+                    .frame(minHeight: 44)
                     .background(Theme.s1.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
                     .foregroundStyle(Theme.tx)
             }
@@ -199,7 +199,7 @@ struct SosHoldButton: View {
                 .overlay {
                     VStack(spacing: 6) {
                         Text("SOS").font(.system(size: 52, weight: .heavy))
-                        Text("Hold for 3 s").font(.system(size: 15, weight: .medium))
+                        Text("Hold for 3 s").font(.system(.subheadline, weight: .medium))
                     }
                     .foregroundStyle(.white)
                 }
@@ -251,8 +251,8 @@ struct MeasurementRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(who).font(.system(size: 16, weight: .semibold))
-                Text(detail).font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                Text(who).font(.system(.callout, weight: .semibold))
+                Text(detail).font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
             Spacer()
             Text(value).font(Theme.figure(17))
@@ -298,9 +298,9 @@ struct CardRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.tx)
+                Text(title).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
                 if let subtitle {
-                    Text(subtitle).font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                    Text(subtitle).font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -344,7 +344,7 @@ struct LaterNote: View {
 
     var body: some View {
         Label(text, systemImage: "clock")
-            .font(.system(size: 12))
+            .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
     }
 }

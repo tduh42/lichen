@@ -13,7 +13,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Settings")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(.system(.largeTitle, weight: .bold))
                         .tracking(-0.5)
                         .padding(.horizontal, 4)
                         .padding(.top, 8)
@@ -41,22 +41,22 @@ struct SettingsView: View {
                     SectionLabel("Internet transports").padding(.top, 10)
                     CardList {
                         CardRow(title: String(localized: "iroh (direct P2P)"), subtitle: irohLine) {
-                            Toggle("", isOn: $model.irohEnabled).labelsHidden()
+                            Toggle("iroh (direct P2P)", isOn: $model.irohEnabled).labelsHidden()
                         }
                         CardDivider()
                         CardRow(title: String(localized: "Tor"), subtitle: torLine) {
-                            Toggle("", isOn: $model.torEnabled).labelsHidden()
+                            Toggle("Tor", isOn: $model.torEnabled).labelsHidden()
                         }
                         CardDivider()
                         CardRow(title: String(localized: "Relay only"),
                                 subtitle: String(localized: "iroh through relays: contacts never see your IP")) {
-                            Toggle("", isOn: $model.relayOnly).labelsHidden()
+                            Toggle("Relay only", isOn: $model.relayOnly).labelsHidden()
                         }
                         .opacity(model.irohEnabled ? 1 : 0.5)
                         .disabled(!model.irohEnabled)
                     }
                     Text("Photos and files go over the Internet when both phones have it; LoRa only carries a one-packet announcement. iroh first, Tor when iroh cannot reach the sender.")
-                        .font(.system(size: 12))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .padding(.horizontal, 4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -68,7 +68,7 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     Text(voiceNote)
-                        .font(.system(size: 12))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .padding(.horizontal, 4)
                         .fixedSize(horizontal: false, vertical: true)
@@ -76,12 +76,12 @@ struct SettingsView: View {
                     CardList {
                         CardRow(title: String(localized: "Send threshold"),
                                 subtitle: String(localized: "Distance from the predicted track")) {
-                            Text("50 m").font(.system(size: 15)).foregroundStyle(Theme.tx2)
+                            Text("50 m").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                         }
                         CardDivider()
                         CardRow(title: String(localized: "Heartbeat when still"),
                                 subtitle: String(localized: "Contacts; groups every 30 min")) {
-                            Text("15 min").font(.system(size: 15)).foregroundStyle(Theme.tx2)
+                            Text("15 min").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                         }
                     }
                     SectionLabel("Appearance").padding(.top, 10)
@@ -150,10 +150,10 @@ struct SettingsView: View {
                         .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.nodeName.isEmpty ? String(localized: "MeshCore radio") : model.nodeName)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(.body, weight: .semibold))
                         Text(model.isDemo ? String(localized: "Demo network · simulated companion") :
                                 String(localized: "BLE · MeshCore companion"))
-                            .font(.system(size: 13))
+                            .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
                     }
                     Spacer()
@@ -169,8 +169,8 @@ struct SettingsView: View {
                             .frame(width: 40, height: 40)
                             .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Pair a radio").font(.system(size: 17, weight: .semibold))
-                            Text("No radio connected").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                            Text("Pair a radio").font(.system(.body, weight: .semibold))
+                            Text("No radio connected").font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         }
                         Spacer()
                         Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
@@ -180,7 +180,7 @@ struct SettingsView: View {
                 .buttonStyle(.plain)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("Airtime left").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                Text("Airtime left").font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 AirtimeMeter(usedMs: model.budget.usedMs, limitMs: model.budget.limitMs, large: true)
             }
             if model.isConnected && !model.isDemo {

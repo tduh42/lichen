@@ -12,13 +12,15 @@ struct SosView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        // Scrolls at large text sizes and in French (audit M12).
+        ScrollView {
         VStack(spacing: 20) {
             HStack {
-                Text("Distress alert").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.sosFg)
+                Text("Distress alert").font(.system(.subheadline, weight: .semibold)).foregroundStyle(Theme.sosFg)
                 Spacer()
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(.callout, weight: .bold))
                         .frame(width: 44, height: 44)
                         .background(Theme.sosBg, in: Circle())
                         .foregroundStyle(Theme.sosFg)
@@ -33,7 +35,7 @@ struct SosView: View {
                         .overlay {
                             VStack(spacing: 4) {
                                 Text("SOS").font(.system(size: 44, weight: .heavy))
-                                Text("on").font(.system(size: 15, weight: .medium))
+                                Text("on").font(.system(.subheadline, weight: .medium))
                             }
                             .foregroundStyle(.white)
                         }
@@ -57,13 +59,14 @@ struct SosView: View {
             }
             Spacer(minLength: 0)
             Text("The SOS stays on until you stop it. It does not replace 112.")
-                .font(.system(size: 12))
+                .font(.system(.caption))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
         .padding(.bottom, 24)
+        }
         .background(SosColor.screen.ignoresSafeArea())
     }
 
@@ -104,8 +107,8 @@ struct SosView: View {
 
     private func card(_ title: String, _ text: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 13)).foregroundStyle(Theme.sosFg)
-            Text(text).font(.system(size: 15)).fixedSize(horizontal: false, vertical: true)
+            Text(title).font(.system(.footnote)).foregroundStyle(Theme.sosFg)
+            Text(text).font(.system(.subheadline)).fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
@@ -137,17 +140,17 @@ struct SosReceivedView: View {
         return VStack(spacing: 16) {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(.title, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 72, height: 72)
                     .background(Theme.sosBtn, in: Circle())
                 Text("SOS alert · \(MapScreen.ago(UInt64(sos.started.timeIntervalSince1970)))")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .foregroundStyle(Theme.sosFg)
                 Text(model.name(of: from))
                     .font(Theme.wordmark(40))
                     .tracking(-1)
-                Text(via(sos)).font(.system(size: 15)).foregroundStyle(Theme.tx2)
+                Text(via(sos)).font(.system(.subheadline)).foregroundStyle(Theme.tx2)
             }
             .multilineTextAlignment(.center)
             .padding(.top, 24)
@@ -210,7 +213,7 @@ struct SosReceivedView: View {
                     .disabled(sos.position == nil)
                 }
                 Button("Dismiss") { model.sosAlert = nil }
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(.subheadline, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .foregroundStyle(Theme.tx2)
             }

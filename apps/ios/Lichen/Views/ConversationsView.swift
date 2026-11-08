@@ -95,7 +95,7 @@ struct ConversationsView: View {
     private var header: some View {
         HStack(alignment: .bottom) {
             Text("Messages")
-                .font(.system(size: 34, weight: .bold))
+                .font(.system(.largeTitle, weight: .bold))
                 .tracking(-0.5)
             Spacer()
             HStack(spacing: 8) {
@@ -158,21 +158,21 @@ private struct ChatRow: View {
             Avatar(name: row.title, key: row.key)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(row.title).font(.system(size: 16, weight: .semibold)).lineLimit(1)
+                    Text(row.title).font(.system(.callout, weight: .semibold)).lineLimit(1)
                     Spacer()
                     if let d = row.date {
-                        Text(d, style: .time).font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        Text(d, style: .time).font(.system(.footnote)).foregroundStyle(Theme.tx2)
                     }
                 }
                 if !row.preview.isEmpty {
-                    Text(row.preview).font(.system(size: 14)).foregroundStyle(Theme.tx2).lineLimit(1)
+                    Text(row.preview).font(.system(.subheadline)).foregroundStyle(Theme.tx2).lineLimit(1)
                 }
                 HStack {
                     TransportBadge(kind: .lora, label: row.badge)
                     Spacer()
                     if row.unread > 0 {
                         Text(String(row.unread))
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(.caption, weight: .bold))
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 20)
                             .background(Theme.actBg, in: Capsule())
@@ -196,11 +196,11 @@ struct RadioCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
-                Text(headline).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                Text(headline).font(.system(.subheadline, weight: .semibold)).lineLimit(1)
                 Spacer()
                 if let r = model.radio, model.isConnected {
                     Text("BLE · SF\(r.sf) / \(bandwidth(r.bwHz))")
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                 }
             }
@@ -208,14 +208,14 @@ struct RadioCard: View {
             HStack(spacing: 6) {
                 TransportBadge(kind: .lora, label: "LoRa")
                 Text(model.isConnected ? "available" : "unavailable")
-                    .font(.system(size: 12))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                 Spacer()
                 if model.bridgeOnline { TransportBadge(kind: .iroh, label: "iroh") }
                 if model.torStatus == .ready { TransportBadge(kind: .tor, label: "Tor") }
                 if !model.bridgeOnline && model.torStatus != .ready {
                     Text("No Internet bridge")
-                        .font(.system(size: 11))
+                        .font(.system(.caption2))
                         .foregroundStyle(Theme.tx2)
                         .lineLimit(1)
                 }
@@ -280,13 +280,13 @@ private struct EmptyConversations: View {
     var body: some View {
         VStack(spacing: 12) {
             ChirpMark(color: Theme.tx2).frame(width: 40, height: 40)
-            Text("No conversations yet").font(.system(size: 17, weight: .semibold))
+            Text("No conversations yet").font(.system(.body, weight: .semibold))
             Text("Add a contact by scanning their code, in person.")
-                .font(.system(size: 14))
+                .font(.system(.subheadline))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
             Button("Add a contact", action: addContact)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .padding(.horizontal, 18)
                 .frame(minHeight: 44)
                 .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 12))

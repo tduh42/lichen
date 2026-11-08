@@ -11,6 +11,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -133,15 +135,18 @@ private fun ChevronRow(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-/** Groups of digits (fingerprint, safety number), three per line, big and tabular. */
+/** Groups of digits (fingerprint, safety number), three per line, big and tabular; fewer per
+ * line when the text is large (they wrap instead of overflowing). */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun Groups(groups: List<String>, modifier: Modifier = Modifier) {
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        groups.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-                row.forEach { Text(it, style = figure(22.sp), color = lichen.tx) }
-            }
-        }
+    FlowRow(
+        modifier.widthIn(max = 320.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxItemsInEachRow = 3,
+    ) {
+        groups.forEach { Text(it, style = figure(22.sp), color = lichen.tx) }
     }
 }
 

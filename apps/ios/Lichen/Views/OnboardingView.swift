@@ -39,38 +39,10 @@ private struct WelcomeView: View {
     @State private var contact = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 60)
-            VStack(spacing: 20) {
-                ChirpMark()
-                    .frame(width: 78, height: 78)
-                    .frame(width: 120, height: 120)
-                    .background(Theme.s1, in: RoundedRectangle(cornerRadius: 27))
-                    .overlay(RoundedRectangle(cornerRadius: 27).stroke(Theme.line))
-                Text(verbatim: "lichen")
-                    .font(Theme.wordmark(48))
-                    .tracking(-1.5)
-                Text("Encrypted messaging off the grid, over LoRa and beyond.")
-                    .font(.system(size: 17))
-                    .foregroundStyle(Theme.tx2)
-                    .multilineTextAlignment(.center)
-            }
-            Spacer()
-            VStack(alignment: .leading, spacing: 16) {
-                point("No cell towers", "Messages go from radio to radio.")
-                point("End-to-end encrypted", "Verified keys, nothing in clear on the air.")
-                point("Find your people", "Location sharing and search mode.")
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer()
-            VStack(spacing: 8) {
-                Button("Connect my radio") { pairing = true }
-                    .buttonStyle(.primary)
-                Button("Later") { identity = true }
-                    .font(.system(size: 16, weight: .semibold))
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .foregroundStyle(Theme.tx)
-            }
+        // Fits on one screen when it can; scrolls at large text sizes (audit M12).
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 12)
@@ -88,12 +60,48 @@ private struct WelcomeView: View {
         }
     }
 
+    private var content: some View {
+        VStack(spacing: 0) {
+            Spacer().frame(height: 60)
+            VStack(spacing: 20) {
+                ChirpMark()
+                    .frame(width: 78, height: 78)
+                    .frame(width: 120, height: 120)
+                    .background(Theme.s1, in: RoundedRectangle(cornerRadius: 27))
+                    .overlay(RoundedRectangle(cornerRadius: 27).stroke(Theme.line))
+                Text(verbatim: "lichen")
+                    .font(Theme.wordmark(48))
+                    .tracking(-1.5)
+                Text("Encrypted messaging off the grid, over LoRa and beyond.")
+                    .font(.system(.body))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+            }
+            Spacer()
+            VStack(alignment: .leading, spacing: 16) {
+                point("No cell towers", "Messages go from radio to radio.")
+                point("End-to-end encrypted", "Only you and the people you write to can read your messages. Check their key in person.")
+                point("Find your people", "Location sharing and search mode.")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer()
+            VStack(spacing: 8) {
+                Button("Connect my radio") { pairing = true }
+                    .buttonStyle(.primary)
+                Button("Later") { identity = true }
+                    .font(.system(.callout, weight: .semibold))
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .foregroundStyle(Theme.tx)
+            }
+        }
+    }
+
     private func point(_ title: LocalizedStringKey, _ detail: LocalizedStringKey) -> some View {
         HStack(alignment: .top, spacing: 14) {
             Circle().fill(Theme.lora).frame(width: 8, height: 8).padding(.top, 7)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 16, weight: .semibold))
-                Text(detail).font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                Text(title).font(.system(.callout, weight: .semibold))
+                Text(detail).font(.system(.subheadline)).foregroundStyle(Theme.tx2)
             }
         }
     }
@@ -109,13 +117,13 @@ struct PairingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Turn your radio on and keep it close to the phone. Stock MeshCore companion firmware: nothing to flash.")
-                    .font(.system(size: 15))
+                    .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
                 HStack(spacing: 8) {
                     Image(systemName: "dot.radiowaves.left.and.right")
                     Text(scanLine)
                 }
-                .font(.system(size: 13))
+                .font(.system(.footnote))
                 .foregroundStyle(Theme.tx2)
                 if !model.found.isEmpty {
                     CardList {
@@ -126,9 +134,9 @@ struct PairingView: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Code shown on the radio").font(.system(size: 17, weight: .semibold))
+                    Text("Code shown on the radio").font(.system(.body, weight: .semibold))
                     Text("When you pair, iOS asks for the 6 digits shown on the radio's screen: type them in its prompt. The radio then stays paired with this phone.")
-                        .font(.system(size: 14))
+                        .font(.system(.subheadline))
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 8) {
@@ -183,8 +191,8 @@ struct PairingView: View {
                 .frame(width: 40, height: 40)
                 .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(f.name).font(.system(size: 16))
-                Text("\(f.rssi) dBm · MeshCore companion").font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                Text(f.name).font(.system(.callout))
+                Text("\(f.rssi) dBm · MeshCore companion").font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
             Spacer()
             Button("Pair") { model.companion.connect(f.id) }

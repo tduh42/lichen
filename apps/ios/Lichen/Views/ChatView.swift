@@ -30,7 +30,7 @@ struct ChatView: View {
                         }
                         if model.olderAvailable[chat] == true {
                             Button("Show earlier messages") { showEarlier() }
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(.subheadline, weight: .semibold))
                             .frame(minHeight: 44)
                         }
                         sessionLine
@@ -60,7 +60,7 @@ struct ChatView: View {
                             unseen = 0
                         } label: {
                             Label(String(localized: "\(unseen) new messages"), systemImage: "arrow.down")
-                                .font(.system(size: 14, weight: .semibold))
+                                .font(.system(.subheadline, weight: .semibold))
                                 .padding(.horizontal, 16)
                                 .frame(minHeight: 44)
                                 .background(Theme.actBg, in: Capsule())
@@ -119,8 +119,8 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 // A contact's name: tap to rename it on this phone.
                 VStack(spacing: 2) {
-                    Text(model.title(of: chat)).font(.system(size: 17, weight: .semibold))
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    Text(model.title(of: chat)).font(.system(.body, weight: .semibold))
+                    Text(subtitle).font(.system(.caption)).foregroundStyle(Theme.tx2)
                 }
                 .onTapGesture { if !isGroup { renaming = true } }
                 .accessibilityAddTraits(isGroup ? [] : .isButton)
@@ -204,7 +204,7 @@ struct ChatView: View {
                           ? String(localized: "Encrypted session · key verified")
                           : String(localized: "Encrypted session · key to verify"),
                           systemImage: c.verified ? "lock" : "lock.open")
-                        .font(.system(size: 12))
+                        .font(.system(.caption))
                         .foregroundStyle(c.verified ? Theme.tx2 : Theme.warnFg)
                         .labelStyle(TintedIconLabel(tint: c.verified ? Theme.ok : Theme.warn))
                 }
@@ -212,14 +212,14 @@ struct ChatView: View {
                 .padding(.top, 4)
             } else if model.secured.contains(key) {
                 Label("Encrypted session", systemImage: "lock")
-                    .font(.system(size: 12))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .labelStyle(TintedIconLabel(tint: Theme.ok))
                     .padding(.top, 4)
             }
         } else if isGroup {
             Label("Signed group messages, flooded", systemImage: "lock")
-                .font(.system(size: 12))
+                .font(.system(.caption))
                 .foregroundStyle(Theme.tx2)
                 .labelStyle(TintedIconLabel(tint: Theme.ok))
                 .padding(.top, 4)
@@ -254,7 +254,7 @@ struct DaySeparator: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 12))
+            .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
@@ -378,7 +378,7 @@ private struct MessageView: View {
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
             if isGroup, !message.outgoing, let a = message.author {
-                Text(model.name(of: a)).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.tx2)
+                Text(model.name(of: a)).font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx2)
                     .padding(.horizontal, 6)
             }
             switch message.message {
@@ -393,7 +393,7 @@ private struct MessageView: View {
                 }
             default:
                 Text(message.message.display)
-                    .font(.system(size: 16))
+                    .font(.system(.callout))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(message.outgoing ? Theme.actBg : Theme.s2, in: RoundedRectangle(cornerRadius: 18))
@@ -407,7 +407,7 @@ private struct MessageView: View {
             // When it was sent (ours) or received, then how it went.
             let time = message.date.formatted(date: .omitted, time: .shortened)
             Text(message.outgoing ? ([time] + [caption].compactMap { $0 }).joined(separator: " · ") : time)
-                .font(.system(size: 11))
+                .font(.system(.caption2))
                 .foregroundStyle(Theme.tx2)
         }
         .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
@@ -445,7 +445,7 @@ private struct VoiceNote: View {
             HStack(spacing: 10) {
                 Button { model.player.toggle(message) } label: {
                     Image(systemName: playing ? "stop.fill" : "play.fill")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(.subheadline, weight: .bold))
                         .frame(width: 36, height: 36)
                         .background(Theme.lora, in: Circle())
                         .foregroundStyle(Color(hex: 0x141413))
@@ -455,9 +455,9 @@ private struct VoiceNote: View {
                 .accessibilityLabel(playing ? "Stop" : "Play the voice message")
                 Waveform(seed: data.prefix(32), color: message.outgoing ? Theme.actFg.opacity(0.55) : Theme.tx2)
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(clock(TimeInterval(durationMs) / 1000)).font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    Text(clock(TimeInterval(durationMs) / 1000)).font(.system(.footnote, weight: .semibold).monospacedDigit())
                     Text(codecName(mode))
-                        .font(.system(size: 11))
+                        .font(.system(.caption2))
                         .opacity(0.7)
                 }
             }
@@ -501,7 +501,7 @@ private struct ImageCard: View {
                     }
                     if !full && fetched == nil {
                         Text("LoRa preview · \(data.count) bytes")
-                            .font(.system(size: 11))
+                            .font(.system(.caption2))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
                             .background(Theme.bg.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
@@ -512,22 +512,22 @@ private struct ImageCard: View {
                 .clipped()
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("Photo").font(.system(size: 13, weight: .semibold))
+                        Text("Photo").font(.system(.footnote, weight: .semibold))
                         Spacer()
                         Text(ByteCountFormatter.string(fromByteCount: Int64(full ? data.count : Int(fullLen)), countStyle: .file))
-                            .font(.system(size: 13))
+                            .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
                     }
                     HStack(spacing: 6) {
                         TransportBadge(kind: .lora, label: full ? String(localized: "LoRa · full thumbnail") : String(localized: "LoRa · preview"))
-                        if !full && !message.outgoing { Text("full one on request").font(.system(size: 11)).foregroundStyle(Theme.tx2) }
+                        if !full && !message.outgoing { Text("full one on request").font(.system(.caption2)).foregroundStyle(Theme.tx2) }
                     }
                     if let announce {
                         BridgeSection(announce: announce, standalone: false)
                     } else if !message.outgoing && !full && fullLen > 0 {
                         if model.requestedFull.contains(message.id) {
                             Label("Full image requested…", systemImage: "hourglass")
-                                .font(.system(size: 13))
+                                .font(.system(.footnote))
                                 .foregroundStyle(Theme.tx2)
                         } else {
                             Button(fullLabel(Int(fullLen))) { error = model.requestFull(message) }
@@ -576,13 +576,13 @@ private struct Composer: View {
             if let share = model.share(of: chat) {
                 Button { locating = true } label: {
                     Label(sharingText(share), systemImage: "location.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(.caption, weight: .semibold))
                         .foregroundStyle(Theme.tx2)
                 }
                 .padding(.leading, 52)
             }
             if let line = costLine {
-                Text(line).font(.system(size: 11)).foregroundStyle(Theme.tx2).padding(.leading, 52)
+                Text(line).font(.system(.caption2)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
             if model.recorder.recording, model.recorder.chat == chat {
                 recordingBar
@@ -598,7 +598,7 @@ private struct Composer: View {
                         }
                     } label: {
                         Image(systemName: preparing ? "hourglass" : "plus")
-                            .font(.system(size: 18, weight: .semibold))
+                            .font(.system(.body, weight: .semibold))
                             .frame(width: 44, height: 44)
                             .background(Theme.s2, in: Circle())
                             .foregroundStyle(Theme.tx)
@@ -607,7 +607,7 @@ private struct Composer: View {
                     .accessibilityLabel("Attach")
                     TextField("Message", text: $draft, axis: .vertical)
                         .lineLimit(1...5)
-                        .font(.system(size: 16))
+                        .font(.system(.callout))
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
                         .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22))
@@ -617,7 +617,7 @@ private struct Composer: View {
                             Task { await model.recorder.start(for: chat) }
                         } label: {
                             Image(systemName: "mic")
-                                .font(.system(size: 20, weight: .semibold))
+                                .font(.system(.title3, weight: .semibold))
                                 .frame(width: 44, height: 44)
                                 .foregroundStyle(Theme.lora)
                         }
@@ -629,7 +629,7 @@ private struct Composer: View {
                             if let e = model.send(text, to: chat) { error = e } else { draft = "" }
                         } label: {
                             Image(systemName: "arrow.up")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(.system(.body, weight: .bold))
                                 .frame(width: 44, height: 44)
                                 .background(Theme.actBg, in: Circle())
                                 .foregroundStyle(Theme.actFg)
@@ -723,7 +723,7 @@ private struct Composer: View {
                 _ = model.recorder.stop(keep: false)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(.callout, weight: .bold))
                     .frame(width: 44, height: 44)
                     .background(Theme.s2, in: Circle())
                     .foregroundStyle(Theme.tx)
@@ -732,10 +732,10 @@ private struct Composer: View {
             Circle().fill(Theme.sos).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(clock(seconds)) / \(clock(VoiceRecorder.maxSeconds))")
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 if let e = estimate {
                     Text("\(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of airtime")
-                        .font(.system(size: 11))
+                        .font(.system(.caption2))
                         .foregroundStyle(Theme.tx2)
                 }
             }
@@ -747,7 +747,7 @@ private struct Composer: View {
                 if let e = model.sendVoice(voice, to: to) { error = e }
             } label: {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(.body, weight: .bold))
                     .frame(width: 44, height: 44)
                     .background(Theme.actBg, in: Circle())
                     .foregroundStyle(Theme.actFg)
@@ -799,7 +799,7 @@ private struct ChatShareSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Text("A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.")
-                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                        .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     SectionLabel("Duration").padding(.top, 8)
                     Picker("Duration", selection: $hours) {
                         Text("1 h").tag(1.0)
@@ -808,10 +808,10 @@ private struct ChatShareSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Text("Sharing stops on its own at the end; the others see your marker disappear.")
-                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                        .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     if case .group = chat {
                         Text("A group gets at most one position every 5 minutes.")
-                            .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                            .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     }
                     Button(current == nil ? "Share" : "Update") { apply(precision) }
                         .buttonStyle(.primary)
@@ -929,7 +929,7 @@ private struct SendPhotoSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .overlay(alignment: .bottomLeading) {
                             Text("\(Int(image.width))×\(Int(image.height)) AVIF · preview \(image.preview.count) B · full \(image.full.count) B")
-                                .font(.system(size: 12))
+                                .font(.system(.caption))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(Theme.bg, in: RoundedRectangle(cornerRadius: 6))
@@ -955,7 +955,7 @@ private struct SendPhotoSheet: View {
                            badge: costBadge, kind: .lora, selected: false, enabled: false)
                     LaterNote(text: "Sending later comes in a later version.")
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. Images are never flooded.")
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                     Button(bridgeChosen ? String(localized: "Send the announcement") : String(localized: "Send the preview")) {
                         if bridgeChosen, let original {
@@ -1015,8 +1015,8 @@ private struct SendPhotoSheet: View {
                 .frame(width: 22, height: 22)
                 .overlay { if selected { Circle().fill(Theme.tx).frame(width: 10, height: 10) } }
             VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 15, weight: .semibold))
-                Text(detail).font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                Text(title).font(.system(.subheadline, weight: .semibold))
+                Text(detail).font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
             Spacer(minLength: 4)
             TransportBadge(kind: kind, label: badge)
@@ -1047,10 +1047,10 @@ private struct BridgeSection: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 HStack {
-                    Text(verbatim: name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(verbatim: name).font(.system(.footnote, weight: .semibold)).lineLimit(1)
                     Spacer()
                     Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 }
                 HStack(spacing: 6) {
                     ForEach(providers, id: \.transport) { p in
@@ -1062,12 +1062,12 @@ private struct BridgeSection: View {
                     }
                     if file != nil {
                         Label("hash verified", systemImage: "checkmark.seal")
-                            .font(.system(size: 11))
+                            .font(.system(.caption2))
                             .foregroundStyle(Theme.ok)
                     }
                 }
                 if let error = model.fetchErrors[hash] {
-                    Text(error).font(.system(size: 12)).foregroundStyle(Theme.sosFg)
+                    Text(error).font(.system(.caption)).foregroundStyle(Theme.sosFg)
                 }
                 if file == nil && !announce.outgoing {
                     if let via = model.fetching[hash] {
@@ -1075,7 +1075,7 @@ private struct BridgeSection: View {
                             ProgressView()
                             Text(via == 2 ? String(localized: "Downloading over Tor: it can take a minute…")
                                           : String(localized: "Downloading over iroh…"))
-                                .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                                .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         }
                     } else {
                         let route = model.fetchRoute(providers)

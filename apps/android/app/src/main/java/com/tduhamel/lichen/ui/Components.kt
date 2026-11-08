@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -218,6 +219,8 @@ fun CardRow(title: String, subtitle: String? = null, trailing: @Composable () ->
     Row(
         Modifier
             .fillMaxWidth()
+            // One node for screen readers: the title, the subtitle and a switch's state together.
+            .semantics(mergeDescendants = true) {}
             .heightIn(min = 48.dp)
             .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,

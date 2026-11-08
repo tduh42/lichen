@@ -56,12 +56,12 @@ enum Theme {
 
     /// Big figures (budget, distance, fingerprints): bold, tabular.
     static func figure(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .bold).monospacedDigit()
+        .system(size: UIFontMetrics.default.scaledValue(for: size), weight: .bold).monospacedDigit()
     }
 
     /// The wordmark.
     static func wordmark(_ size: CGFloat) -> Font {
-        .system(size: size, weight: .bold)
+        .system(size: UIFontMetrics.default.scaledValue(for: size), weight: .bold)
     }
 }
 
@@ -132,7 +132,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(.body, weight: .semibold))
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 14))
             .foregroundStyle(Theme.actFg)
@@ -149,7 +149,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 16, weight: .semibold))
+            .font(.system(.callout, weight: .semibold))
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity, minHeight: height)
             .padding(.horizontal, 8)
@@ -180,7 +180,7 @@ struct RoundIconButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(.body, weight: .semibold))
                 .frame(width: 44, height: 44)
                 .background(prominent ? Theme.actBg : Theme.s2, in: Circle())
                 .foregroundStyle(prominent ? Theme.actFg : Theme.tx)
@@ -199,7 +199,7 @@ struct Badge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11, weight: .semibold))
+            .font(.system(.caption2, weight: .semibold))
             .lineLimit(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
@@ -244,7 +244,7 @@ struct SectionLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13))
+            .font(.system(.footnote))
             .foregroundStyle(Theme.tx2)
             .padding(.horizontal, 4)
             .frame(maxWidth: .infinity, alignment: .leading)

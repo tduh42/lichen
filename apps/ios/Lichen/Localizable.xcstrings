@@ -1,16 +1,6 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": ""
-          }
-        }
-      }
-    },
     " / %@ s": {
       "localizations": {
         "fr": {
@@ -2841,6 +2831,16 @@
         }
       }
     },
+    "Only you and the people you write to can read your messages. Check their key in person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seuls toi et les personnes à qui tu écris pouvez lire tes messages. Vérifie leur clé en personne."
+          }
+        }
+      }
+    },
     "Open": {
       "localizations": {
         "fr": {
@@ -4407,16 +4407,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vérifié par le scan. Son téléphone affiche les mêmes chiffres dès qu'il te connaît : après ton premier message, ou quand il scanne ton code."
-          }
-        }
-      }
-    },
-    "Verified keys, nothing in clear on the air.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clés vérifiées, rien en clair sur les ondes."
           }
         }
       }

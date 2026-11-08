@@ -73,7 +73,7 @@ struct MapScreen: View {
                     Image(systemName: "exclamationmark.triangle")
                     Text(model.sos ? "SOS on" : "SOS")
                 }
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(.subheadline, weight: .bold))
                 .padding(.horizontal, 18)
                 .frame(height: 44)
                 .background(Theme.sosBtn, in: Capsule())
@@ -164,7 +164,7 @@ private struct MapIcon: View {
 
     var body: some View {
         Image(systemName: systemName)
-            .font(.system(size: 18, weight: .medium))
+            .font(.system(.body, weight: .medium))
             .foregroundStyle(tint)
             .frame(width: 44, height: 44)
             .background(Theme.s2, in: Circle())
@@ -203,7 +203,7 @@ private struct OfflineMapsSheet: View {
     private func row(_ a: OfflineArea) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(a.name).font(.system(size: 16, weight: .semibold))
+                Text(a.name).font(.system(.callout, weight: .semibold))
                 Spacer()
                 badge(a.state)
             }
@@ -211,15 +211,15 @@ private struct OfflineMapsSheet: View {
                   ByteCountFormatter.string(fromByteCount: Int64(a.bytes), countStyle: .file),
                   a.created?.formatted(date: .abbreviated, time: .omitted) ?? ""]
                 .filter { !$0.isEmpty }.joined(separator: " · "))
-                .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                .font(.system(.footnote)).foregroundStyle(Theme.tx2)
             if a.state != .complete, a.total > 0 {
                 ProgressView(value: Double(a.done), total: Double(max(a.total, 1)))
                     .tint(Theme.tx)
                 Text("\(Int(a.done)) / \(Int(a.total)) tiles and resources")
-                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    .font(.system(.caption)).foregroundStyle(Theme.tx2)
             }
             if case let .failed(why) = a.state {
-                Text(why).font(.system(size: 13)).foregroundStyle(Theme.sosFg)
+                Text(why).font(.system(.footnote)).foregroundStyle(Theme.sosFg)
             }
             HStack(spacing: 16) {
                 switch a.state {
@@ -236,7 +236,7 @@ private struct OfflineMapsSheet: View {
                 Button("Delete", role: .destructive) { offline.delete(a) }
             }
             .buttonStyle(.borderless)
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(.subheadline, weight: .semibold))
         }
         .padding(.vertical, 4)
     }
@@ -262,7 +262,7 @@ private struct DownloadBanner: View {
                 .tint(Theme.tx)
                 .frame(width: 80)
             Text("Downloading the map: \(Int(done)) / \(Int(total))")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(.caption, weight: .medium))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -312,9 +312,9 @@ struct SharePanel: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Location sharing")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(.title3, weight: .bold))
                     Text(status)
-                        .font(.system(size: 13))
+                        .font(.system(.footnote))
                         .foregroundStyle(model.sos ? Theme.sosFg : Theme.tx2)
                 }
                 Spacer()
@@ -343,11 +343,11 @@ struct SharePanel: View {
                     Button { editing = true } label: {
                         HStack(spacing: 12) {
                             Image(systemName: "plus")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(.subheadline, weight: .bold))
                                 .frame(width: 32, height: 32)
                                 .background(Theme.s1, in: Circle())
                             Text(model.shares.isEmpty ? "Share my position…" : "Precision per contact")
-                                .font(.system(size: 16))
+                                .font(.system(.callout))
                             Spacer()
                         }
                         .padding(.horizontal, 16)
@@ -358,7 +358,7 @@ struct SharePanel: View {
                 }
                 .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
                 Text("Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.")
-                    .font(.system(size: 12))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -388,12 +388,12 @@ private struct ShareRow: View {
         HStack(spacing: 12) {
             Avatar(name: model.title(of: share.chat), key: avatarKey, size: 32)
             VStack(alignment: .leading, spacing: 2) {
-                Text(model.title(of: share.chat)).font(.system(size: 16))
-                Text(detail).font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                Text(model.title(of: share.chat)).font(.system(.callout))
+                Text(detail).font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
             Spacer()
             Text(PrecisionText.name(share.precision))
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
@@ -443,7 +443,7 @@ struct ShareSheet: View {
                     }
                     .pickerStyle(.segmented)
                     Text("Sharing stops on its own at the end; the others see your marker disappear.")
-                        .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                        .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     if !model.contacts.isEmpty {
                         SectionLabel("Contacts").padding(.top, 8)
                         CardList {
@@ -462,14 +462,14 @@ struct ShareSheet: View {
                             }
                         }
                         Text("A group gets at most one position every 5 minutes.")
-                            .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                            .font(.system(.caption)).foregroundStyle(Theme.tx2)
                     }
                     if model.contacts.isEmpty && model.groups.isEmpty {
                         Text("No contacts yet: connect your MeshCore node, or try the demo network in Settings.")
                             .foregroundStyle(Theme.tx2)
                     }
                     Text("A rounded position is the centre of a fixed grid cell, never random noise: averaging many of them reveals nothing more.")
-                        .font(.system(size: 12))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .padding(.top, 8)
                 }
@@ -497,7 +497,7 @@ struct ShareSheet: View {
         let current = model.share(of: chat)?.precision
         return HStack(spacing: 12) {
             Avatar(name: name, key: key, size: 32)
-            Text(name).font(.system(size: 16))
+            Text(name).font(.system(.callout))
             Spacer()
             Menu {
                 Button("Not shared") { set(chat, nil) }
@@ -507,9 +507,9 @@ struct ShareSheet: View {
             } label: {
                 HStack(spacing: 4) {
                     Text(current.map(PrecisionText.name) ?? String(localized: "Not shared"))
-                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(.caption2))
                 }
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(current == nil ? Theme.tx2 : Theme.tx)
                 .frame(minHeight: 44)
             }

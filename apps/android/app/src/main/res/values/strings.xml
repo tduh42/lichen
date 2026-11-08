@@ -419,7 +419,7 @@
     <string name="no_cell_towers">No cell towers</string>
     <string name="no_cell_towers_note">Messages go from radio to radio.</string>
     <string name="end_to_end">End-to-end encrypted</string>
-    <string name="end_to_end_note">Verified keys, nothing in clear on the air.</string>
+    <string name="end_to_end_note">Only you and the people you write to can read your messages. Check their key in person.</string>
     <string name="find_your_people">Find your people</string>
     <string name="find_your_people_note">Location sharing and search mode.</string>
     <string name="connect_my_radio">Connect my radio</string>
