@@ -63,6 +63,13 @@ fun RootScreen(model: AppModel) {
     }
 
     // Each screen handles its own system bars; the tab bar its own.
+    // Debug extra `screen`: a screen to show at launch (screenshots).
+    LaunchedEffect(Unit) {
+        when (model.debugScreen) {
+            "contact", "identity", "pairing" -> nav.navigate(model.debugScreen!!)
+        }
+    }
+
     Scaffold(
         containerColor = lichen.bg,
         contentWindowInsets = WindowInsets(0),
@@ -74,15 +81,30 @@ fun RootScreen(model: AppModel) {
             modifier = Modifier.padding(bottom = padding.calculateBottomPadding()),
         ) {
             composable("messages") {
-                ConversationsScreen(model, open = { nav.navigate("chat/${it.route}") }, pair = { nav.navigate("pairing") })
+                ConversationsScreen(
+                    model,
+                    open = { nav.navigate("chat/${it.route}") },
+                    pair = { nav.navigate("pairing") },
+                    addContact = { nav.navigate("contact") },
+                )
             }
             composable("map") { LaterScreen(stringResource(R.string.tab_map), stringResource(R.string.later_map)) }
             composable("search") { LaterScreen(stringResource(R.string.tab_search), stringResource(R.string.later_search)) }
-            composable("settings") { SettingsScreen(model, pair = { nav.navigate("pairing") }) }
+            composable("settings") {
+                SettingsScreen(model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") })
+            }
+            composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
+            composable("contact") { ContactScreen(model, back = { nav.popBackStack() }) }
+            composable("group/{id}") { e ->
+                val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
+                if (chat != null) GroupScreen(model, chat, back = { nav.popBackStack() })
+            }
             composable("pairing") { PairingScreen(model, back = { nav.popBackStack() }) }
             composable("chat/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
-                if (chat != null) ChatScreen(model, chat, back = { nav.popBackStack() })
+                if (chat != null) {
+                    ChatScreen(model, chat, back = { nav.popBackStack() }, details = { nav.navigate("group/${chat.route}") })
+                }
             }
         }
     }

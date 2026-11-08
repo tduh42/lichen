@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -33,7 +34,7 @@ import com.tduhamel.lichen.model.bandwidth
 /** Radio, appearance, demo network (mockup `reglages`; the rest comes with L9b–L9f). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(model: AppModel, pair: () -> Unit) {
+fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
     val t = lichen
     Scaffold(
         containerColor = t.bg,
@@ -84,6 +85,18 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit) {
                         TextButton(onClick = { model.sendAdvert() }, enabled = model.isConnected) {
                             Text(stringResource(R.string.send), fontWeight = FontWeight.SemiBold, color = if (model.isConnected) t.tx else t.tx2)
                         }
+                    }
+                }
+            }
+            item { Gap(8.dp) }
+            item { SectionLabel(stringResource(R.string.identity)) }
+            item {
+                CardList {
+                    androidx.compose.foundation.layout.Box(Modifier.clickable(onClick = identity)) {
+                        CardRow(
+                            stringResource(R.string.your_identity),
+                            if (model.phraseBackedUp) model.fingerprint.take(2).joinToString(" ") else stringResource(R.string.not_backed_up),
+                        )
                     }
                 }
             }

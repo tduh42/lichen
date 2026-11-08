@@ -1772,6 +1772,28 @@ pub fn companion_ble_uuids() -> BleUuids {
     }
 }
 
+/// A QR code's modules, row by row (`width` × `width`, true = dark), error correction M: the
+/// contact card's code, drawn by each app (§4.7).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct QrCode {
+    pub width: u32,
+    pub dark: Vec<bool>,
+}
+
+#[uniffi::export]
+pub fn qr_code(text: String) -> Result<QrCode, LichenError> {
+    let code = qrcode::QrCode::with_error_correction_level(text.as_bytes(), qrcode::EcLevel::M)
+        .map_err(|_| LichenError::TooLarge)?;
+    Ok(QrCode {
+        width: u32::try_from(code.width()).unwrap_or(0),
+        dark: code
+            .to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    })
+}
+
 /// A companion frame wrapped for the radio's USB serial port (`'<' ‖ len ‖ frame`), for apps
 /// that reach the radio over USB (Android OTG). Over BLE, frames go as they are.
 #[uniffi::export]
@@ -1847,5 +1869,14 @@ mod tests {
         rest.extend_from_slice(&frame);
         rest.extend_from_slice(&[b'>', 1, 0, 0x88]);
         assert_eq!(d.push(rest), vec![frame, vec![0x88]]);
+    }
+
+    #[test]
+    fn qr_codes() {
+        let q = qr_code("lichen:1:test".into()).unwrap();
+        assert!(q.width >= 21);
+        assert_eq!(q.dark.len(), (q.width * q.width) as usize);
+        // The finder pattern's corner is dark.
+        assert!(q.dark[0]);
     }
 }

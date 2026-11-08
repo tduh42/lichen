@@ -23,6 +23,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -73,7 +75,7 @@ private data class Row(
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Unit) {
+fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Unit, addContact: () -> Unit) {
     val t = lichen
     val res = LocalResources.current
     var composing by remember { mutableStateOf(false) }
@@ -107,6 +109,9 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.tab_messages), fontSize = 22.sp) },
+                actions = {
+                    IconButton(onClick = addContact) { Icon(Icons.Outlined.QrCode2, stringResource(R.string.add_contact), tint = t.tx) }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx),
             )
         },

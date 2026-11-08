@@ -1,6 +1,8 @@
 package com.tduhamel.lichen.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material3.AlertDialog
@@ -68,9 +71,11 @@ import com.tduhamel.lichen.model.secondsText
 /** One conversation (mockup `chat`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
+fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit) {
     val t = lichen
     var error by remember { mutableStateOf<String?>(null) }
+    // The verification sheet: an empty array for the current identity, else a pending one.
+    var verifying by remember { mutableStateOf<ByteArray?>(null) }
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
@@ -79,6 +84,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
         model.load(chat)
         model.markRead(chat)
         Notifications.clear(context, chat)
+        // Debug extra `screen`: the group's details, or the verification sheet.
+        when (model.debugScreen) {
+            "group" -> if (chat.group) details()
+            "verify" -> if (!chat.group) verifying = ByteArray(0)
+        }
     }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) list.animateScrollToItem(messages.size)
@@ -96,6 +106,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
                     Text(subtitle(model, chat), fontSize = 12.sp, color = t.tx2)
                 }
             },
+            actions = {
+                if (chat.group) {
+                    IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
+                }
+            },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = t.s1, titleContentColor = t.tx, navigationIconContentColor = t.tx,
             ),
@@ -106,7 +121,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { SessionLine(model, chat) }
+            item { SessionLine(model, chat) { verifying = it } }
             items(messages, key = { it.id }) { m -> MessageBubble(model, m, chat.group) }
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
@@ -116,6 +131,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
         Composer(model, chat) { error = it }
     }
 
+    val node = chat.contactKey
+    val v = verifying
+    if (node != null && v != null) {
+        VerifySheet(model, node, v.takeIf { it.isNotEmpty() }) { verifying = null }
+    }
     error?.let {
         AlertDialog(
             onDismissRequest = { error = null },
@@ -146,7 +166,7 @@ private fun subtitle(model: AppModel, chat: ChatId): String {
 }
 
 @Composable
-private fun SessionLine(model: AppModel, chat: ChatId) {
+private fun SessionLine(model: AppModel, chat: ChatId, verify: (ByteArray) -> Unit) {
     val t = lichen
     if (chat.group) {
         TintedLine(Icons.Outlined.Lock, t.ok, stringResource(R.string.group_signed), t.tx2)
@@ -159,13 +179,16 @@ private fun SessionLine(model: AppModel, chat: ChatId) {
             BannerKind.SOS,
             stringResource(R.string.key_changed_title, model.title(chat)),
             stringResource(R.string.key_changed_note),
+            stringResource(R.string.compare) to { model.conflicts[chat.hex]?.let(verify) },
         )
-        c?.identity != null -> TintedLine(
-            if (c.verified) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-            if (c.verified) t.ok else t.warn,
-            stringResource(if (c.verified) R.string.session_verified else R.string.session_to_verify),
-            if (c.verified) t.tx2 else t.warnFg,
-        )
+        c?.identity != null -> Box(Modifier.fillMaxWidth().clickable { verify(ByteArray(0)) }) {
+            TintedLine(
+                if (c.verified) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                if (c.verified) t.ok else t.warn,
+                stringResource(if (c.verified) R.string.session_verified else R.string.session_to_verify),
+                if (c.verified) t.tx2 else t.warnFg,
+            )
+        }
         chat.hex in model.secured -> TintedLine(Icons.Outlined.Lock, t.ok, stringResource(R.string.session_encrypted), t.tx2)
     }
 }

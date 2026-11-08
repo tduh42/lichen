@@ -14,6 +14,9 @@ import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -44,6 +47,9 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
     val t = lichen
     val res = LocalResources.current
     var query by remember { mutableStateOf("") }
+    var groupName by remember { mutableStateOf("") }
+    var selected by remember { mutableStateOf(setOf<String>()) }
+    var error by remember { mutableStateOf<String?>(null) }
     val q = query.trim()
     val people = model.contacts
         .filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
@@ -88,6 +94,45 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
                         hopsBadge(res, c.hops)
                     }
                     PickRow(c.name, c.key, sub) { open(ChatId.contact(c.key)) }
+                }
+                item { SectionLabel(stringResource(R.string.new_group), Modifier.padding(top = 16.dp)) }
+                item {
+                    OutlinedTextField(
+                        groupName, { groupName = it },
+                        Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = { Text(stringResource(R.string.group_name)) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors(),
+                    )
+                }
+                // Members are people we already talked with in lichen: their identity is known.
+                items(people.filter { it.identity != null }, key = { "m" + it.key.contentHashCode() }) { c ->
+                    val k = c.key.contentHashCode().toString()
+                    Row(
+                        Modifier.fillMaxWidth().clickable { selected = if (k in selected) selected - k else selected + k },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(
+                            k in selected,
+                            { selected = if (it) selected + k else selected - k },
+                            colors = CheckboxDefaults.colors(checkedColor = t.actBg, checkmarkColor = t.actFg, uncheckedColor = t.tx2),
+                        )
+                        Text(c.name, fontSize = 16.sp, color = t.tx)
+                    }
+                }
+                item {
+                    Text(stringResource(R.string.new_group_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(4.dp))
+                }
+                error?.let { item { Banner(BannerKind.SOS, it) } }
+                item {
+                    PrimaryButton(stringResource(R.string.create_group), enabled = groupName.isNotBlank() && selected.isNotEmpty()) {
+                        val members = model.contacts.filter { it.key.contentHashCode().toString() in selected }.map { it.key }
+                        error = model.createGroup(groupName.trim(), members)
+                        if (error == null) {
+                            model.groups.firstOrNull { it.name == groupName.trim() }?.let { open(ChatId.group(it.gid)) }
+                        }
+                    }
                 }
                 item { Gap(24.dp) }
             }

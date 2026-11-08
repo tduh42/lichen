@@ -21,6 +21,7 @@ import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Radio
 import com.tduhamel.lichen.core.StoredMessage
+import com.tduhamel.lichen.core.seedFromPhrase
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,6 +100,14 @@ class AppModel(private val app: Application) {
     var appearance by mutableStateOf(
         runCatching { Appearance.valueOf(prefs.getString(APPEARANCE, null) ?: "") }.getOrDefault(Appearance.SYSTEM),
     )
+        private set
+
+    /** The name on our contact card (the node's name by default). */
+    var myName by mutableStateOf(prefs.getString(MY_NAME, null) ?: "")
+        private set
+
+    /** The recovery phrase was written down (Identity screen). */
+    var phraseBackedUp by mutableStateOf(prefs.getBoolean(BACKED_UP, false))
         private set
 
     var core: LichenCore = makeCore(identityStore.seed(), persistent = true)
@@ -474,7 +483,105 @@ class AppModel(private val app: Application) {
 
     fun group(chat: ChatId): GroupInfo? = if (chat.group) groups.firstOrNull { it.gid.hex() == chat.hex } else null
 
+    // ----- identity (ADR-0013) -----
+
+    fun changeName(name: String) {
+        myName = name
+        prefs.edit { putString(MY_NAME, name) }
+    }
+
+    fun markBackedUp() {
+        phraseBackedUp = true
+        prefs.edit { putBoolean(BACKED_UP, true) }
+    }
+
+    val fingerprint: List<String> get() = core.fingerprint()
+
+    fun recoveryPhrase(): List<String> = core.recoveryPhrase()
+
+    /** Our contact card for the QR code; null until the radio is connected. */
+    fun myCard(): String? = runCatching { core.contactCard(myName.ifEmpty { nodeName }) }.getOrNull()
+
+    /** Adds the contact of a scanned card (verified: scanned in person); or an error to show. */
+    fun addCard(text: String): Pair<ContactInfo?, String?> = try {
+        val c = core.addContactCard(text.trim())
+        contacts = people()
+        pump()
+        c to null
+    } catch (e: LichenException) {
+        null to e.display(res)
+    }
+
+    /** The safety number with an identity (the contact's, or a new one it presented). */
+    fun safetyNumberWith(identity: ByteArray): List<String>? = runCatching { core.safetyNumberWith(identity) }.getOrNull()
+
+    /** Verifies (or not) `node`, whose identity `identity` the user compared; false when its
+     * identity changed meanwhile (nothing verified, review PR-07). */
+    fun setVerified(node: ByteArray, identity: ByteArray, verified: Boolean): Boolean {
+        val done = runCatching { core.setVerified(node, identity, verified) }.getOrDefault(false)
+        contacts = people()
+        return done
+    }
+
+    /** Accepts the new identity `expected` the user compared, verified; false when another one
+     * arrived meanwhile (compare again). */
+    fun acceptIdentity(node: ByteArray, expected: ByteArray): Boolean {
+        val done = runCatching { core.acceptIdentity(node, expected, true) }.getOrDefault(false)
+        updateConflict(node)
+        contacts = people()
+        pump()
+        return done
+    }
+
+    fun rejectIdentity(node: ByteArray, expected: ByteArray) {
+        runCatching { core.rejectIdentity(node, expected) }
+        updateConflict(node)
+    }
+
+    private fun updateConflict(node: ByteArray) {
+        val pending = runCatching { core.pendingIdentity(node) }.getOrNull()
+        conflicts = if (pending != null) conflicts + (node.hex() to pending) else conflicts - node.hex()
+    }
+
+    /** Restores an identity from its 24 words: the core restarts with it. */
+    fun restore(words: List<String>): String? = try {
+        val seed = seedFromPhrase(words)
+        identityStore.save(seed)
+        if (isDemo) stopDemo()
+        resetState()
+        replaceCore(makeCore(seed, persistent = true))
+        refreshAll()
+        markBackedUp()
+        if (isConnected) core.connect(now())
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    // ----- groups -----
+
+    fun createGroup(name: String, members: List<ByteArray>): String? = try {
+        core.createGroup(name, members, now())
+        groups = core.groups()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    fun removeMember(member: ByteArray, gid: ByteArray): String? = try {
+        core.removeMember(gid, member, now())
+        groups = core.groups()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
     companion object {
         private const val APPEARANCE = "appearance"
+        private const val MY_NAME = "lichen.myName"
+        private const val BACKED_UP = "lichen.phraseBackedUp"
     }
 }

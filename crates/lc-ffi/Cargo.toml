@@ -25,6 +25,7 @@ lc-media.workspace = true
 uniffi = { workspace = true, features = ["tokio"] }
 lc-bridge.workspace = true
 tokio.workspace = true
+qrcode.workspace = true
 
 [lints]
 workspace = true
