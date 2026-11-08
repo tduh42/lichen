@@ -56,7 +56,7 @@ import com.tduhamel.lichen.model.hex
 /** "Add a contact" (mockup `contact`, §4.7): show my code, scan theirs, compare the safety number. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContactScreen(model: AppModel, back: () -> Unit) {
+fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null) {
     val t = lichen
     var scanning by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<ContactInfo?>(null) }
@@ -81,7 +81,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit) {
                     // Their conversation opens, ready for the first message (the list shows
                     // contacts once there is a message).
                     model.openChat = ChatId.contact(c.key)
-                    back()
+                    (next ?: back)()
                 }
             } else {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -104,6 +104,8 @@ fun ContactScreen(model: AppModel, back: () -> Unit) {
                     MyCode(model)
                 }
                 error?.let { Banner(BannerKind.SOS, it) }
+                // In the first-launch flow: go on without a contact.
+                if (next != null) SecondaryButton(stringResource(R.string.later), onClick = next)
             }
         }
     }

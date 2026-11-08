@@ -1,14 +1,28 @@
 package com.tduhamel.lichen.ui
 
+import android.app.LocaleManager
+import android.os.Build
+import android.os.LocaleList
+import androidx.annotation.RequiresApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.SettingsInputAntenna
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -16,22 +30,26 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.BuildConfig
 import com.tduhamel.lichen.R
-import com.tduhamel.lichen.model.Appearance
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.Appearance
 import com.tduhamel.lichen.model.bandwidth
 
-/** Radio, appearance, demo network (mockup `reglages`; the rest comes with L9b–L9f). */
 @Composable
 fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
     val t = lichen
@@ -44,10 +62,12 @@ fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean
     )
 }
 
+/** Settings (mockup `reglages`): the radio, transports, position, appearance, demo, about. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
     val t = lichen
+    var advertSent by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = t.bg,
         // The tab bar below takes the navigation bar.
@@ -64,44 +84,40 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionLabel(stringResource(R.string.radio)) }
+            item { RadioCardLarge(model, pair) }
+            item { SectionLabel(stringResource(R.string.radio), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
                     val r = model.radio
                     CardRow(
-                        if (model.isConnected) model.nodeName.ifEmpty { stringResource(R.string.radio) } else stringResource(R.string.no_radio),
-                        if (r != null && model.isConnected) {
-                            "%s · %.3f MHz · SF%d · %s · CR 4/%d".format(
-                                model.linkKind, r.freqKhz.toDouble() / 1000, r.sf.toInt(), bandwidth(r.bwHz), r.cr.toInt(),
-                            )
+                        stringResource(R.string.preset),
+                        if (r != null) {
+                            "SF${r.sf} / ${bandwidth(r.bwHz)} · CR 4/${r.cr} · ${"%.3f".format(r.freqKhz.toDouble() / 1000)} MHz"
                         } else {
-                            null
+                            stringResource(R.string.read_from_radio)
                         },
                     )
                     CardDivider()
-                    if (model.isConnected && !model.isDemo) {
-                        CardRow(stringResource(R.string.disconnect)) {
-                            TextButton(onClick = { model.disconnect() }) {
-                                Text(stringResource(R.string.disconnect), fontWeight = FontWeight.SemiBold, color = t.sos)
-                            }
-                        }
-                    } else if (!model.isDemo) {
-                        CardRow(stringResource(R.string.connect_radio), stringResource(R.string.connect_radio_note)) {
-                            TextButton(onClick = pair) {
-                                Text(stringResource(R.string.connect), fontWeight = FontWeight.SemiBold, color = t.tx)
-                            }
-                        }
-                    }
+                    val khz = r?.freqKhz?.toInt() ?: 869_618
+                    val band = if (khz in 869_400..869_650) "869.4–869.65 MHz" else "%.3f MHz".format(khz / 1000.0)
+                    CardRow(stringResource(R.string.sub_band), "$band · ${"%.0f".format(model.budget.limitMs.toDouble() / 36_000)} %")
                     CardDivider()
-                    CardRow(stringResource(R.string.send_advert), stringResource(R.string.send_advert_note)) {
-                        TextButton(onClick = { model.sendAdvert() }, enabled = model.isConnected) {
-                            Text(stringResource(R.string.send), fontWeight = FontWeight.SemiBold, color = if (model.isConnected) t.tx else t.tx2)
+                    CardRow(stringResource(R.string.relay_for_others), stringResource(R.string.relay_for_others_note))
+                    CardDivider()
+                    Box(Modifier.clickable(enabled = model.isConnected) {
+                        model.sendAdvert()
+                        advertSent = true
+                    }) {
+                        CardRow(
+                            stringResource(R.string.send_advert),
+                            stringResource(if (advertSent) R.string.advert_sent else R.string.send_advert_note),
+                        ) {
+                            Icon(Icons.Outlined.SettingsInputAntenna, null, tint = if (model.isConnected) t.lora else t.tx2)
                         }
                     }
                 }
             }
-            item { Gap(8.dp) }
-            item { SectionLabel(stringResource(R.string.internet_transports)) }
+            item { SectionLabel(stringResource(R.string.internet_transports), Modifier.padding(top = 10.dp)) }
             item {
                 val irohLine = when {
                     !model.irohEnabled -> stringResource(R.string.off)
@@ -129,29 +145,19 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 Text(stringResource(R.string.transports_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
             }
-            item { Gap(8.dp) }
-            item { SectionLabel(stringResource(R.string.identity)) }
+            item { SectionLabel(stringResource(R.string.position), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    androidx.compose.foundation.layout.Box(Modifier.clickable(onClick = identity)) {
-                        CardRow(
-                            stringResource(R.string.your_identity),
-                            if (model.phraseBackedUp) model.fingerprint.take(2).joinToString(" ") else stringResource(R.string.not_backed_up),
-                        )
+                    CardRow(stringResource(R.string.send_threshold), stringResource(R.string.send_threshold_note)) {
+                        Text("50 m", fontSize = 15.sp, color = t.tx2)
+                    }
+                    CardDivider()
+                    CardRow(stringResource(R.string.heartbeat), stringResource(R.string.heartbeat_note)) {
+                        Text("15 min", fontSize = 15.sp, color = t.tx2)
                     }
                 }
             }
-            item { Gap(8.dp) }
-            item { SectionLabel(stringResource(R.string.airtime)) }
-            item {
-                CardList {
-                    androidx.compose.foundation.layout.Box(Modifier.padding(16.dp)) {
-                        AirtimeMeter(model.budget.usedMs, model.budget.limitMs, large = true)
-                    }
-                }
-            }
-            item { Gap(8.dp) }
-            item { SectionLabel(stringResource(R.string.appearance)) }
+            item { SectionLabel(stringResource(R.string.appearance), Modifier.padding(top = 10.dp)) }
             item {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     val options = listOf(Appearance.SYSTEM to R.string.system, Appearance.DARK to R.string.dark, Appearance.LIGHT to R.string.light)
@@ -160,31 +166,109 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                             selected = model.appearance == a,
                             onClick = { model.chooseAppearance(a) },
                             shape = SegmentedButtonDefaults.itemShape(i, options.size),
-                            colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = t.s2, activeContentColor = t.tx,
-                                inactiveContainerColor = t.s1, inactiveContentColor = t.tx2,
-                                activeBorderColor = t.line, inactiveBorderColor = t.line,
-                            ),
+                            colors = segmentedColors(),
                         ) { Text(stringResource(label)) }
                     }
                 }
             }
-            item { Gap(8.dp) }
-            item { SectionLabel(stringResource(R.string.demo)) }
+            if (Build.VERSION.SDK_INT >= 33) {
+                item { SectionLabel(stringResource(R.string.language), Modifier.padding(top = 10.dp)) }
+                item { LanguagePicker() }
+            }
+            item { SectionLabel(stringResource(R.string.demo), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
                     CardRow(stringResource(R.string.demo_network), stringResource(R.string.demo_network_note)) {
                         LichenSwitch(model.isDemo, { if (it) model.startDemo() else model.stopDemo() })
                     }
+                    CardDivider()
+                    Box(Modifier.clickable { model.markOnboarded(false) }) {
+                        CardRow(stringResource(R.string.show_welcome_again))
+                    }
                 }
             }
+            item { SectionLabel(stringResource(R.string.about), Modifier.padding(top = 10.dp)) }
             item {
+                CardList {
+                    CardRow(stringResource(R.string.version)) { Text(BuildConfig.VERSION_NAME, color = t.tx2) }
+                    CardDivider()
+                    Row(Modifier.fillMaxWidth().clickable(onClick = identity), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            val f = model.fingerprint.take(2).joinToString(" ")
+                            CardRow(
+                                stringResource(R.string.your_identity),
+                                stringResource(if (model.phraseBackedUp) R.string.key_backed_up else R.string.key_not_backed_up, f),
+                            )
+                        }
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** The radio, its link and the airtime left; pairing when none is connected. */
+@Composable
+private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
+    val t = lichen
+    Column(
+        Modifier.fillMaxWidth().background(t.s1, CardShape).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        if (model.isConnected) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(model.nodeName.ifEmpty { stringResource(R.string.radio) }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
                 Text(
-                    "lichen ${BuildConfig.VERSION_NAME}",
-                    fontSize = 12.sp, color = t.tx2,
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp, start = 4.dp),
+                    if (model.isDemo) stringResource(R.string.demo_network) else "${model.linkKind} · ${stringResource(R.string.radio_connected_short)}",
+                    fontSize = 13.sp, color = t.tx2,
                 )
             }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = pair),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Box(Modifier.size(40.dp).background(t.s2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.SettingsInputAntenna, null, tint = t.tx2)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.pair_a_radio), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+                    Text(stringResource(R.string.no_radio), fontSize = 13.sp, color = t.tx2)
+                }
+                Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2)
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.airtime_left_short), fontSize = 13.sp, color = t.tx2)
+            AirtimeMeter(model.budget.usedMs, model.budget.limitMs, large = true)
+        }
+        if (model.isConnected && !model.isDemo) {
+            SecondaryButton(stringResource(R.string.disconnect), background = t.sosBg, foreground = t.sosFg) { model.disconnect() }
+        }
+    }
+}
+
+/** The app's language (Android 13+): the system's, English or French. */
+@RequiresApi(33)
+@Composable
+private fun LanguagePicker() {
+    val context = LocalContext.current
+    val manager = remember { context.getSystemService(LocaleManager::class.java) }
+    var current by remember { mutableStateOf(manager?.applicationLocales?.toLanguageTags().orEmpty()) }
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        val options = listOf("" to stringResource(R.string.system), "en" to "English", "fr" to "Français")
+        options.forEachIndexed { i, (tag, label) ->
+            SegmentedButton(
+                selected = current.substringBefore('-') == tag,
+                onClick = {
+                    current = tag
+                    manager?.applicationLocales = if (tag.isEmpty()) LocaleList.getEmptyLocaleList() else LocaleList.forLanguageTags(tag)
+                },
+                shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                colors = segmentedColors(),
+            ) { Text(label) }
         }
     }
 }

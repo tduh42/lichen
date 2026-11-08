@@ -59,7 +59,7 @@ import com.tduhamel.lichen.model.AppModel
 /** "Your identity" (mockup `identite`, ADR-0013): name, fingerprint, the 24-word backup, restore. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun IdentityScreen(model: AppModel, back: () -> Unit) {
+fun IdentityScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null) {
     val t = lichen
     var showingPhrase by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf(false) }
@@ -112,6 +112,7 @@ fun IdentityScreen(model: AppModel, back: () -> Unit) {
                     Text(stringResource(R.string.encrypted_backup_note), fontSize = 13.sp, color = t.tx2)
                 }
             }
+            if (next != null) PrimaryButton(stringResource(R.string.continue_), Modifier.padding(top = 8.dp), onClick = next)
         }
     }
     if (showingPhrase) RecoveryPhraseSheet(model) { showingPhrase = false }

@@ -189,3 +189,29 @@ iOS simulator, demo network (`-demo YES -open Camille -media YES`): the announce
 Relay only (`--ignored relay_only`): no direct address published, 300 kB through n0's relays in 343 ms (135 ms with direct paths, L7a).
 
 iOS simulator, demo network with iroh off and Tor on (`-demo YES -open Camille -media YES -lichen.tor YES -lichen.iroh NO`): Camille publishes her own onion service, announces with both providers (138 bytes of content), and the app fetches her 9 KB photo over Tor, hash verified (`docs/screenshots/ios-tor-fetched-en.png`).
+
+## 2026-11-07 — First real-radio test
+
+Paris, indoors, the two radios a few metres apart on the same desk. An iPhone 17 Pro with the lichen app, paired over Bluetooth with the ThinkNode M5 (oxymesh firmware), against the Heltec V4 (stock MeshCore companion over USB) driven by `lichen listen --echo --save`. Preset 869.618 MHz / 62.5 kHz / SF8 / CR 4/8, direct path (0 hops).
+
+| What | Frames | Result |
+|---|---|---|
+| First text, from a phone the Heltec did not know (introduction, then the message) | INTRO, INTRO_ACK, INTRO_FIN, 1 data | received 5 s after the listener started; the echo delivered 9 s later |
+| Voice, 2.2 s of Codec2 700C (193 bytes) | 2 | received at 12.5 dB SNR, saved as WAV; the bot's reply delivered 2 s later |
+| Photo preview, 160 × 120 AVIF (420 bytes) | 3 | received at 11.5 dB, decodes |
+| Full thumbnail asked for by the bot (3,793 bytes) | 25 | 48 s from the request to the last fragment, 10.5 dB |
+| Announcement of a 2 MB photo over iroh | 1 | received; the CLI has no bridge to fetch it |
+
+SNR 10.5 to 13 dB throughout. The Heltec reports RSSI 0 dBm in every push (`RAW_DATA` and `LOG_RX_DATA`): its stock firmware's reading, not lichen's.
+
+Found and fixed: an introduction names its sender by one hash byte, and the core took the first contact with that byte, a repeater sharing the phone's node byte (`7d9fcd8`, spec §4.6).
+
+## 2026-11-08 — Android on the real radio, from the emulator
+
+The Android emulator cannot use the Mac's USB devices: `lichen bridge` relays the Heltec's serial port on 127.0.0.1:5000 and the Android app's TCP link reaches it at 10.0.2.2. Same desk, same preset, against the iPhone and the M5 as above.
+
+- Texts both ways, delivered; the safety numbers matched on both phones.
+- The iPhone's LoRa full thumbnail (2.2 kB) displays on Android (AVIF decoded by the system).
+- A 2.0 MB photo announced by the iPhone, fetched over iroh by Android, hash verified.
+- Voice needed the emulator's audio (`-allow-host-audio`); without it, silent playback and no recording.
+- Cold start of the debug build on the emulator: 5.7 s, then 2.5 s (a 48 MB native library); to measure on a phone.

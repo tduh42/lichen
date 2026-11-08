@@ -9,7 +9,7 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 
 - Normative spec: [`docs/spec/protocol.md`](docs/spec/protocol.md); original design: [`docs/spec/design.md`](docs/spec/design.md) (French original: [`design.fr.md`](docs/spec/design.fr.md)).
 - Decisions: [`docs/decisions/`](docs/decisions/). Mockups: [`docs/maquettes/`](docs/maquettes/). Logo and palette: [`docs/brand/`](docs/brand/).
-- Shared Rust core; iOS app (SwiftUI) first, then Android (Compose).
+- Shared Rust core; an iOS app (SwiftUI) and an Android app (Jetpack Compose).
 
 | Crate | Role |
 |---|---|
@@ -19,6 +19,7 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 | `lc-cli` | `lichen` command-line client over USB |
 | `lc-ffi` | UniFFI bindings for Swift and Kotlin, and a demo network for the apps |
 | `lc-media` | voice (Codec2) and image thumbnails (AVIF) for LoRa |
+| `lc-bridge` | the Internet bridge: content over iroh or Tor, checked against its BLAKE3 hash |
 
 ## iOS app
 
@@ -33,6 +34,19 @@ Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings 
 | Messages | Chat |
 |---|---|
 | ![Messages](docs/screenshots/ios-demo-messages-en.png) | ![Chat](docs/screenshots/ios-demo-chat-en.png) |
+
+## Android app
+
+```sh
+scripts/build-android-core.sh                                  # Rust core (arm64, cargo-ndk) + Kotlin bindings
+cd apps/android && ./gradlew assembleDebug                     # app/build/outputs/apk/debug/app-debug.apk
+```
+
+Android 12 or later. The radio over Bluetooth, over USB (OTG, a radio with the USB companion firmware) or over TCP (a Wi-Fi companion, or `lichen bridge` relaying a USB radio, which is how the emulator reaches a real one). The same demo network as on iOS in Settings.
+
+| Messages | Chat | Map |
+|---|---|---|
+| ![Messages](docs/screenshots/android-conversations-en.png) | ![Chat](docs/screenshots/android-chat-en.png) | ![Map](docs/screenshots/android-map-en.png) |
 
 ```sh
 scripts/check.sh                                               # all checks

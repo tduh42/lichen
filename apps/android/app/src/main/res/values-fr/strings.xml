@@ -123,7 +123,6 @@
     <string name="radio">Radio</string>
     <string name="send_advert">Envoyer un advert</string>
     <string name="send_advert_note">Permet aux radios proches d\'ajouter la tienne comme contact.</string>
-    <string name="airtime">Temps d\'antenne</string>
     <string name="appearance">Apparence</string>
     <string name="system">Système</string>
     <string name="dark">Sombre</string>
@@ -170,13 +169,10 @@
     <string name="connect">Connecter</string>
     <string name="try_demo_instead">Essayer plutôt le réseau de démo</string>
     <string name="disconnect">Déconnecter</string>
-    <string name="connect_radio">Connecter une radio</string>
-    <string name="connect_radio_note">En Bluetooth, ou en USB avec un câble.</string>
     <string name="channel_radio">Lien radio</string>
     <string name="channel_messages">Messages</string>
     <string name="service_notification">lichen continue de recevoir les messages.</string>
     <!-- Identité, contacts, groupes (L9c) -->
-    <string name="identity">Identité</string>
     <string name="your_identity">Ton identité</string>
     <string name="your_name">Ton nom</string>
     <string name="key_fingerprint">Empreinte de ta clé</string>
@@ -403,4 +399,33 @@
         <item quantity="many">Groupe · %1$d membres · flood</item>
         <item quantity="other">Groupe · %1$d membres · flood</item>
     </plurals>
+    <!-- Réglages et premier lancement (L9f) -->
+    <string name="preset">Preset</string>
+    <string name="read_from_radio">Lu sur la radio une fois connectée</string>
+    <string name="sub_band">Sous-bande</string>
+    <string name="relay_for_others">Relayer pour les autres</string>
+    <string name="relay_for_others_note">Le firmware companion stock ne relaie pas : c\'est le rôle d\'un nœud répéteur.</string>
+    <string name="advert_sent">Envoyé : les radios autour peuvent ajouter la tienne en contact.</string>
+    <string name="send_threshold">Seuil d\'envoi</string>
+    <string name="send_threshold_note">Écart à la trajectoire prévue</string>
+    <string name="heartbeat">Signe de vie à l\'arrêt</string>
+    <string name="heartbeat_note">Contacts ; groupes toutes les 30 min</string>
+    <string name="language">Langue</string>
+    <string name="show_welcome_again">Revoir les écrans d\'accueil</string>
+    <string name="about">À propos</string>
+    <string name="version">Version</string>
+    <string name="key_backed_up">Clé %1$s… · sauvegardée</string>
+    <string name="key_not_backed_up">Clé %1$s… · pas sauvegardée</string>
+    <string name="radio_connected_short">connectée</string>
+    <string name="airtime_left_short">Temps d\'antenne restant</string>
+    <string name="tagline">Messagerie chiffrée hors réseau, sur la LoRa et au-delà.</string>
+    <string name="no_cell_towers">Sans antenne relais</string>
+    <string name="no_cell_towers_note">Les messages passent de radio en radio.</string>
+    <string name="end_to_end">Chiffré de bout en bout</string>
+    <string name="end_to_end_note">Clés vérifiées, rien en clair sur les ondes.</string>
+    <string name="find_your_people">Retrouver les siens</string>
+    <string name="find_your_people_note">Position partagée et mode recherche.</string>
+    <string name="connect_my_radio">Connecter ma radio</string>
+    <string name="later">Plus tard</string>
+    <string name="continue_">Continuer</string>
 </resources>

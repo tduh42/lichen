@@ -78,6 +78,12 @@ class MainActivity : ComponentActivity() {
             media = e.getBoolean("media"),
             share = e.getString("share"),
             sosDemo = e.getBoolean("sosdemo"),
+            // Screenshots and tests skip the welcome screens unless asked for them.
+            onboarding = when {
+                e.containsKey("onboarding") -> e.getBoolean("onboarding")
+                e.containsKey("demo") || e.containsKey("tcp") -> false
+                else -> null
+            },
         )
     }
 }

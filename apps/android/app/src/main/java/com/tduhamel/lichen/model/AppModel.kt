@@ -84,6 +84,8 @@ class AppModel(private val app: Application) {
         val share: String? = null,
         /** An SOS from Julien (screenshots of the alert and the Search tab). */
         val sosDemo: Boolean = false,
+        /** The welcome screens: shown (true), skipped (false), or as saved (null). */
+        val onboarding: Boolean? = null,
     )
 
     enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
@@ -131,6 +133,15 @@ class AppModel(private val app: Application) {
     /** The name on our contact card (the node's name by default). */
     var myName by mutableStateOf(prefs.getString(MY_NAME, null) ?: "")
         private set
+
+    /** The welcome screens were seen (first launch). */
+    var onboarded by mutableStateOf(prefs.getBoolean(ONBOARDED, false))
+        private set
+
+    fun markOnboarded(done: Boolean) {
+        onboarded = done
+        prefs.edit { putBoolean(ONBOARDED, done) }
+    }
 
     /** The recovery phrase was written down (Identity screen). */
     var phraseBackedUp by mutableStateOf(prefs.getBoolean(BACKED_UP, false))
@@ -274,6 +285,7 @@ class AppModel(private val app: Application) {
         debugApplied = true
         debug = options
         debugScreen = options.screen
+        options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
             "map" -> tab = Tab.MAP
             "search" -> tab = Tab.SEARCH
@@ -1126,5 +1138,6 @@ class AppModel(private val app: Application) {
         private const val IROH = "lichen.iroh"
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"
+        private const val ONBOARDED = "onboarded"
     }
 }

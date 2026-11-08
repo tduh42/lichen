@@ -50,6 +50,10 @@ private val TabRoutes = mapOf(
 /** The four tabs, and the chats above them. */
 @Composable
 fun RootScreen(model: AppModel) {
+    if (!model.onboarded) {
+        Onboarding(model)
+        return
+    }
     val nav = rememberNavController()
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
@@ -66,7 +70,7 @@ fun RootScreen(model: AppModel) {
     // Debug extra `screen`: a screen to show at launch (screenshots).
     LaunchedEffect(Unit) {
         when (model.debugScreen) {
-            "contact", "identity", "pairing", "sos" -> nav.navigate(model.debugScreen!!)
+            "contact", "identity", "sos" -> nav.navigate(model.debugScreen!!)
         }
     }
 

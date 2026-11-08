@@ -119,7 +119,6 @@
     <string name="radio">Radio</string>
     <string name="send_advert">Send an advert</string>
     <string name="send_advert_note">Lets nearby radios add yours as a contact.</string>
-    <string name="airtime">Airtime</string>
     <string name="appearance">Appearance</string>
     <string name="system">System</string>
     <string name="dark">Dark</string>
@@ -167,13 +166,10 @@
     <string name="connect">Connect</string>
     <string name="try_demo_instead">Try the demo network instead</string>
     <string name="disconnect">Disconnect</string>
-    <string name="connect_radio">Connect a radio</string>
-    <string name="connect_radio_note">Over Bluetooth, or USB with a cable.</string>
     <string name="channel_radio">Radio link</string>
     <string name="channel_messages">Messages</string>
     <string name="service_notification">lichen keeps receiving messages.</string>
     <!-- Identity, contacts, groups (L9c) -->
-    <string name="identity">Identity</string>
     <string name="your_identity">Your identity</string>
     <string name="your_name">Your name</string>
     <string name="key_fingerprint">Your key\'s fingerprint</string>
@@ -397,4 +393,33 @@
         <item quantity="one">Group · %1$d member · flood</item>
         <item quantity="other">Group · %1$d members · flood</item>
     </plurals>
+    <!-- Settings and first launch (L9f) -->
+    <string name="preset">Preset</string>
+    <string name="read_from_radio">Read from the radio once connected</string>
+    <string name="sub_band">Sub-band</string>
+    <string name="relay_for_others">Relay for others</string>
+    <string name="relay_for_others_note">Stock companion firmware does not repeat: a repeater node does that.</string>
+    <string name="advert_sent">Sent: radios around can add yours as a contact.</string>
+    <string name="send_threshold">Send threshold</string>
+    <string name="send_threshold_note">Distance from the predicted track</string>
+    <string name="heartbeat">Heartbeat when still</string>
+    <string name="heartbeat_note">Contacts; groups every 30 min</string>
+    <string name="language">Language</string>
+    <string name="show_welcome_again">Show the welcome screens again</string>
+    <string name="about">About</string>
+    <string name="version">Version</string>
+    <string name="key_backed_up">Key %1$s… · backed up</string>
+    <string name="key_not_backed_up">Key %1$s… · not backed up</string>
+    <string name="radio_connected_short">connected</string>
+    <string name="airtime_left_short">Airtime left</string>
+    <string name="tagline">Encrypted messaging off the grid, over LoRa and beyond.</string>
+    <string name="no_cell_towers">No cell towers</string>
+    <string name="no_cell_towers_note">Messages go from radio to radio.</string>
+    <string name="end_to_end">End-to-end encrypted</string>
+    <string name="end_to_end_note">Verified keys, nothing in clear on the air.</string>
+    <string name="find_your_people">Find your people</string>
+    <string name="find_your_people_note">Location sharing and search mode.</string>
+    <string name="connect_my_radio">Connect my radio</string>
+    <string name="later">Later</string>
+    <string name="continue_">Continue</string>
 </resources>
