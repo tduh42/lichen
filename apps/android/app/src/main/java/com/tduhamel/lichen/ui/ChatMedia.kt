@@ -295,8 +295,10 @@ fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
         }
         IconButton(
             onClick = {
+                // To the conversation the recording was made in.
+                val to = model.recorder.chat ?: return@IconButton
                 val pcm = model.recorder.stop(keep = true) ?: return@IconButton
-                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()), chat)?.let(onError)
+                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()), to)?.let(onError)
             },
             colors = IconButtonDefaults.iconButtonColors(containerColor = t.actBg, contentColor = t.actFg),
             modifier = Modifier.size(48.dp),

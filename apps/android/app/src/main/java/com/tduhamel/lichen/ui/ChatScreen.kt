@@ -106,7 +106,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     // On screen: its messages need no notification.
     DisposableEffect(chat) {
         model.visibleChat = chat
-        onDispose { if (model.visibleChat == chat) model.visibleChat = null }
+        onDispose {
+            if (model.visibleChat == chat) model.visibleChat = null
+            // A recording belongs to its conversation: leaving it drops the recording.
+            model.recorder.cancel(chat)
+        }
     }
     LaunchedEffect(chat) {
         model.load(chat)
@@ -356,7 +360,7 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (!ok) {
             onError(res.getString(R.string.mic_denied))
-        } else if (!model.recorder.start()) {
+        } else if (!model.recorder.start(chat)) {
             onError(res.getString(R.string.mic_unavailable))
         }
     }
@@ -378,7 +382,7 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (model.recorder.recording) {
+        if (model.recorder.recording && model.recorder.chat == chat) {
             RecordingBar(model, chat, onError)
             return@Column
         }
@@ -449,7 +453,7 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                             PackageManager.PERMISSION_GRANTED
                         if (!granted) {
                             askMic.launch(Manifest.permission.RECORD_AUDIO)
-                        } else if (!model.recorder.start()) {
+                        } else if (!model.recorder.start(chat)) {
                             onError(res.getString(R.string.mic_unavailable))
                         }
                     },

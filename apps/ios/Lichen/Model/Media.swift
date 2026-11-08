@@ -10,16 +10,24 @@ final class VoiceRecorder {
     private(set) var recording = false
     private(set) var elapsed: TimeInterval = 0
     var denied = false
+    /// The conversation the recording is for (set from the tap, before the permission prompt):
+    /// only that conversation shows it and sends it.
+    private(set) var chat: ChatID?
 
     @ObservationIgnored private var recorder: AVAudioRecorder?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice.caf")
 
-    func start() async {
+    func start(for chat: ChatID) async {
+        if recording { return }
+        self.chat = chat
         guard await AVAudioApplication.requestRecordPermission() else {
             denied = true
+            self.chat = nil
             return
         }
+        // The conversation was left while the permission prompt was up.
+        guard self.chat == chat else { return }
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
         try? session.setActive(true)
@@ -31,7 +39,10 @@ final class VoiceRecorder {
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
         ]
-        guard let r = try? AVAudioRecorder(url: url, settings: settings) else { return }
+        guard let r = try? AVAudioRecorder(url: url, settings: settings) else {
+            self.chat = nil
+            return
+        }
         recorder = r
         r.record(forDuration: Self.maxSeconds)
         recording = true
@@ -44,8 +55,15 @@ final class VoiceRecorder {
         }
     }
 
+    /// Conversation `chat` was left: its recording is dropped, never sent elsewhere.
+    func cancel(for chat: ChatID) {
+        guard self.chat == chat else { return }
+        _ = stop(keep: false)
+    }
+
     /// Stops and returns the samples (nil when cancelled or empty).
     func stop(keep: Bool) -> [Int16]? {
+        chat = nil
         timer?.invalidate()
         recorder?.stop()
         recorder = nil

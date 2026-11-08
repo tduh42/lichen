@@ -88,6 +88,8 @@ struct ChatView: View {
         }
         .onDisappear {
             if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
+            // A recording belongs to its conversation: leaving it drops the recording.
+            model.recorder.cancel(for: chat)
         }
         .sheet(isPresented: Binding(get: { verifying != nil }, set: { if !$0 { verifying = nil } })) {
             if case let .contact(key) = chat {
@@ -516,7 +518,7 @@ private struct Composer: View {
             if let line = costLine {
                 Text(line).font(.system(size: 11)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
-            if model.recorder.recording {
+            if model.recorder.recording, model.recorder.chat == chat {
                 recordingBar
             } else {
                 HStack(spacing: 8) {
@@ -546,7 +548,7 @@ private struct Composer: View {
                         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.line))
                     if isContact && draft.isEmpty {
                         Button {
-                            Task { await model.recorder.start() }
+                            Task { await model.recorder.start(for: chat) }
                         } label: {
                             Image(systemName: "mic")
                                 .font(.system(size: 20, weight: .semibold))
@@ -673,9 +675,10 @@ private struct Composer: View {
             }
             Spacer()
             Button {
-                guard let pcm = model.recorder.stop(keep: true) else { return }
+                // To the conversation the recording was made in.
+                guard let to = model.recorder.chat, let pcm = model.recorder.stop(keep: true) else { return }
                 let voice = prepareVoice(pcm: pcm, mode: UInt8(model.voiceMode))
-                if let e = model.sendVoice(voice, to: chat) { error = e }
+                if let e = model.sendVoice(voice, to: to) { error = e }
             } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 18, weight: .bold))

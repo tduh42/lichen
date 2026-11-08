@@ -29,6 +29,10 @@ class VoiceRecorder {
     var elapsed by mutableStateOf(0.0)
         private set
 
+    /** The conversation the recording is for: only that conversation shows it and sends it. */
+    var chat by mutableStateOf<ChatId?>(null)
+        private set
+
     private val main = Handler(Looper.getMainLooper())
     private var record: AudioRecord? = null
     private var thread: Thread? = null
@@ -38,8 +42,8 @@ class VoiceRecorder {
     /** Starts recording (the RECORD_AUDIO permission is granted); false when the microphone
      * cannot be opened. */
     @SuppressLint("MissingPermission")
-    fun start(): Boolean {
-        if (recording) return true
+    fun start(chat: ChatId): Boolean {
+        if (recording) return this.chat == chat
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val r = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
@@ -50,6 +54,7 @@ class VoiceRecorder {
             return false
         }
         record = r
+        this.chat = chat
         samples = ShortArray(MAX_SAMPLES)
         count = 0
         elapsed = 0.0
@@ -59,6 +64,7 @@ class VoiceRecorder {
             r.release()
             record = null
             recording = false
+            this.chat = null
             return false
         }
         thread = Thread({
@@ -76,8 +82,14 @@ class VoiceRecorder {
         return true
     }
 
+    /** Conversation [chat] was left: its recording is dropped, never sent elsewhere. */
+    fun cancel(chat: ChatId) {
+        if (this.chat == chat) stop(keep = false)
+    }
+
     /** Stops; the samples, or null when cancelled or empty. */
     fun stop(keep: Boolean): ShortArray? {
+        chat = null
         if (!recording) return null
         recording = false
         thread?.join(500)
