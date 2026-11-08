@@ -73,7 +73,7 @@ private data class Row(
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit) {
+fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Unit) {
     val t = lichen
     val res = LocalResources.current
     var composing by remember { mutableStateOf(false) }
@@ -127,7 +127,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { RadioCard(model) }
-            item { StatusBanners(model) }
+            item { StatusBanners(model, pair) }
             if (rows.isEmpty()) {
                 item { EmptyConversations() }
             } else {
@@ -252,7 +252,7 @@ fun RadioCard(model: AppModel) {
             )
             val r = model.radio
             if (r != null && model.isConnected) {
-                Text("SF${r.sf} / ${bandwidth(r.bwHz)}", fontSize = 13.sp, color = t.tx2)
+                Text("${model.linkKind} · SF${r.sf} / ${bandwidth(r.bwHz)}", fontSize = 13.sp, color = t.tx2)
             }
         }
         AirtimeMeter(model.budget.usedMs, model.budget.limitMs)
@@ -269,7 +269,7 @@ fun RadioCard(model: AppModel) {
 
 /** Degraded states that concern the whole app (mockup `etats`): radio, budget. */
 @Composable
-fun StatusBanners(model: AppModel) {
+fun StatusBanners(model: AppModel, pair: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (!model.isConnected && !model.isDemo) {
             Banner(
@@ -278,6 +278,7 @@ fun StatusBanners(model: AppModel) {
                 stringResource(
                     if (model.radioState == RadioState.Off) R.string.turn_bluetooth_on else R.string.messages_wait_for_radio,
                 ),
+                stringResource(R.string.connect) to pair,
             )
         }
         if (model.isConnected && model.airtimeLeftMs < 10_000uL) {

@@ -150,4 +150,27 @@
     <string name="fail_too_large">too large</string>
     <string name="fail_interrupted">the app stopped before delivery</string>
     <string name="fail_identity_changed">their identity changed: verify it first</string>
+    <!-- Pairing and the radio link (L9b) -->
+    <string name="pair_a_radio">Pair a radio</string>
+    <string name="pair_intro">Turn your radio on and keep it close to the phone. Stock MeshCore companion firmware: nothing to flash.</string>
+    <string name="searching_bluetooth">Searching over Bluetooth…</string>
+    <string name="bluetooth_permission">Bluetooth access is off</string>
+    <string name="bluetooth_permission_note">Allow nearby devices so that lichen can find and pair your radio.</string>
+    <string name="allow">Allow</string>
+    <string name="dbm_companion">%1$d dBm · MeshCore companion</string>
+    <string name="pair">Pair</string>
+    <string name="code_on_radio">Code shown on the radio</string>
+    <string name="code_on_radio_note">When you pair, Android asks for the 6 digits shown on the radio\'s screen: type them in its dialog. The radio then stays paired with this phone.</string>
+    <string name="usb" translatable="false">USB</string>
+    <string name="usb_note">Or plug a radio with the USB companion firmware into the phone (USB-C, OTG).</string>
+    <string name="no_usb">No USB radio plugged in.</string>
+    <string name="usb_serial">USB serial · %1$s</string>
+    <string name="connect">Connect</string>
+    <string name="try_demo_instead">Try the demo network instead</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connect_radio">Connect a radio</string>
+    <string name="connect_radio_note">Over Bluetooth, or USB with a cable.</string>
+    <string name="channel_radio">Radio link</string>
+    <string name="channel_messages">Messages</string>
+    <string name="service_notification">lichen keeps receiving messages.</string>
 </resources>

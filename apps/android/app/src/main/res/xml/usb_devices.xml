@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB serial ports (CDC-ACM), as on the Heltec V4's own USB: a radio with the USB companion firmware. -->
+<resources>
+    <usb-device class="2" />
+</resources>

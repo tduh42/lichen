@@ -33,7 +33,7 @@ import com.tduhamel.lichen.model.bandwidth
 /** Radio, appearance, demo network (mockup `reglages`; the rest comes with L9b–L9f). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(model: AppModel) {
+fun SettingsScreen(model: AppModel, pair: () -> Unit) {
     val t = lichen
     Scaffold(
         containerColor = t.bg,
@@ -58,11 +58,27 @@ fun SettingsScreen(model: AppModel) {
                     CardRow(
                         if (model.isConnected) model.nodeName.ifEmpty { stringResource(R.string.radio) } else stringResource(R.string.no_radio),
                         if (r != null && model.isConnected) {
-                            "%.3f MHz · SF%d · %s · CR 4/%d".format(r.freqKhz.toDouble() / 1000, r.sf.toInt(), bandwidth(r.bwHz), r.cr.toInt())
+                            "%s · %.3f MHz · SF%d · %s · CR 4/%d".format(
+                                model.linkKind, r.freqKhz.toDouble() / 1000, r.sf.toInt(), bandwidth(r.bwHz), r.cr.toInt(),
+                            )
                         } else {
                             null
                         },
                     )
+                    CardDivider()
+                    if (model.isConnected && !model.isDemo) {
+                        CardRow(stringResource(R.string.disconnect)) {
+                            TextButton(onClick = { model.disconnect() }) {
+                                Text(stringResource(R.string.disconnect), fontWeight = FontWeight.SemiBold, color = t.sos)
+                            }
+                        }
+                    } else if (!model.isDemo) {
+                        CardRow(stringResource(R.string.connect_radio), stringResource(R.string.connect_radio_note)) {
+                            TextButton(onClick = pair) {
+                                Text(stringResource(R.string.connect), fontWeight = FontWeight.SemiBold, color = t.tx)
+                            }
+                        }
+                    }
                     CardDivider()
                     CardRow(stringResource(R.string.send_advert), stringResource(R.string.send_advert_note)) {
                         TextButton(onClick = { model.sendAdvert() }, enabled = model.isConnected) {

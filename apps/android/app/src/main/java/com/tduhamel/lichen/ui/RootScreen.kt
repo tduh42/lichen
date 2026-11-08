@@ -74,11 +74,12 @@ fun RootScreen(model: AppModel) {
             modifier = Modifier.padding(bottom = padding.calculateBottomPadding()),
         ) {
             composable("messages") {
-                ConversationsScreen(model, open = { nav.navigate("chat/${it.route}") })
+                ConversationsScreen(model, open = { nav.navigate("chat/${it.route}") }, pair = { nav.navigate("pairing") })
             }
             composable("map") { LaterScreen(stringResource(R.string.tab_map), stringResource(R.string.later_map)) }
             composable("search") { LaterScreen(stringResource(R.string.tab_search), stringResource(R.string.later_search)) }
-            composable("settings") { SettingsScreen(model) }
+            composable("settings") { SettingsScreen(model, pair = { nav.navigate("pairing") }) }
+            composable("pairing") { PairingScreen(model, back = { nav.popBackStack() }) }
             composable("chat/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
                 if (chat != null) ChatScreen(model, chat, back = { nav.popBackStack() })

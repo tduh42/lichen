@@ -2,6 +2,7 @@ package com.tduhamel.lichen.model
 
 import android.app.Application
 import android.content.Context
+import android.hardware.usb.UsbDevice
 import android.os.SystemClock
 import androidx.core.content.edit
 import androidx.compose.runtime.getValue
@@ -104,6 +105,22 @@ class AppModel(private val app: Application) {
         private set
     var link: RadioLink? = null
 
+    /** Radios found by the Bluetooth scan, strongest first. */
+    var found by mutableStateOf(listOf<BleCompanion.Found>())
+
+    /** USB serial devices plugged in (USB OTG). */
+    var usbDevices by mutableStateOf(listOf<UsbDevice>())
+
+    /** How the radio is reached: "BLE" or "USB". */
+    var linkKind by mutableStateOf("BLE")
+
+    /** The app is on screen: received messages need no notification. */
+    var inForeground = false
+
+    // USB first: the Bluetooth link may report its state while it is built.
+    val usb = UsbCompanion(app, ::usbChanged, ::frame) { usbDevices = it }
+    val ble = BleCompanion(app, ::bleChanged, { found = it }, ::frame)
+
     private var demo: DemoNetwork? = null
     private var demoJob: Job? = null
     private var wake: Job? = null
@@ -112,6 +129,8 @@ class AppModel(private val app: Application) {
 
     init {
         refreshAll()
+        Notifications.channels(app)
+        if (ble.permitted()) ble.start()
     }
 
     private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
@@ -188,6 +207,7 @@ class AppModel(private val app: Application) {
         replaceCore(makeCore(identityStore.seed(), persistent = true))
         radioState = RadioState.Idle
         refreshAll()
+        radioChanged(usb.device?.let { RadioState.Connected(it.productName ?: "USB") } ?: ble.state)
     }
 
     private fun demoStep() {
@@ -217,17 +237,57 @@ class AppModel(private val app: Application) {
     fun now(): ULong = (SystemClock.elapsedRealtime() - started).toULong()
 
     /** The radio link changed state (BLE or USB). */
-    fun radioChanged(state: RadioState) {
+    private fun radioChanged(state: RadioState) {
         if (isDemo) return
         radioState = state
         if (state is RadioState.Connected) {
+            // Receive with the screen off (ADR-0006); stops when the user disconnects.
+            RadioService.start(app, state.name)
             core.connect(now())
             pump()
         }
     }
 
-    /** A frame from the radio. */
+    private fun bleChanged(s: RadioState) {
+        if (usb.device != null) return
+        linkKind = "BLE"
+        link = RadioLink(ble::write)
+        radioChanged(s)
+    }
+
+    private fun usbChanged(s: RadioState) {
+        if (s is RadioState.Connected) {
+            ble.stopScan()
+            linkKind = "USB"
+            link = RadioLink(usb::write)
+            radioChanged(s)
+        } else {
+            linkKind = "BLE"
+            link = RadioLink(ble::write)
+            radioChanged(ble.state)
+        }
+    }
+
+    /** The Bluetooth permissions were just granted. */
+    fun bluetoothReady() = ble.start()
+
+    fun scan() = ble.scan()
+
+    fun stopScan() = ble.stopScan()
+
+    fun pair(address: String) = ble.connect(address)
+
+    fun connectUsb(d: UsbDevice) = usb.connect(d)
+
+    /** Disconnects the radio (and forgets it, over Bluetooth). */
+    fun disconnect() {
+        if (usb.device != null) usb.close() else ble.disconnect()
+        RadioService.stop(app)
+    }
+
+    /** A frame from the radio (ignored while the demo network runs). */
     fun frame(data: ByteArray) {
+        if (isDemo) return
         core.onCompanionFrame(data, now())
         pump()
     }
@@ -278,6 +338,7 @@ class AppModel(private val app: Application) {
             is LichenEvent.SessionEstablished -> secured = secured + e.peer.hex()
             is LichenEvent.Received -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
+                notify(ChatId.contact(e.from), name(e.from), e.message.display(res))
                 debug.say?.let { say ->
                     debug = debug.copy(say = null)
                     send(say, ChatId.contact(e.from))
@@ -289,13 +350,22 @@ class AppModel(private val app: Application) {
                 contacts = people()
                 debugOpen()
             }
-            is LichenEvent.GroupMessage -> lastSnr = lastSnr + (e.from.hex() to e.snrDb)
+            is LichenEvent.GroupMessage -> {
+                lastSnr = lastSnr + (e.from.hex() to e.snrDb)
+                val chat = ChatId.group(e.gid)
+                notify(chat, title(chat), "${name(e.from)}: ${e.message.display(res)}")
+            }
             is LichenEvent.MessageChanged -> {
                 upsert(e.message)
                 conversations = core.conversations()
             }
             is LichenEvent.Location, LichenEvent.SharesChanged, is LichenEvent.MediaRequested -> Unit
         }
+    }
+
+    /** A notification for a message received while the app is not on screen. */
+    private fun notify(chat: ChatId, title: String, text: String) {
+        if (!inForeground) Notifications.message(app, chat, title, text)
     }
 
     /** Debug extra `open`: the conversation with this contact or group, once it exists. */

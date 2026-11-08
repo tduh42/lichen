@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -58,6 +59,7 @@ import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.Notifications
 import com.tduhamel.lichen.model.display
 import com.tduhamel.lichen.model.fragmentsText
 import com.tduhamel.lichen.model.hopsBadge
@@ -72,9 +74,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
+    val context = LocalContext.current
     LaunchedEffect(chat) {
         model.load(chat)
         model.markRead(chat)
+        Notifications.clear(context, chat)
     }
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) list.animateScrollToItem(messages.size)
