@@ -308,4 +308,5 @@
     <string name="delete_conversation">Supprimer la conversation</string>
     <string name="today">Aujourd\'hui</string>
     <string name="yesterday">Hier</string>
+    <string name="mic_unavailable">Impossible d\'ouvrir le micro : une autre app l\'utilise peut-être.</string>
 </resources>

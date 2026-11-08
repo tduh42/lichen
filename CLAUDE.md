@@ -106,7 +106,7 @@ python3 -I apps/ios/sync-strings.py                                       # Stri
 swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appiconset   # app icons
 scripts/build-android-core.sh                                             # Android core (arm64) + Kotlin bindings
 (cd apps/android && ./gradlew lintDebug testDebugUnitTest assembleDebug)  # lint, JVM tests on the host core, APK
-$ANDROID_HOME/emulator/emulator -avd lichen-pixel -no-window -no-audio -gpu swiftshader_indirect &
+$ANDROID_HOME/emulator/emulator -avd lichen-pixel -allow-host-audio &   # with a window, the Mac's audio and mic
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.tduhamel.lichen/.MainActivity --ez demo true --es open Camille   # debug extras
 cargo run --release -p lc-cli -- bridge /dev/cu.usbmodem2101    # the radio's serial port on 127.0.0.1:5000 (TCP)

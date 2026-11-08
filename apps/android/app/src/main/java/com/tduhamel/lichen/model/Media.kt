@@ -35,10 +35,11 @@ class VoiceRecorder {
     private var samples = ShortArray(MAX_SAMPLES)
     @Volatile private var count = 0
 
-    /** Starts recording (the RECORD_AUDIO permission is granted). */
+    /** Starts recording (the RECORD_AUDIO permission is granted); false when the microphone
+     * cannot be opened. */
     @SuppressLint("MissingPermission")
-    fun start() {
-        if (recording) return
+    fun start(): Boolean {
+        if (recording) return true
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val r = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
@@ -46,7 +47,7 @@ class VoiceRecorder {
         )
         if (r.state != AudioRecord.STATE_INITIALIZED) {
             r.release()
-            return
+            return false
         }
         record = r
         samples = ShortArray(MAX_SAMPLES)
@@ -54,6 +55,12 @@ class VoiceRecorder {
         elapsed = 0.0
         recording = true
         r.startRecording()
+        if (r.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            r.release()
+            record = null
+            recording = false
+            return false
+        }
         thread = Thread({
             val buf = ShortArray(800)
             while (recording && count < MAX_SAMPLES) {
@@ -66,6 +73,7 @@ class VoiceRecorder {
                 }
             }
         }, "lichen-voice").apply { start() }
+        return true
     }
 
     /** Stops; the samples, or null when cancelled or empty. */

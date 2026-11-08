@@ -345,7 +345,11 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
         }
     }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) model.recorder.start() else onError(res.getString(R.string.mic_denied))
+        if (!ok) {
+            onError(res.getString(R.string.mic_denied))
+        } else if (!model.recorder.start()) {
+            onError(res.getString(R.string.mic_unavailable))
+        }
     }
     val bridgeAvailable = model.bridgeProviders(anonymous = false).isNotEmpty()
     val text = draft.trim()
@@ -415,7 +419,11 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED
-                        if (granted) model.recorder.start() else askMic.launch(Manifest.permission.RECORD_AUDIO)
+                        if (!granted) {
+                            askMic.launch(Manifest.permission.RECORD_AUDIO)
+                        } else if (!model.recorder.start()) {
+                            onError(res.getString(R.string.mic_unavailable))
+                        }
                     },
                     enabled = model.isConnected,
                     modifier = Modifier.size(48.dp),

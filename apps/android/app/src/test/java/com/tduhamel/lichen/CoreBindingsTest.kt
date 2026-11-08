@@ -5,6 +5,8 @@ import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.Message
 import com.tduhamel.lichen.core.UsbDecoder
+import com.tduhamel.lichen.core.decodeVoice
+import com.tduhamel.lichen.core.prepareVoice
 import com.tduhamel.lichen.core.usbEncode
 import com.tduhamel.lichen.model.ChatId
 import org.junit.Assert.assertEquals
@@ -54,6 +56,19 @@ class CoreBindingsTest {
         assertTrue(core.conversations().isNotEmpty())
         core.close()
         demo.close()
+    }
+
+    @Test
+    fun voiceRoundTrip() {
+        // Two seconds of a 300 Hz tone at 8 kHz, through Codec2 700C and back.
+        val pcm = List(16_000) { i -> (8_000 * kotlin.math.sin(2 * Math.PI * 300 * i / 8_000.0)).toInt().toShort() }
+        val v = prepareVoice(pcm)
+        assertEquals(0, v.mode.toInt())
+        assertTrue("about 2 s", v.durationMs.toInt() in 1_900..2_100)
+        val back = decodeVoice(v.mode, v.frames, v.data)!!
+        assertTrue("decoded samples", back.size > 15_000)
+        val energy = back.sumOf { it.toLong() * it }.toDouble() / back.size
+        assertTrue("not silence", energy > 1e5)
     }
 
     @Test
