@@ -112,6 +112,20 @@ impl Share {
     }
 }
 
+/// What SOS is doing, for the app to show (§12.2, §11.3): never a delivery claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SosStatus {
+    pub on: bool,
+    /// Our fix is fresh enough to be sent (`FIX_MAX_AGE_S`).
+    pub fix_fresh: bool,
+    /// No fresh fix: BEACONs without a position go to the groups instead (§11.3).
+    pub beacon_only: bool,
+    /// Conversations that get it now: every share and group with a fix, the groups without.
+    pub recipients: u32,
+    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds.
+    pub last_queued: Option<u64>,
+}
+
 /// Location state of the core.
 #[derive(Debug, Default)]
 pub(crate) struct Locations {
@@ -325,6 +339,7 @@ impl Core {
         }
         self.loc.sos = on;
         if !on {
+            self.end_sos_beacons(now);
             // Targets without a share forget us; the others get a normal position again.
             let extra: Vec<Chat> = self.loc.sos_extra.drain().collect();
             for c in extra {
@@ -340,6 +355,39 @@ impl Core {
 
     pub const fn sos(&self) -> bool {
         self.loc.sos
+    }
+
+    /// What SOS is doing now (the app adds what it knows: radio link, permission).
+    pub fn sos_status(&self, now: Millis) -> SosStatus {
+        let t = self.unix_s(now);
+        let fix_fresh = matches!(
+            (self.loc.fix, t),
+            (Some(f), Some(t)) if f.unix_s + FIX_MAX_AGE_S >= t
+        );
+        let groups = self.groups.len();
+        let recipients = if fix_fresh {
+            let extra = self
+                .loc
+                .shares
+                .iter()
+                .filter(|s| !matches!(s.chat, Chat::Group(g) if self.groups.contains_key(&g)))
+                .count();
+            groups + extra
+        } else {
+            groups
+        };
+        let last = if fix_fresh {
+            self.loc.sos_at.values().max().copied()
+        } else {
+            self.last_sos_beacon()
+        };
+        SosStatus {
+            on: self.loc.sos,
+            fix_fresh,
+            beacon_only: self.loc.sos && !fix_fresh,
+            recipients: u32::try_from(recipients).unwrap_or(u32::MAX),
+            last_queued: if self.loc.sos { last } else { None },
+        }
     }
 
     fn check_target(&self, chat: &Chat) -> Result<(), Error> {

@@ -315,6 +315,51 @@ fn sos_reaches_the_group() {
     }
 }
 
+/// What SOS reports to the app: position-less beacons to the groups without a fix, then the
+/// position to every share and group once a fix comes, the queue time of the last one.
+#[test]
+fn sos_status_tells_what_goes_out() {
+    let (mut net, [a, b, c]) = three(7);
+    let (bob, carol) = (net.key(b), net.key(c));
+    net.with_core(a, |core, now| {
+        core.create_group("Rando", &[bob, carol], now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    let off = net.with_core(a, |core, now| core.sos_status(now)).unwrap();
+    assert!(!off.on && off.last_queued.is_none());
+
+    // No fix: beacons without a position, to the group only.
+    net.with_core(a, |core, now| core.set_sos(true, now));
+    net.run_until(net.now + 5 * S, |_| false);
+    let s = net.with_core(a, |core, now| core.sos_status(now)).unwrap();
+    assert!(s.on && !s.fix_fresh && s.beacon_only);
+    assert_eq!(s.recipients, 1);
+    assert_eq!(s.last_queued, Some(unix(net.now) - 5));
+
+    // A fix and a share with Bob: positions to the group and to Bob.
+    net.with_core(a, |core, now| {
+        core.start_share(
+            lc_core::Chat::Contact(bob),
+            Precision::Exact,
+            unix(now) + 3_600,
+            now,
+        )
+        .unwrap();
+        core.update_location(fix_at(now, 45.0, 5.5, 0.0, 0.0), now);
+    });
+    net.run_until(net.now + 5 * S, |_| false);
+    let s = net.with_core(a, |core, now| core.sos_status(now)).unwrap();
+    assert!(s.fix_fresh && !s.beacon_only);
+    assert_eq!(s.recipients, 2);
+    assert!(s.last_queued.is_some_and(|t| t + 10 >= unix(net.now)));
+
+    net.with_core(a, |core, now| core.set_sos(false, now));
+    let s = net.with_core(a, |core, now| core.sos_status(now)).unwrap();
+    assert!(!s.on && s.last_queued.is_none());
+}
+
 /// On lossy links some positions fail: none is resent stale, and the share recovers with a
 /// fresh one, so Bob keeps up with a zigzag walk.
 #[test]

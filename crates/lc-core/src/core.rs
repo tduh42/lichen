@@ -239,6 +239,14 @@ pub enum Event {
         gid: GroupId,
         by: PubKey,
     },
+    /// A BEACON from member `from` (node) of `gid` (§11.1): `sos` while it is in SOS (with or
+    /// without a position: an SOS without GPS shows here), clear when it left SOS.
+    Beacon {
+        gid: GroupId,
+        from: PubKey,
+        sos: bool,
+        battery: Option<u8>,
+    },
     /// Our radio's TX power is now `dbm`; `previous` while a POWER request holds it, to
     /// restore after a restart ([`Core::restore_tx_power`]: the radio keeps it), `None` once
     /// restored.

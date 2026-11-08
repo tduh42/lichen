@@ -569,3 +569,29 @@ fn figures() {
         println!("  airtime per searcher: {:.0} ms/min", median(airtime));
     }
 }
+
+/// An SOS without GPS reaches the group as BEACONs with the SOS bit; leaving SOS still without
+/// a fix sends one with the bit clear, so the others know it ended.
+#[test]
+fn sos_without_gps_is_announced_and_ended() {
+    let mut f = Field::new(29, geometry(2.8));
+    let (alice, j, gid) = (f.searchers[0], f.julien, f.gid);
+    let julien = f.net.key(j);
+    let beacons = |ev: &[Event]| -> Vec<bool> {
+        ev.iter()
+            .filter_map(|e| match e {
+                Event::Beacon {
+                    from, sos, gid: g, ..
+                } if *from == julien && *g == gid => Some(*sos),
+                _ => None,
+            })
+            .collect()
+    };
+    f.net.with_core(j, |c, now| c.set_sos(true, now));
+    f.net.run_until(f.net.now + 3 * MIN, |_| false);
+    let got = beacons(&f.net.take_events(alice));
+    assert!(got.len() >= 2 && got.iter().all(|s| *s), "{got:?}");
+    f.net.with_core(j, |c, now| c.set_sos(false, now));
+    f.net.run_until(f.net.now + 3 * MIN, |_| false);
+    assert_eq!(beacons(&f.net.take_events(alice)), vec![false]);
+}

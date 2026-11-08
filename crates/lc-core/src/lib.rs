@@ -22,7 +22,7 @@ pub use crate::core::{
 pub use content::{Announce, Content};
 pub use group::{Group, GroupId, Member};
 pub use lc_proto::Millis;
-pub use location::{Fix, Precision, Share};
+pub use location::{Fix, Precision, Share, SosStatus};
 pub use search::{Measurement, SearchInfo, TargetFix};
 pub use solver::{Estimate, Heat, PathLoss};
 pub use store::Chat;

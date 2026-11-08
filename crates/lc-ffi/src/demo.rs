@@ -16,6 +16,8 @@ use crate::LocationFix;
 const REFUGE: (f64, f64) = (44.8960, 5.4880);
 const COL: (f64, f64) = (44.9150, 5.4620);
 const YOU: (f64, f64) = (44.8885, 5.4985);
+/// Where Julien hurt himself in the SOS scenario, halfway down, without GPS.
+const JULIEN_HURT: (f64, f64) = (44.9055, 5.4750);
 /// Julien's walking speed, m/s.
 const WALK: f64 = 1.3;
 /// Camille's voice message: `mode u8 ‖ frames u16 ‖ Codec2 data` (macOS speech synthesis,
@@ -148,6 +150,21 @@ struct Demo {
     /// Camille announced her full-resolution photo (§14.1).
     announced: bool,
     bots_met: bool,
+    /// The SOS scenario: Julien in SOS without GPS once the group is set up, Camille searching.
+    julien_sos: bool,
+    camille_searching: bool,
+    next_camille_ping: u64,
+    /// Camille's own SOS, from and until (simulated ms), for two incidents at once.
+    camille_sos: Option<(u64, u64)>,
+}
+
+/// A point in metres east and north of the user (the fake network's plane).
+fn plane(at: (f64, f64)) -> (f64, f64) {
+    let m = 111_320.0;
+    (
+        (at.1 - YOU.1) * m * YOU.0.to_radians().cos(),
+        (at.0 - YOU.0) * m,
+    )
 }
 
 fn unix_now_ms() -> u64 {
@@ -337,6 +354,7 @@ impl Demo {
             self.act(a);
         }
         self.locate();
+        self.camille_acts();
         let app_key = self.net.key(self.app);
         // Once her photo's preview went out and the bridge is up, Camille announces the full
         // resolution (one LoRa frame).
@@ -427,6 +445,20 @@ impl Demo {
                                 .with_core(bot, |c, t| c.send_media(&app_key, datagram, t));
                         }
                     }
+                    Event::Beacon {
+                        gid,
+                        from,
+                        sos: true,
+                        ..
+                    } if bot == self.camille
+                        && from == self.net.key(self.julien)
+                        && !self.camille_searching =>
+                    {
+                        self.camille_searching = true;
+                        let _ = self
+                            .net
+                            .with_core(bot, |c, t| c.start_search(&gid, &from, t));
+                    }
                     Event::GroupMessage { from, .. } if from == app_key && bot == self.camille => {
                         self.pending.push((
                             now + 6 * SEC,
@@ -454,6 +486,22 @@ impl Demo {
                 })
         {
             self.julien_posted = true;
+            if self.julien_sos {
+                // Hurt, without GPS: SOS (BEACONs without a position) and consent for pings.
+                let _ = self.net.with_core(self.julien, |c, t| {
+                    c.set_search_consent(&gid, true, t);
+                    c.set_battery(Some(64));
+                    c.set_sos(true, t);
+                });
+                self.pending.push((
+                    now + 3 * SEC,
+                    Action::GroupPost {
+                        from: self.julien,
+                        text: "Twisted my ankle above the gorge, no GPS here. SOS on.".into(),
+                    },
+                ));
+                return;
+            }
             // He shares his position with the group, rounded to 1 km, as he leaves the col.
             self.julien_walk = Some(now);
             let unix = self.unix_s();
@@ -474,6 +522,26 @@ impl Demo {
 }
 
 impl Demo {
+    /// Camille, searching, pings Julien when allowed; her own SOS starts and ends on time.
+    fn camille_acts(&mut self) {
+        let now = self.net.now;
+        if self.camille_searching && now >= self.next_camille_ping {
+            self.next_camille_ping = now + 45 * SEC;
+            let julien = self.net.key(self.julien);
+            let _ = self
+                .net
+                .with_core(self.camille, |c, t| c.search_ping(&julien, t));
+        }
+        if let Some((from, until)) = self.camille_sos {
+            let on = now >= from && now < until;
+            let _ = self.net.with_core(self.camille, |c, t| {
+                if c.sos() != on {
+                    c.set_sos(on, t);
+                }
+            });
+        }
+    }
+
     /// The bots' phones report their positions every 10 seconds.
     fn locate(&mut self) {
         let now = self.net.now;
@@ -565,8 +633,48 @@ impl DemoNetwork {
                 camille_full: None,
                 announced: false,
                 bots_met: false,
+                julien_sos: false,
+                camille_searching: false,
+                next_camille_ping: 0,
+                camille_sos: None,
             }),
         })
+    }
+
+    /// The SOS scenario (debug `sosdemo`): once the group is set up, Julien, hurt halfway down
+    /// without GPS, turns SOS on; the app and Camille hear him directly (radio geometry from the
+    /// real distances) and Camille searches for him too. Call right after `new`.
+    pub fn julien_sos(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.julien_sos = true;
+        let (app, camille, julien) = (d.app, d.camille, d.julien);
+        for (node, at) in [(app, YOU), (camille, REFUGE), (julien, JULIEN_HURT)] {
+            let (e, n) = plane(at);
+            d.net.place(node, e, n);
+        }
+        d.net.link(app, julien);
+        d.net.link(camille, julien);
+        // Routes follow the new links (a node that overhears a frame routed the long way would
+        // drop the relayed copy as a duplicate); the bots load them again.
+        for (a, b) in [(app, julien), (camille, julien)] {
+            d.net.know(a, b, true);
+            d.net.know(b, a, true);
+        }
+        d.net.connect(camille);
+        d.net.connect(julien);
+    }
+
+    /// Camille also in SOS (at the refuge, with GPS) from `after_s` for `for_s` seconds: two
+    /// incidents at once, one ending (debug `sosdemo2`).
+    pub fn camille_sos(&self, after_s: u64, for_s: u64) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.camille_sos = Some((after_s * SEC, (after_s + for_s) * SEC));
     }
 
     /// A frame from the app to its (simulated) companion.
@@ -683,6 +791,84 @@ mod tests {
 mod location {
     use super::*;
     use crate::{LichenCore, LichenEvent, SharePrecision};
+
+    /// The SOS scenario as the app runs it: Julien's SOS beacons (no GPS) arrive, the app
+    /// searches, hears him directly and gets Camille's measures too; the estimate holds him.
+    #[test]
+    fn julien_sos_without_gps_is_searched() {
+        let demo = DemoNetwork::new();
+        demo.julien_sos();
+        let core = LichenCore::new("t".into(), vec![5; 32], vec![105; 32], None).unwrap();
+        core.set_clock(unix_now_ms(), 0);
+        core.connect(0);
+        let mut searching: Option<Vec<u8>> = None;
+        let mut sos_beacons = 0;
+        let mut sent = false;
+        let mut now = 0;
+        while now < 15 * 60_000 {
+            // The group needs Camille to know the app's identity: a first exchange.
+            if !sent
+                && now > 40_000
+                && let Some(c) = core.contacts().into_iter().find(|c| c.name == "Camille")
+            {
+                sent = core.send_text(c.key, "On my way".into(), 1, now).is_ok();
+            }
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::Beacon {
+                    gid,
+                    from,
+                    sos: true,
+                    ..
+                } = e
+                {
+                    sos_beacons += 1;
+                    if searching.is_none() {
+                        core.start_search(gid, from.clone(), now).unwrap();
+                        searching = Some(from);
+                    }
+                }
+            }
+            if now % 10_000 == 0 {
+                let mut me = demo.my_position();
+                me.unix_s = (unix_now_ms() + now) / 1000;
+                core.update_location(me, now);
+            }
+            if let Some(j) = &searching
+                && now % 30_000 == 0
+            {
+                let _ = core.search_ping(j.clone(), now);
+            }
+            now += 100;
+        }
+        let julien = searching.expect("Julien's SOS beacons reached the app");
+        assert!(sos_beacons >= 3, "{sos_beacons}");
+        let ms = core.search_measurements(julien.clone());
+        assert!(ms.iter().any(|m| m.mine), "the app measured Julien");
+        assert!(ms.iter().any(|m| !m.mine), "Camille's measures arrived");
+        let e = core.search_estimate(julien.clone()).expect("an estimate");
+        let err = lc_core::location::distance_m((e.lat, e.lon), JULIEN_HURT);
+        eprintln!(
+            "{} measurements, error {err:.0} m, 95 % {:.0} m",
+            ms.len(),
+            e.major95_m
+        );
+        assert!(err < e.major95_m.max(800.0), "{err} m");
+        assert_eq!(
+            usize::from(e.heat_cols) * usize::from(e.heat_rows),
+            e.heat.len()
+        );
+        let st = core.searches(now);
+        assert_eq!(st.len(), 1);
+        assert_eq!(st[0].battery, Some(64));
+        assert!(core.search_csv(julien).lines().count() > ms.len());
+    }
 
     /// Camille's exact position arrives directly, Julien's through the group rounded to 1 km;
     /// the map gets one marker each.

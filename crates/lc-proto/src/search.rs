@@ -19,6 +19,7 @@ pub const NOISE_UNKNOWN: i8 = i8::MIN;
 pub const POWER_MINUTES_MAX: u8 = 30;
 
 const BEACON_POSITION: u8 = 1;
+const BEACON_SOS: u8 = 2;
 const MEASURE_ESTIMATED: u8 = 1;
 const MEASURE_SATURATED: u8 = 2;
 const MEASURE_BEARING: u8 = 4;
@@ -99,6 +100,8 @@ pub enum Search {
         tx_dbm: i8,
         /// 0..=100 %, or [`BATTERY_UNKNOWN`].
         battery: u8,
+        /// The target is in SOS (with or without a position).
+        sos: bool,
         position: Option<Position>,
     },
     Measure(Measure),
@@ -124,16 +127,20 @@ impl Search {
                 id,
                 tx_dbm,
                 battery,
+                sos,
                 position,
             } => {
                 w.put(&[BEACON]);
                 w.put(&id.to_le_bytes());
                 w.put(&[*tx_dbm as u8, *battery]);
-                w.put(&[if position.is_some() {
-                    BEACON_POSITION
-                } else {
-                    0
-                }]);
+                let mut flags = 0;
+                if position.is_some() {
+                    flags |= BEACON_POSITION;
+                }
+                if *sos {
+                    flags |= BEACON_SOS;
+                }
+                w.put(&[flags]);
                 if let Some(p) = position {
                     w.put(&p.encode());
                 }
@@ -204,6 +211,7 @@ impl Search {
                     id: u16::from_le_bytes([i0, i1]),
                     tx_dbm: tx as i8,
                     battery,
+                    sos: flags & BEACON_SOS != 0,
                     position,
                 })
             }
@@ -316,14 +324,21 @@ mod tests {
     fn sizes_and_round_trips() {
         let target = [1, 2, 3, 4];
         assert_eq!(round(Search::Ping { target, id: 0xBEEF }), 7);
-        let beacon = |position| Search::Beacon {
+        let beacon = |sos, position| Search::Beacon {
             id: 7,
             tx_dbm: 22,
             battery: 81,
+            sos,
             position,
         };
-        assert_eq!(round(beacon(None)), 6);
-        assert_eq!(round(beacon(Some(position()))), 20);
+        assert_eq!(round(beacon(false, None)), 6);
+        assert_eq!(round(beacon(true, None)), 6);
+        assert_eq!(round(beacon(true, Some(position()))), 20);
+        // Unknown flag bits are ignored; the SOS bit is bit 1.
+        assert_eq!(
+            Search::decode(&[BEACON, 7, 0, 22, 81, 0x82]),
+            Some(beacon(true, None))
+        );
         let m = Measure {
             target,
             t16: 0xABCD,

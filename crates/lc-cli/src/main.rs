@@ -331,6 +331,14 @@ fn describe(core: &Core, e: &Event) -> String {
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
         Event::SearchUpdated { target } => format!("search for {} updated", short(target)),
         Event::Searched { by, .. } => format!("{} is searching for us", name_of(core, by)),
+        Event::Beacon {
+            from, sos, battery, ..
+        } => format!(
+            "beacon from {}{}{}",
+            name_of(core, from),
+            if *sos { " (SOS)" } else { "" },
+            battery.map_or(String::new(), |b| format!(", battery {b} %"))
+        ),
         Event::TxPower { dbm, previous } => match previous {
             Some(p) => format!("TX power {dbm} dBm for a search (was {p} dBm)"),
             None => format!("TX power {dbm} dBm"),

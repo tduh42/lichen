@@ -609,6 +609,22 @@ impl Core {
         v
     }
 
+    /// SOS turned off: the groups that only got position-less BEACONs get one more with the
+    /// SOS bit clear (an end position needs a fix, §11.3).
+    pub(crate) fn end_sos_beacons(&mut self, now: Millis) {
+        let groups: Vec<GroupId> = self.search.sos_beacon_at.drain().map(|(g, _)| g).collect();
+        for g in groups {
+            if self.groups.contains_key(&g) {
+                self.send_beacon(&g, 0, now);
+            }
+        }
+    }
+
+    /// When the last position-less SOS BEACON was queued, Unix seconds.
+    pub(crate) fn last_sos_beacon(&self) -> Option<u64> {
+        self.search.sos_beacon_at.values().max().copied()
+    }
+
     /// Whether `gid` may make us transmit (§11 consent).
     fn may_locate(&self, gid: &GroupId) -> bool {
         self.loc.sos_on() || self.search.consent.contains(gid)
@@ -756,9 +772,17 @@ impl Core {
             Search::Beacon {
                 tx_dbm,
                 battery,
+                sos,
                 position,
                 ..
             } => {
+                let battery = (battery != BATTERY_UNKNOWN).then_some(battery.min(100));
+                self.events.push_back(Event::Beacon {
+                    gid,
+                    from: from_node,
+                    sos,
+                    battery,
+                });
                 let at = position.and_then(|p| {
                     location::receive(
                         &mut self.loc,
@@ -777,7 +801,7 @@ impl Core {
                     .entry(from)
                     .or_insert_with(|| Track::new(from_node));
                 t.tx_dbm = Some(tx_dbm);
-                t.battery = (battery != BATTERY_UNKNOWN).then_some(battery.min(100));
+                t.battery = battery;
                 t.last_heard = Some(now);
                 if let Some((p, at)) = at {
                     let (lat, lon) = to_degrees(p.lat, p.lon);
@@ -1082,6 +1106,7 @@ impl Core {
             id,
             tx_dbm: self.search.tx_dbm.unwrap_or(DEFAULT_TX_DBM),
             battery: self.search.battery.unwrap_or(BATTERY_UNKNOWN),
+            sos: self.loc.sos_on(),
             position,
         };
         if self.send_search(gid, &s, now).is_ok() {

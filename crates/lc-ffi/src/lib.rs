@@ -14,6 +14,7 @@ use lc_core::{
     Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Precision, PubKey,
 };
 use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
+use lc_proto::search::BearingClass;
 
 mod bridge;
 mod demo;
@@ -142,6 +143,97 @@ pub struct GroupInfo {
     pub members: Vec<ContactInfo>,
     /// Members whose sender key we hold (out of `members.len() - 1`).
     pub keys_known: u32,
+}
+
+/// A search we run (protocol.md §11): the target's node (the app's handle) and identity.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SearchState {
+    pub gid: Vec<u8>,
+    pub node: Vec<u8>,
+    pub identity: Vec<u8>,
+    pub measurements: u32,
+    /// From the target's last BEACON.
+    pub tx_dbm: Option<i8>,
+    pub battery: Option<u8>,
+    /// Unix seconds of the newest reception (ours or shared).
+    pub last_heard_s: Option<u64>,
+    pub last_fix: Option<SearchFix>,
+    /// How long until a ping may go (0: now).
+    pub ping_in_ms: u64,
+}
+
+/// A position the target reported.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SearchFix {
+    pub at_s: u64,
+    pub lat: f64,
+    pub lon: f64,
+    pub radius_m: f64,
+}
+
+/// One reception of the target, by us (`mine`) or another searcher (`by`: its node when known,
+/// else its identity).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SearchMeasurement {
+    pub by: Vec<u8>,
+    pub mine: bool,
+    pub at_s: u64,
+    pub lat: f64,
+    pub lon: f64,
+    pub accuracy_m: f64,
+    /// dBm; `None` for a bearing alone.
+    pub rssi: Option<i8>,
+    pub snr_db: f32,
+    pub noise: Option<i8>,
+    /// RSSI estimated from noise + SNR; saturated: the true RSSI is higher.
+    pub estimated: bool,
+    pub saturated: bool,
+    pub bearing_deg: Option<u16>,
+    /// The bearing came from a directional antenna (else body shadowing or other).
+    pub bearing_yagi: bool,
+}
+
+/// Where the target probably is: the heat grid (row-major from the north-west corner, 255 the
+/// densest cell) over its bounds, and the 68 % / 95 % ellipses.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SearchEstimate {
+    pub lat: f64,
+    pub lon: f64,
+    pub major68_m: f64,
+    pub minor68_m: f64,
+    pub major95_m: f64,
+    pub minor95_m: f64,
+    /// The major axis, degrees from north.
+    pub azimuth_deg: f64,
+    pub heat_north: f64,
+    pub heat_south: f64,
+    pub heat_west: f64,
+    pub heat_east: f64,
+    pub heat_cols: u16,
+    pub heat_rows: u16,
+    pub heat: Vec<u8>,
+    pub observations: u32,
+    /// The path loss was fitted to the target's own GPS positions.
+    pub calibrated: bool,
+}
+
+/// A member searching for us (the last ten minutes).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SearchedBy {
+    pub gid: Vec<u8>,
+    pub by: Vec<u8>,
+}
+
+/// What our SOS is doing (the app adds the radio link and the location permission).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct SosStatus {
+    pub on: bool,
+    pub fix_fresh: bool,
+    /// No fresh fix: BEACONs without a position go to the groups.
+    pub beacon_only: bool,
+    pub recipients: u32,
+    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds.
+    pub last_queued_s: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -505,6 +597,14 @@ pub enum LichenEvent {
         gid: Vec<u8>,
         by: Vec<u8>,
     },
+    /// A BEACON from member `from` (node) of `gid`: `sos` while it is in SOS, with or without a
+    /// position (an SOS without GPS); clear when it left SOS.
+    Beacon {
+        gid: Vec<u8>,
+        from: Vec<u8>,
+        sos: bool,
+        battery: Option<u8>,
+    },
     /// Our radio's TX power is now `dbm` (`previous`: lowered by a search, to restore).
     TxPower {
         dbm: i8,
@@ -624,6 +724,17 @@ impl LichenEvent {
                 by: by.to_vec(),
             },
             Event::TxPower { dbm, previous } => Self::TxPower { dbm, previous },
+            Event::Beacon {
+                gid,
+                from,
+                sos,
+                battery,
+            } => Self::Beacon {
+                gid: gid.to_vec(),
+                from: from.to_vec(),
+                sos,
+                battery,
+            },
         }
     }
 }
@@ -785,6 +896,24 @@ impl Inner {
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
+    }
+
+    /// The node of identity `id` (the app knows people by node): a group member or a contact.
+    fn node_of(&self, id: &PubKey) -> Option<PubKey> {
+        if Some(id) == self.core.key() {
+            return self.core.node_key().copied();
+        }
+        self.core
+            .groups()
+            .flat_map(|g| g.members.iter())
+            .find(|m| m.key == *id)
+            .map(|m| m.node)
+            .or_else(|| {
+                self.core
+                    .contacts()
+                    .find(|c| c.identity == Some(*id))
+                    .map(|c| c.key)
+            })
     }
 
     fn save_contacts(&self) {
@@ -1768,6 +1897,227 @@ impl LichenCore {
             .iter()
             .map(|p| PeerPosition::new(p, now_s))
             .collect()
+    }
+
+    /// What our SOS is doing now.
+    pub fn sos_status(&self, now_ms: u64) -> SosStatus {
+        let st = self.lock().core.sos_status(now_ms);
+        SosStatus {
+            on: st.on,
+            fix_fresh: st.fix_fresh,
+            beacon_only: st.beacon_only,
+            recipients: st.recipients,
+            last_queued_s: st.last_queued,
+        }
+    }
+
+    // ----- search (protocol.md §11) -----
+
+    /// Starts searching for member `target` (node or identity) of group `gid`.
+    pub fn start_search(
+        &self,
+        gid: Vec<u8>,
+        target: Vec<u8>,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let (g, k) = (self::gid(&gid)?, key(&target)?);
+        let mut i = self.lock();
+        i.core.start_search(&g, &k, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    pub fn stop_search(&self, target: Vec<u8>) -> Result<(), LichenError> {
+        let k = key(&target)?;
+        self.lock().core.stop_search(&k);
+        Ok(())
+    }
+
+    pub fn searches(&self, now_ms: u64) -> Vec<SearchState> {
+        self.lock()
+            .core
+            .searches(now_ms)
+            .into_iter()
+            .map(|s| SearchState {
+                gid: s.gid.to_vec(),
+                node: s.node.to_vec(),
+                identity: s.target.to_vec(),
+                measurements: u32::try_from(s.measurements).unwrap_or(u32::MAX),
+                tx_dbm: s.tx_dbm,
+                battery: s.battery,
+                last_heard_s: s.last_heard,
+                last_fix: s.last_fix.map(|f| SearchFix {
+                    at_s: f.at,
+                    lat: f.lat,
+                    lon: f.lon,
+                    radius_m: f.radius_m,
+                }),
+                ping_in_ms: s.ping_in_ms,
+            })
+            .collect()
+    }
+
+    /// Asks the target to transmit now (`TooSoon` with the wait otherwise).
+    pub fn search_ping(&self, target: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
+        let k = key(&target)?;
+        let mut i = self.lock();
+        i.core.search_ping(&k, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// A bearing to the target from here, degrees from true north; `yagi`: taken with a
+    /// directional antenna (else by turning around, the body shadowing the signal).
+    pub fn search_bearing(
+        &self,
+        target: Vec<u8>,
+        deg: f64,
+        yagi: bool,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let k = key(&target)?;
+        let class = if yagi {
+            BearingClass::Yagi
+        } else {
+            BearingClass::Body
+        };
+        let mut i = self.lock();
+        i.core.search_bearing(&k, deg, class, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Asks the target to set its TX power to `dbm` for `minutes` (close range).
+    pub fn search_lower_power(
+        &self,
+        target: Vec<u8>,
+        dbm: i8,
+        minutes: u8,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let k = key(&target)?;
+        let mut i = self.lock();
+        i.core.search_lower_power(&k, dbm, minutes, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    pub fn search_estimate(&self, target: Vec<u8>) -> Option<SearchEstimate> {
+        let k = key(&target).ok()?;
+        let e = self.lock().core.search_estimate(&k)?;
+        Some(SearchEstimate {
+            lat: e.lat,
+            lon: e.lon,
+            major68_m: e.major68_m,
+            minor68_m: e.minor68_m,
+            major95_m: e.major95_m,
+            minor95_m: e.minor95_m,
+            azimuth_deg: e.azimuth_deg,
+            heat_north: e.heat.north,
+            heat_south: e.heat.south,
+            heat_west: e.heat.west,
+            heat_east: e.heat.east,
+            heat_cols: e.heat.cols,
+            heat_rows: e.heat.rows,
+            heat: e.heat.cells,
+            observations: u32::try_from(e.observations).unwrap_or(u32::MAX),
+            calibrated: e.model != lc_core::PathLoss::DEFAULT,
+        })
+    }
+
+    /// Every reception of the target, newest first.
+    pub fn search_measurements(&self, target: Vec<u8>) -> Vec<SearchMeasurement> {
+        let Ok(k) = key(&target) else {
+            return Vec::new();
+        };
+        let i = self.lock();
+        let me = i.core.key().copied();
+        let mut v: Vec<SearchMeasurement> = i
+            .core
+            .search_measurements(&k)
+            .iter()
+            .map(|m| SearchMeasurement {
+                by: i.node_of(&m.by).unwrap_or(m.by).to_vec(),
+                mine: Some(m.by) == me,
+                at_s: m.at,
+                lat: m.lat,
+                lon: m.lon,
+                accuracy_m: m.accuracy_m,
+                rssi: m.rssi,
+                snr_db: snr(m.snr4),
+                noise: m.noise,
+                estimated: m.estimated,
+                saturated: m.saturated,
+                bearing_deg: m.bearing.map(|b| b.deg),
+                bearing_yagi: m.bearing.is_some_and(|b| b.class == BearingClass::Yagi),
+            })
+            .collect();
+        v.reverse();
+        v
+    }
+
+    /// The target's receptions as CSV (field tests, ADR-0016), oldest first.
+    pub fn search_csv(&self, target: Vec<u8>) -> String {
+        let Ok(k) = key(&target) else {
+            return String::new();
+        };
+        let i = self.lock();
+        let me = i.core.key().copied();
+        let mut out = String::from(
+            "unix_s,searcher,mine,lat,lon,accuracy_m,rssi_dbm,snr_db,noise_dbm,estimated,saturated,\
+             bearing_deg,bearing_class,target_tx_dbm\n",
+        );
+        let opt = |v: Option<i8>| v.map_or(String::new(), |x| x.to_string());
+        for m in i.core.search_measurements(&k) {
+            let by = i.node_of(&m.by).unwrap_or(m.by);
+            let (deg, class) = m.bearing.map_or((String::new(), ""), |b| {
+                let c = match b.class {
+                    BearingClass::Yagi => "yagi",
+                    BearingClass::Body => "body",
+                    BearingClass::Other => "other",
+                };
+                (b.deg.to_string(), c)
+            });
+            out.push_str(&format!(
+                "{},{},{},{:.6},{:.6},{:.0},{},{:.2},{},{},{},{},{},{}\n",
+                m.at,
+                by.iter()
+                    .take(4)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>(),
+                u8::from(Some(m.by) == me),
+                m.lat,
+                m.lon,
+                m.accuracy_m,
+                opt(m.rssi),
+                f32::from(m.snr4) / 4.0,
+                opt(m.noise),
+                u8::from(m.estimated),
+                u8::from(m.saturated),
+                deg,
+                class,
+                opt(m.tx_dbm),
+            ));
+        }
+        out
+    }
+
+    /// Members searching for us (the last ten minutes).
+    pub fn searched_by(&self, now_ms: u64) -> Vec<SearchedBy> {
+        self.lock()
+            .core
+            .searched_by(now_ms)
+            .into_iter()
+            .map(|(g, by)| SearchedBy {
+                gid: g.to_vec(),
+                by: by.to_vec(),
+            })
+            .collect()
+    }
+
+    /// The phone's battery level (0..=100), sent in our BEACONs.
+    pub fn set_battery(&self, percent: Option<u8>) {
+        self.lock().core.set_battery(percent);
     }
 
     pub fn mark_read(&self, chat: ChatRef) -> Result<(), LichenError> {
