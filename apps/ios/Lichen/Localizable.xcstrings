@@ -51,6 +51,16 @@
         }
       }
     },
+    "%@ is searching for you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ te recherche"
+          }
+        }
+      }
+    },
     "%@ is unreachable": {
       "localizations": {
         "fr": {
@@ -2441,6 +2451,16 @@
         }
       }
     },
+    "No search is running for this person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune recherche en cours pour cette personne."
+          }
+        }
+      }
+    },
     "No search under way": {
       "localizations": {
         "fr": {
@@ -2737,6 +2757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Position"
+          }
+        }
+      }
+    },
+    "Possible again in %llu s.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Possible à nouveau dans %llu s."
           }
         }
       }
@@ -4047,6 +4077,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ta position n'est pas encore connue"
+          }
+        }
+      }
+    },
+    "Your position is not known yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta position n’est pas encore connue."
           }
         }
       }

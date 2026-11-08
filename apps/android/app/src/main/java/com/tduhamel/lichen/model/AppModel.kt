@@ -561,6 +561,13 @@ class AppModel(private val app: Application) {
                 updateLocator()
             }
             is LichenEvent.MediaRequested -> Unit
+            is LichenEvent.Searched -> {
+                // A member asks where we are and we answer (SOS or this group's consent, §11).
+                val chat = ChatId.group(e.gid)
+                notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)))
+            }
+            // The search screen reads the estimate itself; lc-ffi keeps the power to restore.
+            is LichenEvent.SearchUpdated, is LichenEvent.TxPower -> Unit
         }
     }
 

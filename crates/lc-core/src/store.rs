@@ -29,7 +29,7 @@ pub use rusqlite::Error;
 /// 3: images (`messages.media_id`, added to older databases; `media` table).
 /// 4: phone identities (ADR-0013): `contacts.identity`, `contacts.verified`, added likewise.
 /// 5: nicknames the user gives contacts (table added, nothing migrated).
-const VERSION: i32 = 5;
+const VERSION: i32 = 6;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -197,6 +197,13 @@ CREATE TABLE IF NOT EXISTS shares (
     precision INTEGER NOT NULL,
     until INTEGER NOT NULL,
     PRIMARY KEY (chat_kind, chat)
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS search_consent (
+    gid BLOB PRIMARY KEY
 );
 CREATE TABLE IF NOT EXISTS positions (
     sender BLOB NOT NULL,
@@ -400,6 +407,57 @@ impl Store {
             )?,
         };
         Ok(())
+    }
+
+    /// A small value kept across restarts (`None` removes it).
+    pub fn set_setting(&self, key: &str, value: Option<&[u8]>) -> Result<(), Error> {
+        match value {
+            Some(v) => self.conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET value = ?2",
+                params![key, v],
+            )?,
+            None => self
+                .conn
+                .execute("DELETE FROM settings WHERE key = ?1", params![key])?,
+        };
+        Ok(())
+    }
+
+    pub fn setting(&self, key: &str) -> Result<Option<Vec<u8>>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut rows = st.query(params![key])?;
+        Ok(match rows.next()? {
+            Some(r) => Some(r.get(0)?),
+            None => None,
+        })
+    }
+
+    /// "Let this group locate me" (protocol.md §11).
+    pub fn set_search_consent(&self, gid: &GroupId, on: bool) -> Result<(), Error> {
+        if on {
+            self.conn.execute(
+                "INSERT OR IGNORE INTO search_consent (gid) VALUES (?1)",
+                params![gid.as_slice()],
+            )?;
+        } else {
+            self.conn.execute(
+                "DELETE FROM search_consent WHERE gid = ?1",
+                params![gid.as_slice()],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn search_consents(&self) -> Result<Vec<GroupId>, Error> {
+        let mut st = self.conn.prepare("SELECT gid FROM search_consent")?;
+        let rows = st.query_map([], |r| {
+            let gid: Vec<u8> = r.get(0)?;
+            Ok(GroupId::try_from(gid.as_slice()).ok())
+        })?;
+        Ok(rows.filter_map(Result::ok).flatten().collect())
     }
 
     pub fn nicknames(&self) -> Result<HashMap<PubKey, String>, Error> {
@@ -886,6 +944,23 @@ mod tests {
         assert_eq!((c[1].identity, c[1].verified), (None, false));
         assert_eq!(s.groups().unwrap(), vec![b"snapshot".to_vec()]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn settings_and_search_consent() {
+        let s = Store::in_memory().unwrap();
+        assert_eq!(s.setting("tx_power_restore").unwrap(), None);
+        s.set_setting("tx_power_restore", Some(&[22])).unwrap();
+        s.set_setting("tx_power_restore", Some(&[20])).unwrap();
+        assert_eq!(s.setting("tx_power_restore").unwrap(), Some(vec![20]));
+        s.set_setting("tx_power_restore", None).unwrap();
+        assert_eq!(s.setting("tx_power_restore").unwrap(), None);
+        let (a, b) = ([1u8; 16], [2u8; 16]);
+        s.set_search_consent(&a, true).unwrap();
+        s.set_search_consent(&a, true).unwrap();
+        s.set_search_consent(&b, true).unwrap();
+        s.set_search_consent(&b, false).unwrap();
+        assert_eq!(s.search_consents().unwrap(), vec![a]);
     }
 
     #[test]

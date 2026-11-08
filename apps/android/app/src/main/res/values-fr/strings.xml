@@ -145,6 +145,9 @@
     <string name="err_media_in_group">Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder.</string>
     <string name="err_bad_image">Impossible de lire cette image.</string>
     <string name="err_not_a_preview">Il n\'y a pas de version complète à demander.</string>
+    <string name="err_not_searching">Aucune recherche en cours pour cette personne.</string>
+    <string name="err_too_soon">Possible à nouveau dans %1$d s.</string>
+    <string name="err_no_position">Ta position n\'est pas encore connue.</string>
     <string name="fail_no_path">aucun chemin trouvé</string>
     <string name="fail_unreachable">injoignable</string>
     <string name="fail_timeout">pas d\'accusé de réception</string>
@@ -306,6 +309,7 @@
     <string name="mic_unavailable">Impossible d\'ouvrir le micro : une autre app l\'utilise peut-être.</string>
     <!-- Position, carte, SOS, recherche (L9d) -->
     <string name="sos">SOS</string>
+    <string name="searching_for_you">%1$s te recherche</string>
     <string name="sos_on">SOS actif</string>
     <string name="map_layers">Couches de la carte</string>
     <string name="map_style">Style de carte</string>

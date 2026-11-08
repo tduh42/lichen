@@ -572,6 +572,11 @@ impl Core {
         self.tick(now);
     }
 
+    /// A consent saved by the app, back after a restart (no tick).
+    pub fn restore_search_consent(&mut self, gid: &GroupId) {
+        self.search.consent.insert(*gid);
+    }
+
     pub fn search_consent(&self, gid: &GroupId) -> bool {
         self.search.consent.contains(gid)
     }

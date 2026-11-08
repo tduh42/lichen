@@ -141,6 +141,9 @@
     <string name="err_media_in_group">Photos and voice messages go to contacts only: in a group they would have to be flooded.</string>
     <string name="err_bad_image">This image could not be read.</string>
     <string name="err_not_a_preview">There is no full version to ask for.</string>
+    <string name="err_not_searching">No search is running for this person.</string>
+    <string name="err_too_soon">Possible again in %1$d s.</string>
+    <string name="err_no_position">Your position is not known yet.</string>
     <string name="fail_no_path">no path found</string>
     <string name="fail_unreachable">unreachable</string>
     <string name="fail_timeout">no acknowledgement</string>
@@ -303,6 +306,7 @@
     <string name="mic_unavailable">The microphone could not be opened: another app may be using it.</string>
     <!-- Location, map, SOS, search (L9d) -->
     <string name="sos">SOS</string>
+    <string name="searching_for_you">%1$s is searching for you</string>
     <string name="sos_on">SOS on</string>
     <string name="map_layers">Map layers</string>
     <string name="map_style">Map style</string>

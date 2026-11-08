@@ -773,6 +773,15 @@ impl Inner {
         for (chat, precision, until) in store.shares().unwrap_or_default() {
             let _ = self.core.restore_share(chat, precision, until);
         }
+        for gid in store.search_consents().unwrap_or_default() {
+            self.core.restore_search_consent(&gid);
+        }
+        // A TX power a search lowered before the app stopped: the radio kept it.
+        if let Ok(Some(v)) = store.setting(TX_POWER_RESTORE)
+            && let [dbm] = v.as_slice()
+        {
+            self.core.restore_tx_power(*dbm as i8);
+        }
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
@@ -988,12 +997,21 @@ impl Inner {
                 }
             }
             Event::SharesChanged => self.save_shares(),
+            Event::TxPower { previous, .. } => {
+                if let Some(st) = &self.store {
+                    let v = previous.map(|p| [p as u8]);
+                    let _ = st.set_setting(TX_POWER_RESTORE, v.as_ref().map(|v| v.as_slice()));
+                }
+            }
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
             _ => {}
         }
     }
 }
+
+/// Store setting: the TX power to restore (one i8), while a search's POWER holds it.
+const TX_POWER_RESTORE: &str = "tx_power_restore";
 
 /// The lichen core with its storage, shared between threads.
 #[derive(uniffi::Object)]
@@ -1285,6 +1303,31 @@ impl LichenCore {
         };
         i.extra.push_back(LichenEvent::ContactsUpdated);
         Ok(())
+    }
+
+    /// "Let this group locate me" (protocol.md §11): answer its members' pings and power
+    /// requests outside SOS. Kept across restarts.
+    pub fn set_search_consent(
+        &self,
+        gid: Vec<u8>,
+        on: bool,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let g = self::gid(&gid)?;
+        let mut i = self.lock();
+        if !i.core.groups().any(|x| x.gid == g) {
+            return Err(LichenError::UnknownGroup);
+        }
+        if let Some(st) = &i.store {
+            let _ = st.set_search_consent(&g, on);
+        }
+        i.core.set_search_consent(&g, on, now_ms);
+        i.persist();
+        Ok(())
+    }
+
+    pub fn search_consent(&self, gid: Vec<u8>) -> bool {
+        self::gid(&gid).is_ok_and(|g| self.lock().core.search_consent(&g))
     }
 
     pub fn groups(&self) -> Vec<GroupInfo> {

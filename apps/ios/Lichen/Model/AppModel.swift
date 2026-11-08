@@ -388,6 +388,14 @@ final class AppModel {
             updateLocator()
         case .mediaRequested:
             break
+        case let .searched(gid, by):
+            // A member asks where we are and we answer (SOS or this group's consent, §11).
+            let chat = ChatID.group(gid: gid)
+            notifier.message(chat, title: title(of: chat),
+                             body: String(localized: "\(name(of: by)) is searching for you"))
+        case .searchUpdated, .txPower:
+            // The search screen reads the estimate itself; lc-ffi keeps the power to restore.
+            break
         }
     }
 
@@ -1031,6 +1039,9 @@ extension LichenError {
             return String(localized: "Photos and voice messages go to contacts only: in a group they would have to be flooded.")
         case .BadImage: return String(localized: "This image could not be read.")
         case .NotAPreview: return String(localized: "There is no full version to ask for.")
+        case .NotSearching: return String(localized: "No search is running for this person.")
+        case let .TooSoon(waitS): return String(localized: "Possible again in \(waitS) s.")
+        case .NoPosition: return String(localized: "Your position is not known yet.")
         }
     }
 }

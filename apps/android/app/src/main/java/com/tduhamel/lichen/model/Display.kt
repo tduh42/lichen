@@ -27,6 +27,9 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.MediaInGroup -> res.getString(R.string.err_media_in_group)
     is LichenException.BadImage -> res.getString(R.string.err_bad_image)
     is LichenException.NotAPreview -> res.getString(R.string.err_not_a_preview)
+    is LichenException.NotSearching -> res.getString(R.string.err_not_searching)
+    is LichenException.TooSoon -> res.getString(R.string.err_too_soon, waitS.toLong())
+    is LichenException.NoPosition -> res.getString(R.string.err_no_position)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {
