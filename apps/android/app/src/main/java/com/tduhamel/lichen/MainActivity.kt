@@ -26,18 +26,13 @@ import com.tduhamel.lichen.ui.isDark
 class MainActivity : ComponentActivity() {
     private val model: AppModel get() = (application as LichenApplication).model
 
-    /** Notifications for messages and SOS: asked once, at the first launch past onboarding. */
+    /** Notifications for messages and SOS: asked once, after the welcome screens. */
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (BuildConfig.DEBUG) model.applyDebug(debugOptions())
         handle(intent)
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
         setContent {
             val dark = isDark(model.appearance)
             LaunchedEffect(dark) {
@@ -47,6 +42,18 @@ class MainActivity : ComponentActivity() {
                     SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
                 }
                 enableEdgeToEdge(bars, bars)
+            }
+            // Notifications for messages and SOS: asked once, when the welcome screens are done
+            // (not at every recreation, not before the user knows the app).
+            LaunchedEffect(model.onboarded) {
+                val prefs = getSharedPreferences("lichen", MODE_PRIVATE)
+                if (model.onboarded && Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean(ASKED_NOTIFICATIONS, false) &&
+                    ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) !=
+                    PackageManager.PERMISSION_GRANTED
+                ) {
+                    prefs.edit().putBoolean(ASKED_NOTIFICATIONS, true).apply()
+                    askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             }
             LichenTheme(model.appearance) { RootScreen(model) }
         }
@@ -103,5 +110,9 @@ class MainActivity : ComponentActivity() {
                 else -> null
             },
         )
+    }
+
+    private companion object {
+        const val ASKED_NOTIFICATIONS = "lichen.askedNotifications"
     }
 }

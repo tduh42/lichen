@@ -4541,6 +4541,16 @@
         }
       }
     },
+    "Your cost: %@ · ≈ %@ s of airtime · relays add theirs, no acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton coût : %@ · ≈ %@ s d’antenne · les relais ajoutent le leur, sans accusé de réception"
+          }
+        }
+      }
+    },
     "Your exact GPS position, again every 2 minutes. Without GPS, a beacon your groups can locate by radio.": {
       "localizations": {
         "fr": {

@@ -179,6 +179,12 @@ class AppModel(val app: Application) {
     /** The location permission is not granted. */
     var locationDenied by mutableStateOf(false)
 
+    /** Only the approximate location is allowed (about 2 km): exact shares send it as it is. */
+    var locationApproximate by mutableStateOf(false)
+
+    /** The phone's location services are off. */
+    var locationServicesOff by mutableStateOf(false)
+
     /** SOS incidents heard, by sender (hex): one alert each (Search.kt). */
     var incidents by mutableStateOf(mapOf<String, SosIncident>())
 
@@ -312,7 +318,7 @@ class AppModel(val app: Application) {
         startBridge()
         shares = core.shares()
         positions = core.positions(now())
-        locationDenied = !locator.permitted()
+        refreshLocationAccess()
         updateLocator()
     }
 
@@ -824,10 +830,13 @@ class AppModel(val app: Application) {
         pump()
     }
 
+    /** What sending `text` to `chat` costs us; for a group, our own floods (both copies). */
     fun estimate(chat: ChatId, text: String): Estimate? {
-        val key = chat.contactKey ?: return null
         if (text.isEmpty()) return null
-        return runCatching { core.estimateText(key, text.toByteArray().size.toUInt()) }.getOrNull()
+        val len = text.toByteArray().size.toUInt()
+        if (chat.group) return core.estimateGroupText(len)
+        val key = chat.contactKey ?: return null
+        return runCatching { core.estimateText(key, len) }.getOrNull()
     }
 
     /** Sends `text`; returns an error message to show, or null. */
@@ -878,7 +887,7 @@ class AppModel(val app: Application) {
                 demoFixJob = null
             }
         } else if (needed) {
-            locationDenied = !locator.permitted()
+            refreshLocationAccess()
             locator.start()
         } else {
             locator.stop()
@@ -888,8 +897,15 @@ class AppModel(val app: Application) {
     }
 
     /** The location permission was just granted. */
-    fun locationReady() {
+    /** Denied, approximate only, services off: kept apart (audit M10). */
+    fun refreshLocationAccess() {
         locationDenied = !locator.permitted()
+        locationApproximate = locator.approximate()
+        locationServicesOff = !locator.servicesOn()
+    }
+
+    fun locationReady() {
+        refreshLocationAccess()
         updateLocator()
     }
 

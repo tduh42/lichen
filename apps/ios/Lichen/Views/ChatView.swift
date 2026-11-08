@@ -762,10 +762,17 @@ private struct Composer: View {
         return String(localized: "Sharing your location (\(PrecisionText.name(share.precision))) until \(until)")
     }
 
+    /// Before every radio send: what it costs us. A group message is flooded: relays add their
+    /// own airtime, and nobody acknowledges it.
     private var costLine: String? {
-        if case .group = chat { return String(localized: "Flooded to every member, without acknowledgement") }
-        guard let e = model.estimate(chat, text: draft) else { return nil }
+        guard let e = model.estimate(chat, text: draft) else {
+            if case .group = chat { return String(localized: "Flooded to every member, without acknowledgement") }
+            return nil
+        }
         let s = String(format: "%.1f", Double(e.airtimeMs) / 1000)
+        if case .group = chat {
+            return String(localized: "Your cost: \(fragmentsText(e.fragments)) · ≈ \(s) s of airtime · relays add theirs, no acknowledgement")
+        }
         return String(localized: "Estimated cost: \(fragmentsText(e.fragments)) · ≈ \(s) s of airtime")
     }
 }

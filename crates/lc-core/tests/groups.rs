@@ -326,3 +326,31 @@ fn member_restart_restores_the_group() {
         );
     }
 }
+
+/// The group cost shown before sending (audit M15) is what the sender's floods take on air.
+#[test]
+fn group_estimate_matches_the_air() {
+    let (mut net, m) = star(23);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("g", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    settle(&mut net);
+    for text in ["ok", &"long message ".repeat(12)] {
+        let (fragments, airtime) = net
+            .with_core(m[0], |c, _| c.estimate_group_send(5 + text.len()))
+            .unwrap();
+        let before = net.nodes[m[0]].tx_airtime_ms;
+        net.with_core(m[0], |c, now| c.send_group_text(&gid, text, 1, now))
+            .unwrap()
+            .unwrap();
+        settle(&mut net);
+        let spent = net.nodes[m[0]].tx_airtime_ms - before;
+        assert!(fragments >= 1);
+        assert!(
+            spent.abs_diff(airtime) * 20 <= spent,
+            "{text:?}: estimated {airtime} ms, spent {spent} ms"
+        );
+    }
+}

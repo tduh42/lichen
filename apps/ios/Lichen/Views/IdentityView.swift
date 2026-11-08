@@ -121,6 +121,7 @@ struct RecoveryPhraseSheet: View {
                 .padding(16)
             }
             .screen()
+            .secretCover()
             .navigationTitle("Recovery phrase")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -173,6 +174,7 @@ struct RestoreSheet: View {
             }
             .padding(16)
             .screen()
+            .secretCover()
             .navigationTitle("Restore an identity")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -241,4 +243,26 @@ struct IdentityProblemView: View {
             String(localized: "Your new identity could not be saved on this phone. Try again.")
         }
     }
+}
+
+/// Covers a screen holding the recovery phrase whenever the app is not active: the app
+/// switcher's snapshot and screen sharing never show it (audit M13).
+private struct SecretCover: ViewModifier {
+    @Environment(\.scenePhase) private var phase
+
+    func body(content: Content) -> some View {
+        content.overlay {
+            if phase != .active {
+                ZStack {
+                    Theme.bg
+                    Image(systemName: "lock.fill").font(.system(size: 40)).foregroundStyle(Theme.tx2)
+                }
+                .ignoresSafeArea()
+            }
+        }
+    }
+}
+
+extension View {
+    func secretCover() -> some View { modifier(SecretCover()) }
 }

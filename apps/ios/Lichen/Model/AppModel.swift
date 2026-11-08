@@ -611,9 +611,13 @@ final class AppModel {
         pump()
     }
 
+    /// What sending `text` to `chat` costs us; for a group, our own floods (both copies).
     func estimate(_ chat: ChatID, text: String) -> Estimate? {
-        guard case let .contact(key) = chat, !text.isEmpty else { return nil }
-        return try? core.estimateText(to: key, textLen: UInt32(text.utf8.count))
+        guard !text.isEmpty else { return nil }
+        switch chat {
+        case let .contact(key): return try? core.estimateText(to: key, textLen: UInt32(text.utf8.count))
+        case .group: return core.estimateGroupText(textLen: UInt32(text.utf8.count))
+        }
     }
 
     /// Sends `text`; returns an error message to show, or nil.

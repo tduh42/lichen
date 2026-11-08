@@ -35,6 +35,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -170,7 +172,11 @@ private fun RecoveryPhraseSheet(model: AppModel, dismiss: () -> Unit) {
         window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+    // The sheet is a window of its own: secure it too (screenshots, recent apps).
+    ModalBottomSheet(
+        onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg,
+        properties = ModalBottomSheetProperties(securePolicy = SecureFlagPolicy.SecureOn),
+    ) {
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -206,7 +212,11 @@ internal fun RestoreSheet(model: AppModel, dismiss: () -> Unit) {
     var text by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     val words = text.split(Regex("[\\s,]+")).filter { it.isNotEmpty() }
-    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+    // The words typed are as secret as the words shown (audit M13): a secure window.
+    ModalBottomSheet(
+        onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg,
+        properties = ModalBottomSheetProperties(securePolicy = SecureFlagPolicy.SecureOn),
+    ) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text(stringResource(R.string.restore_identity), fontSize = 22.sp, color = t.tx)
             Text(stringResource(R.string.restore_intro), fontSize = 14.sp, color = t.tx2)

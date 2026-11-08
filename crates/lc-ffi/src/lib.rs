@@ -1513,6 +1513,16 @@ impl LichenCore {
         })
     }
 
+    /// What a group text of `text_len` bytes costs us: fragments and the airtime of our own
+    /// floods (both copies). Relays spend theirs, and nobody acknowledges (§10.3).
+    pub fn estimate_group_text(&self, text_len: u32) -> Estimate {
+        let (fragments, airtime_ms) = self.lock().core.estimate_group_send(5 + text_len as usize);
+        Estimate {
+            fragments,
+            airtime_ms,
+        }
+    }
+
     /// Sends a text and returns it as stored (status `Sending`).
     pub fn send_text(
         &self,

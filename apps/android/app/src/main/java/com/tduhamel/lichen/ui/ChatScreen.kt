@@ -453,12 +453,13 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     }
     val bridgeAvailable = model.bridgeProviders(anonymous = false).isNotEmpty()
     val text = draft.trim()
-    val cost = if (chat.group) {
-        stringResource(R.string.flooded_to_every_member)
-    } else {
-        model.estimate(chat, draft)?.let {
-            stringResource(R.string.estimated_cost, fragmentsText(res, it.fragments.toInt()), secondsText(it.airtimeMs))
-        }
+    // Before every radio send: what it costs us. A group message is flooded: relays add their
+    // own airtime, and nobody acknowledges it.
+    val estimate = model.estimate(chat, draft)
+    val cost = when {
+        estimate == null -> if (chat.group) stringResource(R.string.flooded_to_every_member) else null
+        chat.group -> stringResource(R.string.group_cost, fragmentsText(res, estimate.fragments.toInt()), secondsText(estimate.airtimeMs))
+        else -> stringResource(R.string.estimated_cost, fragmentsText(res, estimate.fragments.toInt()), secondsText(estimate.airtimeMs))
     }
     Column(
         Modifier

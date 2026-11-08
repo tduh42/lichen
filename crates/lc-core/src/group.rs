@@ -770,6 +770,24 @@ impl Core {
         self.send_group(gid, datagram, now)
     }
 
+    /// Fragments and airtime (ms, our own floods: every copy, no relays) of a group message of
+    /// `body_len` bytes (§10.3): what the sender spends; relays add their own.
+    pub fn estimate_group_send(&self, body_len: usize) -> (u8, Millis) {
+        let plain = body_len.max(1) + SIGNATURE_LEN;
+        let fragments = plain.div_ceil(group::FRAGMENT_PLAIN_MAX);
+        let overhead = group::PAYLOAD_MAX - group::FRAGMENT_PLAIN_MAX;
+        let transport = if self.scope.is_some() { 4 } else { 0 };
+        let mut airtime = 0;
+        for i in 0..fragments {
+            let chunk = (plain - i * group::FRAGMENT_PLAIN_MAX).min(group::FRAGMENT_PLAIN_MAX);
+            airtime += self.radio.airtime_us(2 + transport + chunk + overhead) / 1000;
+        }
+        (
+            fragments.min(255) as u8,
+            airtime * Millis::from(self.group_copies),
+        )
+    }
+
     pub(crate) fn send_group(
         &mut self,
         gid: &GroupId,

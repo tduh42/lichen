@@ -306,13 +306,8 @@ private fun SharePanel(model: AppModel, edit: () -> Unit) {
             LichenSwitch(model.shares.isNotEmpty(), { on -> if (on) edit() else model.stopAllShares() })
         }
         if (expanded) {
-            if (model.locationDenied && !model.isDemo) {
-                Banner(
-                    BannerKind.WARN, stringResource(R.string.location_off), stringResource(R.string.location_off_note),
-                    stringResource(R.string.allow) to {
-                        askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-                    },
-                )
+            LocationAccessBanner(model) {
+                askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             }
             Column(Modifier.fillMaxWidth().background(t.s2, RoundedCornerShape(12.dp))) {
                 model.shares.forEachIndexed { i, s ->
@@ -485,6 +480,9 @@ fun ChatShareSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(stringResource(R.string.share_my_location), fontSize = 22.sp, color = t.tx)
+            LocationAccessBanner(model) {
+                askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            }
             SectionLabel(stringResource(R.string.precision))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 val all = listOf(SharePrecision.EXACT, SharePrecision.M100, SharePrecision.KM1, SharePrecision.KM10)
@@ -505,5 +503,29 @@ fun ChatShareSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit) {
                 SecondaryButton(stringResource(R.string.stop_sharing), background = t.sosBg, foreground = t.sosFg) { apply(null) }
             }
         }
+    }
+}
+
+/** Why our position is missing or rough (audit M10): denied, approximate only, services off.
+ * `ask` requests the permission again (Android offers the upgrade to precise). */
+@Composable
+fun LocationAccessBanner(model: AppModel, ask: () -> Unit) {
+    if (model.isDemo) return
+    val context = LocalContext.current
+    when {
+        model.locationDenied -> Banner(
+            BannerKind.WARN, stringResource(R.string.location_off), stringResource(R.string.location_off_note),
+            stringResource(R.string.allow) to ask,
+        )
+        model.locationServicesOff -> Banner(
+            BannerKind.WARN, stringResource(R.string.location_services_off), stringResource(R.string.location_services_off_note),
+            stringResource(R.string.open_settings) to {
+                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+            },
+        )
+        model.locationApproximate -> Banner(
+            BannerKind.WARN, stringResource(R.string.location_approximate), stringResource(R.string.location_approximate_note),
+            stringResource(R.string.allow_precise) to ask,
+        )
     }
 }

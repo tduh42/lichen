@@ -509,4 +509,11 @@
         <item quantity="one">%1$d new message</item>
         <item quantity="other">%1$d new messages</item>
     </plurals>
+    <string name="group_cost">Your cost: %1$s · ≈ %2$s s of airtime · relays add theirs, no acknowledgement</string>
+    <string name="location_services_off">Location services are off</string>
+    <string name="location_services_off_note">Turn them on in the phone\'s settings: without them, no position at all.</string>
+    <string name="open_settings">Settings</string>
+    <string name="location_approximate">Approximate location only</string>
+    <string name="location_approximate_note">Your phone gives lichen a position within about 2 km: an exact share sends it as it is, with its real uncertainty. Allow the precise location for exact shares and SOS.</string>
+    <string name="allow_precise">Precise</string>
 </resources>

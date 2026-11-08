@@ -22,17 +22,28 @@ class Locator(private val context: Context, private val onFix: (LocationFix) -> 
 
     private val listener = LocationListener { onFix(it.fix()) }
 
-    fun permitted(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    private fun granted(p: String) = ContextCompat.checkSelfPermission(context, p) == PackageManager.PERMISSION_GRANTED
+
+    /** Any location at all: precise, or the approximate one Android lets users choose. */
+    fun permitted(): Boolean = granted(Manifest.permission.ACCESS_FINE_LOCATION) || approximate()
+
+    /** Only the approximate location (about 2 km): never to be called exact. */
+    fun approximate(): Boolean =
+        granted(Manifest.permission.ACCESS_COARSE_LOCATION) && !granted(Manifest.permission.ACCESS_FINE_LOCATION)
+
+    /** The phone's location services are on (a permission is useless without them). */
+    fun servicesOn(): Boolean = manager?.isLocationEnabled ?: false
 
     /** Starts the updates (every second, every metre: the core decides what is worth sending). */
     @SuppressLint("MissingPermission")
     fun start() {
         val m = manager ?: return
         if (running || !permitted()) return
+        // GPS needs the precise permission; with the approximate one, the network provider.
         val provider = when {
             m.hasProvider(LocationManager.FUSED_PROVIDER) -> LocationManager.FUSED_PROVIDER
-            m.hasProvider(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            !approximate() && m.hasProvider(LocationManager.GPS_PROVIDER) -> LocationManager.GPS_PROVIDER
+            m.hasProvider(LocationManager.NETWORK_PROVIDER) -> LocationManager.NETWORK_PROVIDER
             else -> return
         }
         m.getLastKnownLocation(provider)?.let { onFix(it.fix()) }

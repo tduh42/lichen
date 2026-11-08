@@ -515,4 +515,11 @@
         <item quantity="other">%1$d nouveaux messages</item>
         <item quantity="many">%1$d nouveaux messages</item>
     </plurals>
+    <string name="group_cost">Ton coût : %1$s · ≈ %2$s s d’antenne · les relais ajoutent le leur, sans accusé de réception</string>
+    <string name="location_services_off">Localisation du téléphone coupée</string>
+    <string name="location_services_off_note">Active-la dans les réglages du téléphone : sans elle, aucune position.</string>
+    <string name="open_settings">Réglages</string>
+    <string name="location_approximate">Position approximative seulement</string>
+    <string name="location_approximate_note">Ton téléphone donne à lichen une position à environ 2 km près : un partage exact l’envoie telle quelle, avec sa vraie incertitude. Autorise la position précise pour les partages exacts et le SOS.</string>
+    <string name="allow_precise">Précise</string>
 </resources>

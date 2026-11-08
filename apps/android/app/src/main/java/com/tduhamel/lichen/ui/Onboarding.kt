@@ -23,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,7 +41,8 @@ private enum class Step { WELCOME, PAIRING, IDENTITY, CONTACT }
  * `identite`, `contact`), as on iOS. */
 @Composable
 fun Onboarding(model: AppModel) {
-    var step by remember { mutableStateOf(if (model.debugScreen == "pairing") Step.PAIRING else Step.WELCOME) }
+    // Kept through rotation and activity recreation.
+    var step by rememberSaveable { mutableStateOf(if (model.debugScreen == "pairing") Step.PAIRING else Step.WELCOME) }
     BackHandler(step != Step.WELCOME) {
         step = when (step) {
             Step.CONTACT -> Step.IDENTITY
@@ -49,7 +51,7 @@ fun Onboarding(model: AppModel) {
     }
     when (step) {
         Step.WELCOME -> Welcome(pair = { step = Step.PAIRING }, later = { step = Step.IDENTITY })
-        Step.PAIRING -> PairingScreen(model, back = { step = Step.IDENTITY })
+        Step.PAIRING -> PairingScreen(model, back = { step = Step.WELCOME }, done = { step = Step.IDENTITY })
         Step.IDENTITY -> IdentityScreen(model, back = { step = Step.WELCOME }, next = { step = Step.CONTACT })
         Step.CONTACT -> ContactScreen(model, back = { step = Step.IDENTITY }, next = { model.markOnboarded(true) })
     }

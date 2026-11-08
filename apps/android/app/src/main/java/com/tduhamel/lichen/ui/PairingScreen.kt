@@ -66,7 +66,8 @@ private val radioPermissions = buildList {
 /** Pair a radio over Bluetooth, or plug one in over USB (mockup `appairage`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PairingScreen(model: AppModel, back: () -> Unit) {
+/** `back`: the toolbar or system Back; `done`: a radio connected, or the demo started. */
+fun PairingScreen(model: AppModel, back: () -> Unit, done: () -> Unit = back) {
     val t = lichen
     val context = LocalContext.current
     fun granted() = listOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -86,7 +87,7 @@ fun PairingScreen(model: AppModel, back: () -> Unit) {
     // Connected over Bluetooth or USB: back to where the user came from.
     var wasConnected by remember { mutableStateOf(model.isConnected) }
     LaunchedEffect(model.isConnected) {
-        if (model.isConnected && !wasConnected && !model.isDemo) back()
+        if (model.isConnected && !wasConnected && !model.isDemo) done()
         wasConnected = model.isConnected
     }
 
@@ -203,7 +204,7 @@ fun PairingScreen(model: AppModel, back: () -> Unit) {
                 item {
                     SecondaryButton(stringResource(R.string.try_demo_instead), Modifier.padding(top = 8.dp)) {
                         model.startDemo()
-                        back()
+                        done()
                     }
                 }
             }
