@@ -27,10 +27,16 @@ class RadioService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val name = intent?.getStringExtra(NAME) ?: "MeshCore"
-        ServiceCompat.startForeground(
-            this, Notifications.SERVICE_ID, Notifications.service(this, name),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-        )
+        val started = runCatching {
+            ServiceCompat.startForeground(
+                this, Notifications.SERVICE_ID, Notifications.service(this, name),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+            )
+        }
+        if (started.isFailure) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 

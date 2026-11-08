@@ -1,6 +1,7 @@
 //! `lichen`: run the lichen core against a MeshCore companion over USB, or on the fake network.
 
 mod bot;
+mod bridge;
 mod device;
 
 use std::path::PathBuf;
@@ -91,6 +92,16 @@ enum Cmd {
         /// Write the QR code to this SVG file.
         #[arg(long)]
         svg: Option<PathBuf>,
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Relay the radio's USB serial port on a TCP port, for an app with a TCP link (the
+    /// Android emulator reaches it at 10.0.2.2).
+    Bridge {
+        port: String,
+        /// Address to listen on (loopback only by default).
+        #[arg(long, default_value = "127.0.0.1:5000")]
+        listen: String,
         #[arg(short, long)]
         verbose: bool,
     },
@@ -614,6 +625,11 @@ fn main() {
             svg,
             verbose,
         } => card(&port, name, svg, verbose),
+        Cmd::Bridge {
+            port,
+            listen,
+            verbose,
+        } => bridge::run(&port, &listen, verbose),
         Cmd::Sim {
             repeaters,
             loss,

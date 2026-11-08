@@ -235,7 +235,7 @@ fun shortTime(context: android.content.Context, atMs: Long): String = when {
 fun RadioCard(model: AppModel) {
     val t = lichen
     val headline = when (val s = model.radioState) {
-        is RadioState.Connected -> stringResource(R.string.radio_connected, s.name)
+        is RadioState.Connected -> stringResource(R.string.radio_connected, model.nodeName.ifEmpty { s.name })
         is RadioState.Connecting -> stringResource(R.string.radio_connecting, s.name)
         RadioState.Scanning -> stringResource(R.string.radio_scanning)
         RadioState.Off -> stringResource(R.string.bluetooth_off)

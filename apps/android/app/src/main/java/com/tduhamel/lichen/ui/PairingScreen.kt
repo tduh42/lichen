@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Usb
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -176,6 +178,24 @@ fun PairingScreen(model: AppModel, back: () -> Unit) {
                                 stringResource(R.string.connect),
                             ) { model.connectUsb(d) }
                         }
+                    }
+                }
+            }
+            item { SectionLabel(stringResource(R.string.network), Modifier.padding(top = 8.dp)) }
+            item { Text(stringResource(R.string.network_note), fontSize = 14.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp)) }
+            item {
+                var address by remember { mutableStateOf(model.tcpAddress) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        address, { address = it },
+                        Modifier.weight(1f),
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = FontFamily.Monospace, fontSize = 15.sp, color = t.tx),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors(),
+                    )
+                    SecondaryButton(stringResource(R.string.connect), Modifier.width(120.dp), enabled = address.contains(':')) {
+                        model.connectTcp(address.trim())
                     }
                 }
             }

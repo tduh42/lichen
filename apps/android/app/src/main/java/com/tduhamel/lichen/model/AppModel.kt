@@ -60,6 +60,8 @@ class AppModel(private val app: Application) {
         val say: String? = null,
         val tab: String? = null,
         val screen: String? = null,
+        /** A companion to reach over TCP at launch, e.g. `10.0.2.2:5000` (`lichen bridge`). */
+        val tcp: String? = null,
     )
 
     private val res get() = app.resources
@@ -120,7 +122,7 @@ class AppModel(private val app: Application) {
     /** USB serial devices plugged in (USB OTG). */
     var usbDevices by mutableStateOf(listOf<UsbDevice>())
 
-    /** How the radio is reached: "BLE" or "USB". */
+    /** How the radio is reached: "BLE", "USB" or "TCP". */
     var linkKind by mutableStateOf("BLE")
 
     /** The app is on screen: received messages need no notification. */
@@ -128,6 +130,11 @@ class AppModel(private val app: Application) {
 
     // USB first: the Bluetooth link may report its state while it is built.
     val usb = UsbCompanion(app, ::usbChanged, ::frame) { usbDevices = it }
+    val tcp = TcpCompanion(::tcpChanged, ::frame)
+
+    /** The last TCP companion address, to offer again. */
+    var tcpAddress by mutableStateOf(prefs.getString(TCP_ADDRESS, null) ?: "10.0.2.2:5000")
+        private set
     val ble = BleCompanion(app, ::bleChanged, { found = it }, ::frame)
 
     private var demo: DemoNetwork? = null
@@ -183,6 +190,7 @@ class AppModel(private val app: Application) {
             "settings" -> tab = Tab.SETTINGS
         }
         if (options.demo) startDemo()
+        options.tcp?.let { connectTcp(it) }
     }
 
     // ----- demo network -----
@@ -258,7 +266,7 @@ class AppModel(private val app: Application) {
     }
 
     private fun bleChanged(s: RadioState) {
-        if (usb.device != null) return
+        if (usb.device != null || tcp.connectedTo != null) return
         linkKind = "BLE"
         link = RadioLink(ble::write)
         radioChanged(s)
@@ -277,6 +285,25 @@ class AppModel(private val app: Application) {
         }
     }
 
+    private fun tcpChanged(s: RadioState) {
+        if (s is RadioState.Connected || s is RadioState.Connecting) {
+            ble.stopScan()
+            linkKind = "TCP"
+            link = RadioLink(tcp::write)
+            radioChanged(s)
+        } else {
+            linkKind = "BLE"
+            link = RadioLink(ble::write)
+            radioChanged(ble.state)
+        }
+    }
+
+    fun connectTcp(address: String) {
+        tcpAddress = address
+        prefs.edit { putString(TCP_ADDRESS, address) }
+        tcp.connect(address)
+    }
+
     /** The Bluetooth permissions were just granted. */
     fun bluetoothReady() = ble.start()
 
@@ -290,7 +317,11 @@ class AppModel(private val app: Application) {
 
     /** Disconnects the radio (and forgets it, over Bluetooth). */
     fun disconnect() {
-        if (usb.device != null) usb.close() else ble.disconnect()
+        when {
+            tcp.connectedTo != null -> tcp.close()
+            usb.device != null -> usb.close()
+            else -> ble.disconnect()
+        }
         RadioService.stop(app)
     }
 
@@ -583,5 +614,6 @@ class AppModel(private val app: Application) {
         private const val APPEARANCE = "appearance"
         private const val MY_NAME = "lichen.myName"
         private const val BACKED_UP = "lichen.phraseBackedUp"
+        private const val TCP_ADDRESS = "lichen.tcpAddress"
     }
 }

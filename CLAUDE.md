@@ -109,6 +109,8 @@ scripts/build-android-core.sh                                             # Andr
 $ANDROID_HOME/emulator/emulator -avd lichen-pixel -no-window -no-audio -gpu swiftshader_indirect &
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.tduhamel.lichen/.MainActivity --ez demo true --es open Camille   # debug extras
+cargo run --release -p lc-cli -- bridge /dev/cu.usbmodem2101    # the radio's serial port on 127.0.0.1:5000 (TCP)
+adb shell am start -n com.tduhamel.lichen/.MainActivity --es tcp 10.0.2.2:5000   # emulator on the real radio
 ```
 
 Android: toolchain from Homebrew, `JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`, `ANDROID_HOME=/opt/homebrew/share/android-commandlinetools` (NDK 28.2.13676358, AVD `lichen-pixel`, API 36 arm64); one emulator at a time, never with the iOS simulator. minSdk 31 (AVIF decoding, ADR-0012), compileSdk 37. The bindings are generated into `app/src/main/java/com/tduhamel/lichen/core` (git-ignored); their byte arrays compare by reference, so the app keys maps by `ChatId` / hex strings. Debug extras mirror the iOS launch arguments (`--ez demo true`, `--es open|say|tab|screen`); the per-app language: `adb shell cmd locale set-app-locales com.tduhamel.lichen --locales fr`, dark: `adb shell cmd uimode night yes`.

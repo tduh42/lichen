@@ -236,4 +236,6 @@
     <string name="new_group_note">Members are contacts you have already talked with in lichen. Every member gets the others\' sender keys over encrypted sessions. Group messages are flooded and signed.</string>
     <string name="create_group">Create group</string>
     <string name="group_details">Group details</string>
+    <string name="network">Network</string>
+    <string name="network_note">A companion on Wi-Fi, or a USB radio relayed by a computer (lichen bridge; the Android emulator reaches it at 10.0.2.2:5000).</string>
 </resources>

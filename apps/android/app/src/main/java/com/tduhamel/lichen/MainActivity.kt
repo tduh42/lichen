@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
             say = e.getString("say"),
             tab = e.getString("tab"),
             screen = e.getString("screen"),
+            tcp = e.getString("tcp"),
         )
     }
 }
