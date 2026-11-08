@@ -35,7 +35,7 @@ struct MapScreen: View {
         .sheet(isPresented: $editing) { ShareSheet() }
         .fullScreenCover(isPresented: $showingSos) { SosView() }
         .onAppear {
-            model.mapVisible = true
+            model.needsLocation("map", true)
             model.refreshPositions()
             refresh = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
                 MainActor.assumeIsolated { model.refreshPositions() }
@@ -47,7 +47,7 @@ struct MapScreen: View {
             #endif
         }
         .onDisappear {
-            model.mapVisible = false
+            model.needsLocation("map", false)
             refresh?.invalidate()
         }
         .onChange(of: items.map(\.id)) { _, ids in

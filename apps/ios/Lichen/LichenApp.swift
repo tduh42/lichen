@@ -36,8 +36,8 @@ struct RootView: View {
             NavigationStack { IdentityView() }
         }
         #endif
-        .fullScreenCover(item: $model.sosAlert) { sos in
-            SosReceivedView(sos: sos)
+        .fullScreenCover(item: $model.sosAlert) { alert in
+            SosReceivedView(from: alert.id)
         }
         // Notifications for messages and SOS: asked once the welcome screens are done.
         .task(id: onboarded) { if onboarded { model.notifier.requestAuthorization() } }
@@ -62,7 +62,7 @@ struct RootView: View {
             SearchView()
                 .tabItem { Label("Search", systemImage: "scope") }
                 .tag(AppModel.Tab.search)
-                .badge(model.incomingSos == nil ? 0 : 1)
+                .badge(model.activeIncidents.count)
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(AppModel.Tab.settings)

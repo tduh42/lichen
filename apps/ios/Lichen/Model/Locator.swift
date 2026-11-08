@@ -8,6 +8,8 @@ final class Locator: NSObject, CLLocationManagerDelegate {
     private(set) var running = false
     var onFix: ((CLLocation) -> Void)?
     var onAuthorization: ((CLAuthorizationStatus) -> Void)?
+    /// Compass headings, degrees from true north (magnetic when true is unknown).
+    var onHeading: ((Double) -> Void)?
 
     override init() {
         super.init()
@@ -39,6 +41,23 @@ final class Locator: NSObject, CLLocationManagerDelegate {
         manager.stopUpdatingLocation()
         manager.allowsBackgroundLocationUpdates = false
         running = false
+    }
+
+    /// The compass (search bearings), where the phone has one.
+    func startHeading() {
+        guard CLLocationManager.headingAvailable() else { return }
+        manager.headingFilter = 2
+        manager.startUpdatingHeading()
+    }
+
+    func stopHeading() {
+        manager.stopUpdatingHeading()
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
+        guard newHeading.headingAccuracy >= 0 else { return }
+        let h = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        MainActor.assumeIsolated { onHeading?(h) }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {

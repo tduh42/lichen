@@ -1,16 +1,21 @@
 import SwiftUI
 
-/// "Search": follow an SOS — bearing and distance from our GPS to theirs (mockup `recherche`).
-/// Radio bearings, pings and the particle filter come with search mode (L8).
+/// "Search" (mockup `recherche`): follow an SOS, and search for a group member by radio
+/// (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and
+/// how far, the receptions everyone shared, and the actions (ping, bearing, lower power).
 struct SearchView: View {
     @Environment(AppModel.self) private var model
-    @State private var refresh: Timer?
+    @Environment(\.colorScheme) private var scheme
+    @AppStorage("map.style") private var style = MapStyle.auto
+    @State private var recenter = 0
+    @State private var bearing = false
+    @State private var error: String?
 
     var body: some View {
         NavigationStack {
             Group {
                 if let target {
-                    content(target)
+                    TimelineView(.periodic(from: .now, by: 5)) { _ in content(target) }
                 } else {
                     empty
                 }
@@ -21,99 +26,187 @@ struct SearchView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 2) {
-                        Text(title).font(.system(size: 17, weight: .semibold))
-                        if target != nil {
-                            Text("\(model.sosLog.count) positions received")
-                                .font(.system(size: 12)).foregroundStyle(Theme.tx2)
-                        }
-                    }
+                    Text(target.map { String(localized: "Search · \(model.name(of: $0))") } ?? String(localized: "Search"))
+                        .font(.system(size: 17, weight: .semibold))
                 }
+            }
+            .sheet(isPresented: $bearing) {
+                if let target { BearingSheet(target: target) }
+            }
+            .alert(error ?? "", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+                Button("OK", role: .cancel) {}
             }
         }
         .onAppear {
-            // Our position, to measure the distance.
-            model.mapVisible = true
-            refresh = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { _ in
-                MainActor.assumeIsolated { model.refreshPositions() }
-            }
+            model.needsLocation("search", true)
+            model.useHeading(true)
+            model.refreshSearches()
         }
         .onDisappear {
-            model.mapVisible = false
-            refresh?.invalidate()
+            model.needsLocation("search", false)
+            model.useHeading(false)
         }
+        .onChange(of: target) { recenter += 1 }
     }
 
-    private var target: PeerPosition? { model.incomingSos ?? model.sosLog.last }
-
-    private var title: String {
-        guard let t = target else { return String(localized: "Search") }
-        return String(localized: "Search · \(model.name(of: t.from))")
+    private var target: Data? {
+        if let t = model.searchTarget, model.searchTargets.contains(t) { return t }
+        return model.searchTargets.first
     }
 
     private var empty: some View {
         VStack(spacing: 12) {
             Image(systemName: "scope").font(.system(size: 44)).foregroundStyle(Theme.tx2)
             Text("No search under way").font(.system(size: 17, weight: .semibold))
-            Text("When someone sends an SOS, follow it from here: bearing and distance from your position.")
+            Text("When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.")
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
-            LaterNote(text: "Search without GPS (radio bearings, pings) comes with search mode, L8.")
-                .padding(.top, 4)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func content(_ t: PeerPosition) -> some View {
-        let d = model.distanceTo(t)
+    private func content(_ t: Data) -> some View {
+        let search = model.search(for: t)
+        let estimate = search == nil ? nil : model.searchEstimate(t)
+        let incident = model.incidents[t]
         return ScrollView {
             VStack(spacing: 12) {
-                Banner(kind: .sos, title: String(localized: "SOS received \(MapScreen.ago(t.atS))"),
-                       message: String(localized: "GPS ±\(Int(t.radiusM.rounded())) m · \(String(format: "%.4f, %.4f", t.lat, t.lon))"))
-                Radar(target: t, distance: d)
-                    .frame(height: 230)
-                    .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
-                bearingCard(t, d)
-                if !model.sosLog.isEmpty {
-                    CardList {
-                        ForEach(Array(model.sosLog.reversed().prefix(8).enumerated()), id: \.offset) { i, p in
-                            if i > 0 { CardDivider() }
-                            MeasurementRow(
-                                who: model.name(of: p.from),
-                                detail: "±\(Int(p.radiusM.rounded())) m · \(MapScreen.ago(p.atS))",
-                                value: model.lastSnr[p.from].map { String(format: "SNR %.0f dB", $0) }
-                                    ?? model.distanceTo(p).map { distanceText($0.meters) } ?? "—"
-                            )
-                        }
-                    }
+                if model.searchTargets.count > 1 { picker }
+                status(t, incident: incident, search: search)
+                map(t, estimate: estimate, incident: incident, search: search)
+                    .frame(height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                pointer(t, estimate: estimate, incident: incident, search: search)
+                if search != nil {
+                    actions(t, search: search!)
+                } else {
+                    startCard(t)
                 }
-                HStack(spacing: 8) {
-                    Button("Ping") {}.buttonStyle(SecondaryButtonStyle(height: 56))
-                    Button("Add a bearing") {}.buttonStyle(SecondaryButtonStyle(height: 56))
-                    Button("Lower power") {}.buttonStyle(SecondaryButtonStyle(height: 56))
-                }
-                .disabled(true)
-                LaterNote(text: "Pings, radio bearings and power control come with search mode (L8).")
+                if search != nil { readings(t, estimate: estimate) }
             }
             .padding(16)
         }
     }
 
-    private func bearingCard(_ t: PeerPosition, _ d: (meters: Double, bearing: Double)?) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: "location.north.fill")
+    // MARK: parts
+
+    private var picker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(model.searchTargets, id: \.self) { t in
+                    let on = t == target
+                    Button {
+                        model.searchTarget = t
+                    } label: {
+                        HStack(spacing: 6) {
+                            if let i = model.incidents[t], i.state() != .ended {
+                                Circle().fill(i.state() == .active ? Theme.sos : Theme.warn).frame(width: 8, height: 8)
+                            }
+                            Text(model.name(of: t)).font(.system(size: 14, weight: .semibold))
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(on ? Theme.actBg : Theme.s2, in: Capsule())
+                        .foregroundStyle(on ? Theme.actFg : Theme.tx)
+                    }
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func status(_ t: Data, incident: SosIncident?, search: SearchState?) -> some View {
+        let battery = (incident?.battery ?? search?.battery).map { String(localized: " · battery \($0) %") } ?? ""
+        if let i = incident {
+            let heard = MapScreen.ago(UInt64(i.lastHeard.timeIntervalSince1970))
+            switch i.state() {
+            case .active:
+                Banner(kind: .sos, title: String(localized: "SOS · heard \(heard)\(battery)"),
+                       message: i.position == nil
+                        ? String(localized: "No GPS position: their phone sends beacons every 2 minutes, to be located by radio.")
+                        : String(localized: "Their GPS position comes every 2 minutes."))
+            case .stale:
+                Banner(kind: .warn, title: String(localized: "SOS · nothing heard since \(heard)"),
+                       message: String(localized: "Their beacons no longer reach you: move, or ask the group."))
+            case .ended:
+                Banner(kind: .ok, title: String(localized: "SOS ended"),
+                       message: String(localized: "They turned their SOS off."))
+            }
+        } else if let s = search {
+            let heard = s.lastHeardS.map { String(localized: "heard \(MapScreen.ago($0))") } ?? String(localized: "not heard yet")
+            Banner(kind: .lora, title: String(localized: "Searching · \(heard)\(battery)"),
+                   message: String(localized: "They answer pings in SOS or when they let the group locate them."))
+        }
+    }
+
+    private func map(_ t: Data, estimate: SearchEstimate?, incident: SosIncident?, search: SearchState?) -> some View {
+        let dark = style == .dark || (style == .auto && scheme == .dark)
+        let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
+        var items: [MapItem] = []
+        let name = model.name(of: t)
+        // Their own position: the latest SOS or search fix.
+        if let p = incident?.position {
+            items.append(MapItem(id: "target", kind: .sos, lat: p.lat, lon: p.lon, radius: p.radiusM,
+                                 initials: initials(name), label: MapScreen.ago(p.atS),
+                                 color: UIColor(Theme.sosBtn).resolvedColor(with: traits), dark: dark))
+        } else if let f = search?.lastFix {
+            items.append(MapItem(id: "target", kind: .sos, lat: f.lat, lon: f.lon, radius: f.radiusM,
+                                 initials: initials(name), label: MapScreen.ago(f.atS),
+                                 color: UIColor(Theme.sosBtn).resolvedColor(with: traits), dark: dark))
+        }
+        if let me = model.myFix {
+            items.append(MapItem(id: "me", kind: .me, lat: me.lat, lon: me.lon, radius: me.accuracyM,
+                                 initials: "", label: "", color: UIColor(Theme.me).resolvedColor(with: traits), dark: dark))
+        }
+        let overlay = estimate.map { e in
+            MapOverlay(version: model.searchVersion &* 31 &+ t.hashValue, heat: e.heatImage(),
+                       north: e.heatNorth, south: e.heatSouth, west: e.heatWest, east: e.heatEast,
+                       ellipse68: e.ellipse(major: e.major68M, minor: e.minor68M),
+                       ellipse95: e.ellipse(major: e.major95M, minor: e.minor95M))
+        }
+        return MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { _, _ in },
+                            overlay: overlay, insets: UIEdgeInsets(top: 30, left: 30, bottom: 30, right: 30))
+            .onAppear { recenter += 1 }
+            .onChange(of: estimate != nil) { recenter += 1 }
+            .accessibilityLabel(estimate.map { String(localized: "Map: \(name) is probably within \(distanceText($0.major68M)) of the centre") }
+                ?? String(localized: "Map"))
+    }
+
+    /// Which way and how far: to the estimate, else to their last position.
+    private func pointer(_ t: Data, estimate: SearchEstimate?, incident: SosIncident?, search: SearchState?) -> some View {
+        let goal: (lat: Double, lon: Double, radius: Double)? = estimate.map { ($0.lat, $0.lon, $0.major68M) }
+            ?? incident?.position.map { ($0.lat, $0.lon, $0.radiusM) }
+            ?? search?.lastFix.map { ($0.lat, $0.lon, $0.radiusM) }
+        let d = goal.flatMap { model.distanceTo(lat: $0.lat, lon: $0.lon) }
+        // Inside the likely zone (a ring around us, two places), there is no direction to give.
+        let unknownWay = estimate != nil && (d.map { $0.meters <= (goal?.radius ?? 0) } ?? false)
+        let relative = d.flatMap { d in model.heading.map { (d.bearing - $0 + 360).truncatingRemainder(dividingBy: 360) } }
+        return HStack(spacing: 16) {
+            Image(systemName: unknownWay ? "questionmark" : "location.north.fill")
                 .font(.system(size: 30))
-                .foregroundStyle(Theme.lora)
-                .rotationEffect(.degrees(d?.bearing ?? 0))
+                .foregroundStyle(Theme.sos)
+                .rotationEffect(.degrees(unknownWay ? 0 : relative ?? d?.bearing ?? 0))
                 .frame(width: 64, height: 64)
                 .background(Theme.s2, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
-                if let d {
+                if unknownWay, let goal {
+                    Text("Direction not known yet").font(.system(size: 17, weight: .semibold))
+                    Text("Within \(distanceText(goal.radius)) of here, around you. Move a few hundred metres or add a bearing: other places narrow it down.")
+                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let d, let goal {
                     Text("\(Int(d.bearing.rounded()))° · \(distanceText(d.meters))").font(Theme.figure(28))
-                    Text("Bearing from north · uncertainty ±\(Int(t.radiusM.rounded())) m")
+                    Text(relative != nil
+                         ? String(localized: "The arrow follows your phone · ±\(distanceText(goal.radius))")
+                         : String(localized: "Bearing from north · ±\(distanceText(goal.radius))"))
+                        .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                } else if goal == nil {
+                    Text("Position unknown").font(.system(size: 17, weight: .semibold))
+                    Text("Start the search: every reception of their radio narrows it down.")
                         .font(.system(size: 13)).foregroundStyle(Theme.tx2)
                 } else {
                     Text("Waiting for your position").font(.system(size: 17, weight: .semibold))
@@ -126,41 +219,177 @@ struct SearchView: View {
         .card(padding: 16)
         .accessibilityElement(children: .combine)
     }
+
+    private func startCard(_ t: Data) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Search by radio").font(.system(size: 17, weight: .semibold))
+            Text("Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.")
+                .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Start the search") {
+                error = model.startSearch(t)
+            }
+            .buttonStyle(.primary)
+            .disabled(model.searchGroup(for: t) == nil)
+            if model.searchGroup(for: t) == nil {
+                Text("A radio search needs a group you share with them.")
+                    .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+            }
+        }
+        .card(padding: 16)
+    }
+
+    private func actions(_ t: Data, search: SearchState) -> some View {
+        let wait = Int((Double(search.pingInMs) / 1000).rounded(.up))
+        let gid = search.gid
+        let cost = model.estimate(.group(gid: gid), datagramLen: 8).map { String(format: "%.0f", Double($0.airtimeMs) / 1000) }
+        return VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Button {
+                    error = model.ping(t)
+                } label: {
+                    VStack(spacing: 2) {
+                        Text("Ping")
+                        Text(wait > 0 ? String(localized: "in \(wait) s") : cost.map { String(localized: "≈ \($0) s air") } ?? "")
+                            .font(.system(size: 11, weight: .regular)).foregroundStyle(Theme.tx2)
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle(height: 56))
+                .disabled(wait > 0 || !model.isConnected)
+                Button("Add a bearing") { bearing = true }
+                    .buttonStyle(SecondaryButtonStyle(height: 56))
+                    .disabled(model.myFix == nil)
+                Menu {
+                    Button("10 dBm for 10 min") { error = model.lowerPower(t, dbm: 10) }
+                    Button("2 dBm for 10 min") { error = model.lowerPower(t, dbm: 2) }
+                } label: {
+                    Text("Lower power")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .background(Theme.s2, in: RoundedRectangle(cornerRadius: 14))
+                        .foregroundStyle(Theme.tx)
+                }
+                .disabled(!model.isConnected)
+            }
+            HStack(spacing: 8) {
+                if let url = model.searchCSV(t) {
+                    ShareLink(item: url) {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                    }
+                    .foregroundStyle(Theme.tx)
+                }
+                Button(role: .destructive) {
+                    model.stopSearch(t)
+                } label: {
+                    Text("Stop the search")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            if let tx = search.txDbm {
+                Text("Their radio transmits at \(tx) dBm.")
+                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func readings(_ t: Data, estimate: SearchEstimate?) -> some View {
+        let ms = model.measurements(t)
+        return VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(LocalizedStringKey(estimate.map {
+                $0.calibrated
+                    ? String(localized: "\(ms.count) measures · range calibrated on their GPS")
+                    : String(localized: "\(ms.count) measures")
+            } ?? String(localized: "No measure yet")))
+            if !ms.isEmpty {
+                CardList {
+                    ForEach(Array(ms.prefix(20).enumerated()), id: \.offset) { i, m in
+                        if i > 0 { CardDivider() }
+                        MeasurementRow(who: m.mine ? String(localized: "You") : model.name(of: m.by),
+                                       detail: detail(m), value: value(m))
+                    }
+                }
+            }
+        }
+    }
+
+    private func detail(_ m: SearchMeasurement) -> String {
+        var parts = [MapScreen.ago(m.atS)]
+        if m.rssi != nil { parts.append(String(format: "SNR %.0f dB", m.snrDb)) }
+        if m.estimated { parts.append(m.saturated ? String(localized: "estimated, saturated") : String(localized: "estimated")) }
+        if let b = m.bearingDeg {
+            parts.append(m.bearingYagi ? String(localized: "bearing \(b)° (antenna)") : String(localized: "bearing \(b)° (body)"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private func value(_ m: SearchMeasurement) -> String {
+        if let r = m.rssi { return "\(r) dBm" }
+        if let b = m.bearingDeg { return "\(b)°" }
+        return "—"
+    }
 }
 
-/// A schematic plan: the SOS position and its uncertainty in the middle, us on the side.
-private struct Radar: View {
-    let target: PeerPosition
-    let distance: (meters: Double, bearing: Double)?
+/// A bearing: face where the signal seems strongest (the last readings help), and keep it.
+struct BearingSheet: View {
+    let target: Data
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var yagi = false
+    @State private var manual = 0.0
+    @State private var error: String?
 
     var body: some View {
-        Canvas { ctx, size in
-            let c = CGPoint(x: size.width / 2, y: size.height / 2)
-            let maxR = min(size.width, size.height) / 2 - 18
-            for f in [0.33, 0.66, 1.0] {
-                let r = maxR * f
-                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)),
-                           with: .color(Theme.line), lineWidth: 1)
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Face where their signal seems strongest (the last readings below help), or point a directional antenna at it, then keep this direction.")
+                    .font(.system(size: 14)).foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    VStack(spacing: 6) {
+                        Image(systemName: "location.north.line.fill")
+                            .font(.system(size: 44))
+                            .foregroundStyle(Theme.sos)
+                            .accessibilityHidden(true)
+                        Text("\(Int(direction.rounded()))°").font(Theme.figure(40))
+                        Text(model.heading == nil ? String(localized: "No compass: set it by hand") : String(localized: "From the compass"))
+                            .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+                    }
+                    Spacer()
+                }
+                if model.heading == nil {
+                    Slider(value: $manual, in: 0...359, step: 1)
+                        .accessibilityLabel("Direction")
+                }
+                if let m = model.measurements(target).first(where: { $0.mine && $0.rssi != nil }), let r = m.rssi {
+                    Text("Your last reading: \(r) dBm, \(MapScreen.ago(m.atS))")
+                        .font(.system(size: 14))
+                }
+                Toggle("Directional antenna", isOn: $yagi)
+                Text(yagi ? String(localized: "Trusted to ±15°.") : String(localized: "Trusted to ±40° (the body shadows the signal)."))
+                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+                if let error { Banner(kind: .sos, title: error) }
+                Spacer()
+                Button("Use this direction") {
+                    error = model.addBearing(target, degrees: direction, yagi: yagi)
+                    if error == nil { dismiss() }
+                }
+                .buttonStyle(.primary)
             }
-            // Scale: we sit on the outer ring; the uncertainty is to scale.
-            let span = max(distance?.meters ?? target.radiusM * 4, target.radiusM * 2, 50)
-            let ur = max(10, maxR * target.radiusM / span)
-            ctx.fill(Path(ellipseIn: CGRect(x: c.x - ur, y: c.y - ur, width: 2 * ur, height: 2 * ur)),
-                     with: .color(Theme.lora.opacity(0.25)))
-            ctx.fill(Path(ellipseIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)), with: .color(Theme.sos))
-            if let d = distance {
-                // We are at the opposite of their bearing from us.
-                let a = (d.bearing + 180) * .pi / 180
-                let p = CGPoint(x: c.x + maxR * sin(a), y: c.y - maxR * cos(a))
-                var line = Path()
-                line.move(to: p)
-                line.addLine(to: c)
-                ctx.stroke(line, with: .color(Theme.me.opacity(0.7)), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                ctx.fill(Path(ellipseIn: CGRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14)), with: .color(Theme.me))
+            .padding(16)
+            .screen()
+            .navigationTitle("Add a bearing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
-            ctx.draw(Text("N").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.tx2),
-                     at: CGPoint(x: c.x, y: 10))
         }
-        .accessibilityLabel("Plan of the SOS position and yours")
+        .presentationDetents([.large])
     }
+
+    private var direction: Double { model.heading ?? manual }
 }

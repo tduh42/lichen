@@ -72,12 +72,23 @@ final class AppModel {
     var sos = false
     var myFix: LocationFix?
     var locationDenied = false
-    /// The latest SOS heard, until it ends (the Search tab follows it).
-    var incomingSos: PeerPosition?
-    /// The full-screen alert for an SOS just heard, until dismissed.
-    var sosAlert: PeerPosition?
-    /// Every SOS position heard, newest last (the Search tab's measurements).
-    var sosLog: [PeerPosition] = []
+    /// SOS incidents heard, by sender node: one alert each (`Search.swift`).
+    var incidents: [Data: SosIncident] = [:]
+    /// The incident whose full-screen alert is up, until dismissed.
+    var sosAlert: SenderID?
+    /// The person the Search tab shows.
+    var searchTarget: Data?
+    /// Searches we run (protocol.md §11); `searchVersion` changes with their estimates.
+    var searches: [SearchState] = []
+    var searchVersion = 0
+    /// Members searching for us, and our radio's power while a search holds it lowered.
+    var searchedBy: [SearchedBy] = []
+    var loweredPower: Int8?
+    /// What our SOS is doing.
+    var sosStatus: SosStatus?
+    /// The compass heading, degrees from true north, while the Search tab is on screen.
+    var heading: Double?
+    @ObservationIgnored var lastBatteryReport: Date?
     /// A screen to show at launch (debug launch argument `-screen <name>`, for screenshots).
     var debugScreen: String?
     /// Image previews whose full variant we asked for.
@@ -90,9 +101,9 @@ final class AppModel {
         didSet { UserDefaults.standard.set(voiceMode, forKey: "lichen.voiceMode") }
     }
     let player = VoicePlayer()
-    /// The map is on screen: our position is needed even without a share.
-    var mapVisible = false {
-        didSet { if mapVisible != oldValue { updateLocator() } }
+    /// Screens that need our position while shown (map, search, SOS alert).
+    var locationUsers: Set<String> = [] {
+        didSet { if locationUsers != oldValue { updateLocator() } }
     }
 
     @ObservationIgnored private(set) var core: LichenCore
@@ -141,8 +152,15 @@ final class AppModel {
         locator.onFix = { [weak self] l in self?.gotFix(LocationFix(l)) }
         // A tap on a notification opens its conversation.
         notifier.onOpen = { [weak self] chat in
-            self?.tab = .messages
-            self?.debugOpen = chat
+            guard let self else { return }
+            // An SOS notification opens its search.
+            if case let .contact(key) = chat, let i = incidents[key], i.state() != .ended {
+                searchTarget = key
+                tab = .search
+                return
+            }
+            tab = .messages
+            debugOpen = chat
         }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
@@ -267,6 +285,13 @@ final class AppModel {
         if torEnabled, let state = Self.folder("demo-tor-state")?.path, let cache = Self.folder("demo-tor-cache")?.path {
             net.camilleOverTor(stateDir: state, cacheDir: cache)
         }
+        #if DEBUG
+        // -sosdemo YES: Julien in SOS without GPS once the group is set up (a real search);
+        // -sosdemo2 YES: Camille in SOS too, for five minutes (two incidents).
+        let args = UserDefaults.standard
+        if args.bool(forKey: "sosdemo") || args.bool(forKey: "sosdemo2") { net.julienSos() }
+        if args.bool(forKey: "sosdemo2") { net.camilleSos(afterS: 240, forS: 300) }
+        #endif
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
         demoTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
@@ -323,9 +348,13 @@ final class AppModel {
         shares = []
         positions = []
         sos = false
-        incomingSos = nil
+        incidents = [:]
         sosAlert = nil
-        sosLog = []
+        searchTarget = nil
+        searches = []
+        searchedBy = []
+        loweredPower = nil
+        sosStatus = nil
         myFix = nil
         lastFed = nil
     }
@@ -337,7 +366,7 @@ final class AppModel {
 
     // MARK: runner
 
-    private func now() -> UInt64 {
+    func now() -> UInt64 {
         UInt64((ProcessInfo.processInfo.systemUptime - started) * 1000)
     }
 
@@ -371,6 +400,9 @@ final class AppModel {
         let g = core.groups()
         if g != groups { groups = g }
         budget = core.budget(nowMs: t)
+        let st = core.sosStatus(nowMs: t)
+        if st != sosStatus { sosStatus = st }
+        if !searches.isEmpty || sos { reportBattery() }
         timer?.invalidate()
         if let next = core.nextWakeup() {
             let delay = max(0.02, Double(Int64(next) - Int64(t)) / 1000)
@@ -397,18 +429,6 @@ final class AppModel {
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
                 debugOpen = .contact(key: c.key)
-            }
-            // -sosdemo YES: an SOS from Julien, for screenshots of the alert and the Search tab.
-            if UserDefaults.standard.bool(forKey: "sosdemo"), incomingSos == nil,
-               let j = contacts.first(where: { $0.name == "Julien" }) {
-                let p = PeerPosition(
-                    from: j.key, group: nil,
-                    lat: 44.9065, lon: 5.4745, altM: 1_620, radiusM: 6, headingDeg: nil, speedMps: nil,
-                    atS: UInt64(Date().timeIntervalSince1970) - 40, sos: true, extrapolated: false
-                )
-                incomingSos = p
-                sosAlert = debugScreen == "search" ? nil : p
-                sosLog = [p]
             }
             if shares.isEmpty, let name = UserDefaults.standard.string(forKey: "share"),
                let c = contacts.first(where: { $0.name == name }) {
@@ -469,17 +489,16 @@ final class AppModel {
         case let .location(position, end):
             positions = core.positions(nowMs: now())
             if position.sos && !end {
-                if incomingSos?.from != position.from {
-                    sosAlert = position
-                    notifier.sos(.contact(key: position.from),
-                                 title: String(localized: "SOS from \(name(of: position.from))"),
-                                 body: String(localized: "Their exact position is on the map; open lichen to follow it."))
-                }
-                incomingSos = position
-                sosLog.append(position)
-            } else if incomingSos?.from == position.from {
-                incomingSos = nil
-                sosAlert = nil
+                heardSos(from: position.from, group: position.group, position: position, battery: nil)
+            } else {
+                endSos(position.from)
+            }
+        case let .beacon(gid, from, sos, battery):
+            // An SOS without GPS shows here (protocol.md §11.1).
+            if sos {
+                heardSos(from: from, group: gid, position: nil, battery: battery)
+            } else {
+                endSos(from)
             }
         case .sharesChanged:
             shares = core.shares()
@@ -491,9 +510,13 @@ final class AppModel {
             let chat = ChatID.group(gid: gid)
             notifier.message(chat, title: title(of: chat),
                              body: String(localized: "\(name(of: by)) is searching for you"))
-        case .searchUpdated, .txPower:
-            // The search screen reads the estimate itself; lc-ffi keeps the power to restore.
-            break
+            searchedBy = core.searchedBy(nowMs: now())
+        case .searchUpdated:
+            searchVersion += 1
+            refreshSearches()
+        case let .txPower(dbm, previous):
+            // lc-ffi keeps the power to restore; we show it while it is lowered.
+            loweredPower = previous == nil ? nil : dbm
         }
     }
 
@@ -656,9 +679,10 @@ final class AppModel {
 
     /// Location is needed while sharing, during SOS, or with the map on screen; in the demo it
     /// comes from the simulated network.
-    private func updateLocator() {
-        let sharing = !shares.isEmpty || sos
-        let needed = sharing || mapVisible
+    func updateLocator() {
+        // A search measures with our position: it must stay fresh, screen off too.
+        let sharing = !shares.isEmpty || sos || !searches.isEmpty
+        let needed = sharing || !locationUsers.isEmpty
         if let demo {
             locator.stop()
             if needed, demoFixTimer == nil {

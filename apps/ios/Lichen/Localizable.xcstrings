@@ -21,6 +21,16 @@
         }
       }
     },
+    " · battery %u %%": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": " · batterie %u %%"
+          }
+        }
+      }
+    },
     "%@ / %@": {
       "localizations": {
         "fr": {
@@ -251,6 +261,26 @@
         }
       }
     },
+    "%lld measures": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mesures"
+          }
+        }
+      }
+    },
+    "%lld measures · range calibrated on their GPS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld mesures · portée calibrée sur son GPS"
+          }
+        }
+      }
+    },
     "%lld members": {
       "localizations": {
         "fr": {
@@ -277,46 +307,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld membres · clés %lld/%lld"
-          }
-        }
-      }
-    },
-    "%lld positions received": {
-      "localizations": {
-        "en": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld position received"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld positions received"
-                }
-              }
-            }
-          }
-        },
-        "fr": {
-          "variations": {
-            "plural": {
-              "one": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld position reçue"
-                }
-              },
-              "other": {
-                "stringUnit": {
-                  "state": "translated",
-                  "value": "%lld positions reçues"
-                }
-              }
-            }
           }
         }
       }
@@ -367,6 +357,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld°": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld°"
           }
         }
       }
@@ -431,6 +431,16 @@
         }
       }
     },
+    "10 dBm for 10 min": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "10 dBm pendant 10 min"
+          }
+        }
+      }
+    },
     "10 km": {
       "localizations": {
         "fr": {
@@ -467,6 +477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "160×120 AVIF · %@ · direct uniquement ; la miniature complète sur demande"
+          }
+        }
+      }
+    },
+    "2 dBm for 10 min": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2 dBm pendant 10 min"
           }
         }
       }
@@ -537,6 +557,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fichier protégé par mot de passe : plus tard"
+          }
+        }
+      }
+    },
+    "A radio search needs a group you share with them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une recherche radio demande un groupe en commun."
           }
         }
       }
@@ -627,6 +657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Admin"
+          }
+        }
+      }
+    },
+    "Again every 2 minutes. Nobody confirms reception: watch for answers.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À nouveau toutes les 2 minutes. Personne ne confirme la réception : surveille les réponses."
           }
         }
       }
@@ -771,12 +811,12 @@
         }
       }
     },
-    "Bearing from north · uncertainty ±%lld m": {
+    "Bearing from north · ±%@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cap depuis le nord · incertitude ±%lld m"
+            "value": "Cap depuis le nord · ±%@"
           }
         }
       }
@@ -1271,6 +1311,36 @@
         }
       }
     },
+    "Direction": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direction"
+          }
+        }
+      }
+    },
+    "Direction not known yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direction pas encore connue"
+          }
+        }
+      }
+    },
+    "Directional antenna": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antenne directionnelle"
+          }
+        }
+      }
+    },
     "Disconnect": {
       "localizations": {
         "fr": {
@@ -1481,16 +1551,6 @@
         }
       }
     },
-    "Every 2 minutes, until they stop it": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Toutes les 2 minutes, jusqu'à ce qu'il l'arrête"
-          }
-        }
-      }
-    },
     "Exact": {
       "localizations": {
         "fr": {
@@ -1507,6 +1567,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déplier"
+          }
+        }
+      }
+    },
+    "Export": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporter"
+          }
+        }
+      }
+    },
+    "Face where their signal seems strongest (the last readings below help), or point a directional antenna at it, then keep this direction.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tourne-toi vers l’endroit où le signal semble le plus fort (les dernières mesures ci-dessous aident), ou vise-le avec une antenne directionnelle, puis garde cette direction."
           }
         }
       }
@@ -1541,6 +1621,16 @@
         }
       }
     },
+    "Follow the search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suivre la recherche"
+          }
+        }
+      }
+    },
     "Follow the theme": {
       "localizations": {
         "fr": {
@@ -1557,6 +1647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À partir de ses 24 mots : remplace celle-ci"
+          }
+        }
+      }
+    },
+    "From the compass": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "D’après la boussole"
           }
         }
       }
@@ -1607,16 +1707,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pleine résolution via iroh"
-          }
-        }
-      }
-    },
-    "GPS ±%lld m · %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "GPS ±%lld m · %@"
           }
         }
       }
@@ -1721,6 +1811,16 @@
         }
       }
     },
+    "Heard %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendu %@"
+          }
+        }
+      }
+    },
     "Heartbeat when still": {
       "localizations": {
         "fr": {
@@ -1791,16 +1891,6 @@
         }
       }
     },
-    "In search mode (L8)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En mode recherche (L8)"
-          }
-        }
-      }
-    },
     "Internet transports": {
       "localizations": {
         "fr": {
@@ -1817,26 +1907,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clé invalide."
-          }
-        }
-      }
-    },
-    "Invite": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inviter"
-          }
-        }
-      }
-    },
-    "Inviting and leaving come with the phone identity.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Inviter et quitter arrivent avec l'identité du téléphone."
           }
         }
       }
@@ -1907,16 +1977,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quitter la démo"
-          }
-        }
-      }
-    },
-    "Leave the group": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Quitter le groupe"
           }
         }
       }
@@ -2081,6 +2141,16 @@
         }
       }
     },
+    "Location is off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localisation coupée"
+          }
+        }
+      }
+    },
     "Location sharing": {
       "localizations": {
         "fr": {
@@ -2147,6 +2217,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Style de carte"
+          }
+        }
+      }
+    },
+    "Map: %@ is probably within %@ of the centre": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carte : %@ est probablement à moins de %@ du centre"
+          }
+        }
+      }
+    },
+    "Meanwhile your groups get a beacon without position every 2 minutes, to locate you by radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attendant, tes groupes reçoivent une balise sans position toutes les 2 minutes, pour te localiser par radio."
           }
         }
       }
@@ -2281,16 +2371,6 @@
         }
       }
     },
-    "N": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "N"
-          }
-        }
-      }
-    },
     "Needs an Internet connection": {
       "localizations": {
         "fr": {
@@ -2301,12 +2381,12 @@
         }
       }
     },
-    "Never flooded: a LoRa announcement, the content over iroh or Tor (L7)": {
+    "Never flooded: a LoRa announcement, the content over iroh or Tor": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jamais en flood : annonce LoRa, contenu via iroh ou Tor (L7)"
+            "value": "Jamais diffusés : une annonce LoRa, le contenu par iroh ou Tor"
           }
         }
       }
@@ -2351,6 +2431,36 @@
         }
       }
     },
+    "No GPS position": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de position GPS"
+          }
+        }
+      }
+    },
+    "No GPS position: search for them by radio from lichen.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de position GPS : lance une recherche radio depuis lichen."
+          }
+        }
+      }
+    },
+    "No GPS position: their phone sends beacons every 2 minutes, to be located by radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de position GPS : son téléphone envoie une balise toutes les 2 minutes, pour être localisé par radio."
+          }
+        }
+      }
+    },
     "No Internet bridge": {
       "localizations": {
         "fr": {
@@ -2377,6 +2487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sans antenne relais"
+          }
+        }
+      }
+    },
+    "No compass: set it by hand": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de boussole : règle-la à la main"
           }
         }
       }
@@ -2417,6 +2537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "L'expéditeur ne la propose plus."
+          }
+        }
+      }
+    },
+    "No measure yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de mesure"
           }
         }
       }
@@ -2477,6 +2607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun transport ne joint l'expéditeur : active iroh ou Tor."
+          }
+        }
+      }
+    },
+    "Nobody receives it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne ne le reçoit"
           }
         }
       }
@@ -2561,6 +2701,16 @@
         }
       }
     },
+    "Nothing goes out until your radio is back.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien ne part tant que ta radio n’est pas revenue."
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "fr": {
@@ -2607,6 +2757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seul l'administrateur du groupe peut faire ça."
+          }
+        }
+      }
+    },
+    "Open": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir"
           }
         }
       }
@@ -2711,26 +2871,6 @@
         }
       }
     },
-    "Pings, radio bearings and power control come with search mode (L8).": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les pings, les caps radio et la puissance arrivent avec le mode recherche (L8)."
-          }
-        }
-      }
-    },
-    "Plan of the SOS position and yours": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plan de la position SOS et de la tienne"
-          }
-        }
-      }
-    },
     "Play the voice message": {
       "localizations": {
         "fr": {
@@ -2757,6 +2897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Position"
+          }
+        }
+      }
+    },
+    "Position unknown": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position inconnue"
           }
         }
       }
@@ -3031,6 +3181,16 @@
         }
       }
     },
+    "SOS ended": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS terminé"
+          }
+        }
+      }
+    },
     "SOS from %@": {
       "localizations": {
         "fr": {
@@ -3071,12 +3231,22 @@
         }
       }
     },
-    "SOS received %@": {
+    "SOS · heard %@%@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Balise SOS reçue %@"
+            "value": "SOS · entendu %@%@"
+          }
+        }
+      }
+    },
+    "SOS · nothing heard since %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS · rien entendu depuis %@"
           }
         }
       }
@@ -3121,12 +3291,22 @@
         }
       }
     },
-    "Search without GPS (radio bearings, pings) comes with search mode, L8.": {
+    "Search by radio": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La recherche sans GPS (caps radio, pings) arrive avec le mode recherche, L8."
+            "value": "Rechercher par radio"
+          }
+        }
+      }
+    },
+    "Search for %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher %@"
           }
         }
       }
@@ -3147,6 +3327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recherche en Bluetooth…"
+          }
+        }
+      }
+    },
+    "Searching · %@%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche · %@%@"
           }
         }
       }
@@ -3261,6 +3451,16 @@
         }
       }
     },
+    "Sent %@ to %u conversations": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé %@ à %u conversations"
+          }
+        }
+      }
+    },
     "Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.": {
       "localizations": {
         "fr": {
@@ -3337,6 +3537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Partager ma position…"
+          }
+        }
+      }
+    },
+    "Share your position with a contact or join a group.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partage ta position avec un contact ou rejoins un groupe."
           }
         }
       }
@@ -3451,6 +3661,26 @@
         }
       }
     },
+    "Start the search: every reception of their radio narrows it down.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lance la recherche : chaque réception de sa radio réduit la zone."
+          }
+        }
+      }
+    },
+    "Starting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrage"
+          }
+        }
+      }
+    },
     "Stock companion firmware does not repeat: a repeater node does that.": {
       "localizations": {
         "fr": {
@@ -3487,6 +3717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter le SOS"
+          }
+        }
+      }
+    },
+    "Stop the search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter la recherche"
           }
         }
       }
@@ -3531,6 +3771,16 @@
         }
       }
     },
+    "The arrow follows your phone · ±%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La flèche suit ton téléphone · ±%@"
+          }
+        }
+      }
+    },
     "The bearing and the distance appear with your GPS fix.": {
       "localizations": {
         "fr": {
@@ -3547,6 +3797,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le contenu ne correspond pas à son empreinte : abandonné."
+          }
+        }
+      }
+    },
+    "The first position goes out in a moment.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La première position part dans un instant."
           }
         }
       }
@@ -3621,6 +3881,26 @@
         }
       }
     },
+    "Their GPS position comes every 2 minutes.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa position GPS arrive toutes les 2 minutes."
+          }
+        }
+      }
+    },
+    "Their beacons no longer reach you: move, or ask the group.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses balises ne t’arrivent plus : déplace-toi, ou demande au groupe."
+          }
+        }
+      }
+    },
     "Their exact position is on the map; open lichen to follow it.": {
       "localizations": {
         "fr": {
@@ -3671,6 +3951,16 @@
         }
       }
     },
+    "Their phone sends beacons: search for them by radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son téléphone envoie des balises : recherche par radio."
+          }
+        }
+      }
+    },
     "Their radio did not answer the handshake: off, out of range, or their app is closed.": {
       "localizations": {
         "fr": {
@@ -3691,6 +3981,16 @@
         }
       }
     },
+    "Their radio transmits at %d dBm.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa radio émet à %d dBm."
+          }
+        }
+      }
+    },
     "There is no full version to ask for.": {
       "localizations": {
         "fr": {
@@ -3701,12 +4001,32 @@
         }
       }
     },
+    "They answer pings in SOS or when they let the group locate them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La personne répond aux pings en SOS, ou si elle laisse le groupe la localiser."
+          }
+        }
+      }
+    },
     "They differ": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ils sont différents"
+          }
+        }
+      }
+    },
+    "They turned their SOS off.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le SOS a été arrêté."
           }
         }
       }
@@ -3777,6 +4097,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tor n'a pas pu se connecter"
+          }
+        }
+      }
+    },
+    "Trusted to ±15°.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiable à ±15°."
+          }
+        }
+      }
+    },
+    "Trusted to ±40° (the body shadows the signal).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fiable à ±40° (le corps masque le signal)."
           }
         }
       }
@@ -3901,6 +4241,16 @@
         }
       }
     },
+    "Use this direction": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utiliser cette direction"
+          }
+        }
+      }
+    },
     "Verified by the scan. Their phone shows the same numbers once it knows you: after your first message, or when they scan your code.": {
       "localizations": {
         "fr": {
@@ -3947,6 +4297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Messages vocaux"
+          }
+        }
+      }
+    },
+    "Waiting for GPS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente du GPS"
           }
         }
       }
@@ -4001,12 +4361,12 @@
         }
       }
     },
-    "When someone sends an SOS, follow it from here: bearing and distance from your position.": {
+    "When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quand quelqu'un envoie un SOS, suis-le d'ici : cap et distance depuis ta position."
+            "value": "Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour rechercher quelqu’un d’autre, ouvre un groupe et choisis la personne."
           }
         }
       }
@@ -4017,6 +4377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À l'appairage, iOS demande les 6 chiffres affichés sur l'écran de la radio : saisis-les dans sa fenêtre. La radio reste ensuite appairée à ce téléphone."
+          }
+        }
+      }
+    },
+    "Within %@ of here, around you. Move a few hundred metres or add a bearing: other places narrow it down.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À moins de %@ d’ici, tout autour. Déplace-toi de quelques centaines de mètres ou ajoute un relèvement : d’autres endroits affinent la zone."
           }
         }
       }
@@ -4101,12 +4471,12 @@
         }
       }
     },
-    "Your exact GPS position, again every 2 minutes": {
+    "Your exact GPS position, again every 2 minutes. Without GPS, a beacon your groups can locate by radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ta position GPS précise, puis de nouveau toutes les 2 minutes"
+            "value": "Ta position GPS exacte, toutes les 2 minutes. Sans GPS, une balise que tes groupes peuvent localiser par radio."
           }
         }
       }
@@ -4141,6 +4511,16 @@
         }
       }
     },
+    "Your last reading: %d dBm, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta dernière mesure : %d dBm, %@"
+          }
+        }
+      }
+    },
     "Your name": {
       "localizations": {
         "fr": {
@@ -4171,6 +4551,26 @@
         }
       }
     },
+    "Your phone answers their pings: SOS, or you let the group locate you.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton téléphone répond à leurs pings : SOS, ou tu laisses le groupe te localiser."
+          }
+        }
+      }
+    },
+    "Your phone answers their search pings even outside SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton téléphone répond à leurs pings de recherche, même hors SOS"
+          }
+        }
+      }
+    },
     "Your position is not known yet": {
       "localizations": {
         "fr": {
@@ -4187,6 +4587,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ta position n’est pas encore connue."
+          }
+        }
+      }
+    },
+    "Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio mesure chaque émission qu’elle entend directement, là où tu es ; le groupe partage ses mesures et chaque téléphone calcule où la personne se trouve probablement."
+          }
+        }
+      }
+    },
+    "Your radio transmits at %d dBm for the search, then goes back.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio émet à %d dBm pour la recherche, puis revient à la normale."
           }
         }
       }
@@ -4211,12 +4631,62 @@
         }
       }
     },
+    "bearing %u° (antenna)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "relèvement %u° (antenne)"
+          }
+        }
+      }
+    },
+    "bearing %u° (body)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "relèvement %u° (corps)"
+          }
+        }
+      }
+    },
     "connected": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "connecté"
+          }
+        }
+      }
+    },
+    "ended": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "terminé"
+          }
+        }
+      }
+    },
+    "estimated": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "estimé"
+          }
+        }
+      }
+    },
+    "estimated, saturated": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "estimé, saturé"
           }
         }
       }
@@ -4237,6 +4707,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "empreinte vérifiée"
+          }
+        }
+      }
+    },
+    "heard %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "entendu %@"
+          }
+        }
+      }
+    },
+    "in %lld s": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dans %lld s"
           }
         }
       }
@@ -4301,6 +4791,16 @@
         }
       }
     },
+    "not heard yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas encore entendu"
+          }
+        }
+      }
+    },
     "now": {
       "localizations": {
         "fr": {
@@ -4337,6 +4837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "refusé"
+          }
+        }
+      }
+    },
+    "silent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "muet"
           }
         }
       }
@@ -4411,12 +4921,32 @@
         }
       }
     },
+    "verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vérifié"
+          }
+        }
+      }
+    },
     "≈ %@ s": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "≈ %@ s"
+          }
+        }
+      }
+    },
+    "≈ %@ s air": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "≈ %@ s d’antenne"
           }
         }
       }

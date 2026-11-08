@@ -43,13 +43,14 @@ struct SosView: View {
                         .buttonStyle(.primary)
                 }
                 .padding(.top, 8)
+                statusBanner
             } else {
                 SosHoldButton { model.setSos(true) }
                     .padding(.top, 8)
             }
             VStack(spacing: 10) {
                 card(String(localized: "What is sent"),
-                     String(localized: "Your exact GPS position, again every 2 minutes"))
+                     String(localized: "Your exact GPS position, again every 2 minutes. Without GPS, a beacon your groups can locate by radio."))
                 card(String(localized: "To whom"), recipients)
                 card(String(localized: "How"),
                      String(localized: "Over LoRa to each contact you share with, flooded to each group, on the mesh's usual radio settings."))
@@ -64,6 +65,32 @@ struct SosView: View {
         .padding(.top, 16)
         .padding(.bottom, 24)
         .background(SosColor.screen.ignoresSafeArea())
+    }
+
+    /// What the SOS really does now: never a delivery claim (nobody acknowledges a flood).
+    @ViewBuilder
+    private var statusBanner: some View {
+        let st = model.sosStatus
+        if !model.isConnected {
+            Banner(kind: .warn, title: String(localized: "Radio disconnected"),
+                   message: String(localized: "Nothing goes out until your radio is back."))
+        } else if st?.recipients == 0 {
+            Banner(kind: .warn, title: String(localized: "Nobody receives it"),
+                   message: String(localized: "Share your position with a contact or join a group."))
+        } else if st?.beaconOnly == true {
+            Banner(kind: .warn,
+                   title: model.locationDenied ? String(localized: "Location is off") : String(localized: "Waiting for GPS"),
+                   message: String(localized: "Meanwhile your groups get a beacon without position every 2 minutes, to locate you by radio."),
+                   action: model.locationDenied ? (String(localized: "Settings"), {
+                       if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                   }) : nil)
+        } else if let at = st?.lastQueuedS {
+            Banner(kind: .ok, title: String(localized: "Sent \(MapScreen.ago(at)) to \(st?.recipients ?? 0) conversations"),
+                   message: String(localized: "Again every 2 minutes. Nobody confirms reception: watch for answers."))
+        } else {
+            Banner(kind: .ok, title: String(localized: "Starting"),
+                   message: String(localized: "The first position goes out in a moment."))
+        }
     }
 
     private var recipients: String {
@@ -87,50 +114,82 @@ struct SosView: View {
     }
 }
 
-/// Someone sent an SOS: full-screen alert (mockup `sos-recu`).
+/// Someone sent an SOS: full-screen alert (mockup `sos-recu`), live while it is up.
 struct SosReceivedView: View {
-    let sos: PeerPosition
+    let from: Data
     @Environment(AppModel.self) private var model
+    @State private var error: String?
 
     var body: some View {
-        VStack(spacing: 16) {
+        TimelineView(.periodic(from: .now, by: 5)) { _ in
+            if let sos = model.incidents[from] { content(sos) }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
+        .background(SosColor.screen.ignoresSafeArea())
+        // Our position, for the distance and bearing.
+        .onAppear { model.needsLocation("sosAlert", true) }
+        .onDisappear { model.needsLocation("sosAlert", false) }
+    }
+
+    private func content(_ sos: SosIncident) -> some View {
+        let heard = MapScreen.ago(UInt64(sos.lastHeard.timeIntervalSince1970))
+        return VStack(spacing: 16) {
             VStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(width: 72, height: 72)
                     .background(Theme.sosBtn, in: Circle())
-                Text("SOS alert · \(MapScreen.ago(sos.atS))")
+                Text("SOS alert · \(MapScreen.ago(UInt64(sos.started.timeIntervalSince1970)))")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.sosFg)
-                Text(model.name(of: sos.from))
+                Text(model.name(of: from))
                     .font(Theme.wordmark(40))
                     .tracking(-1)
-                Text(via).font(.system(size: 15)).foregroundStyle(Theme.tx2)
+                Text(via(sos)).font(.system(size: 15)).foregroundStyle(Theme.tx2)
             }
             .multilineTextAlignment(.center)
             .padding(.top, 24)
             CardList {
-                CardRow(title: String(localized: "Last GPS position"),
-                        subtitle: "\(MapScreen.ago(sos.atS)) · ±\(Int(sos.radiusM.rounded())) m · \(String(format: "%.4f, %.4f", sos.lat, sos.lon))")
-                CardDivider()
-                if let d = model.distanceTo(sos) {
-                    CardRow(title: String(localized: "From you")) {
-                        Text("\(distanceText(d.meters)) · \(Int(d.bearing.rounded()))°").font(Theme.figure(18))
+                if let p = sos.position {
+                    CardRow(title: String(localized: "Last GPS position"),
+                            subtitle: "\(MapScreen.ago(p.atS)) · ±\(Int(p.radiusM.rounded())) m · \(String(format: "%.4f, %.4f", p.lat, p.lon))")
+                    CardDivider()
+                    if let d = model.distanceTo(p) {
+                        CardRow(title: String(localized: "From you")) {
+                            Text("\(distanceText(d.meters)) · \(Int(d.bearing.rounded()))°").font(Theme.figure(18))
+                        }
+                    } else {
+                        CardRow(title: String(localized: "From you"), subtitle: String(localized: "Your position is not known yet")) {
+                            Badge(text: String(localized: "unknown"), background: Theme.warnBg, foreground: Theme.warnFg)
+                        }
                     }
                 } else {
-                    CardRow(title: String(localized: "From you"), subtitle: String(localized: "Your position is not known yet")) {
-                        Badge(text: String(localized: "unknown"), background: Theme.warnBg, foreground: Theme.warnFg)
-                    }
+                    CardRow(title: String(localized: "No GPS position"),
+                            subtitle: String(localized: "Their phone sends beacons: search for them by radio."))
                 }
                 CardDivider()
-                CardRow(title: String(localized: "Beacon"), subtitle: String(localized: "Every 2 minutes, until they stop it")) {
-                    Badge(text: String(localized: "active"), background: Theme.loraBg, foreground: Theme.loraFg)
+                CardRow(title: String(localized: "Beacon"),
+                        subtitle: String(localized: "Heard \(heard)") + (sos.battery.map { String(localized: " · battery \($0) %") } ?? "")) {
+                    switch sos.state() {
+                    case .active: Badge(text: String(localized: "active"), background: Theme.loraBg, foreground: Theme.loraFg)
+                    case .stale: Badge(text: String(localized: "silent"), background: Theme.warnBg, foreground: Theme.warnFg)
+                    case .ended: Badge(text: String(localized: "ended"), background: Theme.okBg, foreground: Theme.okFg)
+                    }
                 }
             }
+            if let error { Banner(kind: .warn, title: error) }
             Spacer(minLength: 0)
             VStack(spacing: 8) {
-                Button("Start the search") {
+                Button(model.search(for: from) == nil ? "Start the search" : "Follow the search") {
+                    if model.search(for: from) == nil, model.searchGroup(for: from) != nil {
+                        if let e = model.startSearch(from) {
+                            error = e
+                            return
+                        }
+                    }
+                    model.searchTarget = from
                     model.tab = .search
                     model.sosAlert = nil
                 }
@@ -138,16 +197,17 @@ struct SosReceivedView: View {
                 HStack(spacing: 8) {
                     Button("Reply") {
                         model.tab = .messages
-                        model.debugOpen = .contact(key: sos.from)
+                        model.debugOpen = .contact(key: from)
                         model.sosAlert = nil
                     }
                     .buttonStyle(.secondary)
-                    .disabled(!model.contacts.contains { $0.key == sos.from })
+                    .disabled(!model.contacts.contains { $0.key == from })
                     Button("Show on the map") {
                         model.tab = .map
                         model.sosAlert = nil
                     }
                     .buttonStyle(.secondary)
+                    .disabled(sos.position == nil)
                 }
                 Button("Dismiss") { model.sosAlert = nil }
                     .font(.system(size: 15, weight: .semibold))
@@ -155,14 +215,9 @@ struct SosReceivedView: View {
                     .foregroundStyle(Theme.tx2)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
-        .background(SosColor.screen.ignoresSafeArea())
-        // Our position, for the distance and bearing.
-        .onAppear { model.mapVisible = true }
     }
 
-    private var via: String {
+    private func via(_ sos: SosIncident) -> String {
         if let gid = sos.group {
             let name = model.groups.first { $0.gid == gid }?.name ?? String(localized: "Group")
             return String(localized: "Received over LoRa · group \(name)")
@@ -182,7 +237,13 @@ func distanceText(_ m: Double) -> String {
 extension AppModel {
     /// Distance (m) and bearing (degrees from north) from us to `p`.
     func distanceTo(_ p: PeerPosition) -> (meters: Double, bearing: Double)? {
+        distanceTo(lat: p.lat, lon: p.lon)
+    }
+
+    /// Distance (m) and bearing (degrees from north) from us to a point.
+    func distanceTo(lat: Double, lon: Double) -> (meters: Double, bearing: Double)? {
         guard let me = myFix else { return nil }
+        let p = (lat: lat, lon: lon)
         let r = 6_371_000.0
         let (la1, lo1, la2, lo2) = (me.lat * .pi / 180, me.lon * .pi / 180, p.lat * .pi / 180, p.lon * .pi / 180)
         let dla = la2 - la1, dlo = lo2 - lo1

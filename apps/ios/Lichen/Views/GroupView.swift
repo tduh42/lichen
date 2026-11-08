@@ -6,6 +6,7 @@ struct GroupView: View {
     @Environment(AppModel.self) private var model
     @State private var sharing = false
     @State private var error: String?
+    @State private var consent = false
 
     var body: some View {
         ScrollView {
@@ -22,8 +23,12 @@ struct GroupView: View {
                     SectionLabel("Location").padding(.top, 10)
                     CardList {
                         CardRow(title: String(localized: "Let this group locate me"),
-                                subtitle: String(localized: "In search mode (L8)")) {
-                            Toggle("Let this group locate me", isOn: .constant(false)).labelsHidden().disabled(true)
+                                subtitle: String(localized: "Your phone answers their search pings even outside SOS")) {
+                            Toggle("Let this group locate me", isOn: Binding(get: { consent }, set: {
+                                consent = $0
+                                model.setSearchConsent(gid, $0)
+                            }))
+                            .labelsHidden()
                         }
                         CardDivider()
                         Button { sharing = true } label: {
@@ -45,15 +50,8 @@ struct GroupView: View {
                         }
                         CardDivider()
                         CardRow(title: String(localized: "Media"),
-                                subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor (L7)"))
+                                subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor"))
                     }
-                    HStack(spacing: 8) {
-                        Button("Invite") {}.buttonStyle(.secondary)
-                        Button("Leave the group") {}.buttonStyle(.destructive)
-                    }
-                    .disabled(true)
-                    .padding(.top, 12)
-                    LaterNote(text: "Inviting and leaving come with the phone identity.")
                 }
                 .padding(16)
             }
@@ -72,6 +70,7 @@ struct GroupView: View {
             }
         }
         .sheet(isPresented: $sharing) { ShareSheet() }
+        .onAppear { consent = model.searchConsent(gid) }
         .alert("Not changed", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -106,13 +105,27 @@ struct GroupView: View {
             }
             Spacer()
             if !me {
-                // Keys are compared in person with the phone identity.
-                Badge(text: String(localized: "to verify"), background: Theme.warnBg, foreground: Theme.warnFg)
+                if m.verified {
+                    Badge(text: String(localized: "verified"), background: Theme.okBg, foreground: Theme.okFg)
+                } else {
+                    Badge(text: String(localized: "to verify"), background: Theme.warnBg, foreground: Theme.warnFg)
+                }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .contextMenu {
+            if !me {
+                Button {
+                    if let e = model.startSearch(m.key) {
+                        error = e
+                    } else {
+                        model.tab = .search
+                    }
+                } label: {
+                    Label("Search for \(m.name)", systemImage: "scope")
+                }
+            }
             if isAdmin && !me {
                 Button(role: .destructive) {
                     error = model.removeMember(m.key, from: gid)

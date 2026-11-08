@@ -251,6 +251,17 @@ struct StatusBanners: View {
                     action: (String(localized: "Retry"), { model.companion.scan() })
                 )
             }
+            // Someone is searching for us (protocol.md §11): our phone answers their pings.
+            if let first = model.searchedBy.first {
+                let names = ListFormatter.localizedString(byJoining: Array(Set(model.searchedBy.map { model.name(of: $0.by) })).sorted())
+                Banner(
+                    kind: .sos,
+                    title: String(localized: "\(names) is searching for you"),
+                    message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm for the search, then goes back.") }
+                        ?? String(localized: "Your phone answers their pings: SOS, or you let the group locate you."),
+                    action: (String(localized: "Open"), { model.debugOpen = .group(gid: first.gid) })
+                )
+            }
             if model.isConnected && model.airtimeLeftMs < 10_000 {
                 Banner(
                     kind: .lora,

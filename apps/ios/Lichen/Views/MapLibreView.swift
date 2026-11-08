@@ -45,6 +45,21 @@ struct MapItem: Equatable, Identifiable {
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 }
 
+/// A search estimate on the map: the heat grid as an image over its bounds, and the 68 % and
+/// 95 % ellipses. `version` tells a new estimate.
+struct MapOverlay: Equatable {
+    let version: Int
+    let heat: UIImage?
+    let north: Double
+    let south: Double
+    let west: Double
+    let east: Double
+    let ellipse68: [CLLocationCoordinate2D]
+    let ellipse95: [CLLocationCoordinate2D]
+
+    static func == (a: MapOverlay, b: MapOverlay) -> Bool { a.version == b.version }
+}
+
 /// MapLibre Native in SwiftUI: items as annotation views, circles as polygons.
 struct MapLibreView: UIViewRepresentable {
     let items: [MapItem]
@@ -53,6 +68,10 @@ struct MapLibreView: UIViewRepresentable {
     let recenter: Int
     /// Reports the visible area (for offline downloads).
     let onCamera: (MLNCoordinateBounds, Double) -> Void
+    /// A search estimate to draw.
+    var overlay: MapOverlay?
+    /// Margins kept free when fitting (the full-screen map has buttons and labels on top).
+    var insets = UIEdgeInsets(top: 140, left: 95, bottom: 70, right: 95)
 
     func makeUIView(context: Context) -> MLNMapView {
         let map = MLNMapView(frame: .zero, styleURL: style.url)
@@ -76,6 +95,7 @@ struct MapLibreView: UIViewRepresentable {
             map.styleURL = style.url
         }
         c.apply(items, to: map)
+        c.applyOverlay(overlay, to: map)
         if c.recenter != recenter {
             c.recenter = recenter
             fit(map)
@@ -84,7 +104,7 @@ struct MapLibreView: UIViewRepresentable {
 
     private func fit(_ map: MLNMapView) {
         guard let first = items.first else { return }
-        if items.count == 1 && first.radius < 500 {
+        if items.count == 1 && first.radius < 500 && overlay == nil {
             map.setCenter(first.coordinate, zoomLevel: max(map.zoomLevel, 13), animated: true)
             return
         }
@@ -98,10 +118,16 @@ struct MapLibreView: UIViewRepresentable {
             ne.latitude = max(ne.latitude, i.lat + dlat)
             ne.longitude = max(ne.longitude, i.lon + dlon)
         }
+        // And the search estimate's 95 % ellipse.
+        for p in overlay?.ellipse95 ?? [] {
+            sw.latitude = min(sw.latitude, p.latitude)
+            sw.longitude = min(sw.longitude, p.longitude)
+            ne.latitude = max(ne.latitude, p.latitude)
+            ne.longitude = max(ne.longitude, p.longitude)
+        }
         let bounds = MLNCoordinateBounds(sw: sw, ne: ne)
         // Below the top buttons; the sharing panel is outside the map's frame already.
         // Labels are up to ~180 pt wide, centred on their marker.
-        let insets = UIEdgeInsets(top: 140, left: 95, bottom: 70, right: 95)
         let camera = map.cameraThatFitsCoordinateBounds(bounds, edgePadding: insets)
         // Never closer than street level: two people side by side stay in context.
         let maxAltitude = MLNAltitudeForZoomLevel(15, camera.pitch, bounds.sw.latitude, map.frame.size)
@@ -118,6 +144,10 @@ struct MapLibreView: UIViewRepresentable {
         private var annotations: [String: ItemAnnotation] = [:]
         private var circles: [String: (MLNPolygon, Double, Double, Double)] = [:]
         private var circleColors: [ObjectIdentifier: UIColor] = [:]
+        private var overlayVersion: Int?
+        private var ellipses: [MLNPolyline] = []
+        private var ellipseWidths: [ObjectIdentifier: CGFloat] = [:]
+        private static let heatId = "lichen-search-heat"
 
         init(parent: MapLibreView) {
             self.parent = parent
@@ -180,6 +210,51 @@ struct MapLibreView: UIViewRepresentable {
             map.removeAnnotation(polygon)
             circleColors[ObjectIdentifier(polygon)] = nil
             circles[id] = nil
+        }
+
+        /// Draws `overlay` (again after a style change, which drops its layers).
+        @MainActor
+        func applyOverlay(_ overlay: MapOverlay?, to map: MLNMapView, force: Bool = false) {
+            guard force || overlay?.version != overlayVersion else { return }
+            guard let style = map.style else { return }
+            overlayVersion = overlay?.version
+            if let l = style.layer(withIdentifier: Self.heatId) { style.removeLayer(l) }
+            if let s = style.source(withIdentifier: Self.heatId) { style.removeSource(s) }
+            map.removeAnnotations(ellipses)
+            for e in ellipses { ellipseWidths[ObjectIdentifier(e)] = nil; circleColors[ObjectIdentifier(e)] = nil }
+            ellipses = []
+            guard let overlay else { return }
+            if let heat = overlay.heat {
+                let quad = MLNCoordinateQuad(
+                    topLeft: CLLocationCoordinate2D(latitude: overlay.north, longitude: overlay.west),
+                    bottomLeft: CLLocationCoordinate2D(latitude: overlay.south, longitude: overlay.west),
+                    bottomRight: CLLocationCoordinate2D(latitude: overlay.south, longitude: overlay.east),
+                    topRight: CLLocationCoordinate2D(latitude: overlay.north, longitude: overlay.east)
+                )
+                let source = MLNImageSource(identifier: Self.heatId, coordinateQuad: quad, image: heat)
+                style.addSource(source)
+                let layer = MLNRasterStyleLayer(identifier: Self.heatId, source: source)
+                layer.rasterOpacity = NSExpression(forConstantValue: 0.8)
+                layer.rasterFadeDuration = NSExpression(forConstantValue: 0)
+                style.addLayer(layer)
+            }
+            let red = UIColor(red: 0.86, green: 0.15, blue: 0.15, alpha: 1)
+            for (coords, width) in [(overlay.ellipse95, CGFloat(1.5)), (overlay.ellipse68, CGFloat(2.5))] where !coords.isEmpty {
+                var c = coords
+                let line = MLNPolyline(coordinates: &c, count: UInt(c.count))
+                circleColors[ObjectIdentifier(line)] = red
+                ellipseWidths[ObjectIdentifier(line)] = width
+                ellipses.append(line)
+                map.addAnnotation(line)
+            }
+        }
+
+        func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
+            MainActor.assumeIsolated { applyOverlay(parent.overlay, to: mapView, force: true) }
+        }
+
+        func mapView(_ mapView: MLNMapView, lineWidthForPolylineAnnotation annotation: MLNPolyline) -> CGFloat {
+            ellipseWidths[ObjectIdentifier(annotation)] ?? 2
         }
 
         @MainActor
