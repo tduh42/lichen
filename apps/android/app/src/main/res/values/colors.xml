@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- docs/design/tokens.json: bg (light), and the icon's ink. -->
+    <color name="bg">#F7F7F5</color>
+    <color name="icon_bg">#141413</color>
+    <color name="lora">#FB923C</color>
+</resources>

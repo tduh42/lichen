@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "chirp" mark (docs/design/assets/chirp-mark.svg), centred in the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="25.2"
+        android:translateY="25.2"
+        android:scaleX="0.9"
+        android:scaleY="0.9">
+        <path
+            android:pathData="M10,50 L24,14 V50 L38,14 V50 L48,28.3"
+            android:strokeColor="@color/lora"
+            android:strokeWidth="5.5"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round" />
+        <path
+            android:pathData="M49.5,16.4 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
+            android:fillColor="@color/lora" />
+    </group>
+</vector>

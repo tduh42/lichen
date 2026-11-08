@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- English; French in values-fr, worded as the iOS app (Localizable.xcstrings). -->
+<resources>
+    <string name="app_name" translatable="false">lichen</string>
+
+    <!-- Tabs -->
+    <string name="tab_messages">Messages</string>
+    <string name="tab_map">Map</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_settings">Settings</string>
+    <string name="later_map">Shared positions on a map come with the next version.</string>
+    <string name="later_search">Search without GPS (radio bearings, pings) comes with search mode, L8.</string>
+
+    <!-- Conversations -->
+    <string name="new_short">New</string>
+    <string name="new_message">New message</string>
+    <plurals name="members_count">
+        <item quantity="one">%1$d member</item>
+        <item quantity="other">%1$d members</item>
+    </plurals>
+    <string name="group_flood">Group · flood</string>
+    <string name="delete_conversation_with">Delete the conversation with %1$s?</string>
+    <string name="delete_conversation_note">Its messages are deleted from this phone. The contact stays.</string>
+    <string name="delete">Delete</string>
+    <string name="cancel">Cancel</string>
+    <plurals name="unread">
+        <item quantity="one">%1$d unread</item>
+        <item quantity="other">%1$d unread</item>
+    </plurals>
+    <string name="no_conversations">No conversations yet</string>
+    <string name="no_conversations_note">Add a contact by scanning their code, in person.</string>
+
+    <!-- Radio card and banners -->
+    <string name="radio_connected">%1$s connected</string>
+    <string name="radio_connecting">Connecting to %1$s…</string>
+    <string name="radio_scanning">Looking for nodes…</string>
+    <string name="bluetooth_off">Bluetooth is off</string>
+    <string name="no_radio">No radio connected</string>
+    <string name="airtime_left">Airtime left this hour</string>
+    <string name="of_seconds_per_hour">of %1$d s / hour</string>
+    <string name="available">available</string>
+    <string name="unavailable">unavailable</string>
+    <string name="no_internet_bridge">No Internet bridge</string>
+    <string name="radio_disconnected">Radio disconnected</string>
+    <string name="turn_bluetooth_on">Turn Bluetooth on to reach your radio.</string>
+    <string name="messages_wait_for_radio">Messages wait until the radio is back.</string>
+    <string name="budget_spent">Airtime budget spent</string>
+    <string name="budget_spent_note">Short messages go first; longer sends wait for the hour to free up.</string>
+
+    <!-- Chat -->
+    <string name="back">Back</string>
+    <string name="you">You</string>
+    <string name="group">Group</string>
+    <string name="hops_snr">%1$s · SNR %2$s dB</string>
+    <string name="group_keys">%1$d members · keys %2$d/%3$d</string>
+    <plurals name="group_members_flood">
+        <item quantity="one">%1$d member · flood</item>
+        <item quantity="other">%1$d members · flood</item>
+    </plurals>
+    <string name="group_signed">Signed group messages, flooded</string>
+    <string name="key_changed_title">%1$s\'s key changed</string>
+    <string name="key_changed_note">Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers.</string>
+    <string name="session_verified">Encrypted session · key verified</string>
+    <string name="session_to_verify">Encrypted session · key to verify</string>
+    <string name="session_encrypted">Encrypted session</string>
+    <string name="message_placeholder">Message</string>
+    <string name="send">Send</string>
+    <string name="estimated_cost">Estimated cost: %1$s · ≈ %2$s s of airtime</string>
+    <string name="flooded_to_every_member">Flooded to every member, without acknowledgement</string>
+    <string name="waiting_for_ack">Waiting for the acknowledgement</string>
+    <string name="sending_fragments">Sending %1$d / %2$d fragments</string>
+    <plurals name="delivered_fragments">
+        <item quantity="one">Delivered · %1$d fragment · %2$s s of airtime</item>
+        <item quantity="other">Delivered · %1$d fragments · %2$s s of airtime</item>
+    </plurals>
+    <string name="not_delivered">Not delivered: %1$s</string>
+    <string name="sent_to_group">Sent to the group</string>
+    <string name="not_sent">Not sent</string>
+    <string name="ok">OK</string>
+    <string name="resend">Resend</string>
+    <string name="no_path_to">No path to %1$s</string>
+    <string name="no_path_note">No repeater answered the path discovery. Try again when you are closer or a relay is up.</string>
+    <string name="unreachable_title">%1$s is unreachable</string>
+    <string name="unreachable_note">Their radio did not answer the handshake: off, out of range, or their app is closed.</string>
+    <string name="send_abandoned">Send abandoned</string>
+    <plurals name="no_ack_after">
+        <item quantity="one">%1$d fragment, no acknowledgement after several rounds.</item>
+        <item quantity="other">%1$d fragments, no acknowledgement after several rounds.</item>
+    </plurals>
+    <string name="refused">Refused</string>
+    <string name="fail_interrupted_note">The app stopped before delivery.</string>
+    <string name="not_sent_identity_changed">Not sent: identity changed</string>
+    <string name="compare_before_accepting">Compare safety numbers with %1$s before accepting their new key.</string>
+
+    <!-- Message contents -->
+    <string name="voice_message_length">Voice message (%1$s)</string>
+    <string name="photo">Photo</string>
+    <string name="photo_named">Photo: %1$s</string>
+    <string name="position">Position</string>
+    <string name="unsupported_content">Unsupported content (type %1$d, %2$d bytes)</string>
+    <string name="lora" translatable="false">LoRa</string>
+    <string name="lora_direct">LoRa · direct</string>
+    <plurals name="lora_hops">
+        <item quantity="one">LoRa · %1$d hop</item>
+        <item quantity="other">LoRa · %1$d hops</item>
+    </plurals>
+    <plurals name="fragments">
+        <item quantity="one">%1$d fragment</item>
+        <item quantity="other">%1$d fragments</item>
+    </plurals>
+
+    <!-- New chat -->
+    <string name="search_contacts">Search</string>
+    <string name="groups">Groups</string>
+    <string name="contacts">Contacts</string>
+    <string name="no_contacts_yet">No contacts yet: connect your MeshCore node, or try the demo network in Settings.</string>
+    <string name="lichen_contact">lichen · %1$s</string>
+
+    <!-- Settings -->
+    <string name="radio">Radio</string>
+    <string name="send_advert">Send an advert</string>
+    <string name="send_advert_note">Lets nearby radios add yours as a contact.</string>
+    <string name="airtime">Airtime</string>
+    <string name="appearance">Appearance</string>
+    <string name="system">System</string>
+    <string name="dark">Dark</string>
+    <string name="light">Light</string>
+    <string name="demo">Demo</string>
+    <string name="demo_network">Demo network</string>
+    <string name="demo_network_note">A simulated MeshCore network with two other users and a group, in real time: the app\'s real core, without a radio.</string>
+
+    <!-- Errors of the core -->
+    <string name="err_unknown_contact">Unknown contact.</string>
+    <string name="err_unknown_group">Unknown group.</string>
+    <string name="err_empty">The message is empty.</string>
+    <string name="err_too_large">The message is too long.</string>
+    <string name="err_no_identity">Connect your radio first.</string>
+    <string name="err_identity_unknown">Their identity is not known yet: exchange a message or scan their code first.</string>
+    <string name="err_bad_code">This is not a lichen code.</string>
+    <string name="err_not_allowed">Only the group admin can do this.</string>
+    <string name="err_invalid_key">Invalid key.</string>
+    <string name="err_over_budget">Not enough airtime left this hour: it fits in %1$d min.</string>
+    <string name="err_media_in_group">Photos and voice messages go to contacts only: in a group they would have to be flooded.</string>
+    <string name="err_bad_image">This image could not be read.</string>
+    <string name="err_not_a_preview">There is no full version to ask for.</string>
+    <string name="fail_no_path">no path found</string>
+    <string name="fail_unreachable">unreachable</string>
+    <string name="fail_timeout">no acknowledgement</string>
+    <string name="fail_refused">refused</string>
+    <string name="fail_too_large">too large</string>
+    <string name="fail_interrupted">the app stopped before delivery</string>
+    <string name="fail_identity_changed">their identity changed: verify it first</string>
+</resources>

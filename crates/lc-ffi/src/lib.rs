@@ -1772,6 +1772,45 @@ pub fn companion_ble_uuids() -> BleUuids {
     }
 }
 
+/// A companion frame wrapped for the radio's USB serial port (`'<' ‖ len ‖ frame`), for apps
+/// that reach the radio over USB (Android OTG). Over BLE, frames go as they are.
+#[uniffi::export]
+pub fn usb_encode(frame: Vec<u8>) -> Result<Vec<u8>, LichenError> {
+    let mut out = [0u8; lc_meshcore::FRAME_MAX + 3];
+    let n = lc_meshcore::usb::encode(&frame, &mut out).map_err(|_| LichenError::TooLarge)?;
+    Ok(out.get(..n).unwrap_or(&[]).to_vec())
+}
+
+/// Splits the bytes read from the radio's USB serial port (`'>' ‖ len ‖ frame`) into companion
+/// frames.
+#[derive(uniffi::Object, Default, Debug)]
+pub struct UsbDecoder {
+    inner: Mutex<lc_meshcore::usb::Decoder>,
+}
+
+#[uniffi::export]
+impl UsbDecoder {
+    #[uniffi::constructor]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The frames completed by `bytes`, in order (bytes outside frames are skipped).
+    pub fn push(&self, bytes: Vec<u8>) -> Vec<Vec<u8>> {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut frames = Vec::new();
+        for b in bytes {
+            if d.push(b) {
+                frames.push(d.frame().to_vec());
+            }
+        }
+        frames
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1792,5 +1831,21 @@ mod tests {
             core.send_text(vec![0; 32], "x".into(), 0, 0),
             Err(LichenError::UnknownContact)
         );
+    }
+
+    #[test]
+    fn usb_framing_round_trip() {
+        let frame = vec![0x84, 1, 2, 3];
+        let wire = usb_encode(frame.clone()).unwrap();
+        assert_eq!(&wire[..3], &[b'<', 4, 0]);
+        assert!(usb_encode(vec![]).is_err());
+        assert!(usb_encode(vec![0; 177]).is_err());
+        // The radio's direction, split across reads, with noise before the first frame.
+        let d = UsbDecoder::new();
+        assert!(d.push(vec![0xAA, b'>', 4]).is_empty());
+        let mut rest = vec![0];
+        rest.extend_from_slice(&frame);
+        rest.extend_from_slice(&[b'>', 1, 0, 0x88]);
+        assert_eq!(d.push(rest), vec![frame, vec![0x88]]);
     }
 }

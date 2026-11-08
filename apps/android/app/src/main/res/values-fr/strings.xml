@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Français : tutoiement, sans écriture inclusive, comme l'app iOS (Localizable.xcstrings). -->
+<resources>
+    <!-- Onglets -->
+    <string name="tab_messages">Messages</string>
+    <string name="tab_map">Carte</string>
+    <string name="tab_search">Recherche</string>
+    <string name="tab_settings">Réglages</string>
+    <string name="later_map">Les positions partagées sur une carte arrivent dans la prochaine version.</string>
+    <string name="later_search">La recherche sans GPS (caps radio, pings) arrive avec le mode recherche, L8.</string>
+
+    <!-- Conversations -->
+    <string name="new_short">Nouveau</string>
+    <string name="new_message">Nouveau message</string>
+    <plurals name="members_count">
+        <item quantity="one">%1$d membre</item>
+        <item quantity="many">%1$d membres</item>
+        <item quantity="other">%1$d membres</item>
+    </plurals>
+    <string name="group_flood">Groupe · flood</string>
+    <string name="delete_conversation_with">Supprimer la conversation avec %1$s ?</string>
+    <string name="delete_conversation_note">Ses messages sont supprimés de ce téléphone. Le contact reste.</string>
+    <string name="delete">Supprimer</string>
+    <string name="cancel">Annuler</string>
+    <plurals name="unread">
+        <item quantity="one">%1$d non lu</item>
+        <item quantity="many">%1$d non lus</item>
+        <item quantity="other">%1$d non lus</item>
+    </plurals>
+    <string name="no_conversations">Pas encore de conversation</string>
+    <string name="no_conversations_note">Ajoute un contact en scannant son code, en personne.</string>
+
+    <!-- Carte radio et bandeaux -->
+    <string name="radio_connected">%1$s connecté</string>
+    <string name="radio_connecting">Connexion à %1$s…</string>
+    <string name="radio_scanning">Recherche de nœuds…</string>
+    <string name="bluetooth_off">Bluetooth désactivé</string>
+    <string name="no_radio">Aucune radio connectée</string>
+    <string name="airtime_left">Temps d\'antenne restant cette heure</string>
+    <string name="of_seconds_per_hour">sur %1$d s / heure</string>
+    <string name="available">disponible</string>
+    <string name="unavailable">indisponible</string>
+    <string name="no_internet_bridge">Pas de pont Internet</string>
+    <string name="radio_disconnected">Radio déconnectée</string>
+    <string name="turn_bluetooth_on">Active le Bluetooth pour joindre ta radio.</string>
+    <string name="messages_wait_for_radio">Les messages attendent le retour de la radio.</string>
+    <string name="budget_spent">Budget d\'antenne épuisé</string>
+    <string name="budget_spent_note">Les messages courts passent en priorité ; les envois longs attendent que l\'heure se libère.</string>
+
+    <!-- Conversation -->
+    <string name="back">Retour</string>
+    <string name="you">Toi</string>
+    <string name="group">Groupe</string>
+    <string name="hops_snr">%1$s · SNR %2$s dB</string>
+    <string name="group_keys">%1$d membres · clés %2$d/%3$d</string>
+    <plurals name="group_members_flood">
+        <item quantity="one">%1$d membre · flood</item>
+        <item quantity="many">%1$d membres · flood</item>
+        <item quantity="other">%1$d membres · flood</item>
+    </plurals>
+    <string name="group_signed">Messages de groupe signés, en flood</string>
+    <string name="key_changed_title">La clé de %1$s a changé</string>
+    <string name="key_changed_note">Sa radio répond maintenant avec une autre identité : une app réinstallée, ou quelqu\'un entre vous. Rien ne part tant que vous n\'avez pas comparé vos numéros de sécurité.</string>
+    <string name="session_verified">Session chiffrée · clé vérifiée</string>
+    <string name="session_to_verify">Session chiffrée · clé à vérifier</string>
+    <string name="session_encrypted">Session chiffrée</string>
+    <string name="message_placeholder">Message</string>
+    <string name="send">Envoyer</string>
+    <string name="estimated_cost">Coût estimé : %1$s · ≈ %2$s s d\'antenne</string>
+    <string name="flooded_to_every_member">Diffusé à tous les membres, sans accusé de réception</string>
+    <string name="waiting_for_ack">En attente de l\'ACK</string>
+    <string name="sending_fragments">Envoi %1$d / %2$d fragments</string>
+    <plurals name="delivered_fragments">
+        <item quantity="one">Remis · %1$d fragment · %2$s s d\'antenne</item>
+        <item quantity="many">Remis · %1$d fragments · %2$s s d\'antenne</item>
+        <item quantity="other">Remis · %1$d fragments · %2$s s d\'antenne</item>
+    </plurals>
+    <string name="not_delivered">Non remis : %1$s</string>
+    <string name="sent_to_group">Envoyé au groupe</string>
+    <string name="not_sent">Non envoyé</string>
+    <string name="ok">OK</string>
+    <string name="resend">Relancer</string>
+    <string name="no_path_to">Aucun chemin vers %1$s</string>
+    <string name="no_path_note">Aucun répéteur n\'a répondu à la découverte de chemin. Réessaie plus près, ou quand un relais est actif.</string>
+    <string name="unreachable_title">%1$s est injoignable</string>
+    <string name="unreachable_note">Sa radio n\'a pas répondu à la poignée de main : éteinte, hors de portée, ou l\'app fermée.</string>
+    <string name="send_abandoned">Envoi abandonné</string>
+    <plurals name="no_ack_after">
+        <item quantity="one">%1$d fragment, pas d\'ACK après plusieurs tours.</item>
+        <item quantity="many">%1$d fragments, pas d\'ACK après plusieurs tours.</item>
+        <item quantity="other">%1$d fragments, pas d\'ACK après plusieurs tours.</item>
+    </plurals>
+    <string name="refused">Refusé</string>
+    <string name="fail_interrupted_note">L\'app s\'est arrêtée avant la remise.</string>
+    <string name="not_sent_identity_changed">Non envoyé : identité changée</string>
+    <string name="compare_before_accepting">Compare les numéros de sécurité avec %1$s avant d\'accepter sa nouvelle clé.</string>
+
+    <!-- Contenus -->
+    <string name="voice_message_length">Message vocal (%1$s)</string>
+    <string name="photo">Photo</string>
+    <string name="photo_named">Photo : %1$s</string>
+    <string name="position">Position</string>
+    <string name="unsupported_content">Contenu non pris en charge (type %1$d, %2$d octets)</string>
+    <string name="lora_direct">LoRa · direct</string>
+    <plurals name="lora_hops">
+        <item quantity="one">LoRa · %1$d saut</item>
+        <item quantity="many">LoRa · %1$d sauts</item>
+        <item quantity="other">LoRa · %1$d sauts</item>
+    </plurals>
+    <plurals name="fragments">
+        <item quantity="one">%1$d fragment</item>
+        <item quantity="many">%1$d fragments</item>
+        <item quantity="other">%1$d fragments</item>
+    </plurals>
+
+    <!-- Nouvelle conversation -->
+    <string name="search_contacts">Rechercher</string>
+    <string name="groups">Groupes</string>
+    <string name="contacts">Contacts</string>
+    <string name="no_contacts_yet">Pas encore de contacts : connecte ton nœud MeshCore, ou essaie le réseau de démo dans les Réglages.</string>
+    <string name="lichen_contact">lichen · %1$s</string>
+
+    <!-- Réglages -->
+    <string name="radio">Radio</string>
+    <string name="send_advert">Envoyer un advert</string>
+    <string name="send_advert_note">Permet aux radios proches d\'ajouter la tienne comme contact.</string>
+    <string name="airtime">Temps d\'antenne</string>
+    <string name="appearance">Apparence</string>
+    <string name="system">Système</string>
+    <string name="dark">Sombre</string>
+    <string name="light">Claire</string>
+    <string name="demo">Démo</string>
+    <string name="demo_network">Réseau de démo</string>
+    <string name="demo_network_note">Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l\'app, sans radio.</string>
+
+    <!-- Erreurs du cœur -->
+    <string name="err_unknown_contact">Contact inconnu.</string>
+    <string name="err_unknown_group">Groupe inconnu.</string>
+    <string name="err_empty">Le message est vide.</string>
+    <string name="err_too_large">Le message est trop long.</string>
+    <string name="err_no_identity">Connecte d\'abord ta radio.</string>
+    <string name="err_identity_unknown">Son identité n\'est pas encore connue : échangez un message ou scanne son code d\'abord.</string>
+    <string name="err_bad_code">Ce n\'est pas un code lichen.</string>
+    <string name="err_not_allowed">Seul l\'administrateur du groupe peut faire ça.</string>
+    <string name="err_invalid_key">Clé invalide.</string>
+    <string name="err_over_budget">Plus assez de temps d\'antenne cette heure : ça passera dans %1$d min.</string>
+    <string name="err_media_in_group">Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder.</string>
+    <string name="err_bad_image">Impossible de lire cette image.</string>
+    <string name="err_not_a_preview">Il n\'y a pas de version complète à demander.</string>
+    <string name="fail_no_path">aucun chemin trouvé</string>
+    <string name="fail_unreachable">injoignable</string>
+    <string name="fail_timeout">pas d\'accusé de réception</string>
+    <string name="fail_refused">refusé</string>
+    <string name="fail_too_large">trop grand</string>
+    <string name="fail_interrupted">l\'app s\'est arrêtée avant la remise</string>
+    <string name="fail_identity_changed">son identité a changé : vérifie-la d\'abord</string>
+</resources>
