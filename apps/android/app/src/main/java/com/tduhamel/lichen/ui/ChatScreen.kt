@@ -58,6 +58,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.core.content.ContextCompat
 import com.tduhamel.lichen.core.PreparedImage
 import com.tduhamel.lichen.core.prepareImage
@@ -122,19 +127,48 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             "verify" -> if (!chat.group) verifying = ByteArray(0)
         }
     }
-    // The list's rows: the session line, a separator per day, the messages, a failure banner.
+    // The list's rows: the history state, the session line, a separator per day, the messages,
+    // a failure banner.
     val days = messages.indices.count { it == 0 || dayOf(messages[it - 1].atMs) != dayOf(messages[it].atMs) }
     val failedLast = messages.lastOrNull { it.outgoing }?.status is MessageStatus.Failed
-    val rows = 1 + days + messages.size + (if (failedLast) 1 else 0)
+    val top = (if (model.historyError[chat] != null) 1 else 0) + (if (model.olderAvailable[chat] == true) 1 else 0)
+    val rows = top + 1 + days + messages.size + (if (failedLast) 1 else 0)
     var opened by remember(chat) { mutableStateOf(false) }
-    LaunchedEffect(rows) {
-        // Opens on the latest messages at once; later ones slide in.
-        if (messages.isNotEmpty()) {
-            if (opened) list.animateScrollToItem(rows - 1) else list.scrollToItem(rows - 1)
-            opened = true
+    var unseen by remember(chat) { mutableIntStateOf(0) }
+    // At the bottom: the last row (or the one before it) is on screen.
+    val scope = rememberCoroutineScope()
+    var keepAt by remember(chat) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(messages.firstOrNull()?.id) {
+        keepAt?.let { list.scrollToItem(rowOf(model, chat, it)) }
+        keepAt = null
+    }
+    val atBottom by remember {
+        derivedStateOf {
+            val info = list.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            last == null || last.index >= info.totalItemsCount - 2
         }
+    }
+    var lastSeen by remember(chat) { mutableStateOf<Long?>(null) }
+    LaunchedEffect(messages.lastOrNull()?.id) {
+        // Opens on the latest messages at once. A new last message is followed when we were at
+        // the bottom or sent it; else it counts in the pill. Older pages move nothing (keys).
+        val last = messages.lastOrNull() ?: return@LaunchedEffect
+        if (!opened) {
+            list.scrollToItem(rows - 1)
+            opened = true
+        } else if (last.id != lastSeen) {
+            if (atBottom || last.outgoing) {
+                list.animateScrollToItem(rows - 1)
+                unseen = 0
+            } else {
+                unseen++
+            }
+        }
+        lastSeen = last.id
         model.markRead(chat)
     }
+    LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
@@ -157,13 +191,30 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 containerColor = t.s1, titleContentColor = t.tx, navigationIconContentColor = t.tx,
             ),
         )
+        Box(Modifier.weight(1f)) {
         LazyColumn(
-            Modifier.weight(1f),
+            Modifier.fillMaxSize(),
             state = list,
             contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            item { SessionLine(model, chat) { verifying = it } }
+            model.historyError[chat]?.let { e ->
+                item(key = "history-error") {
+                    Banner(BannerKind.WARN, e, action = stringResource(R.string.try_again) to { model.load(chat) })
+                }
+            }
+            if (model.olderAvailable[chat] == true) {
+                item(key = "older") {
+                    TextButton({
+                        // Stay on the message that was at the top (once the page is laid out).
+                        keepAt = messages.firstOrNull()?.id
+                        model.loadOlder(chat)
+                    }, Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(stringResource(R.string.earlier_messages), color = t.tx, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+            item(key = "session") { SessionLine(model, chat) { verifying = it } }
             messages.forEachIndexed { i, m ->
                 // A separator when the day changes: "Today", "Yesterday", the date.
                 if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) {
@@ -174,6 +225,27 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
                 item { FailureBanner(model, failed) { error = model.resend(failed) } }
+            }
+        }
+            if (unseen > 0) {
+                Row(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 10.dp)
+                        .heightIn(min = 44.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(t.actBg)
+                        .clickable {
+                            scope.launch { list.animateScrollToItem(rows - 1) }
+                            unseen = 0
+                        }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Filled.ArrowDownward, null, tint = t.actFg, modifier = Modifier.size(18.dp))
+                    Text(pluralStringResource(R.plurals.new_messages, unseen, unseen), color = t.actFg, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                }
             }
         }
         Composer(model, chat) { error = it }
@@ -194,6 +266,19 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             containerColor = t.s1,
         )
     }
+}
+
+/** The list row of message `id` (the rows: history state, session line, a separator per day,
+ * the messages). */
+private fun rowOf(model: AppModel, chat: ChatId, id: Long): Int {
+    val messages = model.chats[chat].orEmpty()
+    var row = (if (model.historyError[chat] != null) 1 else 0) + (if (model.olderAvailable[chat] == true) 1 else 0) + 1
+    for ((i, m) in messages.withIndex()) {
+        if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) row++
+        if (m.id == id) return row
+        row++
+    }
+    return row
 }
 
 @Composable
@@ -339,7 +424,9 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     val res = LocalResources.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var draft by remember(chat) { mutableStateOf("") }
+    // Kept per conversation, across screens and restarts.
+    var draft by remember(chat) { mutableStateOf(model.draft(chat)) }
+    LaunchedEffect(draft) { model.setDraft(chat, draft) }
     var menu by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<Pair<PreparedImage, ByteArray>?>(null) }

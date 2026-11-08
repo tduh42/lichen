@@ -30,6 +30,7 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.NotSearching -> res.getString(R.string.err_not_searching)
     is LichenException.TooSoon -> res.getString(R.string.err_too_soon, waitS.toLong())
     is LichenException.NoPosition -> res.getString(R.string.err_no_position)
+    is LichenException.Storage -> res.getString(R.string.err_storage)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {

@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
             share = e.getString("share"),
             sosDemo = e.getBoolean("sosdemo"),
             sosDemo2 = e.getBoolean("sosdemo2"),
+            fill = e.getInt("fill"),
             identityProblem = e.getString("identityProblem"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {

@@ -311,6 +311,46 @@
         }
       }
     },
+    "%lld new messages": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld new message"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld new messages"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld nouveau message"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld nouveaux messages"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld resent": {
       "localizations": {
         "fr": {
@@ -3581,6 +3621,16 @@
         }
       }
     },
+    "Show earlier messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les messages précédents"
+          }
+        }
+      }
+    },
     "Show everyone": {
       "localizations": {
         "fr": {
@@ -3811,6 +3861,16 @@
         }
       }
     },
+    "The history could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’historique n’a pas pu être lu."
+          }
+        }
+      }
+    },
     "The identity could not be saved on this phone. Try again.": {
       "localizations": {
         "fr": {
@@ -3847,6 +3907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les chiffres correspondent"
+          }
+        }
+      }
+    },
+    "The phone's storage could not be read or written.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le stockage du téléphone n’a pas pu être lu ou écrit."
           }
         }
       }

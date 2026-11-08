@@ -57,6 +57,8 @@ pub enum LichenError {
     },
     /// Our position is unknown or too old.
     NoPosition,
+    /// The phone's database could not be read or written.
+    Storage,
 }
 
 impl std::fmt::Display for LichenError {
@@ -1776,13 +1778,57 @@ impl LichenCore {
     ) -> Result<Vec<StoredMessage>, LichenError> {
         let c = chat.to_store()?;
         let i = self.lock();
-        Ok(i.store
-            .as_ref()
-            .and_then(|s| s.history(&c, before_id, limit).ok())
-            .unwrap_or_default()
+        // No database (the demo, a throwaway core): no history. A database that fails: say so,
+        // not an empty conversation.
+        let Some(store) = i.store.as_ref() else {
+            return Ok(Vec::new());
+        };
+        Ok(store
+            .history(&c, before_id, limit)
+            .map_err(|_| LichenError::Storage)?
             .into_iter()
             .map(StoredMessage::from)
             .collect())
+    }
+
+    /// Demo and screenshots only: `count` older text messages in `chat`, alternately ours and
+    /// theirs, a minute apart and before everything else. Refused outside the in-memory
+    /// database of the demo (no data dir).
+    pub fn demo_fill_history(&self, chat: ChatRef, count: u32) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        if i.data_dir.is_some() {
+            return Err(LichenError::NotAllowed);
+        }
+        let store = i.store.as_ref().ok_or(LichenError::Storage)?;
+        let start = unix_ms() - i64::from(count) * 60_000 - 3_600_000;
+        for n in 0..count {
+            let at_ms = start + i64::from(n) * 60_000;
+            let outgoing = n % 2 == 0;
+            store
+                .insert(&store::Message {
+                    id: 0,
+                    chat: c,
+                    outgoing,
+                    author: None,
+                    content: Content::Text {
+                        sent_at: u32::try_from(at_ms / 1000).unwrap_or(0),
+                        text: format!("Earlier message {}", n + 1),
+                    },
+                    at_ms,
+                    status: if outgoing {
+                        Status::Delivered
+                    } else {
+                        Status::Received
+                    },
+                    fragments: 1,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                })
+                .map_err(|_| LichenError::Storage)?;
+        }
+        Ok(())
     }
 
     /// Conversations that have messages, most recent first.
@@ -2317,6 +2363,44 @@ impl UsbDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A long conversation pages back to its first message (audit M06).
+    #[test]
+    fn history_pages_back_to_the_oldest() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![101; 32], None).unwrap();
+        let chat = ChatRef::Contact { key: vec![9; 32] };
+        core.demo_fill_history(chat.clone(), 250).unwrap();
+        let mut all: Vec<StoredMessage> = Vec::new();
+        let mut before = None;
+        loop {
+            let page = core.history(chat.clone(), before, 100).unwrap();
+            let n = page.len();
+            before = page.first().map(|m| m.id);
+            all.splice(0..0, page);
+            if n < 100 {
+                break;
+            }
+        }
+        assert_eq!(all.len(), 250);
+        assert!(all.windows(2).all(|w| w[0].id < w[1].id));
+        assert!(
+            matches!(&all[0].message, Message::Text { text, .. } if text == "Earlier message 1")
+        );
+        // On a real database, refused.
+        let dir = std::env::temp_dir().join(format!("lichen-fill-{}", std::process::id()));
+        let real = LichenCore::new(
+            "t".into(),
+            vec![2; 32],
+            vec![102; 32],
+            Some(dir.display().to_string()),
+        )
+        .unwrap();
+        assert!(matches!(
+            real.demo_fill_history(chat, 1),
+            Err(LichenError::NotAllowed)
+        ));
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     #[test]
     fn constructs_and_connects() {

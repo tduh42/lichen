@@ -2,6 +2,16 @@ import CoreLocation
 import Foundation
 import UIKit
 
+extension ChatRef {
+    /// A stable key for per-conversation settings (drafts).
+    var storageKey: String {
+        switch self {
+        case let .contact(key): "c" + key.hex
+        case let .group(gid): "g" + gid.hex
+        }
+    }
+}
+
 /// Who an alert or a search is about (a node key), for `fullScreenCover(item:)`.
 struct SenderID: Identifiable, Hashable {
     let id: Data

@@ -502,4 +502,11 @@
     <string name="trusted_40">Trusted to ±40° (the body shadows the signal).</string>
     <string name="use_direction">Use this direction</string>
     <string name="waiting_gps">Waiting for GPS</string>
+    <string name="history_unreadable">The history could not be read.</string>
+    <string name="earlier_messages">Show earlier messages</string>
+    <string name="err_storage">The phone\'s storage could not be read or written.</string>
+    <plurals name="new_messages">
+        <item quantity="one">%1$d new message</item>
+        <item quantity="other">%1$d new messages</item>
+    </plurals>
 </resources>

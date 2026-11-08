@@ -89,6 +89,9 @@ final class AppModel {
     /// The compass heading, degrees from true north, while the Search tab is on screen.
     var heading: Double?
     @ObservationIgnored var lastBatteryReport: Date?
+    /// Conversations with older messages to load, and those whose history failed to load.
+    var olderAvailable: [ChatID: Bool] = [:]
+    var historyError: [ChatID: String] = [:]
     /// A screen to show at launch (debug launch argument `-screen <name>`, for screenshots).
     var debugScreen: String?
     /// Image previews whose full variant we asked for.
@@ -126,6 +129,7 @@ final class AppModel {
     @ObservationIgnored private var demoTimer: Timer?
     @ObservationIgnored private var debugSay: String?
     @ObservationIgnored private var debugVoiceSent = false
+    @ObservationIgnored private var debugFilled = false
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
     @ObservationIgnored let locator = Locator()
     @ObservationIgnored private var lastFed: UInt64?
@@ -430,6 +434,13 @@ final class AppModel {
                let c = contacts.first(where: { $0.name == name }) {
                 debugOpen = .contact(key: c.key)
             }
+            // -fill N: N older messages with Camille (paging checks), once.
+            if isDemo, !debugFilled, UserDefaults.standard.integer(forKey: "fill") > 0,
+               let c = contacts.first(where: { $0.name == "Camille" }) {
+                debugFilled = true
+                try? core.demoFillHistory(chat: .contact(key: c.key), count: UInt32(UserDefaults.standard.integer(forKey: "fill")))
+                conversations = core.conversations()
+            }
             if shares.isEmpty, let name = UserDefaults.standard.string(forKey: "share"),
                let c = contacts.first(where: { $0.name == name }) {
                 _ = setShare(.contact(key: c.key), precision: .m100, hours: 1.25)
@@ -540,10 +551,47 @@ final class AppModel {
 
     // MARK: actions
 
-    /// Loads the history of `chat` (when its screen opens).
+    /// Messages per history page.
+    static let historyPage: UInt32 = 100
+
+    /// Loads the latest page of `chat` (when its screen opens).
     func load(_ chat: ChatID) {
-        chats[chat] = (try? core.history(chat: chat, beforeId: nil, limit: 200)) ?? []
+        do {
+            let page = try core.history(chat: chat, beforeId: nil, limit: Self.historyPage)
+            chats[chat] = page
+            olderAvailable[chat] = page.count == Int(Self.historyPage)
+            historyError[chat] = nil
+        } catch {
+            if chats[chat] == nil { chats[chat] = [] }
+            historyError[chat] = String(localized: "The history could not be read.")
+        }
     }
+
+    /// The page before the oldest message shown.
+    func loadOlder(_ chat: ChatID) {
+        guard let first = chats[chat]?.first?.id else { return }
+        do {
+            let page = try core.history(chat: chat, beforeId: first, limit: Self.historyPage)
+            chats[chat] = page + (chats[chat] ?? [])
+            olderAvailable[chat] = page.count == Int(Self.historyPage)
+            historyError[chat] = nil
+        } catch {
+            historyError[chat] = String(localized: "The history could not be read.")
+        }
+    }
+
+    /// The text typed in `chat` and not sent, kept across screens and restarts.
+    func draft(_ chat: ChatID) -> String {
+        (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String])?[chat.storageKey] ?? ""
+    }
+
+    func setDraft(_ chat: ChatID, _ text: String) {
+        var all = (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String]) ?? [:]
+        all[chat.storageKey] = text.isEmpty ? nil : text
+        UserDefaults.standard.set(all, forKey: Self.draftsDefault)
+    }
+
+    private static let draftsDefault = "lichen.drafts"
 
     func markRead(_ chat: ChatID) {
         try? core.markRead(chat: chat)
@@ -1163,6 +1211,7 @@ extension LichenError {
         case .NotSearching: return String(localized: "No search is running for this person.")
         case let .TooSoon(waitS): return String(localized: "Possible again in \(waitS) s.")
         case .NoPosition: return String(localized: "Your position is not known yet.")
+        case .Storage: return String(localized: "The phone's storage could not be read or written.")
         }
     }
 }

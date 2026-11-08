@@ -91,6 +91,8 @@ class AppModel(val app: Application) {
         val onboarding: Boolean? = null,
         /** Camille in SOS too, for five minutes (two incidents at once). */
         val sosDemo2: Boolean = false,
+        /** That many older messages with Camille in the demo (paging checks). */
+        val fill: Int = 0,
         /** The identity failure screen: `unavailable`, `corrupt` or `notsaved`. */
         val identityProblem: String? = null,
     )
@@ -630,6 +632,7 @@ class AppModel(val app: Application) {
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
+                debugFill()
                 debugOpen()
                 debugVoice()
                 debugLocation()
@@ -723,6 +726,17 @@ class AppModel(val app: Application) {
     }
 
     /** Debug extra `open`: the conversation with this contact or group, once it exists. */
+    /** Debug extra `fill`: older messages with Camille in the demo, once. */
+    private var debugFilled = false
+
+    private fun debugFill() {
+        if (!isDemo || debugFilled || debug.fill <= 0) return
+        val c = contacts.firstOrNull { it.name == "Camille" } ?: return
+        debugFilled = true
+        runCatching { core.demoFillHistory(ChatId.contact(c.key).ref, debug.fill.toUInt()) }
+        conversations = core.conversations()
+    }
+
     private fun debugOpen() {
         val name = debug.open ?: return
         val chat = contacts.firstOrNull { it.name == name }?.let { ChatId.contact(it.key) }
@@ -755,9 +769,41 @@ class AppModel(val app: Application) {
 
     // ----- actions -----
 
-    /** Loads the history of `chat` (when its screen opens). */
+    /** Conversations with older messages to load, and those whose history failed to load. */
+    val olderAvailable = mutableStateMapOf<ChatId, Boolean>()
+    val historyError = mutableStateMapOf<ChatId, String>()
+
+    /** Loads the latest page of `chat` (when its screen opens). */
     fun load(chat: ChatId) {
-        chats[chat] = runCatching { core.history(chat.ref, null, 200u) }.getOrDefault(emptyList())
+        try {
+            val page = core.history(chat.ref, null, HISTORY_PAGE)
+            chats[chat] = page
+            olderAvailable[chat] = page.size == HISTORY_PAGE.toInt()
+            historyError.remove(chat)
+        } catch (_: LichenException) {
+            if (chats[chat] == null) chats[chat] = emptyList()
+            historyError[chat] = res.getString(R.string.history_unreadable)
+        }
+    }
+
+    /** The page before the oldest message shown. */
+    fun loadOlder(chat: ChatId) {
+        val first = chats[chat]?.firstOrNull()?.id ?: return
+        try {
+            val page = core.history(chat.ref, first, HISTORY_PAGE)
+            chats[chat] = page + chats[chat].orEmpty()
+            olderAvailable[chat] = page.size == HISTORY_PAGE.toInt()
+            historyError.remove(chat)
+        } catch (_: LichenException) {
+            historyError[chat] = res.getString(R.string.history_unreadable)
+        }
+    }
+
+    /** The text typed in `chat` and not sent, kept across screens and restarts. */
+    fun draft(chat: ChatId): String = prefs.getString(DRAFT + chat.route, "") ?: ""
+
+    fun setDraft(chat: ChatId, text: String) {
+        prefs.edit { if (text.isEmpty()) remove(DRAFT + chat.route) else putString(DRAFT + chat.route, text) }
     }
 
     fun markRead(chat: ChatId) {
@@ -1283,5 +1329,7 @@ class AppModel(val app: Application) {
         private const val TOR = "lichen.tor"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
+        private const val DRAFT = "lichen.draft."
+        private const val HISTORY_PAGE = 100u
     }
 }

@@ -11,14 +11,28 @@ struct ChatView: View {
     /// The verification sheet: an empty value for the current identity, else a pending one.
     @State private var verifying: Data?
     @State private var renaming = false
+    /// The bottom-most message on screen: new ones follow only when it is the last one.
+    @State private var bottomVisible: Int64?
+    /// Messages that arrived while reading above.
+    @State private var unseen = 0
+    /// The message to keep at the top while an earlier page comes in.
+    @State private var keepAt: Int64?
 
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    // Not lazy: at most 200 messages, and exact heights let the view open on the
+                    // Not lazy: pages of 100 messages, and exact heights let the view open on the
                     // last one (a lazy stack estimates photos and voice notes, and lands short).
                     VStack(spacing: 10) {
+                        if let e = model.historyError[chat] {
+                            Banner(kind: .warn, title: e, action: (String(localized: "Retry"), { model.load(chat) }))
+                        }
+                        if model.olderAvailable[chat] == true {
+                            Button("Show earlier messages") { showEarlier() }
+                            .font(.system(size: 14, weight: .semibold))
+                            .frame(minHeight: 44)
+                        }
                         sessionLine
                         ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
                             // A separator when the day changes: "Today", "Yesterday", the date.
@@ -33,10 +47,28 @@ struct ChatView: View {
                         }
                         Color.clear.frame(height: 1).id(Self.bottom)
                     }
+                    .scrollTargetLayout()
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
+                .scrollPosition(id: $bottomVisible, anchor: .bottom)
                 .defaultScrollAnchor(.bottom)
+                .overlay(alignment: .bottom) {
+                    if unseen > 0 {
+                        Button {
+                            withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                            unseen = 0
+                        } label: {
+                            Label(String(localized: "\(unseen) new messages"), systemImage: "arrow.down")
+                                .font(.system(size: 14, weight: .semibold))
+                                .padding(.horizontal, 16)
+                                .frame(minHeight: 44)
+                                .background(Theme.actBg, in: Capsule())
+                                .foregroundStyle(Theme.actFg)
+                        }
+                        .padding(.bottom, 10)
+                    }
+                }
                 // Opens on the latest messages, once the history is loaded (onAppear) and again
                 // once images are laid out; later ones scroll into view.
                 .task(id: chat) {
@@ -45,9 +77,36 @@ struct ChatView: View {
                     try? await Task.sleep(for: .milliseconds(250))
                     proxy.scrollTo(Self.bottom, anchor: .bottom)
                 }
-                .onChange(of: messages.count) {
-                    withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                // A new last message: follow it when we were at the bottom or sent it; else count
+                // it in the pill. Older pages, loaded at the top, move nothing.
+                .onChange(of: messages.last?.id) { old, new in
+                    guard let new, new != old else { return }
+                    let wasAtBottom = bottomVisible == nil || bottomVisible == old
+                    if wasAtBottom || messages.last?.outgoing == true {
+                        withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                        unseen = 0
+                    } else {
+                        unseen += 1
+                    }
                     model.markRead(chat)
+                }
+                // Stay on the message that was at the top, once the earlier page is laid out.
+                .onChange(of: messages.first?.id) {
+                    if let keep = keepAt {
+                        proxy.scrollTo(keep, anchor: .top)
+                        keepAt = nil
+                    }
+                }
+                #if DEBUG
+                // -earlier YES: the earlier page at once, as the button does (paging checks).
+                .task(id: chat) {
+                    guard UserDefaults.standard.bool(forKey: "earlier") else { return }
+                    try? await Task.sleep(for: .seconds(2))
+                    showEarlier()
+                }
+                #endif
+                .onChange(of: bottomVisible) {
+                    if bottomVisible == messages.last?.id { unseen = 0 }
                 }
             }
             Composer(chat: chat, draft: $draft, error: $error)
@@ -86,6 +145,8 @@ struct ChatView: View {
             if model.debugScreen == "group", isGroup { showingGroup = true }
             #endif
         }
+        .onAppear { if draft.isEmpty { draft = model.draft(chat) } }
+        .onChange(of: draft) { model.setDraft(chat, draft) }
         .onDisappear {
             if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
             // A recording belongs to its conversation: leaving it drops the recording.
@@ -110,6 +171,11 @@ struct ChatView: View {
     }
 
     private var messages: [StoredMessage] { model.chats[chat] ?? [] }
+
+    private func showEarlier() {
+        keepAt = messages.first?.id
+        model.loadOlder(chat)
+    }
 
     /// The end of the conversation, to scroll to.
     private static let bottom = "bottom"
