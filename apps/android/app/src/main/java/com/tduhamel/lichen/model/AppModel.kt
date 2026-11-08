@@ -21,6 +21,15 @@ import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Radio
 import com.tduhamel.lichen.core.StoredMessage
+import com.tduhamel.lichen.core.BridgeException
+import com.tduhamel.lichen.core.LichenBridge
+import com.tduhamel.lichen.core.Message
+import com.tduhamel.lichen.core.PreparedImage
+import com.tduhamel.lichen.core.PreparedVoice
+import com.tduhamel.lichen.core.Provider
+import com.tduhamel.lichen.core.prepareVoice
+import kotlin.math.PI
+import kotlin.math.sin
 import com.tduhamel.lichen.core.seedFromPhrase
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -62,7 +71,11 @@ class AppModel(private val app: Application) {
         val screen: String? = null,
         /** A companion to reach over TCP at launch, e.g. `10.0.2.2:5000` (`lichen bridge`). */
         val tcp: String? = null,
+        /** A voice message to Camille; full images requested and announcements fetched. */
+        val media: Boolean = false,
     )
+
+    enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
 
     private val res get() = app.resources
     private val prefs = app.getSharedPreferences("lichen", Context.MODE_PRIVATE)
@@ -112,6 +125,33 @@ class AppModel(private val app: Application) {
     var phraseBackedUp by mutableStateOf(prefs.getBoolean(BACKED_UP, false))
         private set
 
+    // Media (protocol.md §13).
+    val recorder = VoiceRecorder()
+    val player = VoicePlayer()
+
+    /** Image previews whose full variant we asked for (message ids). */
+    var requestedFull by mutableStateOf(setOf<Long>())
+
+    // Internet bridge (ADR-0015).
+    /** iroh reachable (a relay answered). */
+    var bridgeOnline by mutableStateOf(false)
+    var irohEnabled by mutableStateOf(prefs.getBoolean(IROH, true))
+        private set
+    var relayOnly by mutableStateOf(prefs.getBoolean(RELAY_ONLY, false))
+        private set
+    var torEnabled by mutableStateOf(prefs.getBoolean(TOR, false))
+        private set
+    var torStatus by mutableStateOf(TorStatus.OFF)
+
+    /** Content fetched or offered over the bridge, by BLAKE3 hash (hex). */
+    val downloads = mutableStateMapOf<String, File>()
+
+    /** Downloads in progress: the transport each one uses (1 iroh, 2 Tor). */
+    val fetching = mutableStateMapOf<String, Int>()
+    val fetchErrors = mutableStateMapOf<String, String>()
+    private var bridge: LichenBridge? = null
+    private var onionId: ByteArray? = null
+
     var core: LichenCore = makeCore(identityStore.seed(), persistent = true)
         private set
     var link: RadioLink? = null
@@ -142,11 +182,14 @@ class AppModel(private val app: Application) {
     private var wake: Job? = null
     private var debug = DebugOptions()
     private var debugApplied = false
+    private var debugVoiceSent = false
 
     init {
         refreshAll()
         Notifications.channels(app)
         if (ble.permitted()) ble.start()
+        loadDownloads()
+        startBridge()
     }
 
     private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
@@ -200,7 +243,10 @@ class AppModel(private val app: Application) {
         if (isDemo) return
         resetState()
         replaceCore(makeCore(IdentityStore.randomBytes(32), persistent = false))
-        demo = DemoNetwork()
+        demo = DemoNetwork().also { net ->
+            // Camille offers her photo over Tor too when Tor is on (her own onion service).
+            if (torEnabled) runCatching { net.camilleOverTor(folder("demo-tor-state").path, folder("demo-tor-cache").path) }
+        }
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")
         core.connect(now())
@@ -374,6 +420,7 @@ class AppModel(private val app: Application) {
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
                 debugOpen()
+                debugVoice()
             }
             is LichenEvent.SessionEstablished -> secured = secured + e.peer.hex()
             is LichenEvent.Received -> {
@@ -398,6 +445,13 @@ class AppModel(private val app: Application) {
             is LichenEvent.MessageChanged -> {
                 upsert(e.message)
                 conversations = core.conversations()
+                // Debug extra `media`: ask for full images as previews arrive, fetch announcements.
+                val m = e.message
+                if (debug.media && !m.outgoing) {
+                    val msg = m.message
+                    if (msg is Message.Image && !msg.full && m.id !in requestedFull) requestFull(m)
+                    if (msg is Message.Announce) fetch(m)
+                }
             }
             is LichenEvent.Location, LichenEvent.SharesChanged, is LichenEvent.MediaRequested -> Unit
         }
@@ -406,6 +460,21 @@ class AppModel(private val app: Application) {
     /** A notification for a message received while the app is not on screen. */
     private fun notify(chat: ChatId, title: String, text: String) {
         if (!inForeground) Notifications.message(app, chat, title, text)
+    }
+
+    /** Debug extra `media`: a 4 s voice message to Camille, 20 s after she appears. */
+    private fun debugVoice() {
+        if (!debug.media || debugVoiceSent) return
+        val c = contacts.firstOrNull { it.name == "Camille" } ?: return
+        debugVoiceSent = true
+        val pcm = List(32_000) { i ->
+            val t = i / 8_000.0
+            (6_000 * sin(2 * PI * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9))).toInt().toShort()
+        }
+        scope.launch {
+            delay(20_000)
+            sendVoice(prepareVoice(pcm), ChatId.contact(c.key))
+        }
     }
 
     /** Debug extra `open`: the conversation with this contact or group, once it exists. */
@@ -488,10 +557,241 @@ class AppModel(private val app: Application) {
         }
     }
 
-    /** Sends a failed text again (a new message). */
+    /** Sends a failed text or voice message again (a new message). */
     fun resend(m: StoredMessage): String? = when (val msg = m.message) {
-        is com.tduhamel.lichen.core.Message.Text -> send(msg.text, ChatId.of(m.chat))
+        is Message.Text -> send(msg.text, ChatId.of(m.chat))
+        is Message.Voice -> sendVoice(PreparedVoice(msg.mode, msg.frames, msg.durationMs, msg.data), ChatId.of(m.chat))
         else -> null
+    }
+
+    // ----- media (protocol.md §13) -----
+
+    fun estimate(chat: ChatId, datagramLen: UInt): Estimate? {
+        val key = chat.contactKey ?: return null
+        return runCatching { core.estimateDatagram(key, datagramLen) }.getOrNull()
+    }
+
+    fun sendVoice(voice: PreparedVoice, chat: ChatId): String? {
+        val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
+        return sendMedia(chat) { at, now -> core.sendVoice(key, voice, at, now) }
+    }
+
+    fun sendImage(image: PreparedImage, chat: ChatId): String? {
+        val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
+        return sendMedia(chat) { at, now -> core.sendImage(key, image, at, now) }
+    }
+
+    private fun sendMedia(chat: ChatId, send: (UInt, ULong) -> StoredMessage): String? = try {
+        val m = send((System.currentTimeMillis() / 1000).toUInt(), now())
+        if (chats[chat] == null) load(chat) else upsert(m)
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    fun requestFull(m: StoredMessage): String? = try {
+        core.requestFullImage(m.id, now())
+        requestedFull = requestedFull + m.id
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** The announcement that completes the LoRa preview `mediaId` in `chat`, if any. */
+    fun announcement(mediaId: ByteArray, chat: ChatId): StoredMessage? =
+        chats[chat]?.lastOrNull { (it.message as? Message.Announce)?.mediaId?.contentEquals(mediaId) == true }
+
+    /** The LoRa preview an announcement completes, if it is in `chat`. */
+    fun preview(mediaId: ByteArray, chat: ChatId): StoredMessage? =
+        chats[chat]?.firstOrNull { (it.message as? Message.Image)?.mediaId?.contentEquals(mediaId) == true }
+
+    // ----- Internet bridge (ADR-0015) -----
+
+    private fun folder(name: String): File = File(dataDirectory() ?: app.filesDir, name).also { it.mkdirs() }
+
+    /** This phone's bridge, keyed from the identity: iroh and Tor as the settings say. */
+    private fun startBridge() {
+        bridge = runCatching { LichenBridge(identityStore.seed(), folder("offers").path) }.getOrNull()
+        applyIroh()
+        applyTor()
+    }
+
+    /** A new identity, new bridge keys. */
+    private fun restartBridge() {
+        val old = bridge
+        bridge = null
+        bridgeOnline = false
+        torStatus = TorStatus.OFF
+        onionId = null
+        scope.launch {
+            old?.let {
+                runCatching { it.stopIroh() }
+                runCatching { it.stopTor() }
+                it.close()
+            }
+            startBridge()
+        }
+    }
+
+    fun chooseIroh(on: Boolean) {
+        irohEnabled = on
+        prefs.edit { putBoolean(IROH, on) }
+        applyIroh()
+    }
+
+    fun chooseRelayOnly(on: Boolean) {
+        relayOnly = on
+        prefs.edit { putBoolean(RELAY_ONLY, on) }
+        applyIroh(restart = true)
+    }
+
+    fun chooseTor(on: Boolean) {
+        torEnabled = on
+        prefs.edit { putBoolean(TOR, on) }
+        applyTor()
+    }
+
+    /** Starts or stops iroh as the settings say; `bridgeOnline` once a relay answers. */
+    private fun applyIroh(restart: Boolean = false) {
+        val b = bridge ?: return
+        val on = irohEnabled
+        val relays = relayOnly
+        scope.launch {
+            if (!on || restart) {
+                runCatching { b.stopIroh() }
+                bridgeOnline = false
+            }
+            if (!on) return@launch
+            if (b.endpointId() == null) runCatching { b.startIroh(relays) }
+            bridgeOnline = runCatching { b.online(30u) }.getOrDefault(false)
+        }
+    }
+
+    /** Connects to Tor and publishes our onion service, or stops Tor, as the settings say. */
+    private fun applyTor() {
+        val b = bridge ?: return
+        if (!torEnabled) {
+            if (torStatus != TorStatus.OFF) {
+                torStatus = TorStatus.OFF
+                onionId = null
+                scope.launch { runCatching { b.stopTor() } }
+            }
+            return
+        }
+        if (torStatus != TorStatus.OFF && torStatus != TorStatus.FAILED) return
+        torStatus = TorStatus.CONNECTING
+        demo?.let { runCatching { it.camilleOverTor(folder("demo-tor-state").path, folder("demo-tor-cache").path) } }
+        scope.launch {
+            try {
+                val id = b.startTor(folder("tor-state").path, folder("tor-cache").path, true, 180u)
+                if (!torEnabled) return@launch
+                onionId = id
+                torStatus = TorStatus.PUBLISHING
+                val reachable = b.onionReachable(300u)
+                if (!torEnabled) return@launch
+                torStatus = if (reachable) TorStatus.READY else TorStatus.FAILED
+            } catch (_: Exception) {
+                if (torEnabled) torStatus = TorStatus.FAILED
+            }
+        }
+    }
+
+    private fun loadDownloads() {
+        folder("downloads").listFiles()?.forEach { f ->
+            val h = f.nameWithoutExtension
+            if (h.length == 64) downloads[h] = f
+        }
+    }
+
+    private fun keep(bytes: ByteArray, hash: ByteArray, name: String): File {
+        val ext = name.substringAfterLast('.', "").ifEmpty { "bin" }
+        val f = File(folder("downloads"), "${hash.hex()}.$ext")
+        f.writeBytes(bytes)
+        downloads[hash.hex()] = f
+        return f
+    }
+
+    /** The providers we can put in an announcement: iroh unless `anonymous`, Tor when our
+     * onion service is reachable. */
+    fun bridgeProviders(anonymous: Boolean): List<Provider> = buildList {
+        val id = bridge?.endpointId()
+        if (!anonymous && bridgeOnline && id != null) add(Provider(1u, id))
+        val onion = onionId
+        if (torStatus == TorStatus.READY && onion != null) add(Provider(2u, onion))
+    }
+
+    /** Offers a photo on the bridge and announces it in one LoRa frame (§14.1); `anonymous`:
+     * over Tor only, so the recipient never learns our IP address. */
+    fun sendOverBridge(original: ByteArray, name: String, chat: ChatId, anonymous: Boolean): String? {
+        val providers = bridgeProviders(anonymous)
+        val b = bridge
+        if (b == null || providers.isEmpty()) return res.getString(R.string.no_internet_for_photo)
+        return try {
+            val offered = b.offer(original)
+            keep(original, offered.hash, name)
+            val m = core.sendAnnounce(
+                chat.ref, ByteArray(0), 1u, offered.hash, offered.size, providers, name,
+                (System.currentTimeMillis() / 1000).toUInt(), now(),
+            )
+            if (chats[chat] == null) load(chat) else upsert(m)
+            conversations = core.conversations()
+            pump()
+            null
+        } catch (e: LichenException) {
+            e.display(res)
+        } catch (e: BridgeException) {
+            e.display(res)
+        }
+    }
+
+    /** The providers of an announcement we would try, in order: iroh (when on), then Tor. */
+    fun fetchRoute(providers: List<Provider>): List<Provider> = listOfNotNull(
+        providers.firstOrNull { it.transport.toInt() == 1 }?.takeIf { irohEnabled && bridgeOnline },
+        providers.firstOrNull { it.transport.toInt() == 2 },
+    )
+
+    /** Fetches announced content, checked against its hash: over iroh first, over Tor when
+     * iroh cannot reach the sender (Tor connects on demand). */
+    fun fetch(m: StoredMessage) {
+        val a = m.message as? Message.Announce ?: return
+        val b = bridge ?: return
+        val h = a.hash.hex()
+        if (fetching.containsKey(h)) return
+        val route = fetchRoute(a.providers)
+        val first = route.firstOrNull()
+        if (first == null) {
+            fetchErrors[h] = res.getString(R.string.no_transport_reaches)
+            return
+        }
+        fetching[h] = first.transport.toInt()
+        fetchErrors.remove(h)
+        scope.launch {
+            var failure = res.getString(R.string.download_failed)
+            try {
+                for (p in route) {
+                    fetching[h] = p.transport.toInt()
+                    try {
+                        if (p.transport.toInt() == 2) {
+                            b.startTor(folder("tor-state").path, folder("tor-cache").path, false, 180u)
+                        }
+                        val bytes = b.fetch(p.transport, p.key, a.hash, a.size.toULong())
+                        keep(bytes, a.hash, a.name)
+                        return@launch
+                    } catch (e: BridgeException) {
+                        failure = e.display(res)
+                        // Only an unreachable sender is worth another transport.
+                        if (e is BridgeException.Unreachable || e is BridgeException.Timeout) continue
+                        break
+                    }
+                }
+                fetchErrors[h] = failure
+            } finally {
+                fetching.remove(h)
+            }
+        }
     }
 
     /** Airtime left this hour, milliseconds. */
@@ -584,6 +884,7 @@ class AppModel(private val app: Application) {
         refreshAll()
         markBackedUp()
         if (isConnected) core.connect(now())
+        restartBridge()
         pump()
         null
     } catch (e: LichenException) {
@@ -615,5 +916,8 @@ class AppModel(private val app: Application) {
         private const val MY_NAME = "lichen.myName"
         private const val BACKED_UP = "lichen.phraseBackedUp"
         private const val TCP_ADDRESS = "lichen.tcpAddress"
+        private const val IROH = "lichen.iroh"
+        private const val RELAY_ONLY = "lichen.relayOnly"
+        private const val TOR = "lichen.tor"
     }
 }

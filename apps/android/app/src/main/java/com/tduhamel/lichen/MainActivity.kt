@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
             tab = e.getString("tab"),
             screen = e.getString("screen"),
             tcp = e.getString("tcp"),
+            media = e.getBoolean("media"),
         )
     }
 }

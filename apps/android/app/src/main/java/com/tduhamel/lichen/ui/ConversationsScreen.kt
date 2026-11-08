@@ -267,7 +267,11 @@ fun RadioCard(model: AppModel) {
                 stringResource(if (model.isConnected) R.string.available else R.string.unavailable),
                 fontSize = 12.sp, color = t.tx2, modifier = Modifier.weight(1f),
             )
-            Text(stringResource(R.string.no_internet_bridge), fontSize = 11.sp, color = t.tx2, maxLines = 1)
+            if (model.bridgeOnline) TransportBadge(Transport.IROH, "iroh")
+            if (model.torStatus == AppModel.TorStatus.READY) TransportBadge(Transport.TOR, "Tor")
+            if (!model.bridgeOnline && model.torStatus != AppModel.TorStatus.READY) {
+                Text(stringResource(R.string.no_internet_bridge), fontSize = 11.sp, color = t.tx2, maxLines = 1)
+            }
         }
     }
 }

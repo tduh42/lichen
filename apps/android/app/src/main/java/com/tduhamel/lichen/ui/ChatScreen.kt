@@ -1,5 +1,10 @@
 package com.tduhamel.lichen.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -23,7 +28,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
@@ -43,6 +54,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.core.content.ContextCompat
+import com.tduhamel.lichen.core.PreparedImage
+import com.tduhamel.lichen.core.prepareImage
+import com.tduhamel.lichen.model.pickPhoto
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -211,7 +230,7 @@ private fun FailureBanner(model: AppModel, m: StoredMessage, resend: () -> Unit)
     val reason = (m.status as? MessageStatus.Failed)?.reason ?: return
     val res = LocalResources.current
     val title = model.title(ChatId.of(m.chat))
-    val action = if (m.message is Message.Text) stringResource(R.string.resend) to resend else null
+    val action = if (m.message is Message.Text || m.message is Message.Voice) stringResource(R.string.resend) to resend else null
     when (reason) {
         FailReason.NO_PATH -> Banner(BannerKind.WARN, stringResource(R.string.no_path_to, title), stringResource(R.string.no_path_note), action)
         FailReason.UNREACHABLE -> Banner(BannerKind.WARN, stringResource(R.string.unreachable_title, title), stringResource(R.string.unreachable_note), action)
@@ -243,14 +262,16 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean) {
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
         }
-        Text(
-            m.message.display(res),
-            fontSize = 16.sp,
-            color = if (m.outgoing) t.actFg else t.tx,
-            modifier = Modifier
-                .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
-                .padding(horizontal = 14.dp, vertical = 9.dp),
-        )
+        if (!MediaContent(model, m)) {
+            Text(
+                m.message.display(res),
+                fontSize = 16.sp,
+                color = if (m.outgoing) t.actFg else t.tx,
+                modifier = Modifier
+                    .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+            )
+        }
         val status = m.status
         if (m.outgoing && status is MessageStatus.Sending && status.total.toInt() > 1) {
             FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
@@ -282,7 +303,29 @@ private fun caption(m: StoredMessage): String? {
 private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     val t = lichen
     val res = LocalResources.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var draft by remember(chat) { mutableStateOf("") }
+    var menu by remember { mutableStateOf(false) }
+    var preparing by remember { mutableStateOf(false) }
+    var picked by remember { mutableStateOf<Pair<PreparedImage, ByteArray>?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        preparing = true
+        scope.launch {
+            // The core encodes the AVIF thumbnails (a few seconds): off the main thread.
+            val result = withContext(Dispatchers.Default) {
+                val photo = pickPhoto(context.contentResolver, uri) ?: return@withContext null
+                runCatching { prepareImage(photo.rgba, photo.width.toUInt(), photo.height.toUInt()) to photo.original }.getOrNull()
+            }
+            preparing = false
+            if (result == null) onError(res.getString(R.string.err_bad_image)) else picked = result
+        }
+    }
+    val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) model.recorder.start() else onError(res.getString(R.string.mic_denied))
+    }
+    val bridgeAvailable = model.bridgeProviders(anonymous = false).isNotEmpty()
     val text = draft.trim()
     val cost = if (chat.group) {
         stringResource(R.string.flooded_to_every_member)
@@ -300,8 +343,37 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             .padding(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        if (model.recorder.recording) {
+            RecordingBar(model, chat, onError)
+            return@Column
+        }
         if (cost != null) Text(cost, fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box {
+                IconButton(
+                    onClick = { menu = true },
+                    enabled = !preparing,
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = t.s2, contentColor = t.tx),
+                ) {
+                    if (preparing) {
+                        CircularProgressIndicator(Modifier.size(18.dp), color = t.tx2, strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Filled.Add, stringResource(R.string.attach))
+                    }
+                }
+                DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.photo)) },
+                        leadingIcon = { Icon(Icons.Outlined.Photo, null) },
+                        enabled = (!chat.group || bridgeAvailable) && model.isConnected,
+                        onClick = {
+                            menu = false
+                            pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    )
+                }
+            }
             TextField(
                 draft,
                 { draft = it },
@@ -316,18 +388,36 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                     focusedPlaceholderColor = t.tx2, unfocusedPlaceholderColor = t.tx2,
                 ),
             )
-            IconButton(
-                onClick = {
-                    val e = model.send(text, chat)
-                    if (e != null) onError(e) else draft = ""
-                },
-                enabled = text.isNotEmpty() && model.isConnected,
-                modifier = Modifier.size(48.dp),
-                colors = IconButtonDefaults.iconButtonColors(
-                    containerColor = t.actBg, contentColor = t.actFg,
-                    disabledContainerColor = t.s2, disabledContentColor = t.tx2,
-                ),
-            ) { Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send)) }
+            if (!chat.group && draft.isEmpty()) {
+                IconButton(
+                    onClick = {
+                        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+                            PackageManager.PERMISSION_GRANTED
+                        if (granted) model.recorder.start() else askMic.launch(Manifest.permission.RECORD_AUDIO)
+                    },
+                    enabled = model.isConnected,
+                    modifier = Modifier.size(48.dp),
+                ) { Icon(Icons.Outlined.Mic, stringResource(R.string.record_voice), tint = if (model.isConnected) t.lora else t.tx2) }
+            } else {
+                IconButton(
+                    onClick = {
+                        val e = model.send(text, chat)
+                        if (e != null) onError(e) else draft = ""
+                    },
+                    enabled = text.isNotEmpty() && model.isConnected,
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        containerColor = t.actBg, contentColor = t.actFg,
+                        disabledContainerColor = t.s2, disabledContentColor = t.tx2,
+                    ),
+                ) { Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send)) }
+            }
+        }
+    }
+    picked?.let { (image, original) ->
+        SendPhotoSheet(model, chat, image, original) { e ->
+            picked = null
+            e?.let(onError)
         }
     }
 }

@@ -2,6 +2,7 @@ package com.tduhamel.lichen.model
 
 import android.content.res.Resources
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Message
@@ -26,6 +27,15 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.MediaInGroup -> res.getString(R.string.err_media_in_group)
     is LichenException.BadImage -> res.getString(R.string.err_bad_image)
     is LichenException.NotAPreview -> res.getString(R.string.err_not_a_preview)
+}
+
+fun BridgeException.display(res: Resources): String = when (this) {
+    is BridgeException.Unreachable -> res.getString(R.string.bridge_unreachable)
+    is BridgeException.NotFound -> res.getString(R.string.bridge_not_found)
+    is BridgeException.TooLarge -> res.getString(R.string.bridge_too_large)
+    is BridgeException.Mismatch -> res.getString(R.string.bridge_mismatch)
+    is BridgeException.Timeout -> res.getString(R.string.bridge_timeout)
+    is BridgeException.Failed -> reason
 }
 
 fun FailReason.display(res: Resources): String = res.getString(

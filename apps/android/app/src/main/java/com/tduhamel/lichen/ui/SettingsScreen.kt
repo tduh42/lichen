@@ -32,6 +32,18 @@ import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.bandwidth
 
 /** Radio, appearance, demo network (mockup `reglages`; the rest comes with L9b–L9f). */
+@Composable
+fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    val t = lichen
+    Switch(
+        checked, onChange, enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedTrackColor = t.ok, checkedThumbColor = t.actFg,
+            uncheckedTrackColor = t.s2, uncheckedThumbColor = t.tx2, uncheckedBorderColor = t.line,
+        ),
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
@@ -89,6 +101,35 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                 }
             }
             item { Gap(8.dp) }
+            item { SectionLabel(stringResource(R.string.internet_transports)) }
+            item {
+                val irohLine = when {
+                    !model.irohEnabled -> stringResource(R.string.off)
+                    !model.bridgeOnline -> stringResource(R.string.connecting)
+                    model.relayOnly -> stringResource(R.string.online_relays)
+                    else -> stringResource(R.string.fast_ip_visible)
+                }
+                val torLine = when (model.torStatus) {
+                    AppModel.TorStatus.OFF -> stringResource(R.string.anonymous_slower)
+                    AppModel.TorStatus.CONNECTING -> stringResource(R.string.connecting_tor)
+                    AppModel.TorStatus.PUBLISHING -> stringResource(R.string.publishing_onion)
+                    AppModel.TorStatus.READY -> stringResource(R.string.onion_reachable)
+                    AppModel.TorStatus.FAILED -> stringResource(R.string.tor_failed)
+                }
+                CardList {
+                    CardRow(stringResource(R.string.iroh_direct), irohLine) { LichenSwitch(model.irohEnabled, model::chooseIroh) }
+                    CardDivider()
+                    CardRow("Tor", torLine) { LichenSwitch(model.torEnabled, model::chooseTor) }
+                    CardDivider()
+                    CardRow(stringResource(R.string.relay_only), stringResource(R.string.relay_only_note)) {
+                        LichenSwitch(model.relayOnly, model::chooseRelayOnly, enabled = model.irohEnabled)
+                    }
+                }
+            }
+            item {
+                Text(stringResource(R.string.transports_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+            }
+            item { Gap(8.dp) }
             item { SectionLabel(stringResource(R.string.identity)) }
             item {
                 CardList {
@@ -133,14 +174,7 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 CardList {
                     CardRow(stringResource(R.string.demo_network), stringResource(R.string.demo_network_note)) {
-                        Switch(
-                            model.isDemo,
-                            { if (it) model.startDemo() else model.stopDemo() },
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = t.ok, checkedThumbColor = t.actFg,
-                                uncheckedTrackColor = t.s2, uncheckedThumbColor = t.tx2, uncheckedBorderColor = t.line,
-                            ),
-                        )
+                        LichenSwitch(model.isDemo, { if (it) model.startDemo() else model.stopDemo() })
                     }
                 }
             }
