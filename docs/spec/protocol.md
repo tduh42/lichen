@@ -362,7 +362,7 @@ Group members (the **searchers**) locate another member (the **target**) from th
 
 - **PING**: asks `target` to transmit now. `id` is the searcher's random ping number.
 - **BEACON** (sent by the target): `id` is the ping answered (0 when unsolicited); `tx_dbm` the radio's TX power (`SELF_INFO`, or the one set by POWER), which ranging needs; `battery` 0..100 % (255 unknown); `flags` bit 0: a LOCATION (§12.1) follows, with its SOS flag when the target is in SOS. A BEACON with a position also counts as a position from the target (§12), with the usual checks.
-- **MEASURE** (sent by a searcher): what it heard of `target`. `t16` the time of reception (§12.1 encoding); `lat`, `lon`, `prec` the searcher's position then (§12.1 encodings; no MEASURE without a fix); `rssi` dBm; `snr4` SNR × 4; `noise` the radio's noise floor in dBm (−128 unknown); `flags` bit 0 RSSI estimated (noise + SNR), bit 1 saturated (SNR ≥ 10 dB with an estimated RSSI: the true RSSI is higher), bit 2 a bearing follows; `bearing` degrees from true north in bits 0-8, its class in bits 9-11 (0 Yagi ±15°, 1 body shadowing ±40°, 2 other ±60°).
+- **MEASURE** (sent by a searcher): what it heard of `target`. `t16` the time of reception (§12.1 encoding); `lat`, `lon`, `prec` the searcher's position then (§12.1 encodings; no MEASURE without a fix); `rssi` dBm (−128: none, a bearing alone); `snr4` SNR × 4; `noise` the radio's noise floor in dBm (−128 unknown); `flags` bit 0 RSSI estimated (noise + SNR), bit 1 saturated (SNR ≥ 10 dB with an estimated RSSI: the true RSSI is higher), bit 2 a bearing follows; `bearing` degrees from true north in bits 0-8, its class in bits 9-11 (0 Yagi ±15°, 1 body shadowing ±40°, 2 other ±60°).
 - **POWER**: asks `target` to set its TX power to `dbm` for `minutes` (1..30), at close range where receivers saturate. The target clamps it to its radio's range, sets it with `SET_RADIO_TX_POWER`, answers with a BEACON carrying the new `tx_dbm`, and restores the previous power after `minutes`, when it leaves SOS, or when consent is turned off.
 
 Every SEARCH message is one group message (§10.3): signed, flooded, two copies.
@@ -371,13 +371,13 @@ Every SEARCH message is one group message (§10.3): signed, flooded, two copies.
 
 - A measurement is a target's group envelope (any type: LOCATION, BEACON, TEXT…) heard in a `LOG_RX_DATA` push with **0 hops**: a relayed copy measures the last repeater, not the target. Every direct copy counts, both copies of a message included, even those the replay window then drops: the envelope's clear header (`gid_hash`, `sender`, `counter`) ties a copy to the message once one copy is decrypted.
 - RSSI: the pushed value; when the radio reports 0 (stock MeshCore on a Heltec V4), the noise floor plus the SNR, flagged estimated. The noise floor comes from `GET_STATS` type 1 (`noise i16`), asked every 30 s while a search runs.
-- A searcher shares a MEASURE for the best direct reception (highest SNR) of each target message, at most one per 60 s per target unless it moved more than 50 m since its last one; a bearing is shared when added, at most one per 10 s.
+- A searcher shares a MEASURE for the best direct reception (highest SNR) of each target message, at most one per 60 s per target unless it moved more than 50 m since its last one; a bearing is shared when added, at most one per 10 s, in a MEASURE of its own (`rssi` −128).
 
 ### 11.3 Pings, beacons and airtime
 
 - A searcher sends a PING only if no BEACON or measurement of the target is less than 60 s old (its own or shared), and at most one per 30 s.
 - The target answers pending PINGs with one BEACON, at most one per 20 s. In SOS without a GPS fix, it sends a BEACON (no position) every 120 s to its groups, in place of the SOS position it cannot send.
-- Cost: a SEARCH message is one envelope of about 100 bytes, about 1 s on air at SF8 / 62.5 kHz / CR 4/8, twice (copies). A searcher pinging and measuring once a minute spends about 4 s a minute, a fifth of its hourly budget (§9); search floods are charged to the budget like other group messages.
+- Cost: a SEARCH message is one envelope of about 100 bytes, about 1 s on air at SF8 / 62.5 kHz / CR 4/8, twice (copies). On the fake network a searcher pinging when allowed and sharing its measures spends about 1.3 s a minute (2.6 s with a bearing a minute), a fifth to two fifths of a 10 % duty cycle; search floods are charged to the budget like other group messages.
 
 ## 12. Location (ADR-0011)
 

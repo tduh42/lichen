@@ -215,3 +215,21 @@ The Android emulator cannot use the Mac's USB devices: `lichen bridge` relays th
 - A 2.0 MB photo announced by the iPhone, fetched over iroh by Android, hash verified.
 - Voice needed the emulator's audio (`-allow-host-audio`); without it, silent playback and no recording.
 - Cold start of the debug build on the emulator: 5.7 s, then 2.5 s (a 48 MB native library); to measure on a phone.
+
+## 2026-11-08 — Search mode on the fake network (L8a)
+
+`cargo test -p lc-core --release --test search -- --ignored --nocapture`. Fake network with geometry: log-distance path loss (n = 2.8, 1 m offset −32 dB, TX 22 dBm), 6 dB shadowing drawn per reception, noise floor −118 dBm, SNR readings capped at 13 dB, frames below −10 dB SNR lost. Julien in SOS **without GPS** (a BEACON every 2 minutes, more when pinged); three searchers starting 2.0 to 2.9 km away, walking toward him at 1 m/s, pinging when allowed, sharing their measures; a repeater on a hill linked to everyone. Alice's estimate, median over 10 seeds:
+
+| Minute | Reported RSSI (M5): error / 95 % semi-axis | Noise + SNR (stock Heltec) | Reported RSSI + body bearing ±40° each minute |
+|---|---|---|---|
+| 3 | 607 m / 2,472 m | 771 m / 2,462 m | 665 m / 1,495 m |
+| 6 | 692 m / 1,969 m | 723 m / 1,995 m | 563 m / 967 m |
+| 9 | 401 m / 1,143 m | 637 m / 1,485 m | 353 m / 749 m |
+| 12 | 339 m / 978 m | 578 m / 1,332 m | 214 m / 670 m |
+| 15 | 298 m / 752 m | 533 m / 1,082 m | 187 m / 599 m |
+
+- Airtime per searcher: 1.27 s a minute (2.57 s with a bearing a minute), against 6 s a minute at 10 % duty.
+- The estimated RSSI saturates: at 2 km the mean SNR is 16 dB here, above the 10 dB where a reading becomes a lower bound only. It is the realistic worst case for stock Heltecs at short range; with a steeper real path loss, fewer readings saturate.
+- Self-calibration: on a field with n = 3.4 (defaults 2.8), while Julien reports GPS the fitted path loss predicts the true mean RSSI within 4 dB from 300 m to 2 km (the default is more than 10 dB off at 1 km). The exponent and the offset trade against each other over a limited span of distances, so the fit is judged by its predictions.
+- The 95 % ellipse held Julien for every searcher in the end-to-end test; the error falls as the searchers close in (RSSI ranging at 6 dB is ±60 % per reading).
+- These are simulated: the field test (L8c) fits the path loss and the shadowing for real, with `lichen search --csv` on each radio.

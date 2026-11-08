@@ -16,6 +16,12 @@
 //!   frame when two neighbours' transmissions overlap at the receiver, or at random with the
 //!   per-link loss rate.
 //!
+//! **Geometry** (optional, for search): nodes placed on a plane ([`Net::place`]) hear each
+//! other through a log-distance path loss with shadowing ([`Geometry`]): RSSI and SNR follow
+//! distance, a frame below the demodulation floor is lost, `GET_STATS` gives the noise floor and
+//! `SET_RADIO_TX_POWER` changes what the others hear. A node can report RSSI 0, like the stock
+//! Heltec V4. Unplaced nodes keep fixed readings (SNR 10 dB, RSSI −90 dBm).
+//!
 //! `SEND_PATH_DISCOVERY_REQ` gets `SENT` and no answer, as with stock firmware whose owner did
 //! not allow telemetry (the default): lichen discovers paths itself (§4.5).
 //!
@@ -68,6 +74,13 @@ pub struct Node {
     /// frames come through [`Net::external_write`] and go out through [`Net::external_read`].
     external: bool,
     outbox: Vec<Vec<u8>>,
+    /// Position on the plane (east, north metres), TX power, noise floor; RSSI reported as 0.
+    pub pos: Option<(f64, f64)>,
+    pub tx_dbm: i8,
+    pub noise_dbm: i16,
+    pub rssi_zero: bool,
+    /// Last reception (for `GET_STATS`).
+    last_rx: (i8, i8),
 }
 
 impl std::fmt::Debug for Node {
@@ -119,6 +132,39 @@ pub struct Net {
     air: Vec<Tx>,
     next_tx_id: u64,
     pub stats: Stats,
+    /// Path loss between placed nodes.
+    pub geometry: Geometry,
+}
+
+/// Path loss between placed nodes: `RSSI = tx + a − 10·n·log10(d) + N(0, σ)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Geometry {
+    pub a_db: f64,
+    pub n: f64,
+    pub sigma_db: f64,
+}
+
+impl Default for Geometry {
+    fn default() -> Self {
+        Self {
+            a_db: -32.0,
+            n: 2.8,
+            sigma_db: 6.0,
+        }
+    }
+}
+
+/// Plane origin of placed nodes (their GPS fixes), degrees.
+pub const ORIGIN: (f64, f64) = (45.19, 5.72);
+/// SNR readings saturate there, dB.
+const SNR_MAX_DB: f64 = 13.0;
+
+/// A plane point (east, north metres) in degrees.
+pub fn latlon(east: f64, north: f64) -> (f64, f64) {
+    (
+        ORIGIN.0 + north / 111_320.0,
+        ORIGIN.1 + east / (111_320.0 * ORIGIN.0.to_radians().cos()),
+    )
 }
 
 impl std::fmt::Debug for Net {
@@ -151,6 +197,7 @@ impl Net {
             air: Vec::new(),
             next_tx_id: 0,
             stats: Stats::default(),
+            geometry: Geometry::default(),
         }
     }
 
@@ -184,6 +231,11 @@ impl Net {
             raw_pushed: 0,
             external: false,
             outbox: Vec::new(),
+            pos: None,
+            tx_dbm: 22,
+            noise_dbm: -118,
+            rssi_zero: false,
+            last_rx: (0, 0),
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -273,6 +325,16 @@ impl Net {
         }
     }
 
+    /// Removes every link of node `i`.
+    pub fn unlink_all(&mut self, i: usize) {
+        if let Some(v) = self.neighbors.get_mut(i) {
+            v.clear();
+        }
+        for v in &mut self.neighbors {
+            v.retain(|&x| x != i);
+        }
+    }
+
     /// Links consecutive nodes.
     pub fn chain(&mut self, nodes: &[usize]) {
         for w in nodes.windows(2) {
@@ -280,6 +342,87 @@ impl Net {
                 self.link(*a, *b);
             }
         }
+    }
+
+    /// Places node `i` at `east`, `north` metres (readings then follow distance).
+    pub fn place(&mut self, i: usize, east: f64, north: f64) {
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.pos = Some((east, north));
+        }
+    }
+
+    /// Links every pair of placed nodes whose mean SNR is above −5 dB.
+    pub fn link_in_range(&mut self) {
+        let placed: Vec<usize> = (0..self.nodes.len())
+            .filter(|&i| self.nodes.get(i).is_some_and(|n| n.pos.is_some()))
+            .collect();
+        for &a in &placed {
+            for &b in &placed {
+                if a < b && self.mean_snr(a, b).is_some_and(|s| s > -5.0) {
+                    self.link(a, b);
+                }
+            }
+        }
+    }
+
+    /// Gives the app of node `i` a GPS fix at its position (5 m).
+    pub fn locate(&mut self, i: usize) {
+        let Some((e, n)) = self.nodes.get(i).and_then(|n| n.pos) else {
+            return;
+        };
+        let (lat, lon) = latlon(e, n);
+        let unix_s = (EPOCH_MS + self.now) / 1000;
+        self.with_core(i, |c, now| {
+            c.update_location(
+                crate::location::Fix {
+                    lat,
+                    lon,
+                    alt_m: None,
+                    accuracy_m: 5.0,
+                    heading_deg: None,
+                    speed_mps: None,
+                    unix_s,
+                },
+                now,
+            );
+        });
+    }
+
+    /// Mean RSSI at `r` of a transmission from `t`, when both are placed.
+    fn mean_rssi(&self, t: usize, r: usize) -> Option<f64> {
+        let (a, b) = (self.nodes.get(t)?, self.nodes.get(r)?);
+        let ((x0, y0), (x1, y1)) = (a.pos?, b.pos?);
+        let d = (x1 - x0).hypot(y1 - y0).max(1.0);
+        let g = &self.geometry;
+        Some(f64::from(a.tx_dbm) + g.a_db - 10.0 * g.n * d.log10())
+    }
+
+    fn mean_snr(&self, t: usize, r: usize) -> Option<f64> {
+        Some(self.mean_rssi(t, r)? - f64::from(self.nodes.get(r)?.noise_dbm))
+    }
+
+    /// One reception's readings `(snr4, rssi)` at `r` from `t`, or `None` when it is below the
+    /// demodulation floor (SF8: −10 dB).
+    fn readings(&mut self, t: usize, r: usize) -> Option<(i8, i8)> {
+        let Some(mean) = self.mean_rssi(t, r) else {
+            return Some((40, -90));
+        };
+        let u = ((self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64).max(1e-300);
+        let v = (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+        let z = (-2.0 * u.ln()).sqrt() * (std::f64::consts::TAU * v).cos();
+        let rssi = mean + self.geometry.sigma_db * z;
+        let node = self.nodes.get(r)?;
+        let snr = rssi - f64::from(node.noise_dbm);
+        if snr < -10.0 {
+            return None;
+        }
+        let snr4 = (snr.min(SNR_MAX_DB) * 4.0).round().clamp(-128.0, 127.0) as i8;
+        let rssi = if node.rssi_zero {
+            0
+        } else {
+            rssi.round().clamp(-127.0, -1.0) as i8
+        };
+        Some((snr4, rssi))
     }
 
     pub fn key(&self, i: usize) -> PubKey {
@@ -390,6 +533,11 @@ impl Net {
     }
 
     /// Events reported by the app of companion `i` since the last call.
+    /// Reads the app of node `i`.
+    pub fn with_core_ref<T>(&self, i: usize, f: impl FnOnce(&Core) -> T) -> Option<T> {
+        self.nodes.get(i)?.core.as_ref().map(f)
+    }
+
     pub fn take_events(&mut self, i: usize) -> Vec<Event> {
         self.nodes
             .get_mut(i)
@@ -524,9 +672,10 @@ impl Net {
             return vec![];
         };
         let (key, prv, name) = (node.key, node.prv, node.name.clone());
+        let (tx_dbm, noise, last_rx) = (node.tx_dbm, node.noise_dbm, node.last_rx);
         match code {
             cmd::APP_START => {
-                let mut v = vec![resp::SELF_INFO, 1, 22, 22];
+                let mut v = vec![resp::SELF_INFO, 1, tx_dbm as u8, 22];
                 v.extend_from_slice(&key);
                 v.extend_from_slice(&[0u8; 12]);
                 v.extend_from_slice(&FREQ_KHZ.to_le_bytes());
@@ -592,6 +741,22 @@ impl Net {
                 vec![vec![resp::OK]]
             }
             cmd::GET_DEFAULT_FLOOD_SCOPE => vec![vec![resp::DEFAULT_FLOOD_SCOPE]],
+            cmd::GET_STATS if frame.get(1) == Some(&1) => {
+                let mut v = vec![resp::STATS, 1];
+                v.extend_from_slice(&noise.to_le_bytes());
+                v.extend_from_slice(&[last_rx.1 as u8, last_rx.0 as u8]);
+                v.extend_from_slice(&[0u8; 8]);
+                vec![v]
+            }
+            cmd::SET_RADIO_TX_POWER => match frame.get(1).map(|&b| b as i8) {
+                Some(dbm @ -9..=22) => {
+                    if let Some(n) = self.nodes.get_mut(i) {
+                        n.tx_dbm = dbm;
+                    }
+                    vec![vec![resp::OK]]
+                }
+                _ => vec![vec![resp::ERR, 6]],
+            },
             cmd::SEND_PATH_DISCOVERY_REQ => {
                 let mut v = vec![resp::SENT, 1];
                 v.extend_from_slice(&[1, 2, 3, 4]);
@@ -714,6 +879,10 @@ impl Net {
                 }
                 continue;
             }
+            let Some((snr4, rssi)) = self.readings(tx.from, r) else {
+                self.stats.random_losses += 1;
+                continue;
+            };
             if self.rng.next_u32() % 100 < self.loss_pct {
                 self.stats.random_losses += 1;
                 if trace {
@@ -725,19 +894,22 @@ impl Net {
                 eprintln!("{:>8} {}->{} ok {}", self.now, tx.from, r, label());
             }
             self.stats.receptions += 1;
-            self.receive(r, &tx.frame);
+            if let Some(n) = self.nodes.get_mut(r) {
+                n.last_rx = (snr4, rssi);
+            }
+            self.receive(r, &tx.frame, snr4, rssi);
         }
         if self.nodes.get(tx.from).is_some_and(|n| !n.txq.is_empty()) {
             self.schedule(self.now, Ev::TryTx(tx.from));
         }
     }
 
-    fn receive(&mut self, r: usize, frame: &[u8]) {
+    fn receive(&mut self, r: usize, frame: &[u8], snr4: i8, rssi: i8) {
         let Ok(p) = Packet::decode(frame) else {
             return;
         };
         if self.nodes.get(r).is_some_and(|n| n.role == Role::Companion) && frame.len() + 3 <= 176 {
-            let mut log = vec![resp::LOG_RX_DATA, 40, (-90i8) as u8];
+            let mut log = vec![resp::LOG_RX_DATA, snr4 as u8, rssi as u8];
             log.extend_from_slice(frame);
             self.push_to_app(r, &log);
         }
@@ -790,7 +962,7 @@ impl Net {
                     self.now, h.kind, h.tag, h.index, h.total, h.attempt, h.src, h.dst
                 );
             }
-            let mut push = vec![resp::RAW_DATA, 40, (-90i8) as u8, 0xFF];
+            let mut push = vec![resp::RAW_DATA, snr4 as u8, rssi as u8, 0xFF];
             push.extend_from_slice(p.payload);
             self.push_to_app(r, &push);
         }

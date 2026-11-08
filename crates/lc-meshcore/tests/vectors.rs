@@ -318,6 +318,9 @@ fn radio_stats_and_tx_power() {
             rx_air_s: 4567
         }
     );
-    assert_eq!(Response::decode(&[24, 0, 1, 2]).unwrap(), Response::OtherStats { kind: 0 });
+    assert_eq!(
+        Response::decode(&[24, 0, 1, 2]).unwrap(),
+        Response::OtherStats { kind: 0 }
+    );
     assert!(Response::decode(&[24, 1, 0]).is_err(), "truncated");
 }

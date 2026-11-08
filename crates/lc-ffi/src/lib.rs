@@ -48,6 +48,14 @@ pub enum LichenError {
     IdentityUnknown,
     /// Not a lichen contact code, or not 24 valid words.
     BadCode,
+    /// No search runs for this member.
+    NotSearching,
+    /// Rate limited: possible again in `wait_s` seconds.
+    TooSoon {
+        wait_s: u64,
+    },
+    /// Our position is unknown or too old.
+    NoPosition,
 }
 
 impl std::fmt::Display for LichenError {
@@ -71,6 +79,11 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::OverBudget { wait_ms } => Self::OverBudget {
                 wait_s: wait_ms.div_ceil(1000),
             },
+            lc_core::Error::NotSearching => Self::NotSearching,
+            lc_core::Error::TooSoon { wait_ms } => Self::TooSoon {
+                wait_s: wait_ms.div_ceil(1000),
+            },
+            lc_core::Error::NoPosition => Self::NoPosition,
         }
     }
 }
@@ -483,6 +496,20 @@ pub enum LichenEvent {
     MediaRequested {
         from: Vec<u8>,
     },
+    /// Our search for `target` (identity) changed: read the estimate again (§11).
+    SearchUpdated {
+        target: Vec<u8>,
+    },
+    /// Member `by` (node) of group `gid` is searching for us, and we answer.
+    Searched {
+        gid: Vec<u8>,
+        by: Vec<u8>,
+    },
+    /// Our radio's TX power is now `dbm` (`previous`: lowered by a search, to restore).
+    TxPower {
+        dbm: i8,
+        previous: Option<i8>,
+    },
 }
 
 fn snr(snr4: i8) -> f32 {
@@ -589,6 +616,14 @@ impl LichenEvent {
             Event::MediaRequested { from, .. } => Self::MediaRequested {
                 from: from.to_vec(),
             },
+            Event::SearchUpdated { target } => Self::SearchUpdated {
+                target: target.to_vec(),
+            },
+            Event::Searched { gid, by } => Self::Searched {
+                gid: gid.to_vec(),
+                by: by.to_vec(),
+            },
+            Event::TxPower { dbm, previous } => Self::TxPower { dbm, previous },
         }
     }
 }

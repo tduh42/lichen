@@ -7,6 +7,7 @@ use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::ecdh::{sign, verify};
 use lc_meshcore::path::Path;
 use lc_proto::group::{self, GroupHeader, SIGNATURE_LEN};
+use lc_proto::search::Search;
 use lc_proto::{Millis, content};
 use rand_core::Rng;
 use sha2::{Digest, Sha256};
@@ -888,7 +889,8 @@ impl Core {
             .filter(|g| g.gid_hash() == h.gid_hash)
             .map(|g| g.gid)
             .collect();
-        for gid in gids {
+        let mut delivered = None;
+        'gids: for gid in gids {
             let Some(g) = self.groups.get_mut(&gid) else {
                 continue;
             };
@@ -986,29 +988,47 @@ impl Core {
                         return;
                     }
                     ks.mark(hdr.counter);
-                    self.dirty_groups.insert(gid);
-                    if let Some(Content::Location(p)) = Content::decode(body) {
-                        crate::location::receive(
-                            &mut self.loc,
-                            &mut self.events,
-                            member_node,
-                            Some(gid),
-                            p,
-                            snr4,
-                            now,
-                        );
-                    } else if let Some(content) = Content::decode(body) {
-                        self.events.push_back(Event::GroupMessage {
-                            gid,
-                            from: member_node,
-                            content,
-                            snr4,
-                            rssi,
-                        });
-                    }
-                    return;
+                    delivered = Some((gid, member, member_node, body.to_vec()));
+                    break 'gids;
                 }
             }
+        }
+        let Some((gid, member, member_node, body)) = delivered else {
+            return;
+        };
+        self.dirty_groups.insert(gid);
+        // Its direct copies were receptions of that member (search, §11.2).
+        self.search_attribute(&h, member, member_node, now);
+        if body.first() == Some(&content::SEARCH) {
+            if let Some(s) = body.get(1..).and_then(Search::decode) {
+                self.on_search(gid, member, member_node, s, now);
+            }
+            return;
+        }
+        match Content::decode(&body) {
+            Some(Content::Location(p)) => {
+                let at = crate::location::receive(
+                    &mut self.loc,
+                    &mut self.events,
+                    member_node,
+                    Some(gid),
+                    p,
+                    snr4,
+                    now,
+                );
+                if let Some(at) = at {
+                    let (lat, lon) = crate::location::to_degrees(p.lat, p.lon);
+                    self.search_fix(&member, lat, lon, p.prec, at);
+                }
+            }
+            Some(content) => self.events.push_back(Event::GroupMessage {
+                gid,
+                from: member_node,
+                content,
+                snr4,
+                rssi,
+            }),
+            None => {}
         }
     }
 }

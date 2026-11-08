@@ -15,17 +15,21 @@ What the radios give: `LOG_RX_DATA` pushes every heard frame with SNR × 4, RSSI
 - **RSSI where the radio has none**: noise floor (`GET_STATS`) plus SNR, flagged estimated, and flagged saturated at SNR ≥ 10 dB, where LoRa's SNR stops growing: such a reading only bounds the distance.
 - **Shared in the group** as MEASURE (§11.1): the searcher's position, RSSI, SNR, noise and an optional compass bearing. Every searcher runs the same fusion on everyone's measurements; nothing is decided centrally.
 - **Pings need consent**: the target's app answers PING and POWER only in SOS or with "let this group locate me" on for that group. The target is told it is being searched.
-- **Fusion on the phone, in the Rust core** (`lc-core/src/search.rs`): a particle filter (2,000 particles, injected randomness) on a local east-north plane:
+- **Fusion on the phone, in the Rust core** (`lc-core/src/search.rs`, solver in `lc-core/src/solver.rs`): a particle filter (2,000 particles, seeded per search so the same measurements give the same estimate, run again over every measurement when one arrives) on a local east-north plane:
   - RSSI by log-distance path loss, `RSSI = P0(tx_dbm) − 10 n log10(d / 1 m) + N(0, σ²)`, defaults n = 2.8, σ = 8 dB, P0 = tx_dbm − 32 dB (868 MHz free space at 1 m, small antennas); a saturated reading as a lower bound;
   - bearings by class (±15° Yagi, ±40° body shadowing, ±60° other);
   - the target's own GPS position when it sends one (it dominates);
-  - a walking target (1.5 m/s);
+  - a target that may move: a random walk of 0.5 m/s whose spread grows with the square root of elapsed time (about 30 m a minute), whatever the observation rate (someone in distress moves little; one who walks reports fixes, which dominate);
+  - recovery from a wrong start: the filter starts from the first reception's ring of likely distances; at each resampling 1 % of the particles are drawn again from the current reception, and a fix that leaves too few particles near it restarts the filter from the fix;
   - **self-calibration**: while the target reports GPS positions, the (distance, RSSI) pairs refit P0 and n for the rest of the search.
-- **Airtime is rationed** (§11.3): pings only when nothing was heard for 60 s, measures at most once a minute per target, beacons at most every 20 s.
+- **Airtime is rationed** (§11.3): pings only when nothing was heard for 60 s, measures at most once a minute per target, beacons at most every 20 s. A bearing goes alone in its own MEASURE (`rssi` −128), at most every 10 s, so that no reception is counted twice.
+- **A lowered TX power is undone by the app, not trusted to the radio**: stock MeshCore saves `SET_RADIO_TX_POWER` in its preferences, so a radio left at 0 dBm would stay there after a crash. The core reports the previous power (`Event::TxPower { previous }`), the app keeps it, and gives it back at start (`Core::restore_tx_power`), restored once the companion is connected.
 
 ## Consequences
 
 - A search needs a group shared by the target and the searchers; a contact-only target cannot be pinged.
 - Searchers with a stock Heltec rank on SNR and an estimated RSSI; their readings saturate sooner. The defaults are literature values until the field test (L8c) fits them.
 - The solver is local: two searchers may show slightly different estimates until they have the same measurements.
+- On the fake network (geometry with 6 dB shadowing, three searchers starting about 2 km away, docs/measurements.md 2026-11-08): about 300 m of median error after 15 minutes with reported RSSI, 530 m with RSSI estimated by stock Heltecs (most readings saturate at 2 km), 190 m with a body-shadow bearing each minute; 1.3 s of airtime a minute per searcher (2.6 s with bearings).
+- Testing it surfaced a session bug (fixed): a message in flight on a responder's pending session was lost when a second HELLO replaced that session, which blocked that peer's queue for good; with every member sending its sender key at once at group creation, a member could miss a key.
 - Rejected: a central solver (one searcher computing for all), which would need another message and a single point of failure; raw RSSI streams (every frame shared), too costly in airtime.

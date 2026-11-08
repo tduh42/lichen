@@ -229,6 +229,23 @@ pub enum Event {
         media_id: crate::content::MediaId,
         full: bool,
     },
+    /// Something changed in our search for `target` (identity): a reception, a BEACON, a fix
+    /// (§11); the estimate is to read again.
+    SearchUpdated {
+        target: PubKey,
+    },
+    /// Member `by` (node) of `gid` is searching for us and we answer (SOS or consent, §11).
+    Searched {
+        gid: GroupId,
+        by: PubKey,
+    },
+    /// Our radio's TX power is now `dbm`; `previous` while a POWER request holds it, to
+    /// restore after a restart ([`Core::restore_tx_power`]: the radio keeps it), `None` once
+    /// restored.
+    TxPower {
+        dbm: i8,
+        previous: Option<i8>,
+    },
 }
 
 /// Why a request was refused right away.
@@ -249,6 +266,14 @@ pub enum Error {
     OverBudget {
         wait_ms: Millis,
     },
+    /// No search runs for this target.
+    NotSearching,
+    /// Rate limited (§11.3): possible again in `wait_ms`.
+    TooSoon {
+        wait_ms: Millis,
+    },
+    /// Our position is unknown or too old.
+    NoPosition,
 }
 
 /// Core configuration.
@@ -276,13 +301,17 @@ impl Config {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Expect {
+pub(crate) enum Expect {
     SelfInfo,
     DeviceInfo,
     Contacts,
     Contact,
     Ok,
     Scope,
+    /// `SET_RADIO_TX_POWER` to this value (search, §11.1).
+    TxPower(i8),
+    /// `GET_STATS` radio (the noise floor).
+    Stats,
 }
 
 #[derive(Clone, Debug)]
@@ -419,6 +448,16 @@ impl Peer {
         }
     }
 
+    /// A new responder session (a HELLO or INTRO_FIN answered again, §4.4) replaces the pending
+    /// one: a message in flight on the old pending session would never finish (no frame, no
+    /// timeout), so it goes back to the queue.
+    fn replace_pending(&mut self, s: Session) {
+        if self.in_flight.as_ref().is_some_and(|f| f.on_pending) {
+            self.requeue_in_flight();
+        }
+        self.pending = Some(Box::new(s));
+    }
+
     /// The pending session is confirmed and replaces the old one. A message in flight on the
     /// old session is sent again; one already on the pending session simply continues.
     fn promote_pending(&mut self) {
@@ -483,6 +522,8 @@ pub struct Core {
     pub(crate) loc: Locations,
     /// New identities presented by verified contacts, waiting for the user (§4.6).
     pending_identities: HashMap<PubKey, PubKey>,
+    /// Search mode (§11).
+    pub(crate) search: crate::search::Searches,
 }
 
 impl std::fmt::Debug for Core {
@@ -548,6 +589,7 @@ impl Core {
             rr_last: None,
             loc: Locations::default(),
             pending_identities: HashMap::new(),
+            search: crate::search::Searches::default(),
         }
     }
 
@@ -953,6 +995,7 @@ impl Core {
         }
         self.tick_groups(now);
         self.tick_locations(now);
+        self.tick_search(now);
         // Round robin: start after the peer served last, so that sessions share the radio.
         let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
         keys.sort_unstable();
@@ -981,6 +1024,9 @@ impl Core {
             consider(d);
         }
         if let Some(d) = self.next_location_wakeup() {
+            consider(d);
+        }
+        if let Some(d) = self.next_search_wakeup() {
             consider(d);
         }
         let slot = self.next_slot.max(self.deferred_until.unwrap_or(0));
@@ -1013,7 +1059,7 @@ impl Core {
 
     // ----- companion plumbing ----------------------------------------------------------
 
-    fn command(&mut self, cmd: &Command<'_>, expect: Expect) {
+    pub(crate) fn command(&mut self, cmd: &Command<'_>, expect: Expect) {
         let mut buf = [0u8; lc_meshcore::FRAME_MAX];
         if let Ok(n) = cmd.encode(&mut buf) {
             self.commands.push_back((buf[..n].to_vec(), expect));
@@ -1027,6 +1073,8 @@ impl Core {
             Response::SelfInfo(si) => {
                 self.node = Some(*si.key);
                 self.name = String::from_utf8_lossy(si.name).into_owned();
+                self.search.tx_dbm = Some(si.tx_power_dbm);
+                self.search.max_tx_dbm = Some(si.max_tx_power_dbm);
                 self.freq_khz = si.freq_khz;
                 self.radio = LoRaParams::meshcore(si.sf, si.bw_hz, si.cr).unwrap_or(DEFAULT_RADIO);
                 if let Ok(b) =
@@ -1077,6 +1125,17 @@ impl Core {
             }
             Response::EndOfContacts { .. } => self.events.push_back(Event::ContactsUpdated),
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
+            Response::Ok => {
+                if let Some(Expect::TxPower(dbm)) = expect {
+                    self.search_power_applied(dbm);
+                }
+            }
+            Response::Err(_) => {
+                if let Some(Expect::TxPower(dbm)) = expect {
+                    self.search_power_refused(dbm);
+                }
+            }
+            Response::RadioStats { noise, .. } => self.search_noise(noise),
             _ => {}
         }
         if done {
@@ -1685,6 +1744,10 @@ impl Core {
             return;
         }
         let Some(probe) = discovery::parse_probe(p.payload) else {
+            // Heard directly: a reception of the sender, for search (§11.2).
+            if p.path.hops() == 0 {
+                self.search_direct(p.payload, snr4, rssi, now);
+            }
             self.on_group_envelope(p.payload, snr4, rssi, now);
             return;
         };
@@ -1958,12 +2021,7 @@ impl Core {
                 self.peers.insert(c, peer);
                 return;
             };
-            peer.pending = Some(Box::new(Session::new(
-                keys,
-                node[0],
-                c[0],
-                self.timing_for(&path),
-            )));
+            peer.replace_pending(Session::new(keys, node[0], c[0], self.timing_for(&path)));
             peer.intro_needed = false;
             if let Some(a) = peer.answered_intro.as_mut() {
                 a.done = true;
@@ -2070,7 +2128,7 @@ impl Core {
                     return;
                 };
                 let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
-                peer.pending = Some(Box::new(session));
+                peer.replace_pending(session);
                 peer.session_since = now;
                 peer.session_bytes = 0;
                 peer.path = Some(path.clone());

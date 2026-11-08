@@ -3,6 +3,7 @@
 mod bot;
 mod bridge;
 mod device;
+mod record;
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -105,6 +106,25 @@ enum Cmd {
         #[arg(short, long)]
         verbose: bool,
     },
+    /// Record what the radio hears, with SNR, RSSI and noise floor, as CSV (search-mode field
+    /// tests): frames heard directly by default.
+    Search {
+        port: String,
+        /// Append to this CSV file (default: standard output).
+        #[arg(long)]
+        csv: Option<PathBuf>,
+        /// Where the recorder stands, "lat,lon" in degrees (written on every row).
+        #[arg(long, value_parser = parse_latlon)]
+        at: Option<(f64, f64)>,
+        /// Relayed frames too.
+        #[arg(long)]
+        all: bool,
+        /// Stop after this many minutes.
+        #[arg(long, default_value_t = 120)]
+        minutes: u64,
+        #[arg(short, long)]
+        verbose: bool,
+    },
     /// Send a datagram across the fake MeshCore network and print the timeline.
     Sim {
         /// Repeaters between the two companions.
@@ -122,6 +142,16 @@ enum Cmd {
         #[arg(long, default_value_t = 5)]
         cr: u8,
     },
+}
+
+fn parse_latlon(s: &str) -> Result<(f64, f64), String> {
+    let (a, b) = s.split_once(',').ok_or("expected lat,lon")?;
+    let lat: f64 = a.trim().parse().map_err(|_| "bad latitude")?;
+    let lon: f64 = b.trim().parse().map_err(|_| "bad longitude")?;
+    if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+        return Err("out of range".into());
+    }
+    Ok((lat, lon))
 }
 
 pub(crate) fn unix_now() -> u32 {
@@ -299,6 +329,12 @@ fn describe(core: &Core, e: &Event) -> String {
         ),
         Event::Delivered { id } => format!("message {id} delivered"),
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
+        Event::SearchUpdated { target } => format!("search for {} updated", short(target)),
+        Event::Searched { by, .. } => format!("{} is searching for us", name_of(core, by)),
+        Event::TxPower { dbm, previous } => match previous {
+            Some(p) => format!("TX power {dbm} dBm for a search (was {p} dBm)"),
+            None => format!("TX power {dbm} dBm"),
+        },
     }
 }
 
@@ -630,6 +666,14 @@ fn main() {
             listen,
             verbose,
         } => bridge::run(&port, &listen, verbose),
+        Cmd::Search {
+            port,
+            csv,
+            at,
+            all,
+            minutes,
+            verbose,
+        } => record::run(&port, csv.as_deref(), at, all, minutes, verbose),
         Cmd::Sim {
             repeaters,
             loss,

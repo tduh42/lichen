@@ -265,7 +265,7 @@ impl Core {
     }
 
     /// `now` of a Unix time in seconds.
-    fn mono_ms(&self, unix_s: u64) -> Option<Millis> {
+    pub(crate) fn mono_ms(&self, unix_s: u64) -> Option<Millis> {
         let off = self.loc.offset_ms?;
         let ms = i64::try_from(unix_s.saturating_mul(1000)).unwrap_or(i64::MAX);
         Some(u64::try_from(ms.saturating_sub(off)).unwrap_or(0))
@@ -531,7 +531,7 @@ impl Core {
         snr4: i8,
         now: Millis,
     ) {
-        receive(
+        let at = receive(
             &mut self.loc,
             &mut self.events,
             from,
@@ -540,10 +540,16 @@ impl Core {
             snr4,
             now,
         );
+        // A target's own fix, for its searchers (§11).
+        if let (Some(at), Some(id)) = (at, self.identity_of(&from)) {
+            let (lat, lon) = to_degrees(position.lat, position.lon);
+            self.search_fix(&id, lat, lon, position.prec, at);
+        }
     }
 }
 
-/// [`Core::on_position`] on the fields it needs (callable while a group is borrowed).
+/// [`Core::on_position`] on the fields it needs (callable while a group is borrowed): the
+/// position's full time when it is fresh and reported.
 pub(crate) fn receive(
     loc: &mut Locations,
     events: &mut VecDeque<Event>,
@@ -552,16 +558,12 @@ pub(crate) fn receive(
     position: Position,
     snr4: i8,
     now: Millis,
-) {
-    let Some(t) = loc.unix_s(now) else {
-        return;
-    };
-    let Some(at) = unwrap_time(position.t16, t) else {
-        return;
-    };
+) -> Option<u64> {
+    let t = loc.unix_s(now)?;
+    let at = unwrap_time(position.t16, t)?;
     let key = (from, group);
     if loc.heard.get(&key).is_some_and(|&last| at <= last) {
-        return;
+        return None;
     }
     loc.heard.insert(key, at);
     events.push_back(Event::Location {
@@ -571,9 +573,18 @@ pub(crate) fn receive(
         at,
         snr4,
     });
+    Some(at)
 }
 
 impl Locations {
+    pub(crate) const fn fix(&self) -> Option<Fix> {
+        self.fix
+    }
+
+    pub(crate) const fn sos_on(&self) -> bool {
+        self.sos
+    }
+
     fn unix_s(&self, now: Millis) -> Option<u64> {
         let off = self.offset_ms?;
         let now = i64::try_from(now).unwrap_or(i64::MAX);

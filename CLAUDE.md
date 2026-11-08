@@ -25,7 +25,8 @@ crates/
                         handshake, introduction (intro.rs), fragmentation and reassembly machines
                         (ACK-on-Error), fixed capacities
   lc-core/      std     sessions, contacts, paths, groups, airtime budget, send queue, events;
-                        location shares (location.rs, ADR-0011); identity tools (identity.rs:
+                        location shares (location.rs, ADR-0011); search mode (search.rs, particle
+                        filter in solver.rs, ADR-0016); identity tools (identity.rs:
                         phrase, fingerprint, safety number, card); SQLite store (store.rs,
                         ADR-0010); fake MeshCore network for tests
   lc-media/     std     media over LoRa (ADR-0012): Codec2 voice frames, AVIF thumbnails (preview + full)
@@ -92,6 +93,8 @@ cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # m
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 cargo test -p lc-core --release --test location -- --nocapture            # location: dead reckoning figures
 cargo test -p lc-core --release --test identity -- --nocapture            # introduction costs
+cargo test -p lc-core --release --test search -- --ignored --nocapture    # search: convergence figures
+cargo run --release -p lc-cli -- search /dev/cu.usbmodem14301 --csv local/rx.csv --at 45.19,5.72   # field recorder
 cargo run -p lc-media --release --example encode_voice -- in.wav out.c2 heard.wav   # voice fixtures
 cargo test -p lc-bridge                                                   # bridge over loopback (no Internet)
 cargo test -p lc-bridge --release -- --ignored n0 --nocapture            # bridge over n0's relays (Internet)

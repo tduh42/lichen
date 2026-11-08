@@ -12,6 +12,8 @@ pub mod fakenet;
 pub mod group;
 pub mod identity;
 pub mod location;
+pub mod search;
+pub mod solver;
 pub mod store;
 
 pub use crate::core::{
@@ -21,4 +23,6 @@ pub use content::{Announce, Content};
 pub use group::{Group, GroupId, Member};
 pub use lc_proto::Millis;
 pub use location::{Fix, Precision, Share};
+pub use search::{Measurement, SearchInfo, TargetFix};
+pub use solver::{Estimate, Heat, PathLoss};
 pub use store::Chat;
