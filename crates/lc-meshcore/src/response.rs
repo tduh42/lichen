@@ -80,6 +80,18 @@ pub enum Response<'a> {
     DeviceInfo(DeviceInfo<'a>),
     PrivateKey(&'a [u8; 64]),
     Disabled,
+    /// `GET_STATS` type 1: the radio's noise floor (dBm), last RSSI and SNR × 4, airtime (s).
+    RadioStats {
+        noise: i16,
+        rssi: i8,
+        snr4: i8,
+        tx_air_s: u32,
+        rx_air_s: u32,
+    },
+    /// `GET_STATS` of another type (not used).
+    OtherStats {
+        kind: u8,
+    },
     /// The companion's default flood scope: region name (NUL-trimmed) and key, if any.
     DefaultFloodScope {
         name: &'a [u8],
@@ -269,6 +281,16 @@ impl<'a> Response<'a> {
                 rtt_ms: r.u32().ok_or(t)?,
             },
             resp::MSG_WAITING => Response::MsgWaiting,
+            resp::STATS => match r.u8().ok_or(t)? {
+                1 => Response::RadioStats {
+                    noise: r.u16().ok_or(t)? as i16,
+                    rssi: r.i8().ok_or(t)?,
+                    snr4: r.i8().ok_or(t)?,
+                    tx_air_s: r.u32().ok_or(t)?,
+                    rx_air_s: r.u32().ok_or(t)?,
+                },
+                kind => Response::OtherStats { kind },
+            },
             resp::RAW_DATA => {
                 let snr4 = r.i8().ok_or(t)?;
                 let rssi = r.i8().ok_or(t)?;

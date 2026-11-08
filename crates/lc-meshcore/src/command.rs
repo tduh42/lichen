@@ -36,6 +36,10 @@ pub enum Command<'a> {
     SendRawPacket { priority: u8, raw: &'a [u8] },
     /// `[64]` → `DEFAULT_FLOOD_SCOPE`.
     GetDefaultFloodScope,
+    /// `[12] dBm i8` → `OK`, or `ERR 6` outside the radio's range (search, §11.1 POWER).
+    SetRadioTxPower { dbm: i8 },
+    /// `[56] type` (v8+) → `STATS`; type 1: noise floor, last RSSI and SNR, airtime (§11.2).
+    GetStats { kind: u8 },
 }
 
 /// Smallest `SEND_RAW_DATA` payload accepted by the firmware.
@@ -97,6 +101,8 @@ impl Command<'_> {
                 w.put(key)?;
             }
             Command::GetDefaultFloodScope => w.u8(cmd::GET_DEFAULT_FLOOD_SCOPE)?,
+            Command::SetRadioTxPower { dbm } => w.put(&[cmd::SET_RADIO_TX_POWER, dbm as u8])?,
+            Command::GetStats { kind } => w.put(&[cmd::GET_STATS, kind])?,
             Command::SendRawPacket { priority, raw } => {
                 if raw.len() < 2 {
                     return Err(EncodeError::Invalid);

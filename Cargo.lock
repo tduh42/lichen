@@ -3301,6 +3301,7 @@ dependencies = [
  "lc-media",
  "lc-meshcore",
  "lc-proto",
+ "qrcode",
  "tokio",
  "uniffi",
 ]

@@ -7,6 +7,7 @@ pub mod cmd {
     pub const GET_DEVICE_TIME: u8 = 5;
     pub const SET_DEVICE_TIME: u8 = 6;
     pub const SEND_SELF_ADVERT: u8 = 7;
+    pub const SET_RADIO_TX_POWER: u8 = 12;
     pub const RESET_PATH: u8 = 13;
     pub const GET_BATT_AND_STORAGE: u8 = 20;
     pub const DEVICE_QUERY: u8 = 22;
@@ -14,6 +15,7 @@ pub mod cmd {
     pub const SEND_RAW_DATA: u8 = 25;
     pub const GET_CONTACT_BY_KEY: u8 = 30;
     pub const SEND_PATH_DISCOVERY_REQ: u8 = 52;
+    pub const GET_STATS: u8 = 56;
     pub const GET_DEFAULT_FLOOD_SCOPE: u8 = 64;
     pub const SEND_RAW_PACKET: u8 = 65;
 }
@@ -33,6 +35,7 @@ pub mod resp {
     pub const DEVICE_INFO: u8 = 13;
     pub const PRIVATE_KEY: u8 = 14;
     pub const DISABLED: u8 = 15;
+    pub const STATS: u8 = 24;
     pub const DEFAULT_FLOOD_SCOPE: u8 = 28;
 
     pub const ADVERT: u8 = 0x80;

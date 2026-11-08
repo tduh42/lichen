@@ -292,3 +292,32 @@ fn route_has_transport() {
     assert!(Route::TransportFlood.has_transport());
     assert!(!Route::Direct.has_transport());
 }
+
+/// Search (§11.2): the radio's noise floor from `GET_STATS` type 1, and its TX power set by
+/// POWER (layouts from oxymesh's companion notes, stock MeshCore v1.18 `MyMesh.cpp` 1460, 1914).
+#[test]
+fn radio_stats_and_tx_power() {
+    let mut out = [0u8; 4];
+    assert_eq!(Command::GetStats { kind: 1 }.encode(&mut out), Ok(2));
+    assert_eq!(&out[..2], &[56, 1]);
+    assert_eq!(Command::SetRadioTxPower { dbm: -9 }.encode(&mut out), Ok(2));
+    assert_eq!(&out[..2], &[12, 0xF7]);
+    // STATS type 1: noise -117 dBm, last RSSI -98, SNR -5.5 dB (×4 = -22), 123 s TX, 4567 s RX.
+    let mut f = vec![24, 1];
+    f.extend_from_slice(&(-117i16).to_le_bytes());
+    f.extend_from_slice(&[(-98i8) as u8, (-22i8) as u8]);
+    f.extend_from_slice(&123u32.to_le_bytes());
+    f.extend_from_slice(&4567u32.to_le_bytes());
+    assert_eq!(
+        Response::decode(&f).unwrap(),
+        Response::RadioStats {
+            noise: -117,
+            rssi: -98,
+            snr4: -22,
+            tx_air_s: 123,
+            rx_air_s: 4567
+        }
+    );
+    assert_eq!(Response::decode(&[24, 0, 1, 2]).unwrap(), Response::OtherStats { kind: 0 });
+    assert!(Response::decode(&[24, 1, 0]).is_err(), "truncated");
+}

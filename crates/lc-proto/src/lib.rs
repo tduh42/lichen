@@ -25,6 +25,7 @@ pub mod intro;
 pub mod kdf;
 pub mod location;
 pub mod receiver;
+pub mod search;
 pub mod sender;
 pub mod session;
 pub mod window;
@@ -73,6 +74,7 @@ pub mod content {
     pub const ANNOUNCE: u8 = 0x04;
     pub const VOICE: u8 = 0x05;
     pub const MEDIA_REQUEST: u8 = 0x06;
+    pub const SEARCH: u8 = 0x07;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
 }
