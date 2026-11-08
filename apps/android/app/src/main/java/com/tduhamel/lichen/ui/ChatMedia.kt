@@ -60,6 +60,7 @@ import com.tduhamel.lichen.core.PreparedImage
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.decodeVoice
 import com.tduhamel.lichen.core.imageDatagramLen
+import com.tduhamel.lichen.core.voiceDatagramLenFor
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.clock
@@ -119,9 +120,18 @@ private fun VoiceNote(model: AppModel, m: StoredMessage, v: Message.Voice) {
         Waveform(v.data.copyOf(minOf(32, v.data.size)), if (m.outgoing) fg.copy(alpha = 0.55f) else t.tx2)
         Column {
             Text(clock(v.durationMs.toDouble() / 1000), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = fg)
-            Text(if (v.mode.toInt() == 0) "Codec2 700C" else "Codec2 1200", fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
+            Text(codecName(v.mode.toInt()), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
         }
     }
+}
+
+/** "Codec2 1600" for a VOICE mode (§13.1). */
+fun codecName(mode: Int): String = "Codec2 " + when (mode) {
+    0 -> "700C"
+    1 -> "1200"
+    2 -> "1600"
+    3 -> "2400"
+    else -> "?"
 }
 
 /** Bars drawn from the Codec2 bits: stable and decorative. */
@@ -265,8 +275,8 @@ fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     val t = lichen
     val res = LocalResources.current
     val seconds = model.recorder.elapsed
-    // 700C: 87.5 bytes a second, plus the 8-byte header.
-    val e = model.estimate(chat, (8 + seconds * 87.5).toUInt())
+    // The chosen mode's bytes for what is recorded so far.
+    val e = model.estimate(chat, voiceDatagramLenFor(model.voiceMode.toUByte(), (seconds * 1000).toUInt()))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         IconButton(
             onClick = { model.recorder.stop(keep = false) },
@@ -286,7 +296,7 @@ fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
         IconButton(
             onClick = {
                 val pcm = model.recorder.stop(keep = true) ?: return@IconButton
-                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList()), chat)?.let(onError)
+                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()), chat)?.let(onError)
             },
             colors = IconButtonDefaults.iconButtonColors(containerColor = t.actBg, contentColor = t.actFg),
             modifier = Modifier.size(48.dp),

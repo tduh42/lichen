@@ -37,6 +37,8 @@ struct RootView: View {
         .fullScreenCover(item: $model.sosAlert) { sos in
             SosReceivedView(sos: sos)
         }
+        // Notifications for messages and SOS: asked once the welcome screens are done.
+        .task(id: onboarded) { if onboarded { model.notifier.requestAuthorization() } }
         .onAppear {
             #if DEBUG
             if UserDefaults.standard.bool(forKey: "onboarding") { onboarded = false }

@@ -1,6 +1,11 @@
 package com.tduhamel.lichen
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import android.graphics.Color
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -21,10 +26,18 @@ import com.tduhamel.lichen.ui.isDark
 class MainActivity : ComponentActivity() {
     private val model: AppModel get() = (application as LichenApplication).model
 
+    /** Notifications for messages and SOS: asked once, at the first launch past onboarding. */
+    private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (BuildConfig.DEBUG) model.applyDebug(debugOptions())
         handle(intent)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent {
             val dark = isDark(model.appearance)
             LaunchedEffect(dark) {

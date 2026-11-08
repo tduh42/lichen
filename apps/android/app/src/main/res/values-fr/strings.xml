@@ -428,4 +428,15 @@
     <string name="connect_my_radio">Connecter ma radio</string>
     <string name="later">Plus tard</string>
     <string name="continue_">Continuer</string>
+    <!-- Qualité vocale, notifications SOS -->
+    <string name="voice_messages">Messages vocaux</string>
+    <string name="voice_compact">Compact</string>
+    <string name="voice_standard">Standard</string>
+    <string name="voice_clear">Clair</string>
+    <string name="voice_compact_note">Codec2 700C : 10 s ≈ 6 fragments sur un saut. Le moins de temps d\'antenne, robotique.</string>
+    <string name="voice_standard_note">Codec2 1600 : 10 s ≈ 13 fragments sur un saut. Plus clair, deux fois plus de temps d\'antenne.</string>
+    <string name="voice_clear_note">Codec2 2400 : 10 s ≈ 20 fragments sur un saut. Le plus clair, trois fois plus de temps d\'antenne.</string>
+    <string name="channel_sos">SOS</string>
+    <string name="sos_notification_title">SOS de %1$s</string>
+    <string name="sos_notification_text">Sa position exacte est sur la carte ; ouvre lichen pour la suivre.</string>
 </resources>

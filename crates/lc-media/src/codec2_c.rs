@@ -16,6 +16,7 @@ unsafe extern "C" {
     fn codec2_decode(c: *mut c_void, speech: *mut c_short, bytes: *const c_uchar);
     fn codec2_samples_per_frame(c: *mut c_void) -> c_int;
     fn codec2_bytes_per_frame(c: *mut c_void) -> c_int;
+    fn codec2_700c_eq(c: *mut c_void, en: bool);
 }
 
 /// A 700C encoder or decoder.
@@ -40,6 +41,15 @@ impl Codec700 {
             )
         };
         (n as usize == SAMPLES && b as usize == BYTES).then_some(c)
+    }
+
+    /// An encoder with 700C's equaliser on: it evens out the spectral envelope of the
+    /// microphone before quantisation (Codec2's `-eq` option), clearer on phone microphones.
+    pub fn encoder() -> Option<Self> {
+        let c = Self::new()?;
+        // SAFETY: the state is live; the flag only selects the encoder's equaliser.
+        unsafe { codec2_700c_eq(c.state, true) };
+        Some(c)
     }
 
     /// Encodes one frame of 320 samples into 4 bytes (28 bits, most significant first).

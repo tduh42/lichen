@@ -83,6 +83,12 @@ final class AppModel {
     /// Image previews whose full variant we asked for.
     var requestedFull: Set<Int64> = []
     let recorder = VoiceRecorder()
+    @ObservationIgnored let notifier = Notifier()
+    /// Codec2 mode of new voice messages (§13.1): 0 = 700C (compact), 2 = 1600 (standard),
+    /// 3 = 2400 (clear).
+    var voiceMode = UserDefaults.standard.object(forKey: "lichen.voiceMode") as? Int ?? 2 {
+        didSet { UserDefaults.standard.set(voiceMode, forKey: "lichen.voiceMode") }
+    }
     let player = VoicePlayer()
     /// The map is on screen: our position is needed even without a share.
     var mapVisible = false {
@@ -113,6 +119,11 @@ final class AppModel {
         companion.onFound = { [weak self] f in MainActor.assumeIsolated { self?.found = f } }
         companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.frame(d) } }
         locator.onFix = { [weak self] l in self?.gotFix(LocationFix(l)) }
+        // A tap on a notification opens its conversation.
+        notifier.onOpen = { [weak self] chat in
+            self?.tab = .messages
+            self?.debugOpen = chat
+        }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
         shares = core.shares()
@@ -314,14 +325,16 @@ final class AppModel {
                     return Int16(6_000 * sin(2 * .pi * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9)))
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
-                    _ = self?.sendVoice(prepareVoice(pcm: pcm), to: .contact(key: c.key))
+                    guard let self else { return }
+                    _ = self.sendVoice(prepareVoice(pcm: pcm, mode: UInt8(self.voiceMode)), to: .contact(key: c.key))
                 }
             }
             #endif
         case let .sessionEstablished(peer):
             secured.insert(peer)
-        case let .received(from, _, snr, _):
+        case let .received(from, message, snr, _):
             lastSnr[from] = snr
+            notifier.message(.contact(key: from), title: name(of: from), body: message.display)
             #if DEBUG
             if let say = debugSay {
                 debugSay = nil
@@ -339,8 +352,10 @@ final class AppModel {
                 debugOpen = .group(gid: g.gid)
             }
             #endif
-        case let .groupMessage(_, from, _, snr, _):
+        case let .groupMessage(gid, from, message, snr, _):
             lastSnr[from] = snr
+            let chat = ChatID.group(gid: gid)
+            notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
@@ -356,7 +371,12 @@ final class AppModel {
         case let .location(position, end):
             positions = core.positions(nowMs: now())
             if position.sos && !end {
-                if incomingSos?.from != position.from { sosAlert = position }
+                if incomingSos?.from != position.from {
+                    sosAlert = position
+                    notifier.sos(.contact(key: position.from),
+                                 title: String(localized: "SOS from \(name(of: position.from))"),
+                                 body: String(localized: "Their exact position is on the map; open lichen to follow it."))
+                }
                 incomingSos = position
                 sosLog.append(position)
             } else if incomingSos?.from == position.from {

@@ -52,6 +52,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -102,6 +103,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     val list = rememberLazyListState()
 
     val context = LocalContext.current
+    // On screen: its messages need no notification.
+    DisposableEffect(chat) {
+        model.visibleChat = chat
+        onDispose { if (model.visibleChat == chat) model.visibleChat = null }
+    }
     LaunchedEffect(chat) {
         model.load(chat)
         model.markRead(chat)

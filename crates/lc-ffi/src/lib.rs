@@ -1742,10 +1742,13 @@ pub struct PreparedVoice {
     pub data: Vec<u8>,
 }
 
-/// Encodes 8 kHz mono samples (at most 15 s are kept).
+/// Encodes 8 kHz mono samples (at most 15 s are kept) in Codec2 `mode` (§13.1: 0 = 700C,
+/// 2 = 1600, 3 = 2400; an unknown mode gives the default, 1600). The speech is prepared first
+/// (level, rumble), so the app hands in the microphone's samples as they are.
 #[uniffi::export]
-pub fn prepare_voice(pcm: Vec<i16>) -> PreparedVoice {
-    let e = lc_media::voice::encode(&pcm);
+pub fn prepare_voice(pcm: Vec<i16>, mode: u8) -> PreparedVoice {
+    let mode = lc_media::voice::Mode::from_code(mode).unwrap_or(lc_media::voice::ENCODE_MODE);
+    let e = lc_media::voice::encode_mode(&pcm, mode);
     PreparedVoice {
         mode: e.mode.code(),
         frames: e.frames,
@@ -1764,6 +1767,16 @@ pub fn decode_voice(mode: u8, frames: u16, data: Vec<u8>) -> Option<Vec<i16>> {
 #[uniffi::export]
 pub fn voice_datagram_len(voice: &PreparedVoice) -> u32 {
     8 + voice.data.len() as u32
+}
+
+/// Bytes of a VOICE datagram of `duration_ms` in `mode` (the cost while recording).
+#[uniffi::export]
+pub fn voice_datagram_len_for(mode: u8, duration_ms: u32) -> u32 {
+    let mode = lc_media::voice::Mode::from_code(mode).unwrap_or(lc_media::voice::ENCODE_MODE);
+    let frames = duration_ms
+        .div_ceil(lc_media::voice::FRAME_MS)
+        .min(u32::from(lc_media::voice::MAX_FRAMES)) as u16;
+    8 + lc_media::voice::data_len(mode, frames) as u32
 }
 
 /// An image made into a thumbnail: a preview (sent) and a full variant (on request).

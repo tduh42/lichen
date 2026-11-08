@@ -774,7 +774,7 @@ mod media {
             if let Some(c) = camille {
                 if step == 0 && now > 40_000 {
                     let pcm: Vec<i16> = (0..24_000).map(|i| ((i % 80) as i16 - 40) * 200).collect();
-                    let v = crate::prepare_voice(pcm);
+                    let v = crate::prepare_voice(pcm, 0);
                     assert_eq!((v.mode, v.frames, v.data.len()), (0, 75, 263));
                     core.send_voice(c.key.clone(), v, 1, now).unwrap();
                     step = 1;

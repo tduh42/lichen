@@ -69,9 +69,15 @@ struct ChatView: View {
         .onAppear {
             model.load(chat)
             model.markRead(chat)
+            // On screen: its messages need no notification.
+            model.notifier.visibleChat = chat
+            model.notifier.clear(chat)
             #if DEBUG
             if model.debugScreen == "group", isGroup { showingGroup = true }
             #endif
+        }
+        .onDisappear {
+            if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
         }
         .sheet(isPresented: Binding(get: { verifying != nil }, set: { if !$0 { verifying = nil } })) {
             if case let .contact(key) = chat {
@@ -217,6 +223,17 @@ private struct RenameAlert: ViewModifier {
     }
 }
 
+/// "Codec2 1600" for a VOICE mode (§13.1).
+func codecName(_ mode: UInt8) -> String {
+    switch mode {
+    case 0: "Codec2 700C"
+    case 1: "Codec2 1200"
+    case 2: "Codec2 1600"
+    case 3: "Codec2 2400"
+    default: "Codec2"
+    }
+}
+
 /// An icon in its own colour next to the text.
 struct TintedIconLabel: LabelStyle {
     let tint: Color
@@ -358,7 +375,7 @@ private struct VoiceNote: View {
                 Waveform(seed: data.prefix(32), color: message.outgoing ? Theme.actFg.opacity(0.55) : Theme.tx2)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(clock(TimeInterval(durationMs) / 1000)).font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    Text(mode == 0 ? "Codec2 700C" : "Codec2 1200")
+                    Text(codecName(mode))
                         .font(.system(size: 11))
                         .opacity(0.7)
                 }
@@ -618,8 +635,8 @@ private struct Composer: View {
     /// While recording: time, cost so far, cancel, send.
     private var recordingBar: some View {
         let seconds = model.recorder.elapsed
-        // 700C: 87.5 bytes a second, plus the 8-byte header.
-        let estimate = model.estimate(chat, datagramLen: 8 + UInt32(seconds * 87.5))
+        // The chosen mode's bytes for what is recorded so far.
+        let estimate = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: UInt8(model.voiceMode), durationMs: UInt32(seconds * 1000)))
         return HStack(spacing: 12) {
             Button {
                 _ = model.recorder.stop(keep: false)
@@ -644,7 +661,7 @@ private struct Composer: View {
             Spacer()
             Button {
                 guard let pcm = model.recorder.stop(keep: true) else { return }
-                let voice = prepareVoice(pcm: pcm)
+                let voice = prepareVoice(pcm: pcm, mode: UInt8(model.voiceMode))
                 if let e = model.sendVoice(voice, to: chat) { error = e }
             } label: {
                 Image(systemName: "arrow.up")

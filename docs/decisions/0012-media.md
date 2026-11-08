@@ -1,6 +1,6 @@
 # ADR-0012 — Media over LoRa: Codec2 voice, AVIF thumbnails with a preview
 
-- Status: accepted; voice in 700C since the vendored C library (same day)
+- Status: accepted; voice in 700C since the vendored C library (same day); 1600 by default since the first real tests (2026-11-08)
 - Date: 2026-11-06
 
 ## Context
@@ -17,6 +17,7 @@ The design allows two media over LoRa, direct only: voice messages in Codec2 700
 
 ## Consequences
 
+- **Voice quality, after the first real tests (2026-11-08).** 700C over a phone's microphone was judged very bad: robotic and hard to follow. The apps now encode in 1600 by default (10 s = 2,000 bytes, 13 fragments, about 25 s of airtime on one hop at SF8 / 62.5 kHz), with 700C (Compact) and 2400 (Clear, 20 fragments) in Settings; the speech is high-passed and levelled before encoding, and 700C uses its equaliser. 1600 and 2400 come from the pure-Rust `codec2` port, as 1200 does; the cost is shown before sending, as for every radio send.
 - Both Codec2 options are LGPL-2.1: distributing the app (App Store) will need the relinking terms of the LGPL to be met (object files of the app available, or the codec in a separate dynamic framework).
 - rav1e adds a few megabytes to the app and to build times.
 - A receiver that never asks for the full image costs the network only the preview.

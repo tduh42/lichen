@@ -145,6 +145,32 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 Text(stringResource(R.string.transports_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
             }
+            item { SectionLabel(stringResource(R.string.voice_messages), Modifier.padding(top = 10.dp)) }
+            item {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    val options = listOf(0 to R.string.voice_compact, 2 to R.string.voice_standard, 3 to R.string.voice_clear)
+                    options.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = model.voiceMode == mode,
+                            onClick = { model.chooseVoiceMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                            colors = segmentedColors(),
+                        ) { Text(stringResource(label)) }
+                    }
+                }
+            }
+            item {
+                Text(
+                    stringResource(
+                        when (model.voiceMode) {
+                            0 -> R.string.voice_compact_note
+                            3 -> R.string.voice_clear_note
+                            else -> R.string.voice_standard_note
+                        },
+                    ),
+                    fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
             item { SectionLabel(stringResource(R.string.position), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {

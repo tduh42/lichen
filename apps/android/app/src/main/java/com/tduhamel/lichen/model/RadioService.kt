@@ -63,6 +63,7 @@ object Notifications {
     const val SERVICE_ID = 1
     private const val RADIO = "radio"
     private const val MESSAGES = "messages"
+    private const val SOS = "sos"
     const val EXTRA_CHAT = "chat"
 
     fun channels(context: Context) {
@@ -73,6 +74,29 @@ object Notifications {
         m.createNotificationChannel(
             NotificationChannel(MESSAGES, context.getString(R.string.channel_messages), NotificationManager.IMPORTANCE_HIGH),
         )
+        m.createNotificationChannel(
+            NotificationChannel(SOS, context.getString(R.string.channel_sos), NotificationManager.IMPORTANCE_HIGH).apply {
+                enableVibration(true)
+                setBypassDnd(true)
+            },
+        )
+    }
+
+    /** An SOS heard: on its own channel, as an alarm. */
+    fun sos(context: Context, chat: ChatId, name: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        val n = NotificationCompat.Builder(context, SOS)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.sos_notification_title, name))
+            .setContentText(context.getString(R.string.sos_notification_text))
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(true)
+            .setContentIntent(open(context, null))
+            .build()
+        NotificationManagerCompat.from(context).notify(("sos" + chat.hex).hashCode(), n)
     }
 
     private fun open(context: Context, chat: ChatId?): PendingIntent {

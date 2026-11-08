@@ -60,15 +60,25 @@ class CoreBindingsTest {
 
     @Test
     fun voiceRoundTrip() {
-        // Two seconds of a 300 Hz tone at 8 kHz, through Codec2 700C and back.
-        val pcm = List(16_000) { i -> (8_000 * kotlin.math.sin(2 * Math.PI * 300 * i / 8_000.0)).toInt().toShort() }
-        val v = prepareVoice(pcm)
-        assertEquals(0, v.mode.toInt())
-        assertTrue("about 2 s", v.durationMs.toInt() in 1_900..2_100)
-        val back = decodeVoice(v.mode, v.frames, v.data)!!
-        assertTrue("decoded samples", back.size > 15_000)
-        val energy = back.sumOf { it.toLong() * it }.toDouble() / back.size
-        assertTrue("not silence", energy > 1e5)
+        // Two seconds of a voiced, speech-like signal (a gliding pitch and its harmonics; Codec2
+        // models speech, a lone sine comes out flat), through each mode the apps offer and back.
+        var phase = 0.0
+        val pcm = List(16_000) { i ->
+            val t = i / 8_000.0
+            phase += 2 * Math.PI * (140 + 40 * kotlin.math.sin(t * 2.1)) / 8_000
+            val env = maxOf(0.05, 0.5 + 0.5 * kotlin.math.sin(t * 2 * Math.PI * 3))
+            val s = (1 until 8).sumOf { h -> kotlin.math.sin(phase * h) / h }
+            (s * env * 6_000).toInt().toShort()
+        }
+        for (mode in listOf(0, 2, 3)) {
+            val v = prepareVoice(pcm, mode.toUByte())
+            assertEquals(mode, v.mode.toInt())
+            assertTrue("about 2 s", v.durationMs.toInt() in 1_900..2_100)
+            val back = decodeVoice(v.mode, v.frames, v.data)!!
+            assertTrue("decoded samples", back.size > 15_000)
+            val energy = back.sumOf { it.toLong() * it }.toDouble() / back.size
+            assertTrue("mode $mode: not silence", energy > 1e5)
+        }
     }
 
     @Test

@@ -422,4 +422,15 @@
     <string name="connect_my_radio">Connect my radio</string>
     <string name="later">Later</string>
     <string name="continue_">Continue</string>
+    <!-- Voice quality, SOS notifications -->
+    <string name="voice_messages">Voice messages</string>
+    <string name="voice_compact">Compact</string>
+    <string name="voice_standard">Standard</string>
+    <string name="voice_clear">Clear</string>
+    <string name="voice_compact_note">Codec2 700C: 10 s ≈ 6 fragments on one hop. The least airtime, robotic.</string>
+    <string name="voice_standard_note">Codec2 1600: 10 s ≈ 13 fragments on one hop. Clearer, twice the airtime.</string>
+    <string name="voice_clear_note">Codec2 2400: 10 s ≈ 20 fragments on one hop. The clearest, three times the airtime.</string>
+    <string name="channel_sos">SOS</string>
+    <string name="sos_notification_title">SOS from %1$s</string>
+    <string name="sos_notification_text">Their exact position is on the map; open lichen to follow it.</string>
 </resources>

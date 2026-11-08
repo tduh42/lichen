@@ -801,6 +801,16 @@
         }
       }
     },
+    "Clear": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clair"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "fr": {
@@ -821,22 +831,32 @@
         }
       }
     },
-    "Codec2 1200": {
+    "Codec2 1600: 10 s ≈ 13 fragments on one hop. Clearer, twice the airtime.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codec2 1200"
+            "value": "Codec2 1600 : 10 s ≈ 13 fragments sur un saut. Plus clair, deux fois plus de temps d'antenne."
           }
         }
       }
     },
-    "Codec2 700C": {
+    "Codec2 2400: 10 s ≈ 20 fragments on one hop. The clearest, three times the airtime.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codec2 700C"
+            "value": "Codec2 2400 : 10 s ≈ 20 fragments sur un saut. Le plus clair, trois fois plus de temps d'antenne."
+          }
+        }
+      }
+    },
+    "Codec2 700C: 10 s ≈ 6 fragments on one hop. The least airtime, robotic.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codec2 700C : 10 s ≈ 6 fragments sur un saut. Le moins de temps d'antenne, robotique."
           }
         }
       }
@@ -847,6 +867,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Replier"
+          }
+        }
+      }
+    },
+    "Compact": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact"
           }
         }
       }
@@ -2961,6 +2991,16 @@
         }
       }
     },
+    "SOS from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS de %@"
+          }
+        }
+      }
+    },
     "SOS on": {
       "localizations": {
         "fr": {
@@ -3331,6 +3371,16 @@
         }
       }
     },
+    "Standard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        }
+      }
+    },
     "Start the search": {
       "localizations": {
         "fr": {
@@ -3487,6 +3537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le transfert a pris trop de temps."
+          }
+        }
+      }
+    },
+    "Their exact position is on the map; open lichen to follow it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa position exacte est sur la carte ; ouvre lichen pour la suivre."
           }
         }
       }
@@ -3787,6 +3847,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Message vocal (%@)"
+          }
+        }
+      }
+    },
+    "Voice messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages vocaux"
           }
         }
       }

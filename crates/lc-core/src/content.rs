@@ -13,11 +13,13 @@ pub const IMAGE_MAX: usize = 4_096;
 /// FILE kind of an AVIF image.
 const KIND_AVIF: u8 = 1;
 
-/// Bits per Codec2 frame of a VOICE mode, if known.
+/// Bits per 40 ms of a VOICE mode, if known (§13.1).
 pub const fn voice_bits(mode: u8) -> Option<usize> {
     match mode {
         0 => Some(28),
         1 => Some(48),
+        2 => Some(64),
+        3 => Some(96),
         _ => None,
     }
 }

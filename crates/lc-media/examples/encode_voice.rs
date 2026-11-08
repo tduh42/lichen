@@ -1,5 +1,6 @@
 //! Encodes an 8 kHz mono 16-bit WAV into a voice fixture: `mode u8 ‖ frames u16 ‖ data`; with
-//! a third path, also writes what the receiver will hear, as a WAV.
+//! a third path, also writes what the receiver will hear, as a WAV. `LICHEN_VOICE_MODE` picks
+//! the mode (§13.1: 0 = 700C, 2 = 1600, the default, 3 = 2400).
 //! Usage: cargo run -p lc-media --example encode_voice -- in.wav out.c2 [decoded.wav]
 
 fn main() {
@@ -24,7 +25,12 @@ fn main() {
         }
         i += 8 + len + (len & 1);
     };
-    let e = lc_media::voice::encode(&pcm);
+    let mode = std::env::var("LICHEN_VOICE_MODE")
+        .ok()
+        .and_then(|m| m.parse().ok())
+        .and_then(lc_media::voice::Mode::from_code)
+        .unwrap_or(lc_media::voice::ENCODE_MODE);
+    let e = lc_media::voice::encode_mode(&pcm, mode);
     let mut out = vec![e.mode.code()];
     out.extend_from_slice(&e.frames.to_le_bytes());
     out.extend_from_slice(&e.data);

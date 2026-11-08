@@ -222,6 +222,19 @@ class AppModel(private val app: Application) {
     /** The app is on screen: received messages need no notification. */
     var inForeground = false
 
+    /** The conversation on screen: its messages need no notification. */
+    var visibleChat: ChatId? = null
+
+    /** Codec2 mode of new voice messages (§13.1): 0 = 700C (compact), 2 = 1600 (standard),
+     * 3 = 2400 (clear). */
+    var voiceMode by mutableStateOf(prefs.getInt(VOICE_MODE, 2))
+        private set
+
+    fun chooseVoiceMode(mode: Int) {
+        voiceMode = mode
+        prefs.edit { putInt(VOICE_MODE, mode) }
+    }
+
     // USB first: the Bluetooth link may report its state while it is built.
     val usb = UsbCompanion(app, ::usbChanged, ::frame) { usbDevices = it }
     val tcp = TcpCompanion(::tcpChanged, ::frame)
@@ -486,6 +499,8 @@ class AppModel(private val app: Application) {
                 nodeKey = e.key
                 nodeName = e.name
                 radio = e.radio
+                // The ongoing notification names the node, not the link's address.
+                if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
             is LichenEvent.IdentityLearned -> contacts = people()
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
@@ -530,7 +545,10 @@ class AppModel(private val app: Application) {
                 positions = core.positions(now())
                 val p = e.position
                 if (p.sos && !e.end) {
-                    if (incomingSos?.from?.contentEquals(p.from) != true) sosAlert = p
+                    if (incomingSos?.from?.contentEquals(p.from) != true) {
+                        sosAlert = p
+                        Notifications.sos(app, ChatId.contact(p.from), name(p.from))
+                    }
                     incomingSos = p
                     sosLog = sosLog + p
                 } else if (incomingSos?.from?.contentEquals(p.from) == true) {
@@ -547,8 +565,9 @@ class AppModel(private val app: Application) {
     }
 
     /** A notification for a message received while the app is not on screen. */
+    /** A notification for a message, unless its conversation is on screen. */
     private fun notify(chat: ChatId, title: String, text: String) {
-        if (!inForeground) Notifications.message(app, chat, title, text)
+        if (!(inForeground && visibleChat == chat)) Notifications.message(app, chat, title, text)
     }
 
     /** Debug extras `share` (100 m with that contact) and `sosDemo` (an SOS from Julien). */
@@ -581,7 +600,7 @@ class AppModel(private val app: Application) {
         }
         scope.launch {
             delay(20_000)
-            sendVoice(prepareVoice(pcm), ChatId.contact(c.key))
+            sendVoice(prepareVoice(pcm, voiceMode.toUByte()), ChatId.contact(c.key))
         }
     }
 
@@ -1139,5 +1158,6 @@ class AppModel(private val app: Application) {
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"
         private const val ONBOARDED = "onboarded"
+        private const val VOICE_MODE = "lichen.voiceMode"
     }
 }

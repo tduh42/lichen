@@ -60,6 +60,18 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.tx2)
                         .padding(.horizontal, 4)
                         .fixedSize(horizontal: false, vertical: true)
+                    SectionLabel("Voice messages").padding(.top, 10)
+                    Picker("Voice messages", selection: $model.voiceMode) {
+                        Text("Compact").tag(0)
+                        Text("Standard").tag(2)
+                        Text("Clear").tag(3)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(voiceNote)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.tx2)
+                        .padding(.horizontal, 4)
+                        .fixedSize(horizontal: false, vertical: true)
                     SectionLabel("Position").padding(.top, 10)
                     CardList {
                         CardRow(title: String(localized: "Send threshold"),
@@ -177,6 +189,14 @@ struct SettingsView: View {
             }
         }
         .card(padding: 16)
+    }
+
+    private var voiceNote: String {
+        switch model.voiceMode {
+        case 0: String(localized: "Codec2 700C: 10 s ≈ 6 fragments on one hop. The least airtime, robotic.")
+        case 3: String(localized: "Codec2 2400: 10 s ≈ 20 fragments on one hop. The clearest, three times the airtime.")
+        default: String(localized: "Codec2 1600: 10 s ≈ 13 fragments on one hop. Clearer, twice the airtime.")
+        }
     }
 
     private var irohLine: String {

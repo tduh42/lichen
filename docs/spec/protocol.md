@@ -382,9 +382,10 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 `ts u32 ‖ mode u8 ‖ frames u16 ‖ data`
 
-- `mode`: 0 = Codec2 700C (28 bits per 40 ms frame, what lichen sends), 1 = Codec2 1200 (48 bits per 40 ms frame, still decoded). Audio is 8 kHz mono.
+- `mode`, with its bits per 40 ms frame: 0 = Codec2 700C (28), 1 = Codec2 1200 (48), 2 = Codec2 1600 (64), 3 = Codec2 2400 (96: two 20 ms Codec2 frames of 48 bits). `frames` counts 40 ms frames in every mode. Audio is 8 kHz mono. The sender picks the mode (the apps: 1600 by default, 700C to save airtime, 2400 for clarity); a receiver decodes all four.
 - `data`: the frames' bits back to back, most significant bit first, `⌈frames × bits / 8⌉` bytes; anything else is rejected.
-- At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200. Ten seconds is 875 bytes (6 fragments on one hop) in 700C, 1,500 (10 fragments) in 1200.
+- At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200, 3,000 in 1600, 4,500 in 2400. Ten seconds on one hop: 875 bytes (6 fragments) in 700C, 2,000 (13) in 1600, 3,000 (20) in 2400.
+- Before encoding, the sender removes DC and rumble (high-pass at about 100 Hz) and brings the speech to about -20 dBFS (at most +24 dB, peaks softly limited); in 700C the encoder's equaliser is on. Codec2 is sensitive to level: a quiet recording comes out muffled.
 
 ### 13.2 FILE (0x02): images
 
