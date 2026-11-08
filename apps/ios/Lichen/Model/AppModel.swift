@@ -834,6 +834,15 @@ final class AppModel {
 
     func contact(_ node: Data) -> ContactInfo? { contacts.first { $0.key == node } }
 
+    /// Names a contact on this phone only (never sent); nil or blank: its node's name again.
+    func renameContact(_ node: Data, to name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        try? core.renameContact(node: node, name: (trimmed?.isEmpty ?? true) ? nil : trimmed)
+        contacts = core.contacts().filter(\.person)
+        groups = core.groups()
+        pump()
+    }
+
     func safetyNumber(with node: Data) -> [String]? { try? core.safetyNumber(node: node) }
 
     /// The safety number with a new identity a contact presented (before accepting it).

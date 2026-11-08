@@ -90,7 +90,10 @@ pub struct Radio {
 pub struct ContactInfo {
     /// The node key.
     pub key: Vec<u8>,
+    /// The nickname the user gave, else the node's name.
     pub name: String,
+    /// The name the node advertises.
+    pub node_name: String,
     /// Repeaters on the known path, if any.
     pub hops: Option<u8>,
     /// The phone identity, once known.
@@ -102,10 +105,14 @@ pub struct ContactInfo {
 }
 
 impl ContactInfo {
-    fn of(c: &lc_core::Contact) -> Self {
+    fn of(c: &lc_core::Contact, nicknames: &HashMap<PubKey, String>) -> Self {
         Self {
             key: c.key.to_vec(),
-            name: c.name.clone(),
+            name: nicknames
+                .get(&c.key)
+                .cloned()
+                .unwrap_or_else(|| c.name.clone()),
+            node_name: c.name.clone(),
             hops: c.out_path.as_ref().map(lc_core::OwnedPath::hops),
             identity: c.identity.map(|i| i.to_vec()),
             verified: c.verified,
@@ -697,6 +704,8 @@ struct Inner {
     extra: VecDeque<LichenEvent>,
     /// The latest `now_ms` the app gave (to answer requests from inside event handling).
     last_now: u64,
+    /// Names the user gave contacts on this phone (node → nickname).
+    nicknames: HashMap<PubKey, String>,
 }
 
 impl Inner {
@@ -719,6 +728,7 @@ impl Inner {
             return;
         };
         let _ = store.fail_unfinished();
+        self.nicknames = store.nicknames().unwrap_or_default();
         for c in store.contacts().unwrap_or_default() {
             self.core.restore_contact(c);
         }
@@ -997,6 +1007,7 @@ impl LichenCore {
             store: None,
             data_dir: data_dir.map(PathBuf::from),
             inflight: HashMap::new(),
+            nicknames: HashMap::new(),
             extra: VecDeque::new(),
             last_now: 0,
         };
@@ -1121,7 +1132,7 @@ impl LichenCore {
             .core
             .contacts()
             .find(|k| k.key == c.node)
-            .map(ContactInfo::of)
+            .map(|k| ContactInfo::of(k, &i.nicknames))
             .ok_or(LichenError::UnknownContact)?;
         i.extra.push_back(LichenEvent::ContactsUpdated);
         Ok(out)
@@ -1212,9 +1223,33 @@ impl LichenCore {
     }
 
     pub fn contacts(&self) -> Vec<ContactInfo> {
-        let mut v: Vec<ContactInfo> = self.lock().core.contacts().map(ContactInfo::of).collect();
+        let i = self.lock();
+        let mut v: Vec<ContactInfo> = i
+            .core
+            .contacts()
+            .map(|c| ContactInfo::of(c, &i.nicknames))
+            .collect();
         v.sort_by_key(|c| c.name.to_lowercase());
         v
+    }
+
+    /// Names contact `node` on this phone only (`None` or blank: its node's name again).
+    pub fn rename_contact(&self, node: Vec<u8>, name: Option<String>) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        if !i.core.contacts().any(|c| c.key == k) {
+            return Err(LichenError::UnknownContact);
+        }
+        let name = name.map(|n| n.trim().to_owned()).filter(|n| !n.is_empty());
+        if let Some(s) = &i.store {
+            let _ = s.set_nickname(&k, name.as_deref());
+        }
+        match name {
+            Some(n) => i.nicknames.insert(k, n),
+            None => i.nicknames.remove(&k),
+        };
+        i.extra.push_back(LichenEvent::ContactsUpdated);
+        Ok(())
     }
 
     pub fn groups(&self) -> Vec<GroupInfo> {
@@ -1238,7 +1273,12 @@ impl LichenCore {
                         let contact = i.core.contacts().find(|c| c.key == m.node);
                         ContactInfo {
                             key: m.node.to_vec(),
-                            name: m.name.clone(),
+                            name: i
+                                .nicknames
+                                .get(&m.node)
+                                .cloned()
+                                .unwrap_or_else(|| m.name.clone()),
+                            node_name: m.name.clone(),
                             hops: None,
                             identity: Some(m.key.to_vec()),
                             verified: contact

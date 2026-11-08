@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var showingGroup = false
     /// The verification sheet: an empty value for the current identity, else a pending one.
     @State private var verifying: Data?
+    @State private var renaming = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +18,11 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         sessionLine
-                        ForEach(messages, id: \.id) { m in
+                        ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
+                            // A separator when the day changes: "Today", "Yesterday", the date.
+                            if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
+                                DaySeparator(date: m.date)
+                            }
                             MessageView(message: m, isGroup: isGroup).id(m.id)
                         }
                         if let failed = lastFailure {
@@ -28,6 +33,8 @@ struct ChatView: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
                 }
+                // Opens on the latest messages; later ones scroll into view.
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) {
                     if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
                     model.markRead(chat)
@@ -41,10 +48,13 @@ struct ChatView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
+                // A contact's name: tap to rename it on this phone.
                 VStack(spacing: 2) {
                     Text(model.title(of: chat)).font(.system(size: 17, weight: .semibold))
                     Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.tx2)
                 }
+                .onTapGesture { if !isGroup { renaming = true } }
+                .accessibilityAddTraits(isGroup ? [] : .isButton)
             }
             if isGroup {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -73,6 +83,12 @@ struct ChatView: View {
         } message: {
             Text(error ?? "")
         }
+        .renameAlert(node: chatKey, isPresented: $renaming)
+    }
+
+    private var chatKey: Data? {
+        if case let .contact(key) = chat { return key }
+        return nil
     }
 
     private var messages: [StoredMessage] { model.chats[chat] ?? [] }
@@ -126,7 +142,10 @@ struct ChatView: View {
     private var subtitle: String {
         switch chat {
         case let .contact(key):
-            let hops = hopsBadge(model.contacts.first { $0.key == key }?.hops)
+            let c = model.contacts.first { $0.key == key }
+            // Renamed: the node's own name first.
+            let hops = [c.flatMap { $0.nodeName != $0.name ? $0.nodeName : nil }, hopsBadge(c?.hops)]
+                .compactMap { $0 }.joined(separator: " · ")
             if let snr = model.lastSnr[key] {
                 return String(localized: "\(hops) · SNR \(String(format: "%.0f", snr)) dB")
             }
@@ -139,6 +158,62 @@ struct ChatView: View {
             }
             return String(localized: "\(g.members.count) members · flood")
         }
+    }
+}
+
+/// "Today", "Yesterday", or the date, between the messages of two days.
+struct DaySeparator: View {
+    let date: Date
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.tx2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+    }
+
+    private var label: String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return String(localized: "Today") }
+        if cal.isDateInYesterday(date) { return String(localized: "Yesterday") }
+        return date.formatted(.dateTime.weekday(.wide).day().month(.wide))
+    }
+}
+
+extension View {
+    /// Names a contact on this phone only (a nickname in the app's database): never sent; the
+    /// radio's contact list and the other phones keep their names. Blank: the node's name.
+    func renameAlert(node: Data?, isPresented: Binding<Bool>) -> some View {
+        modifier(RenameAlert(node: node, isPresented: isPresented))
+    }
+}
+
+private struct RenameAlert: ViewModifier {
+    let node: Data?
+    @Binding var isPresented: Bool
+    @Environment(AppModel.self) private var model
+    @State private var name = ""
+
+    func body(content: Content) -> some View {
+        let c = node.flatMap { model.contact($0) }
+        content
+            .alert("Rename", isPresented: $isPresented) {
+                TextField(c?.nodeName ?? "", text: $name)
+                Button("Save") { if let node { model.renameContact(node, to: name) } }
+                if let c, c.name != c.nodeName {
+                    Button("Use \(c.nodeName) again") { if let node { model.renameContact(node, to: nil) } }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Only on this phone: their radio calls itself \(c?.nodeName ?? ""), and they are not told.")
+            }
+            .onChange(of: isPresented) {
+                if isPresented, let c { name = c.name != c.nodeName ? c.name : "" }
+            }
     }
 }
 
@@ -231,9 +306,11 @@ private struct MessageView: View {
                     .frame(width: 220)
                     .padding(.top, 2)
             }
-            if message.outgoing, let caption {
-                Text(caption).font(.system(size: 11)).foregroundStyle(Theme.tx2)
-            }
+            // When it was sent (ours) or received, then how it went.
+            let time = message.date.formatted(date: .omitted, time: .shortened)
+            Text(message.outgoing ? ([time] + [caption].compactMap { $0 }).joined(separator: " · ") : time)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.tx2)
         }
         .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
         .padding(message.outgoing ? .leading : .trailing, 64)

@@ -814,6 +814,14 @@ class AppModel(private val app: Application) {
 
     fun group(chat: ChatId): GroupInfo? = if (chat.group) groups.firstOrNull { it.gid.hex() == chat.hex } else null
 
+    /** Names a contact on this phone only; null or blank: its node's name again. */
+    fun renameContact(node: ByteArray, name: String?) {
+        runCatching { core.renameContact(node, name?.trim()?.ifEmpty { null }) }
+        contacts = people()
+        groups = core.groups()
+        pump()
+    }
+
     // ----- identity (ADR-0013) -----
 
     fun changeName(name: String) {

@@ -95,6 +95,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var error by remember { mutableStateOf<String?>(null) }
     // The verification sheet: an empty array for the current identity, else a pending one.
     var verifying by remember { mutableStateOf<ByteArray?>(null) }
+    var renaming by remember { mutableStateOf(false) }
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
@@ -109,8 +110,17 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             "verify" -> if (!chat.group) verifying = ByteArray(0)
         }
     }
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) list.animateScrollToItem(messages.size)
+    // The list's rows: the session line, a separator per day, the messages, a failure banner.
+    val days = messages.indices.count { it == 0 || dayOf(messages[it - 1].atMs) != dayOf(messages[it].atMs) }
+    val failedLast = messages.lastOrNull { it.outgoing }?.status is MessageStatus.Failed
+    val rows = 1 + days + messages.size + (if (failedLast) 1 else 0)
+    var opened by remember(chat) { mutableStateOf(false) }
+    LaunchedEffect(rows) {
+        // Opens on the latest messages at once; later ones slide in.
+        if (messages.isNotEmpty()) {
+            if (opened) list.animateScrollToItem(rows - 1) else list.scrollToItem(rows - 1)
+            opened = true
+        }
         model.markRead(chat)
     }
 
@@ -120,7 +130,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
             },
             title = {
-                Column {
+                // A contact's name: tap to rename it on this phone.
+                Column(if (chat.group) Modifier else Modifier.clickable { renaming = true }) {
                     Text(model.title(chat), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     Text(subtitle(model, chat), fontSize = 12.sp, color = t.tx2)
                 }
@@ -141,7 +152,13 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { SessionLine(model, chat) { verifying = it } }
-            items(messages, key = { it.id }) { m -> MessageBubble(model, m, chat.group) }
+            messages.forEachIndexed { i, m ->
+                // A separator when the day changes: "Today", "Yesterday", the date.
+                if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) {
+                    item(key = "day" + dayOf(m.atMs)) { DaySeparator(context, m.atMs) }
+                }
+                item(key = m.id) { MessageBubble(model, m, chat.group) }
+            }
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
                 item { FailureBanner(model, failed) { error = model.resend(failed) } }
@@ -151,6 +168,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     }
 
     val node = chat.contactKey
+    if (renaming && node != null) RenameDialog(model, node) { renaming = false }
     val v = verifying
     if (node != null && v != null) {
         VerifySheet(model, node, v.takeIf { it.isNotEmpty() }) { verifying = null }
@@ -171,7 +189,9 @@ private fun subtitle(model: AppModel, chat: ChatId): String {
     val res = LocalResources.current
     if (!chat.group) {
         val key = chat.contactKey ?: return ""
-        val hops = hopsBadge(res, model.contact(key)?.hops)
+        val c = model.contact(key)
+        // Renamed: the node's own name first.
+        val hops = listOfNotNull(c?.nodeName?.takeIf { it != c.name }, hopsBadge(res, c?.hops)).joinToString(" · ")
         val snr = model.lastSnr[chat.hex] ?: return hops
         return stringResource(R.string.hops_snr, hops, "%.0f".format(snr))
     }
@@ -276,7 +296,9 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean) {
         if (m.outgoing && status is MessageStatus.Sending && status.total.toInt() > 1) {
             FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
         }
-        if (m.outgoing) caption(m)?.let { Text(it, fontSize = 11.sp, color = t.tx2) }
+        // When it was sent (ours) or received, then how it went.
+        val time = timeOf(LocalContext.current, m.atMs)
+        Text(if (m.outgoing) listOfNotNull(time, caption(m)).joinToString(" · ") else time, fontSize = 11.sp, color = t.tx2)
     }
 }
 

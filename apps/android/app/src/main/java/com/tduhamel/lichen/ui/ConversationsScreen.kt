@@ -23,7 +23,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -70,7 +74,10 @@ private data class Row(
     val atMs: Long?,
     val badge: String,
     val unread: Int,
-)
+) {
+    /** A contact (can be renamed), not a group. */
+    val contact: Boolean get() = !id.group
+}
 
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,6 +87,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
     val res = LocalResources.current
     var composing by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<Row?>(null) }
+    var renaming by remember { mutableStateOf<Row?>(null) }
 
     val rows = buildList {
         for (g in model.groups) {
@@ -140,7 +148,9 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
                     CardList {
                         rows.forEachIndexed { i, row ->
                             if (i > 0) CardDivider(inset = 72.dp)
-                            ChatRow(row, open = { open(row.id) }, delete = { deleting = row })
+                            SwipeToDelete({ deleting = row }) {
+                                ChatRow(row, open = { open(row.id) }, delete = { deleting = row }, rename = { renaming = row })
+                            }
                         }
                     }
                 }
@@ -154,6 +164,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
             open(it)
         })
     }
+    renaming?.let { row -> RenameDialog(model, row.key) { renaming = null } }
     deleting?.let { row ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -180,13 +191,36 @@ private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit) {
+private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -> Unit) {
     val t = lichen
     val context = LocalContext.current
+    var menu by remember { mutableStateOf(false) }
+    Box {
+    DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+        if (row.contact) {
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rename)) },
+                leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                onClick = {
+                    menu = false
+                    rename()
+                },
+            )
+        }
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.delete_conversation), color = t.sos) },
+            leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = t.sos) },
+            onClick = {
+                menu = false
+                delete()
+            },
+        )
+    }
     Row(
         Modifier
             .fillMaxWidth()
-            .combinedClickable(onClick = open, onLongClick = delete)
+            .background(t.s1)
+            .combinedClickable(onClick = open, onLongClick = { menu = true })
             .padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -220,6 +254,7 @@ private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit) {
             }
         }
     }
+}
 }
 
 /** "11:20" today, "Yesterday", or a short date. */

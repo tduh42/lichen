@@ -4,6 +4,7 @@
 //! The core stays IO-free: the runner (`lc-ffi`) records what the core reports and restores
 //! contacts and groups at start.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
@@ -27,7 +28,8 @@ pub use rusqlite::Error;
 /// 2: location shares and positions (tables added, nothing migrated).
 /// 3: images (`messages.media_id`, added to older databases; `media` table).
 /// 4: phone identities (ADR-0013): `contacts.identity`, `contacts.verified`, added likewise.
-const VERSION: i32 = 4;
+/// 5: nicknames the user gives contacts (table added, nothing migrated).
+const VERSION: i32 = 5;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -156,6 +158,10 @@ CREATE TABLE IF NOT EXISTS contacts (
     path BLOB,
     identity BLOB,
     verified INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS nicknames (
+    key BLOB PRIMARY KEY,
+    name TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS groups (
     gid BLOB PRIMARY KEY,
@@ -378,6 +384,33 @@ impl Store {
     }
 
     // ----- contacts and groups ---------------------------------------------------------
+
+    /// The name the user gives contact `key` on this phone, or none (the node's own name
+    /// again). Never sent: the radio's contact list and the other phones keep theirs.
+    pub fn set_nickname(&self, key: &PubKey, name: Option<&str>) -> Result<(), Error> {
+        match name.map(str::trim).filter(|n| !n.is_empty()) {
+            Some(n) => self.conn.execute(
+                "INSERT INTO nicknames (key, name) VALUES (?1, ?2)
+                 ON CONFLICT (key) DO UPDATE SET name = ?2",
+                params![key.as_slice(), n],
+            )?,
+            None => self.conn.execute(
+                "DELETE FROM nicknames WHERE key = ?1",
+                params![key.as_slice()],
+            )?,
+        };
+        Ok(())
+    }
+
+    pub fn nicknames(&self) -> Result<HashMap<PubKey, String>, Error> {
+        let mut st = self.conn.prepare("SELECT key, name FROM nicknames")?;
+        let rows = st.query_map([], |r| {
+            let key: Vec<u8> = r.get(0)?;
+            let name: String = r.get(1)?;
+            Ok(PubKey::try_from(key.as_slice()).ok().map(|k| (k, name)))
+        })?;
+        Ok(rows.filter_map(Result::ok).flatten().collect())
+    }
 
     pub fn put_contact(&self, c: &Contact) -> Result<(), Error> {
         let (len, path) = match &c.out_path {
@@ -853,5 +886,23 @@ mod tests {
         assert_eq!((c[1].identity, c[1].verified), (None, false));
         assert_eq!(s.groups().unwrap(), vec![b"snapshot".to_vec()]);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn nicknames_set_and_cleared() {
+        let s = Store::in_memory().unwrap();
+        let k = [7u8; 32];
+        s.set_nickname(&k, Some("  Tanguy ")).unwrap();
+        assert_eq!(
+            s.nicknames().unwrap().get(&k).map(String::as_str),
+            Some("Tanguy")
+        );
+        s.set_nickname(&k, Some("Nina")).unwrap();
+        assert_eq!(
+            s.nicknames().unwrap().get(&k).map(String::as_str),
+            Some("Nina")
+        );
+        s.set_nickname(&k, Some("  ")).unwrap();
+        assert!(s.nicknames().unwrap().is_empty());
     }
 }

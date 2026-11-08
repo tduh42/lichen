@@ -300,4 +300,12 @@
     <string name="airtime_left_images">Budget restant : %1$d s. Les images ne sont jamais envoyées en flood.</string>
     <string name="send_preview">Envoyer l\'aperçu</string>
     <string name="send_announcement">Envoyer l\'annonce</string>
+    <!-- Renommer, heures -->
+    <string name="rename">Renommer</string>
+    <string name="rename_note">Seulement sur ce téléphone : sa radio s\'appelle %1$s, et rien ne lui est envoyé.</string>
+    <string name="use_node_name">Reprendre %1$s</string>
+    <string name="save">Enregistrer</string>
+    <string name="delete_conversation">Supprimer la conversation</string>
+    <string name="today">Aujourd\'hui</string>
+    <string name="yesterday">Hier</string>
 </resources>

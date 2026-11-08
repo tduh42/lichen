@@ -7,36 +7,56 @@ struct ConversationsView: View {
     @State private var addingContact = false
     @State private var path: [ChatID] = []
     @State private var deleting: Row?
+    @State private var renaming: Data?
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                VStack(spacing: 12) {
+            List {
+                Section {
                     header
                     RadioCard()
                     StatusBanners()
                     if rows.isEmpty {
                         EmptyConversations { addingContact = true }
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
-                                if i > 0 { CardDivider(inset: 72) }
-                                NavigationLink(value: row.id) { ChatRow(row: row) }
-                                    .buttonStyle(.plain)
-                                    .contextMenu {
-                                        Button(role: .destructive) { deleting = row } label: {
-                                            Label("Delete conversation", systemImage: "trash")
-                                        }
-                                    }
-                            }
-                        }
-                        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                if !rows.isEmpty {
+                    Section {
+                        ForEach(rows) { row in
+                            Button { path.append(row.id) } label: { ChatRow(row: row) }
+                                .buttonStyle(.plain)
+                                .listRowInsets(EdgeInsets())
+                                .listRowBackground(Theme.s1)
+                                .alignmentGuide(.listRowSeparatorLeading) { _ in 72 }
+                                // Swipe left: delete (confirmed below), rename a contact.
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button { deleting = row } label: { Label("Delete", systemImage: "trash") }
+                                        .tint(Theme.sos)
+                                    if case let .contact(key) = row.id {
+                                        Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
+                                            .tint(Theme.tx2)
+                                    }
+                                }
+                                .contextMenu {
+                                    if case let .contact(key) = row.id {
+                                        Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
+                                    }
+                                    Button(role: .destructive) { deleting = row } label: {
+                                        Label("Delete conversation", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    }
+                    .listRowSeparatorTint(Theme.line)
+                }
             }
-            .screen()
+            .listStyle(.insetGrouped)
+            .listSectionSpacing(12)
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ChatID.self) { ChatView(chat: $0) }
             .onChange(of: model.debugOpen) {
@@ -56,6 +76,7 @@ struct ConversationsView: View {
                 }
             }
             .sheet(isPresented: $addingContact) { NavigationStack { AddContactView() } }
+            .renameAlert(node: renaming, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }))
             .confirmationDialog(
                 deleting.map { String(localized: "Delete the conversation with \($0.title)?") } ?? "",
                 isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
