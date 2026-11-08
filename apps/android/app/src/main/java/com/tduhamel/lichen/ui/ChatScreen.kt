@@ -30,6 +30,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material3.CircularProgressIndicator
@@ -331,6 +333,7 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
     var menu by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<Pair<PreparedImage, ByteArray>?>(null) }
+    var locating by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         preparing = true
@@ -373,6 +376,17 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             RecordingBar(model, chat, onError)
             return@Column
         }
+        model.share(chat)?.let { share ->
+            val until = timeOf(context, share.untilS.toLong() * 1000)
+            Row(
+                Modifier.padding(start = 8.dp).clickable { locating = true },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Filled.LocationOn, null, tint = t.tx2, modifier = Modifier.size(14.dp))
+                Text(stringResource(R.string.sharing_until, precisionName(share.precision), until), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2)
+            }
+        }
         if (cost != null) Text(cost, fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
@@ -396,6 +410,14 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                         onClick = {
                             menu = false
                             pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.share_my_location)) },
+                        leadingIcon = { Icon(Icons.Outlined.LocationOn, null) },
+                        onClick = {
+                            menu = false
+                            locating = true
                         },
                     )
                 }
@@ -444,6 +466,7 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             }
         }
     }
+    if (locating) ChatShareSheet(model, chat) { locating = false }
     picked?.let { (image, original) ->
         SendPhotoSheet(model, chat, image, original) { e ->
             picked = null

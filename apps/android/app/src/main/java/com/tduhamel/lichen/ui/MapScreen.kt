@@ -1,0 +1,509 @@
+package com.tduhamel.lichen.ui
+
+import android.Manifest
+import android.text.format.DateUtils
+import android.text.format.Formatter
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Layers
+import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.PeerPosition
+import com.tduhamel.lichen.core.ShareInfo
+import com.tduhamel.lichen.core.SharePrecision
+import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.OfflineMaps
+import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.initials
+import kotlinx.coroutines.delay
+import org.maplibre.android.geometry.LatLngBounds
+
+/** Precision names, and the nominal precision of a received radius. */
+@Composable
+fun precisionName(p: SharePrecision): String = stringResource(
+    when (p) {
+        SharePrecision.EXACT -> R.string.exact
+        SharePrecision.M100 -> R.string.m100
+        SharePrecision.KM1 -> R.string.km1
+        SharePrecision.KM10 -> R.string.km10
+    },
+)
+
+/** "1 km" for a position rounded to the 1 km grid (its radius is at least 0.7 cell), null for
+ * an exact one. */
+@Composable
+fun nominal(radius: Double): String? = when {
+    radius >= 7_000 -> precisionName(SharePrecision.KM10)
+    radius >= 700 -> precisionName(SharePrecision.KM1)
+    radius >= 70 -> precisionName(SharePrecision.M100)
+    else -> null
+}
+
+/** "now", "3 min ago". */
+@Composable
+fun ago(unixS: ULong): String {
+    val ms = unixS.toLong() * 1000
+    if (System.currentTimeMillis() - ms < 60_000) return stringResource(R.string.now)
+    return DateUtils.getRelativeTimeSpanString(ms, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
+}
+
+/** "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`). */
+@Composable
+fun MapScreen(model: AppModel, sos: () -> Unit) {
+    val t = lichen
+    val context = LocalContext.current
+    val offline = remember { OfflineMaps(context) }
+    val prefs = remember { context.getSharedPreferences("lichen", android.content.Context.MODE_PRIVATE) }
+    var style by remember {
+        mutableStateOf(runCatching { MapStyle.valueOf(prefs.getString("map.style", null) ?: "") }.getOrDefault(MapStyle.AUTO))
+    }
+    var recenter by remember { mutableIntStateOf(0) }
+    var seen by remember { mutableStateOf(setOf<String>()) }
+    var camera by remember { mutableStateOf<Pair<LatLngBounds, Double>?>(null) }
+    var editing by remember { mutableStateOf(false) }
+    var layers by remember { mutableStateOf(false) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
+    DisposableEffect(Unit) {
+        model.mapVisible = true
+        model.refreshPositions()
+        if (!model.isDemo && model.locationDenied) {
+            askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+        onDispose { model.mapVisible = false }
+    }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(5_000)
+            model.refreshPositions()
+        }
+    }
+    val items = mapItems(model)
+    // Someone new on the map: reframe around everyone.
+    LaunchedEffect(items.map { it.id }) {
+        val ids = items.map { it.id }.toSet()
+        if ((ids - seen).isNotEmpty()) {
+            seen = seen + ids
+            recenter++
+        }
+    }
+
+    Column(Modifier.fillMaxSize().background(t.bg)) {
+        Box(Modifier.weight(1f)) {
+            LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize()) { b, z -> camera = b to z }
+            Row(
+                Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier
+                        .heightIn(min = 48.dp)
+                        .shadow(4.dp, CircleShape)
+                        .background(t.sosBtn, CircleShape)
+                        .clickable(onClick = sos)
+                        .padding(horizontal = 18.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(Icons.Outlined.WarningAmber, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Text(stringResource(if (model.sos) R.string.sos_on else R.string.sos), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
+                Box(Modifier.weight(1f))
+                Box {
+                    MapIcon(Icons.Outlined.Layers, stringResource(R.string.map_layers), t.tx) { layers = true }
+                    DropdownMenu(layers, { layers = false }, containerColor = t.s1) {
+                        Text(stringResource(R.string.map_style), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                        for (s in MapStyle.entries) {
+                            DropdownMenuItem(
+                                text = { Text(styleName(s), fontWeight = if (s == style) FontWeight.Bold else FontWeight.Normal) },
+                                onClick = {
+                                    style = s
+                                    prefs.edit().putString("map.style", s.name).apply()
+                                    layers = false
+                                },
+                            )
+                        }
+                        HorizontalDivider(color = t.line)
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.download_area)) },
+                            leadingIcon = { Icon(Icons.Outlined.CloudDownload, null) },
+                            enabled = camera != null && offline.progress == null,
+                            onClick = {
+                                camera?.let { (b, z) -> offline.download(b, z, style.resolved(t.dark).url) }
+                                layers = false
+                            },
+                        )
+                        if (offline.areas > 0) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(R.string.delete_offline, offline.areas, Formatter.formatShortFileSize(context, offline.bytes)),
+                                        color = t.sos,
+                                    )
+                                },
+                                leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = t.sos) },
+                                onClick = {
+                                    offline.deleteAll()
+                                    layers = false
+                                },
+                            )
+                        }
+                        Text(stringResource(R.string.offline_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                    }
+                }
+                Box(Modifier.width(8.dp))
+                MapIcon(Icons.Outlined.MyLocation, stringResource(R.string.show_everyone), t.iroh) { recenter++ }
+            }
+            offline.progress?.let { (done, total) ->
+                Row(
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 96.dp)
+                        .background(t.s1, CircleShape)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    LinearProgressIndicator({ done.toFloat() / total }, Modifier.width(80.dp), color = t.tx, trackColor = t.s2)
+                    Text(stringResource(R.string.downloading_map, done, total), fontSize = 12.sp, color = t.tx)
+                }
+            }
+        }
+        SharePanel(model) {
+            editing = true
+        }
+    }
+    if (editing) ShareSheet(model) { editing = false }
+}
+
+@Composable
+private fun styleName(s: MapStyle): String = stringResource(
+    when (s) {
+        MapStyle.AUTO -> R.string.follow_theme
+        MapStyle.DARK -> R.string.dark
+        MapStyle.LIBERTY -> R.string.outdoor
+        MapStyle.POSITRON -> R.string.light
+        MapStyle.BRIGHT -> R.string.bright
+    },
+)
+
+@Composable
+private fun MapIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, tint: Color, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.size(48.dp).shadow(4.dp, CircleShape),
+        colors = IconButtonDefaults.iconButtonColors(containerColor = lichen.s2, contentColor = tint),
+    ) { Icon(icon, label) }
+}
+
+/** The markers: everyone's last position (SOS first in colour), and ours. */
+@Composable
+private fun mapItems(model: AppModel): List<MapItem> {
+    val t = lichen
+    val out = mutableListOf<MapItem>()
+    for (p in model.positions) {
+        val name = model.name(p.from)
+        val color = if (p.sos) t.sosBtn else t.marker(p.from)
+        out += MapItem(
+            p.from.hex(), if (p.sos) MapItem.Kind.SOS else MapItem.Kind.PEER, p.lat, p.lon, p.radiusM,
+            initials(name), label(p, name), color.toArgb(), t.dark,
+        )
+    }
+    model.myFix?.let { me ->
+        out += MapItem("me", MapItem.Kind.ME, me.lat, me.lon, me.accuracyM, "", "", t.iroh.toArgb(), t.dark)
+    }
+    return out
+}
+
+@Composable
+private fun label(p: PeerPosition, name: String): String {
+    if (p.sos) return "SOS · $name"
+    val coarse = nominal(p.radiusM)
+    return if (coarse != null) "$name · ±$coarse" else "$name · ${ago(p.atS)}"
+}
+
+/** Bottom card: our shares and their precision (mockup `carte`). */
+@Composable
+private fun SharePanel(model: AppModel, edit: () -> Unit) {
+    val t = lichen
+    var expanded by remember { mutableStateOf(true) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(t.s1, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.fillMaxWidth().height(12.dp).clickable { expanded = !expanded },
+            contentAlignment = Alignment.Center,
+        ) { Box(Modifier.size(width = 36.dp, height = 5.dp).background(t.line, CircleShape)) }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.location_sharing), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = t.tx)
+                Text(shareStatus(model), fontSize = 13.sp, color = if (model.sos) t.sosFg else t.tx2)
+            }
+            LichenSwitch(model.shares.isNotEmpty(), { on -> if (on) edit() else model.stopAllShares() })
+        }
+        if (expanded) {
+            if (model.locationDenied && !model.isDemo) {
+                Banner(
+                    BannerKind.WARN, stringResource(R.string.location_off), stringResource(R.string.location_off_note),
+                    stringResource(R.string.allow) to {
+                        askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                    },
+                )
+            }
+            Column(Modifier.fillMaxWidth().background(t.s2, RoundedCornerShape(12.dp))) {
+                model.shares.forEachIndexed { i, s ->
+                    if (i > 0) CardDivider()
+                    ShareRow(model, s, edit)
+                }
+                if (model.shares.isNotEmpty()) CardDivider()
+                Row(
+                    Modifier.fillMaxWidth().clickable(onClick = edit).padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(Modifier.size(32.dp).background(t.s1, CircleShape), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Filled.Add, null, tint = t.tx, modifier = Modifier.size(18.dp))
+                    }
+                    Text(stringResource(if (model.shares.isEmpty()) R.string.share_my_position else R.string.precision_per_contact), fontSize = 16.sp, color = t.tx)
+                }
+            }
+            Text(stringResource(R.string.share_note), fontSize = 12.sp, color = t.tx2)
+        }
+    }
+}
+
+@Composable
+private fun shareStatus(model: AppModel): String {
+    if (model.sos) return stringResource(R.string.sos_status)
+    val soonest = model.shares.minOfOrNull { it.untilS } ?: return stringResource(R.string.off)
+    val left = maxOf(0L, soonest.toLong() * 1000 - System.currentTimeMillis())
+    val minutes = (left + 59_999) / 60_000
+    val text = if (minutes >= 60) "${minutes / 60} h ${minutes % 60} min" else "$minutes min"
+    return stringResource(R.string.active_ends_in, text)
+}
+
+@Composable
+private fun ShareRow(model: AppModel, s: ShareInfo, edit: () -> Unit) {
+    val t = lichen
+    val chat = ChatId.of(s.chat)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = edit).padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Avatar(model.title(chat), chat.hex.let { h -> h.chunked(2).map { it.toInt(16).toByte() }.toByteArray() }, 32.dp)
+        Column(Modifier.weight(1f)) {
+            Text(model.title(chat), fontSize = 16.sp, color = t.tx)
+            Text(shareDetail(model, chat), fontSize = 13.sp, color = t.tx2)
+        }
+        Text(precisionName(s.precision), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+    }
+}
+
+@Composable
+private fun shareDetail(model: AppModel, chat: ChatId): String {
+    if (chat.group) {
+        val n = model.group(chat)?.members?.size ?: 0
+        return pluralStringResource(R.plurals.group_members_flood_detail, n, n)
+    }
+    val hops = chat.contactKey?.let { model.contact(it) }?.hops ?: return stringResource(R.string.contact_path_unknown)
+    if (hops.toInt() == 0) return stringResource(R.string.contact_lora_direct)
+    return pluralStringResource(R.plurals.contact_hops, hops.toInt(), hops.toInt())
+}
+
+/** Who sees our position, at what precision, for how long. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShareSheet(model: AppModel, dismiss: () -> Unit) {
+    val t = lichen
+    var hours by remember { mutableStateOf(1.0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.precision_per_contact), fontSize = 22.sp, color = t.tx)
+            SectionLabel(stringResource(R.string.duration))
+            DurationPicker(hours) { hours = it }
+            Text(stringResource(R.string.share_stops_note), fontSize = 12.sp, color = t.tx2)
+            error?.let { Banner(BannerKind.SOS, stringResource(R.string.could_not_share), it) }
+            if (model.contacts.isNotEmpty()) {
+                SectionLabel(stringResource(R.string.contacts), Modifier.padding(top = 8.dp))
+                CardList {
+                    model.contacts.forEachIndexed { i, c ->
+                        if (i > 0) CardDivider(inset = 60.dp)
+                        PrecisionRow(model, ChatId.contact(c.key), c.name, c.key, hours) { error = it }
+                    }
+                }
+            }
+            if (model.groups.isNotEmpty()) {
+                SectionLabel(stringResource(R.string.groups), Modifier.padding(top = 8.dp))
+                CardList {
+                    model.groups.forEachIndexed { i, g ->
+                        if (i > 0) CardDivider(inset = 60.dp)
+                        PrecisionRow(model, ChatId.group(g.gid), g.name, g.gid, hours) { error = it }
+                    }
+                }
+                Text(stringResource(R.string.group_position_rate), fontSize = 12.sp, color = t.tx2)
+            }
+            if (model.contacts.isEmpty() && model.groups.isEmpty()) {
+                Text(stringResource(R.string.no_contacts_yet), color = t.tx2)
+            }
+            Text(stringResource(R.string.rounded_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun DurationPicker(hours: Double, pick: (Double) -> Unit) {
+    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+        listOf(1.0 to "1 h", 8.0 to "8 h", 24.0 to "24 h").forEachIndexed { i, (h, label) ->
+            SegmentedButton(hours == h, { pick(h) }, SegmentedButtonDefaults.itemShape(i, 3), colors = segmentedColors()) { Text(label) }
+        }
+    }
+}
+
+@Composable
+private fun PrecisionRow(model: AppModel, chat: ChatId, name: String, key: ByteArray, hours: Double, onError: (String?) -> Unit) {
+    val t = lichen
+    val current = model.share(chat)?.precision
+    var menu by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Avatar(name, key, 32.dp)
+        Text(name, fontSize = 16.sp, color = t.tx, modifier = Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { menu = true }) {
+                Text(current?.let { precisionName(it) } ?: stringResource(R.string.not_shared), fontWeight = FontWeight.SemiBold, color = if (current == null) t.tx2 else t.tx)
+            }
+            DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.not_shared)) }, onClick = {
+                    menu = false
+                    onError(model.setShare(chat, null, hours))
+                })
+                for (p in listOf(SharePrecision.EXACT, SharePrecision.M100, SharePrecision.KM1, SharePrecision.KM10)) {
+                    DropdownMenuItem(text = { Text(precisionName(p)) }, onClick = {
+                        menu = false
+                        onError(model.setShare(chat, p, hours))
+                    })
+                }
+            }
+        }
+    }
+}
+
+/** Our position for one chat, from the composer's menu: the same shares as the map's panel. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatShareSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit) {
+    val t = lichen
+    val current = model.share(chat)
+    var precision by remember { mutableStateOf(current?.precision ?: SharePrecision.EXACT) }
+    var hours by remember { mutableStateOf(1.0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
+    LaunchedEffect(Unit) {
+        if (!model.isDemo && model.locationDenied) {
+            askLocation.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+    }
+    fun apply(p: SharePrecision?) {
+        error = model.setShare(chat, p, hours)
+        if (error == null) dismiss()
+    }
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.share_my_location), fontSize = 22.sp, color = t.tx)
+            SectionLabel(stringResource(R.string.precision))
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                val all = listOf(SharePrecision.EXACT, SharePrecision.M100, SharePrecision.KM1, SharePrecision.KM10)
+                all.forEachIndexed { i, p ->
+                    SegmentedButton(precision == p, { precision = p }, SegmentedButtonDefaults.itemShape(i, all.size), colors = segmentedColors()) {
+                        Text(precisionName(p), maxLines = 1)
+                    }
+                }
+            }
+            Text(stringResource(R.string.rounded_note), fontSize = 12.sp, color = t.tx2)
+            SectionLabel(stringResource(R.string.duration), Modifier.padding(top = 8.dp))
+            DurationPicker(hours) { hours = it }
+            Text(stringResource(R.string.share_stops_note), fontSize = 12.sp, color = t.tx2)
+            if (chat.group) Text(stringResource(R.string.group_position_rate), fontSize = 12.sp, color = t.tx2)
+            error?.let { Banner(BannerKind.SOS, stringResource(R.string.could_not_share), it) }
+            PrimaryButton(stringResource(if (current == null) R.string.share else R.string.update), Modifier.padding(top = 8.dp)) { apply(precision) }
+            if (current != null) {
+                SecondaryButton(stringResource(R.string.stop_sharing), background = t.sosBg, foreground = t.sosFg) { apply(null) }
+            }
+        }
+    }
+}

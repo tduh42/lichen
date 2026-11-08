@@ -66,7 +66,7 @@ fun RootScreen(model: AppModel) {
     // Debug extra `screen`: a screen to show at launch (screenshots).
     LaunchedEffect(Unit) {
         when (model.debugScreen) {
-            "contact", "identity", "pairing" -> nav.navigate(model.debugScreen!!)
+            "contact", "identity", "pairing", "sos" -> nav.navigate(model.debugScreen!!)
         }
     }
 
@@ -75,6 +75,19 @@ fun RootScreen(model: AppModel) {
         contentWindowInsets = WindowInsets(0),
         bottomBar = { if (onTab) TabBar(model, nav, route) },
     ) { padding ->
+        // Someone sent an SOS: a full-screen alert, wherever we are.
+        model.sosAlert?.let { sos ->
+            fun tab(r: String) = nav.navigate(r) {
+                popUpTo(nav.graph.startDestinationId) { saveState = true }
+                launchSingleTop = true
+            }
+            SosReceivedDialog(
+                model, sos,
+                search = { tab("search") },
+                reply = { model.openChat = ChatId.contact(sos.from) },
+                map = { tab("map") },
+            )
+        }
         NavHost(
             nav,
             startDestination = TabRoutes.getValue(model.tab),
@@ -88,8 +101,9 @@ fun RootScreen(model: AppModel) {
                     addContact = { nav.navigate("contact") },
                 )
             }
-            composable("map") { LaterScreen(stringResource(R.string.tab_map), stringResource(R.string.later_map)) }
-            composable("search") { LaterScreen(stringResource(R.string.tab_search), stringResource(R.string.later_search)) }
+            composable("map") { MapScreen(model, sos = { nav.navigate("sos") }) }
+            composable("search") { SearchScreen(model) }
+            composable("sos") { SosScreen(model, close = { nav.popBackStack() }) }
             composable("settings") {
                 SettingsScreen(model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") })
             }
@@ -132,7 +146,17 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
                         restoreState = true
                     }
                 },
-                icon = { TabIcon(icon, if (tab == Tab.MESSAGES) model.totalUnread else 0) },
+                icon = {
+                    TabIcon(
+                        icon,
+                        when (tab) {
+                            Tab.MESSAGES -> model.totalUnread
+                            // A search to follow.
+                            Tab.SEARCH -> if (model.incomingSos != null) 1 else 0
+                            else -> 0
+                        },
+                    )
+                },
                 label = { Text(stringResource(label), fontSize = 12.sp, fontWeight = FontWeight.Medium) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = t.tx,
@@ -154,20 +178,5 @@ private fun TabIcon(icon: ImageVector, badge: Int) {
         }
     } else {
         Icon(icon, null)
-    }
-}
-
-/** A tab of a later milestone (L9d map, L8 search). */
-@Composable
-fun LaterScreen(title: String, note: String) {
-    val t = lichen
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text(title, fontSize = 22.sp, color = t.tx, modifier = Modifier.padding(top = 16.dp, bottom = 24.dp))
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                ChirpMark(t.tx2, Modifier.size(40.dp))
-                Text(note, color = t.tx2, fontSize = 14.sp, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 12.dp))
-            }
-        }
     }
 }

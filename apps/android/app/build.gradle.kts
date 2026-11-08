@@ -66,6 +66,7 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
+    implementation(libs.maplibre)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

@@ -10,6 +10,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Location shares and SOS (protocol.md §12), kept going in the background by the radio's
+         foreground service while sharing. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <!-- A companion over TCP (Wi-Fi, or `lichen bridge`); the Internet bridge later (L9e).
          CHANGE_NETWORK_STATE also lets the connectedDevice service run for a TCP or USB radio. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -23,6 +28,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <!-- The identity seed is device only (ADR-0013): no backup, no device-to-device transfer. -->
     <application
@@ -57,6 +63,6 @@
         <service
             android:name=".model.RadioService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
+            android:foregroundServiceType="connectedDevice|location" />
     </application>
 </manifest>

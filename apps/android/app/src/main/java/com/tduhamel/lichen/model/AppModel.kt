@@ -28,6 +28,13 @@ import com.tduhamel.lichen.core.PreparedImage
 import com.tduhamel.lichen.core.PreparedVoice
 import com.tduhamel.lichen.core.Provider
 import com.tduhamel.lichen.core.prepareVoice
+import com.tduhamel.lichen.core.LocationFix
+import com.tduhamel.lichen.core.PeerPosition
+import com.tduhamel.lichen.core.ShareInfo
+import com.tduhamel.lichen.core.SharePrecision
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sqrt
 import kotlin.math.PI
 import kotlin.math.sin
 import com.tduhamel.lichen.core.seedFromPhrase
@@ -73,6 +80,10 @@ class AppModel(private val app: Application) {
         val tcp: String? = null,
         /** A voice message to Camille; full images requested and announcements fetched. */
         val media: Boolean = false,
+        /** Share our position (100 m) with this contact at launch. */
+        val share: String? = null,
+        /** An SOS from Julien (screenshots of the alert and the Search tab). */
+        val sosDemo: Boolean = false,
     )
 
     enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
@@ -124,6 +135,38 @@ class AppModel(private val app: Application) {
     /** The recovery phrase was written down (Identity screen). */
     var phraseBackedUp by mutableStateOf(prefs.getBoolean(BACKED_UP, false))
         private set
+
+    // Location (protocol.md §12).
+    var shares by mutableStateOf(listOf<ShareInfo>())
+    var positions by mutableStateOf(listOf<PeerPosition>())
+    var sos by mutableStateOf(false)
+        private set
+    var myFix by mutableStateOf<LocationFix?>(null)
+        private set
+
+    /** The location permission is not granted. */
+    var locationDenied by mutableStateOf(false)
+
+    /** The latest SOS heard, until it ends (the Search tab follows it). */
+    var incomingSos by mutableStateOf<PeerPosition?>(null)
+
+    /** The full-screen alert for an SOS just heard, until dismissed. */
+    var sosAlert by mutableStateOf<PeerPosition?>(null)
+
+    /** Every SOS position heard, newest last (the Search tab's measurements). */
+    var sosLog by mutableStateOf(listOf<PeerPosition>())
+
+    /** The map or the search is on screen: our position is needed even without a share. */
+    var mapVisible = false
+        set(value) {
+            if (field != value) {
+                field = value
+                updateLocator()
+            }
+        }
+    private val locator = Locator(app) { gotFix(it) }
+    private var lastFed: ULong? = null
+    private var demoFixJob: Job? = null
 
     // Media (protocol.md §13).
     val recorder = VoiceRecorder()
@@ -190,6 +233,10 @@ class AppModel(private val app: Application) {
         if (ble.permitted()) ble.start()
         loadDownloads()
         startBridge()
+        shares = core.shares()
+        positions = core.positions(now())
+        locationDenied = !locator.permitted()
+        updateLocator()
     }
 
     private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
@@ -250,6 +297,7 @@ class AppModel(private val app: Application) {
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")
         core.connect(now())
+        updateLocator()
         demoJob = scope.launch {
             while (isActive) {
                 demoStep()
@@ -263,6 +311,8 @@ class AppModel(private val app: Application) {
         if (!isDemo) return
         demoJob?.cancel()
         demoJob = null
+        demoFixJob?.cancel()
+        demoFixJob = null
         demo?.close()
         demo = null
         isDemo = false
@@ -270,6 +320,8 @@ class AppModel(private val app: Application) {
         replaceCore(makeCore(identityStore.seed(), persistent = true))
         radioState = RadioState.Idle
         refreshAll()
+        shares = core.shares()
+        updateLocator()
         radioChanged(usb.device?.let { RadioState.Connected(it.productName ?: "USB") } ?: ble.state)
     }
 
@@ -291,6 +343,14 @@ class AppModel(private val app: Application) {
         conversations = emptyList()
         secured = emptySet()
         lastSnr = emptyMap()
+        shares = emptyList()
+        positions = emptyList()
+        sos = false
+        incomingSos = null
+        sosAlert = null
+        sosLog = emptyList()
+        myFix = null
+        lastFed = null
     }
 
     val isConnected: Boolean get() = radioState is RadioState.Connected
@@ -305,7 +365,7 @@ class AppModel(private val app: Application) {
         radioState = state
         if (state is RadioState.Connected) {
             // Receive with the screen off (ADR-0006); stops when the user disconnects.
-            RadioService.start(app, state.name)
+            RadioService.start(app, state.name, sharing = shares.isNotEmpty() || sos)
             core.connect(now())
             pump()
         }
@@ -421,6 +481,7 @@ class AppModel(private val app: Application) {
                 contacts = people()
                 debugOpen()
                 debugVoice()
+                debugLocation()
             }
             is LichenEvent.SessionEstablished -> secured = secured + e.peer.hex()
             is LichenEvent.Received -> {
@@ -453,13 +514,48 @@ class AppModel(private val app: Application) {
                     if (msg is Message.Announce) fetch(m)
                 }
             }
-            is LichenEvent.Location, LichenEvent.SharesChanged, is LichenEvent.MediaRequested -> Unit
+            is LichenEvent.Location -> {
+                positions = core.positions(now())
+                val p = e.position
+                if (p.sos && !e.end) {
+                    if (incomingSos?.from?.contentEquals(p.from) != true) sosAlert = p
+                    incomingSos = p
+                    sosLog = sosLog + p
+                } else if (incomingSos?.from?.contentEquals(p.from) == true) {
+                    incomingSos = null
+                    sosAlert = null
+                }
+            }
+            LichenEvent.SharesChanged -> {
+                shares = core.shares()
+                updateLocator()
+            }
+            is LichenEvent.MediaRequested -> Unit
         }
     }
 
     /** A notification for a message received while the app is not on screen. */
     private fun notify(chat: ChatId, title: String, text: String) {
         if (!inForeground) Notifications.message(app, chat, title, text)
+    }
+
+    /** Debug extras `share` (100 m with that contact) and `sosDemo` (an SOS from Julien). */
+    private fun debugLocation() {
+        debug.share?.let { name ->
+            val c = contacts.firstOrNull { it.name == name } ?: return@let
+            debug = debug.copy(share = null)
+            setShare(ChatId.contact(c.key), SharePrecision.M100, 1.25)
+        }
+        if (debug.sosDemo && incomingSos == null) {
+            val j = contacts.firstOrNull { it.name == "Julien" } ?: return
+            val p = PeerPosition(
+                j.key, null, 44.9065, 5.4745, 1_620.0, 6.0, null, null,
+                (System.currentTimeMillis() / 1000 - 40).toULong(), true, false,
+            )
+            incomingSos = p
+            sosAlert = if (debugScreen == "search") null else p
+            sosLog = listOf(p)
+        }
     }
 
     /** Debug extra `media`: a 4 s voice message to Camille, 20 s after she appears. */
@@ -562,6 +658,109 @@ class AppModel(private val app: Application) {
         is Message.Text -> send(msg.text, ChatId.of(m.chat))
         is Message.Voice -> sendVoice(PreparedVoice(msg.mode, msg.frames, msg.durationMs, msg.data), ChatId.of(m.chat))
         else -> null
+    }
+
+    // ----- location (protocol.md §12) -----
+
+    /** Location is needed while sharing, during SOS, or with the map on screen; in the demo it
+     * comes from the simulated network. */
+    fun updateLocator() {
+        val sharing = shares.isNotEmpty() || sos
+        val needed = sharing || mapVisible
+        val d = demo
+        if (d != null) {
+            locator.stop()
+            if (needed && demoFixJob == null) {
+                demoFixJob = scope.launch {
+                    while (isActive) {
+                        gotFix(d.myPosition())
+                        delay(10_000)
+                    }
+                }
+            } else if (!needed) {
+                demoFixJob?.cancel()
+                demoFixJob = null
+            }
+        } else if (needed) {
+            locationDenied = !locator.permitted()
+            locator.start()
+        } else {
+            locator.stop()
+        }
+        // Keep the location alive in the background while sharing (the radio's service).
+        if (isConnected && !isDemo) RadioService.start(app, nodeName.ifEmpty { "MeshCore" }, sharing)
+    }
+
+    /** The location permission was just granted. */
+    fun locationReady() {
+        locationDenied = !locator.permitted()
+        updateLocator()
+    }
+
+    /** A fix from the phone: shown at once, handed to the core every 5 seconds at most. */
+    private fun gotFix(fix: LocationFix) {
+        myFix = fix
+        val t = now()
+        lastFed?.let { if (t < it + 5_000uL) return }
+        lastFed = t
+        core.updateLocation(fix, t)
+        pump()
+    }
+
+    fun refreshPositions() {
+        positions = core.positions(now())
+    }
+
+    fun share(chat: ChatId): ShareInfo? = shares.firstOrNull { ChatId.of(it.chat) == chat }
+
+    /** Shares our position with `chat` at `precision` for `hours`, or stops (null). */
+    fun setShare(chat: ChatId, precision: SharePrecision?, hours: Double): String? {
+        try {
+            if (precision != null) {
+                val until = (System.currentTimeMillis() / 1000 + (hours * 3600).toLong()).toULong()
+                core.startShare(chat.ref, precision, until, now())
+            } else {
+                core.stopShare(chat.ref, now())
+            }
+        } catch (e: LichenException) {
+            return e.display(res)
+        }
+        shares = core.shares()
+        updateLocator()
+        pump()
+        return null
+    }
+
+    fun stopAllShares() {
+        for (s in shares) runCatching { core.stopShare(s.chat, now()) }
+        shares = core.shares()
+        updateLocator()
+        pump()
+    }
+
+    fun changeSos(on: Boolean) {
+        core.setSos(on, now())
+        sos = core.sos()
+        updateLocator()
+        pump()
+    }
+
+    /** Distance (m) and bearing (degrees from north) from us to `p`. */
+    fun distanceTo(p: PeerPosition): Pair<Double, Double>? {
+        val me = myFix ?: return null
+        val r = 6_371_000.0
+        val la1 = Math.toRadians(me.lat)
+        val lo1 = Math.toRadians(me.lon)
+        val la2 = Math.toRadians(p.lat)
+        val lo2 = Math.toRadians(p.lon)
+        val dla = la2 - la1
+        val dlo = lo2 - lo1
+        val a = kotlin.math.sin(dla / 2).let { it * it } + cos(la1) * cos(la2) * kotlin.math.sin(dlo / 2).let { it * it }
+        val d = 2 * r * atan2(sqrt(a), sqrt(1 - a))
+        val y = kotlin.math.sin(dlo) * cos(la2)
+        val x = cos(la1) * kotlin.math.sin(la2) - kotlin.math.sin(la1) * cos(la2) * cos(dlo)
+        val b = (Math.toDegrees(atan2(y, x)) + 360) % 360
+        return d to b
     }
 
     // ----- media (protocol.md §13) -----

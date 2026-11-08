@@ -76,6 +76,8 @@ class MainActivity : ComponentActivity() {
             screen = e.getString("screen"),
             tcp = e.getString("tcp"),
             media = e.getBoolean("media"),
+            share = e.getString("share"),
+            sosDemo = e.getBoolean("sosdemo"),
         )
     }
 }

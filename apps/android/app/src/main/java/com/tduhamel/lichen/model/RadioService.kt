@@ -27,11 +27,14 @@ class RadioService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val name = intent?.getStringExtra(NAME) ?: "MeshCore"
+        // While sharing or in SOS, the location goes on in the background too.
+        val sharing = intent?.getBooleanExtra(SHARING, false) == true &&
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+            (if (sharing) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
         val started = runCatching {
-            ServiceCompat.startForeground(
-                this, Notifications.SERVICE_ID, Notifications.service(this, name),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-            )
+            ServiceCompat.startForeground(this, Notifications.SERVICE_ID, Notifications.service(this, name), types)
         }
         if (started.isFailure) {
             stopSelf()
@@ -42,9 +45,10 @@ class RadioService : Service() {
 
     companion object {
         private const val NAME = "name"
+        private const val SHARING = "sharing"
 
-        fun start(context: Context, name: String) {
-            val i = Intent(context, RadioService::class.java).putExtra(NAME, name)
+        fun start(context: Context, name: String, sharing: Boolean = false) {
+            val i = Intent(context, RadioService::class.java).putExtra(NAME, name).putExtra(SHARING, sharing)
             runCatching { ContextCompat.startForegroundService(context, i) }
         }
 
