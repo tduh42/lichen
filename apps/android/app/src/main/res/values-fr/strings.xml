@@ -326,7 +326,6 @@
     <string name="outdoor">Randonnée</string>
     <string name="bright">Contrastée</string>
     <string name="download_area">Télécharger cette zone</string>
-    <string name="delete_offline">Supprimer les cartes hors ligne (%1$d, %2$s)</string>
     <string name="offline_note">Les zones téléchargées marchent sans réseau.</string>
     <string name="show_everyone">Voir tout le monde</string>
     <string name="downloading_map">Téléchargement de la carte : %1$d / %2$d</string>
@@ -522,4 +521,17 @@
     <string name="location_approximate">Position approximative seulement</string>
     <string name="location_approximate_note">Ton téléphone donne à lichen une position à environ 2 km près : un partage exact l’envoie telle quelle, avec sa vraie incertitude. Autorise la position précise pour les partages exacts et le SOS.</string>
     <string name="allow_precise">Précise</string>
+    <string name="offline_maps">Cartes hors ligne</string>
+    <string name="offline_maps_count">Cartes hors ligne (%1$d, %2$s)</string>
+    <string name="offline_complete">complète</string>
+    <string name="offline_downloading">en cours</string>
+    <string name="offline_partial">partielle</string>
+    <string name="offline_failed">échec</string>
+    <string name="offline_resources">%1$d / %2$d tuiles et ressources</string>
+    <string name="offline_maps_note">Une zone complète marche sans réseau. Une zone partielle manque de tuiles à certains niveaux de zoom : reprends-la tant que tu as du réseau.</string>
+    <string name="offline_too_large">Trop grande : zoome et télécharge une zone plus petite.</string>
+    <string name="map_area">Zone de carte</string>
+    <string name="zoom_range">zoom %1$d–%2$d</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Reprendre</string>
 </resources>

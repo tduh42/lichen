@@ -323,7 +323,6 @@
     <string name="outdoor">Outdoor</string>
     <string name="bright">Bright</string>
     <string name="download_area">Download this area</string>
-    <string name="delete_offline">Delete offline maps (%1$d, %2$s)</string>
     <string name="offline_note">Downloaded areas work without a network.</string>
     <string name="show_everyone">Show everyone</string>
     <string name="downloading_map">Downloading the map: %1$d / %2$d</string>
@@ -516,4 +515,17 @@
     <string name="location_approximate">Approximate location only</string>
     <string name="location_approximate_note">Your phone gives lichen a position within about 2 km: an exact share sends it as it is, with its real uncertainty. Allow the precise location for exact shares and SOS.</string>
     <string name="allow_precise">Precise</string>
+    <string name="offline_maps">Offline maps</string>
+    <string name="offline_maps_count">Offline maps (%1$d, %2$s)</string>
+    <string name="offline_complete">complete</string>
+    <string name="offline_downloading">downloading</string>
+    <string name="offline_partial">partial</string>
+    <string name="offline_failed">failed</string>
+    <string name="offline_resources">%1$d / %2$d tiles and resources</string>
+    <string name="offline_maps_note">A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.</string>
+    <string name="offline_too_large">Too large: zoom in and download a smaller area.</string>
+    <string name="map_area">Map area</string>
+    <string name="zoom_range">zoom %1$d–%2$d</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
 </resources>

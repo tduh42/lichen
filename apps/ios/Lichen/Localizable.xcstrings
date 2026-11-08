@@ -161,6 +161,16 @@
         }
       }
     },
+    "%lld / %lld tiles and resources": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld tuiles et ressources"
+          }
+        }
+      }
+    },
     "%lld / 24 words": {
       "localizations": {
         "fr": {
@@ -577,6 +587,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "8 h"
+          }
+        }
+      }
+    },
+    "A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une zone complète marche sans réseau. Une zone partielle manque de tuiles à certains niveaux de zoom : reprends-la tant que tu as du réseau."
           }
         }
       }
@@ -1257,16 +1277,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Supprimer la conversation"
-          }
-        }
-      }
-    },
-    "Delete offline maps (%lld, %@)": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Supprimer les cartes hors ligne (%lld, %@)"
           }
         }
       }
@@ -2241,6 +2251,16 @@
         }
       }
     },
+    "Map area": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zone de carte"
+          }
+        }
+      }
+    },
     "Map layers": {
       "localizations": {
         "fr": {
@@ -2771,6 +2791,26 @@
         }
       }
     },
+    "Offline maps": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cartes hors ligne"
+          }
+        }
+      }
+    },
+    "Offline maps (%lld, %@)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cartes hors ligne (%lld, %@)"
+          }
+        }
+      }
+    },
     "Online, through relays": {
       "localizations": {
         "fr": {
@@ -2857,6 +2897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Appairer une radio"
+          }
+        }
+      }
+    },
+    "Pause": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause"
           }
         }
       }
@@ -3187,6 +3237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Restaurer depuis mes 24 mots"
+          }
+        }
+      }
+    },
+    "Resume": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reprendre"
           }
         }
       }
@@ -3851,6 +3911,16 @@
         }
       }
     },
+    "The download failed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le téléchargement a échoué."
+          }
+        }
+      }
+    },
     "The first position goes out in a moment.": {
       "localizations": {
         "fr": {
@@ -4147,6 +4217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aujourd'hui"
+          }
+        }
+      }
+    },
+    "Too large: zoom in and download a smaller area.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop grande : zoome et télécharge une zone plus petite."
           }
         }
       }
@@ -4731,12 +4811,32 @@
         }
       }
     },
+    "complete": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "complète"
+          }
+        }
+      }
+    },
     "connected": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "connecté"
+          }
+        }
+      }
+    },
+    "downloading": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en cours"
           }
         }
       }
@@ -4767,6 +4867,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "estimé, saturé"
+          }
+        }
+      }
+    },
+    "failed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "échec"
           }
         }
       }
@@ -4911,6 +5021,16 @@
         }
       }
     },
+    "partial": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "partielle"
+          }
+        }
+      }
+    },
     "refused": {
       "localizations": {
         "fr": {
@@ -5007,6 +5127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "vérifié"
+          }
+        }
+      }
+    },
+    "zoom %lld–%lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "zoom %lld–%lld"
           }
         }
       }

@@ -67,6 +67,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.model.OfflineArea
+import androidx.compose.material3.AlertDialog
 import com.tduhamel.lichen.core.PeerPosition
 import com.tduhamel.lichen.core.ShareInfo
 import com.tduhamel.lichen.core.SharePrecision
@@ -122,6 +124,7 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
     var camera by remember { mutableStateOf<Pair<LatLngBounds, Double>?>(null) }
     var editing by remember { mutableStateOf(false) }
     var layers by remember { mutableStateOf(false) }
+    var showingOffline by remember { mutableStateOf(false) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
     DisposableEffect(Unit) {
         model.needsLocation("map", true)
@@ -188,21 +191,18 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
                             leadingIcon = { Icon(Icons.Outlined.CloudDownload, null) },
                             enabled = camera != null && offline.progress == null,
                             onClick = {
-                                camera?.let { (b, z) -> offline.download(b, z, style.resolved(t.dark).url) }
+                                camera?.let { (b, z) -> offline.download(b, z, style.resolved(t.dark).url, style.resolved(t.dark).key) }
                                 layers = false
                             },
                         )
-                        if (offline.areas > 0) {
+                        if (offline.areas.isNotEmpty()) {
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        stringResource(R.string.delete_offline, offline.areas, Formatter.formatShortFileSize(context, offline.bytes)),
-                                        color = t.sos,
-                                    )
+                                    Text(stringResource(R.string.offline_maps_count, offline.areas.size, Formatter.formatShortFileSize(context, offline.bytes)))
                                 },
-                                leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = t.sos) },
+                                leadingIcon = { Icon(Icons.Outlined.Layers, null) },
                                 onClick = {
-                                    offline.deleteAll()
+                                    showingOffline = true
                                     layers = false
                                 },
                             )
@@ -233,6 +233,15 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
         }
     }
     if (editing) ShareSheet(model) { editing = false }
+    if (showingOffline) OfflineMapsSheet(offline) { showingOffline = false }
+    offline.lastError?.let {
+        AlertDialog(
+            onDismissRequest = { offline.lastError = null },
+            text = { Text(it) },
+            confirmButton = { TextButton(onClick = { offline.lastError = null }) { Text(stringResource(R.string.ok), color = t.tx) } },
+            containerColor = t.s1,
+        )
+    }
 }
 
 @Composable
@@ -527,5 +536,59 @@ fun LocationAccessBanner(model: AppModel, ask: () -> Unit) {
             BannerKind.WARN, stringResource(R.string.location_approximate), stringResource(R.string.location_approximate_note),
             stringResource(R.string.allow_precise) to ask,
         )
+    }
+}
+
+/** The areas kept for use without a network, one by one: what they cover, whether they are
+ * complete, and what to do when they are not (audit M11). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OfflineMapsSheet(offline: OfflineMaps, dismiss: () -> Unit) {
+    val t = lichen
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(stringResource(R.string.offline_maps), fontSize = 22.sp, color = t.tx)
+            CardList {
+                offline.areas.forEachIndexed { i, a ->
+                    if (i > 0) CardDivider()
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(a.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = t.tx, modifier = Modifier.weight(1f))
+                            when (a.state) {
+                                OfflineArea.State.COMPLETE -> Badge(stringResource(R.string.offline_complete), t.okBg, t.okFg)
+                                OfflineArea.State.DOWNLOADING -> Badge(stringResource(R.string.offline_downloading), t.irohBg, t.irohFg)
+                                OfflineArea.State.PARTIAL -> Badge(stringResource(R.string.offline_partial), t.warnBg, t.warnFg)
+                                OfflineArea.State.FAILED -> Badge(stringResource(R.string.offline_failed), t.sosBg, t.sosFg)
+                            }
+                        }
+                        val created = a.created?.let { android.text.format.DateFormat.getMediumDateFormat(context).format(java.util.Date(it)) }
+                        Text(
+                            listOfNotNull(a.style.ifEmpty { null }, Formatter.formatShortFileSize(context, a.bytes), created).joinToString(" · "),
+                            fontSize = 13.sp, color = t.tx2,
+                        )
+                        if (a.state != OfflineArea.State.COMPLETE && a.total > 0) {
+                            LinearProgressIndicator({ a.done.toFloat() / a.total }, Modifier.fillMaxWidth(), color = t.tx, trackColor = t.s2)
+                            Text(stringResource(R.string.offline_resources, a.done, a.total), fontSize = 12.sp, color = t.tx2)
+                        }
+                        a.error?.let { Text(it, fontSize = 13.sp, color = t.sosFg) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            when (a.state) {
+                                OfflineArea.State.DOWNLOADING -> TextButton({ offline.pause(a) }) { Text(stringResource(R.string.pause), color = t.tx) }
+                                OfflineArea.State.PARTIAL -> TextButton({ offline.resume(a) }) { Text(stringResource(R.string.resume), color = t.tx) }
+                                OfflineArea.State.FAILED -> TextButton({ offline.resume(a) }) { Text(stringResource(R.string.try_again), color = t.tx) }
+                                OfflineArea.State.COMPLETE -> Unit
+                            }
+                            Box(Modifier.weight(1f))
+                            TextButton({ offline.delete(a) }) { Text(stringResource(R.string.delete), color = t.sos) }
+                        }
+                    }
+                }
+            }
+            Text(stringResource(R.string.offline_maps_note), fontSize = 12.sp, color = t.tx2)
+        }
     }
 }

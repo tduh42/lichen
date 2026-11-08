@@ -14,6 +14,7 @@ struct MapScreen: View {
     @State private var showingSos = false
     @State private var editing = false
     @State private var refresh: Timer?
+    @State private var showingOffline = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -34,6 +35,10 @@ struct MapScreen: View {
         }
         .sheet(isPresented: $editing) { ShareSheet() }
         .fullScreenCover(isPresented: $showingSos) { SosView() }
+        .sheet(isPresented: $showingOffline) { OfflineMapsSheet(offline: offline) }
+        .alert(offline.lastError ?? "", isPresented: Binding(get: { offline.lastError != nil }, set: { if !$0 { offline.lastError = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
         .onAppear {
             model.needsLocation("map", true)
             model.refreshPositions()
@@ -88,10 +93,10 @@ struct MapScreen: View {
                         Label("Download this area", systemImage: "arrow.down.circle")
                     }
                     .disabled(camera == nil || offline.progress != nil)
-                    if offline.areas > 0 {
-                        Button(role: .destructive) { offline.deleteAll() } label: {
-                            Label("Delete offline maps (\(offline.areas), \(ByteCountFormatter.string(fromByteCount: Int64(offline.bytes), countStyle: .file)))",
-                                  systemImage: "trash")
+                    if !offline.areas.isEmpty {
+                        Button { showingOffline = true } label: {
+                            Label("Offline maps (\(offline.areas.count), \(ByteCountFormatter.string(fromByteCount: Int64(offline.bytes), countStyle: .file)))",
+                                  systemImage: "square.stack.3d.down.right")
                         }
                     }
                 } footer: {
@@ -164,6 +169,86 @@ private struct MapIcon: View {
             .frame(width: 44, height: 44)
             .background(Theme.s2, in: Circle())
             .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+    }
+}
+
+/// The areas kept for use without a network, one by one: what they cover, whether they are
+/// complete, and what to do when they are not.
+private struct OfflineMapsSheet: View {
+    let offline: OfflineMaps
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(offline.areas) { a in
+                        row(a)
+                            .swipeActions {
+                                Button("Delete", role: .destructive) { offline.delete(a) }
+                            }
+                    }
+                } footer: {
+                    Text("A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.")
+                }
+            }
+            .navigationTitle("Offline maps")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+
+    private func row(_ a: OfflineArea) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(a.name).font(.system(size: 16, weight: .semibold))
+                Spacer()
+                badge(a.state)
+            }
+            Text([a.style.capitalized,
+                  ByteCountFormatter.string(fromByteCount: Int64(a.bytes), countStyle: .file),
+                  a.created?.formatted(date: .abbreviated, time: .omitted) ?? ""]
+                .filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.system(size: 13)).foregroundStyle(Theme.tx2)
+            if a.state != .complete, a.total > 0 {
+                ProgressView(value: Double(a.done), total: Double(max(a.total, 1)))
+                    .tint(Theme.tx)
+                Text("\(Int(a.done)) / \(Int(a.total)) tiles and resources")
+                    .font(.system(size: 12)).foregroundStyle(Theme.tx2)
+            }
+            if case let .failed(why) = a.state {
+                Text(why).font(.system(size: 13)).foregroundStyle(Theme.sosFg)
+            }
+            HStack(spacing: 16) {
+                switch a.state {
+                case .downloading:
+                    Button("Pause") { offline.pause(a) }
+                case .partial:
+                    Button("Resume") { offline.resume(a) }
+                case .failed:
+                    Button("Retry") { offline.resume(a) }
+                case .complete:
+                    EmptyView()
+                }
+                Spacer()
+                Button("Delete", role: .destructive) { offline.delete(a) }
+            }
+            .buttonStyle(.borderless)
+            .font(.system(size: 14, weight: .semibold))
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func badge(_ s: OfflineArea.State) -> some View {
+        switch s {
+        case .complete: Badge(text: String(localized: "complete"), background: Theme.okBg, foreground: Theme.okFg)
+        case .downloading: Badge(text: String(localized: "downloading"), background: Theme.irohBg, foreground: Theme.irohFg)
+        case .partial: Badge(text: String(localized: "partial"), background: Theme.warnBg, foreground: Theme.warnFg)
+        case .failed: Badge(text: String(localized: "failed"), background: Theme.sosBg, foreground: Theme.sosFg)
+        }
     }
 }
 
