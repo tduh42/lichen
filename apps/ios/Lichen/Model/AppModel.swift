@@ -701,6 +701,31 @@ final class AppModel {
     /// Airtime left this hour, milliseconds.
     var airtimeLeftMs: UInt64 { budget.limitMs - min(budget.usedMs, budget.limitMs) }
 
+    /// Invites contacts into a group we administer (ADR-0017).
+    func addMembers(_ members: [Data], to gid: Data) -> String? {
+        groupCall { try core.addMembers(gid: gid, members: members, nowMs: now()) }
+    }
+
+    /// Leaves a group (closes it when we are its admin); the conversation stays.
+    func leaveGroup(_ gid: Data) -> String? {
+        let e = groupCall { try core.leaveGroup(gid: gid, nowMs: now()) }
+        shares = core.shares()
+        return e
+    }
+
+    private func groupCall(_ f: () throws -> Void) -> String? {
+        do {
+            try f()
+            groups = core.groups()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not change the group.")
+        }
+    }
+
     func removeMember(_ member: Data, from gid: Data) -> String? {
         do {
             try core.removeMember(gid: gid, member: member, nowMs: now())

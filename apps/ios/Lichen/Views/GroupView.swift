@@ -7,6 +7,10 @@ struct GroupView: View {
     @State private var sharing = false
     @State private var error: String?
     @State private var consent = false
+    @State private var inviting = false
+    @State private var leaving = false
+    @State private var removing: ContactInfo?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -52,6 +56,14 @@ struct GroupView: View {
                         CardRow(title: String(localized: "Media"),
                                 subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor"))
                     }
+                    HStack(spacing: 8) {
+                        if isAdmin {
+                            Button("Invite") { inviting = true }.buttonStyle(.secondary)
+                        }
+                        Button(isAdmin ? "Close the group" : "Leave the group") { leaving = true }
+                            .buttonStyle(.destructive)
+                    }
+                    .padding(.top, 12)
                 }
                 .padding(16)
             }
@@ -69,7 +81,24 @@ struct GroupView: View {
                 }
             }
         }
-        .sheet(isPresented: $sharing) { ShareSheet() }
+        .sheet(isPresented: $sharing) { ChatShareSheet(chat: .group(gid: gid)) }
+        .sheet(isPresented: $inviting) { InviteSheet(gid: gid) }
+        .confirmationDialog(isAdmin ? "Close the group?" : "Leave the group?", isPresented: $leaving, titleVisibility: .visible) {
+            Button(isAdmin ? "Close the group" : "Leave the group", role: .destructive) {
+                // The chat closes itself once the group is gone (ChatView), this screen with it.
+                if let e = model.leaveGroup(gid) { error = e }
+            }
+        } message: {
+            Text(isAdmin
+                 ? "Every member stops receiving it. The messages already received stay on each phone."
+                 : "You stop receiving its messages and your location shares with it stop. What you received stays on this phone.")
+        }
+        .confirmationDialog("Remove from the group?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                            titleVisibility: .visible, presenting: removing) { m in
+            Button("Remove \(m.name)", role: .destructive) { error = model.removeMember(m.key, from: gid) }
+        } message: { _ in
+            Text("Everyone gets new keys: they cannot read what follows.")
+        }
         .onAppear { consent = model.searchConsent(gid) }
         .alert("Not changed", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
@@ -128,9 +157,59 @@ struct GroupView: View {
             }
             if isAdmin && !me {
                 Button(role: .destructive) {
-                    error = model.removeMember(m.key, from: gid)
+                    removing = m
                 } label: {
                     Label("Remove from the group", systemImage: "person.badge.minus")
+                }
+            }
+        }
+    }
+}
+
+/// Invite contacts into the group (the admin): people whose identity is known, not yet in it.
+private struct InviteSheet: View {
+    let gid: Data
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var picked: Set<Data> = []
+    @State private var error: String?
+
+    var body: some View {
+        let members = Set(model.groups.first { $0.gid == gid }?.members.map(\.key) ?? [])
+        let candidates = model.contacts.filter { $0.identity != nil && !members.contains($0.key) }
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(candidates, id: \.key) { c in
+                        Button {
+                            if picked.contains(c.key) { picked.remove(c.key) } else { picked.insert(c.key) }
+                        } label: {
+                            HStack {
+                                Avatar(name: c.name, key: c.key, size: 36)
+                                Text(c.name).foregroundStyle(Theme.tx)
+                                Spacer()
+                                if picked.contains(c.key) { Image(systemName: "checkmark").foregroundStyle(Theme.tx) }
+                            }
+                        }
+                        .accessibilityAddTraits(picked.contains(c.key) ? .isSelected : [])
+                    }
+                } footer: {
+                    Text(candidates.isEmpty
+                         ? String(localized: "Contacts appear here once their identity is known: scan their code or exchange a message.")
+                         : String(localized: "New members get the current keys: they can read messages recorded before they joined."))
+                }
+                if let error { Section { Text(error).foregroundStyle(Theme.sosFg) } }
+            }
+            .navigationTitle("Invite")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Invite") {
+                        error = model.addMembers(Array(picked), to: gid)
+                        if error == nil { dismiss() }
+                    }
+                    .disabled(picked.isEmpty)
                 }
             }
         }

@@ -921,6 +921,26 @@
         }
       }
     },
+    "Close the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer le groupe"
+          }
+        }
+      }
+    },
+    "Close the group?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer le groupe ?"
+          }
+        }
+      }
+    },
     "Code shown on the radio": {
       "localizations": {
         "fr": {
@@ -1147,6 +1167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Contacts"
+          }
+        }
+      }
+    },
+    "Contacts appear here once their identity is known: scan their code or exchange a message.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les contacts apparaissent ici une fois leur identité connue : scanne leur code ou échange un message."
           }
         }
       }
@@ -1591,6 +1621,26 @@
         }
       }
     },
+    "Every member stops receiving it. The messages already received stay on each phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus aucun membre ne le reçoit. Les messages déjà reçus restent sur chaque téléphone."
+          }
+        }
+      }
+    },
+    "Everyone gets new keys: they cannot read what follows.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout le monde reçoit de nouvelles clés : la personne ne pourra pas lire la suite."
+          }
+        }
+      }
+    },
     "Exact": {
       "localizations": {
         "fr": {
@@ -1951,6 +2001,16 @@
         }
       }
     },
+    "Invite": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inviter"
+          }
+        }
+      }
+    },
     "Its messages are deleted from this phone. The contact stays.": {
       "localizations": {
         "fr": {
@@ -2017,6 +2077,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quitter la démo"
+          }
+        }
+      }
+    },
+    "Leave the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter le groupe"
+          }
+        }
+      }
+    },
+    "Leave the group?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter le groupe ?"
           }
         }
       }
@@ -2467,6 +2547,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nouvelle clé"
+          }
+        }
+      }
+    },
+    "New members get the current keys: they can read messages recorded before they joined.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux membres reçoivent les clés actuelles : ils peuvent lire les messages enregistrés avant leur arrivée."
           }
         }
       }
@@ -3171,12 +3261,32 @@
         }
       }
     },
+    "Remove %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer %@"
+          }
+        }
+      }
+    },
     "Remove from the group": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Retirer du groupe"
+          }
+        }
+      }
+    },
+    "Remove from the group?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer du groupe ?"
           }
         }
       }
@@ -4577,6 +4687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu as scanné son code en personne."
+          }
+        }
+      }
+    },
+    "You stop receiving its messages and your location shares with it stop. What you received stays on this phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu ne reçois plus ses messages et tes partages de position avec lui s’arrêtent. Ce que tu as reçu reste sur ce téléphone."
           }
         }
       }

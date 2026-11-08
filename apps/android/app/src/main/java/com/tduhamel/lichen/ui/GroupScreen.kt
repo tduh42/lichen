@@ -17,6 +17,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,12 +54,16 @@ import com.tduhamel.lichen.model.startSearch
 /** A group: members and their keys, diffusion (mockup `groupe`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
+/** `left`: after leaving the group, back to the conversations. */
+fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Unit = back) {
     val t = lichen
     val g = model.group(chat)
     var removing by remember { mutableStateOf<ContactInfo?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var consent by remember(g?.gid?.hex()) { mutableStateOf(g?.let { model.searchConsent(it.gid) } ?: false) }
+    var inviting by remember { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
@@ -102,6 +109,15 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
                             model.setSearchConsent(g.gid, it)
                         })
                     }
+                    CardDivider()
+                    Box(Modifier.clickable { sharing = true }) {
+                        CardRow(stringResource(R.string.precision_shared_with_group)) {
+                            Text(
+                                model.share(ChatId.group(g.gid))?.let { precisionName(it.precision) } ?: stringResource(R.string.not_shared),
+                                fontSize = 15.sp, color = t.tx2,
+                            )
+                        }
+                    }
                 }
             }
             item { SectionLabel(stringResource(R.string.diffusion), Modifier.padding(top = 10.dp)) }
@@ -114,7 +130,35 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit) {
                     CardRow(stringResource(R.string.media), stringResource(R.string.media_never_flooded))
                 }
             }
+            item {
+                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (isAdmin) SecondaryButton(stringResource(R.string.invite), Modifier.weight(1f)) { inviting = true }
+                    SecondaryButton(
+                        stringResource(if (isAdmin) R.string.close_group else R.string.leave_group), Modifier.weight(1f),
+                        background = t.sosBg, foreground = t.sosFg,
+                    ) { leaving = true }
+                }
+            }
         }
+    }
+    if (sharing && g != null) ChatShareSheet(model, ChatId.group(g.gid)) { sharing = false }
+    if (inviting && g != null) InviteDialog(model, g) { inviting = false }
+    if (leaving && g != null) {
+        val admin = model.nodeKey?.contentEquals(g.admin) == true
+        AlertDialog(
+            onDismissRequest = { leaving = false },
+            title = { Text(stringResource(if (admin) R.string.close_group_q else R.string.leave_group_q)) },
+            text = { Text(stringResource(if (admin) R.string.close_group_note else R.string.leave_group_note)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    leaving = false
+                    error = model.leaveGroup(g.gid)
+                    if (error == null) left()
+                }) { Text(stringResource(if (admin) R.string.close_group else R.string.leave_group), color = t.sos) }
+            },
+            dismissButton = { TextButton(onClick = { leaving = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
     }
     removing?.let { m ->
         AlertDialog(
@@ -166,6 +210,12 @@ private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: 
             menu = false
             search()
         })
+        if (removable) {
+            DropdownMenuItem({ Text(stringResource(R.string.remove_from_group), color = t.sos) }, {
+                menu = false
+                remove()
+            })
+        }
     }
     Row(
         Modifier
@@ -188,4 +238,44 @@ private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: 
             }
         }
     }
+}
+
+/** Invite contacts into the group (the admin): people whose identity is known, not yet in it. */
+@Composable
+private fun InviteDialog(model: AppModel, g: GroupInfo, dismiss: () -> Unit) {
+    val t = lichen
+    val members = g.members.map { it.key.hex() }.toSet()
+    val candidates = model.contacts.filter { it.identity != null && it.key.hex() !in members }
+    var picked by remember { mutableStateOf(setOf<String>()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.invite)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (candidates.isEmpty()) Text(stringResource(R.string.invite_none), color = t.tx2)
+                for (c in candidates) {
+                    val k = c.key.hex()
+                    Row(
+                        Modifier.fillMaxWidth().clickable { picked = if (k in picked) picked - k else picked + k }.padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Checkbox(k in picked, { picked = if (it) picked + k else picked - k })
+                        Text(c.name, color = t.tx)
+                    }
+                }
+                if (candidates.isNotEmpty()) Text(stringResource(R.string.invite_note), fontSize = 12.sp, color = t.tx2)
+                error?.let { Text(it, color = t.sosFg) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = picked.isNotEmpty(), onClick = {
+                error = model.addMembers(candidates.filter { it.key.hex() in picked }.map { it.key }, g.gid)
+                if (error == null) dismiss()
+            }) { Text(stringResource(R.string.invite), color = t.tx) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel), color = t.tx) } },
+        containerColor = t.s1,
+    )
 }

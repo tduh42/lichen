@@ -344,7 +344,8 @@ impl State {
         let admin: PubKey = take(&mut b, 32)?.try_into().ok()?;
         let name = take_name(&mut b)?;
         let n = usize::from(*take(&mut b, 1)?.first()?);
-        if !(2..=MAX_MEMBERS).contains(&n) {
+        // One member: the admin closing the group (§10.1, ADR-0017).
+        if !(1..=MAX_MEMBERS).contains(&n) {
             return None;
         }
         let mut members = Vec::with_capacity(n);
@@ -519,6 +520,101 @@ impl Core {
         Ok(gid)
     }
 
+    /// Adds members (admin only, an invitation, ADR-0017): new epoch sent to everyone,
+    /// newcomers included; our key goes to the newcomers (the others send theirs on the state).
+    /// `nodes` are contacts whose identity is known.
+    pub fn add_members(
+        &mut self,
+        gid: &GroupId,
+        nodes: &[PubKey],
+        now: Millis,
+    ) -> Result<(), Error> {
+        let me = self.key.ok_or(Error::NoIdentity)?;
+        if self.groups.get(gid).ok_or(Error::UnknownGroup)?.admin != me {
+            return Err(Error::NotAllowed);
+        }
+        let mut added = Vec::new();
+        for k in nodes {
+            let c = self.contacts.get(k).ok_or(Error::UnknownContact)?;
+            let id = c.identity.ok_or(Error::IdentityUnknown)?;
+            added.push(Member {
+                key: id,
+                node: *k,
+                name: c.name.clone(),
+            });
+        }
+        let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
+        added.retain(|a| g.members.iter().all(|m| m.key != a.key));
+        if added.is_empty() {
+            return Ok(());
+        }
+        if g.members.len() + added.len() > MAX_MEMBERS {
+            return Err(Error::TooLarge);
+        }
+        let ids: Vec<PubKey> = added.iter().map(|m| m.key).collect();
+        g.members.extend(added);
+        g.epoch += 1;
+        self.dirty_groups.insert(*gid);
+        self.broadcast_state(gid, &[]);
+        self.send_my_key(gid, Some(&ids));
+        self.events.push_back(Event::GroupUpdated { gid: *gid });
+        self.tick(now);
+        Ok(())
+    }
+
+    /// Leaves a group (ADR-0017): a member asks the admin to remove it and forgets the group at
+    /// once; the admin closes it (a last state listing the admin alone, so everyone forgets it).
+    pub fn leave_group(&mut self, gid: &GroupId, now: Millis) -> Result<(), Error> {
+        let me = self.key.ok_or(Error::NoIdentity)?;
+        let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
+        if g.admin == me {
+            let others: Vec<PubKey> = g
+                .members
+                .iter()
+                .filter(|m| m.key != me)
+                .map(|m| m.node)
+                .collect();
+            g.members.retain(|m| m.key == me);
+            g.epoch += 1;
+            self.broadcast_state(gid, &others);
+        } else if let Some(admin) = g.members.iter().find(|m| m.key == g.admin).map(|m| m.node) {
+            let mut leave = vec![content::GROUP_LEAVE];
+            leave.extend_from_slice(gid);
+            leave.extend_from_slice(&g.epoch.to_le_bytes());
+            self.enqueue_internal(&admin, leave);
+        }
+        self.groups.remove(gid);
+        self.dirty_groups.insert(*gid);
+        self.events.push_back(Event::GroupLeft { gid: *gid });
+        self.tick(now);
+        Ok(())
+    }
+
+    /// A member asks us, the admin, to remove it (§10.4).
+    fn on_group_leave(&mut self, from: &PubKey, datagram: &[u8], now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        let Some(gid) = datagram.get(1..17).and_then(|g| GroupId::try_from(g).ok()) else {
+            return;
+        };
+        let Some(g) = self.groups.get_mut(&gid) else {
+            return;
+        };
+        if g.admin != me || *from == me || !g.is_member(from) {
+            return;
+        }
+        let node = g.members.iter().find(|m| m.key == *from).map(|m| m.node);
+        g.members.retain(|m| m.key != *from);
+        g.epoch += 1;
+        g.keys.remove(from);
+        self.dirty_groups.insert(gid);
+        self.broadcast_state(&gid, &node.into_iter().collect::<Vec<_>>());
+        self.rotate_my_key(&gid);
+        self.events.push_back(Event::GroupUpdated { gid });
+        self.tick(now);
+    }
+
     /// Removes `member` (admin only): new epoch, and every remaining member rotates its key.
     pub fn remove_member(
         &mut self,
@@ -616,6 +712,10 @@ impl Core {
                 if let Some((gid, epoch, key, next)) = decode_sender_key(datagram) {
                     self.on_sender_key(from, gid, epoch, key, next, now);
                 }
+            }
+            Some(&content::GROUP_LEAVE) if datagram.len() == 21 => {
+                let from = *from;
+                self.on_group_leave(&from, datagram, now);
             }
             _ => {}
         }

@@ -230,7 +230,7 @@
     <string name="hop_limit">Limite de sauts</string>
     <string name="hop_limit_note">Chaque saut coûte du temps d\'antenne aux relais ; les messages tiennent jusqu\'à 8</string>
     <string name="media">Médias</string>
-    <string name="media_never_flooded">Jamais en flood : annonce LoRa, contenu via iroh ou Tor (L7)</string>
+    <string name="media_never_flooded">Jamais en flood : annonce LoRa, contenu via iroh ou Tor</string>
     <string name="remove_from_group">Retirer du groupe</string>
     <string name="not_changed">Pas modifié</string>
     <string name="sender_keys_up_to_date">Sender keys à jour</string>
@@ -534,4 +534,14 @@
     <string name="zoom_range">zoom %1$d–%2$d</string>
     <string name="pause">Pause</string>
     <string name="resume">Reprendre</string>
+    <string name="precision_shared_with_group">Précision partagée avec le groupe</string>
+    <string name="invite">Inviter</string>
+    <string name="leave_group">Quitter le groupe</string>
+    <string name="close_group">Fermer le groupe</string>
+    <string name="leave_group_q">Quitter le groupe ?</string>
+    <string name="close_group_q">Fermer le groupe ?</string>
+    <string name="leave_group_note">Tu ne reçois plus ses messages et tes partages de position avec lui s’arrêtent. Ce que tu as reçu reste sur ce téléphone.</string>
+    <string name="close_group_note">Plus aucun membre ne le reçoit. Les messages déjà reçus restent sur chaque téléphone.</string>
+    <string name="invite_none">Les contacts apparaissent ici une fois leur identité connue : scanne leur code ou échange un message.</string>
+    <string name="invite_note">Les nouveaux membres reçoivent les clés actuelles : ils peuvent lire les messages enregistrés avant leur arrivée.</string>
 </resources>

@@ -354,3 +354,111 @@ fn group_estimate_matches_the_air() {
         );
     }
 }
+
+/// ADR-0017: the admin invites Dave, who reads what follows; Carol leaves (the admin removes
+/// her, keys rotate, she gets nothing more); the admin closes the group, everyone forgets it.
+#[test]
+fn invite_leave_close() {
+    let (mut net, m) = star(31);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol, dave) = (m[0], m[1], m[2], m[3]);
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)));
+    settle(&mut net);
+    for &i in &m {
+        net.take_events(i);
+    }
+
+    // Only the admin invites.
+    assert_eq!(
+        net.with_core(bob, |c, now| c.add_members(&gid, &[keys[3]], now)),
+        Some(Err(lc_core::Error::NotAllowed))
+    );
+    net.with_core(alice, |c, now| c.add_members(&gid, &[keys[3]], now))
+        .unwrap()
+        .unwrap();
+    assert!(
+        net.run_until(net.now + 60 * MIN, |n| keys_complete(
+            n,
+            &[alice, bob, carol, dave],
+            &gid
+        )),
+        "Dave holds every key"
+    );
+    assert!(
+        net.take_events(dave)
+            .iter()
+            .any(|e| matches!(e, Event::GroupJoined { .. }))
+    );
+    net.with_core(bob, |c, now| {
+        c.send_group_text(&gid, "welcome Dave", 1, now)
+    })
+    .unwrap()
+    .unwrap();
+    settle(&mut net);
+    assert!(
+        group_texts(&net.take_events(dave))
+            .iter()
+            .any(|(_, t)| t == "welcome Dave")
+    );
+
+    // Carol leaves: gone on her side at once, removed by the admin, keys rotated.
+    net.with_core(carol, |c, now| c.leave_group(&gid, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 1_000, |_| false);
+    assert!(
+        net.take_events(carol)
+            .iter()
+            .any(|e| matches!(e, Event::GroupLeft { .. }))
+    );
+    assert!(net.with_core(carol, |c, _| c.groups().count()).unwrap() == 0);
+    assert!(net.run_until(net.now + 60 * MIN, |n| {
+        n.nodes[alice].core.as_ref().is_some_and(|c| {
+            c.groups()
+                .find(|g| g.gid == gid)
+                .is_some_and(|g| g.members.len() == 3)
+        })
+    }));
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(
+        n,
+        &[alice, bob, dave],
+        &gid
+    )));
+    settle(&mut net);
+    for &i in &m {
+        net.take_events(i);
+    }
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "after Carol", 2, now))
+        .unwrap()
+        .unwrap();
+    settle(&mut net);
+    assert!(
+        group_texts(&net.take_events(dave))
+            .iter()
+            .any(|(_, t)| t == "after Carol")
+    );
+    assert!(group_texts(&net.take_events(carol)).is_empty());
+
+    // The admin closes the group.
+    net.with_core(alice, |c, now| c.leave_group(&gid, now))
+        .unwrap()
+        .unwrap();
+    settle(&mut net);
+    for i in [alice, bob, dave] {
+        assert_eq!(
+            net.with_core(i, |c, _| c.groups().count()),
+            Some(0),
+            "node {i}"
+        );
+        assert!(
+            net.take_events(i)
+                .iter()
+                .any(|e| matches!(e, Event::GroupLeft { .. }))
+                || i == alice
+        );
+    }
+}

@@ -224,6 +224,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x07 | SEARCH | §11 (groups only) | L8 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
+| 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
 
 An unknown type is handed to the app as "unsupported", with no error on the network.
 
@@ -301,7 +302,7 @@ A group is a set of members who each hold the **sender key** of every other memb
 ### 10.1 Group state (pairwise datagram, type 0x11 GROUP_STATE)
 
 ```
-gid (16, random) ‖ epoch u32 ‖ admin id (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 2..32)
+gid (16, random) ‖ epoch u32 ‖ admin id (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 1..32: 1 only when the admin closes the group)
 ‖ n × (id (32) ‖ node (32) ‖ name_len (1) ‖ name (≤ 32))
 ```
 
@@ -310,6 +311,8 @@ Members are identities (§2); `node` is where to reach them (MeshCore routing).
 - The creator is the **admin**. Only the admin sends GROUP_STATE. A receiver accepts it when it comes from the group's admin with a higher `epoch` than the one it holds, or, for an unknown `gid`, from any contact that lists itself as admin and lists the receiver (joining is reported to the app).
 - Members who are not contacts yet are added as contacts from the list (their pairwise traffic needs a path, found by §4.5).
 - A receiver that is no longer listed forgets the group (reported to the app).
+- The admin adds members (an invitation) with a new `epoch` listing them, sent to every member, newcomers included; the newcomers must be contacts whose identity is known. The keys follow the "only adds" rule of §10.2 (ADR-0017).
+- The admin leaves by closing the group: a last GROUP_STATE (new `epoch`) that lists the admin alone, so every member forgets the group; then the admin forgets it too.
 
 ### 10.2 Sender keys (pairwise datagram, type 0x10 SENDER_KEY)
 
@@ -343,6 +346,16 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 - **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept, 16 at most, for 10 minutes, and tried again when a new sender key arrives. Sender keys travel pairwise over several hops and often arrive after a member's first post.
 - **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006).
 
+
+### 10.4 Leaving (pairwise datagram, type 0x12 GROUP_LEAVE, ADR-0017)
+
+```
+gid (16) ‖ epoch u32
+```
+
+- A member who is not the admin leaves by sending GROUP_LEAVE to the admin (`epoch` the state it holds), and forgets the group at once: its state, the members' sender keys and its own (reported to the app). The conversation already received stays on the phone.
+- The admin, on a GROUP_LEAVE from a listed member other than itself (the sender's identity is the session's, §4.6), removes it as an admin removal does (§10.1: new `epoch`, every remaining member rotates its key, §10.2). A GROUP_LEAVE for a group the receiver does not administer, or from someone not listed, is ignored.
+- Until the admin has removed the member, the others keep sending under keys the leaver held: it deleted them, and a leaver that kept them could read only what is sent before the rotation (the same exposure as a removal waiting for the admin).
 ## 11. Search (ADR-0016)
 
 Group members (the **searchers**) locate another member (the **target**) from the target's group floods heard **directly**: each searcher's phone records their SNR and RSSI with its own GPS position, shares them in the group, and fuses everyone's measurements and bearings in a particle filter (local computation, not on the wire). Phones and stock radios only; regulatory constraints and the threat model stay in `design.md`.

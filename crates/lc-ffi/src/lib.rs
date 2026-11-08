@@ -1765,6 +1765,34 @@ impl LichenCore {
         Ok(stored.into())
     }
 
+    /// Invites contacts (nodes whose identity is known) into a group we administer (ADR-0017).
+    pub fn add_members(
+        &self,
+        gid: Vec<u8>,
+        members: Vec<Vec<u8>>,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let g = self::gid(&gid)?;
+        let ms = members
+            .iter()
+            .map(|m| key(m))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut i = self.lock();
+        i.core.add_members(&g, &ms, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Leaves a group: a member asks the admin to remove it and forgets the group at once; the
+    /// admin closes it for everyone (ADR-0017). The conversation stays on the phone.
+    pub fn leave_group(&self, gid: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
+        let g = self::gid(&gid)?;
+        let mut i = self.lock();
+        i.core.leave_group(&g, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
     pub fn remove_member(
         &self,
         gid: Vec<u8>,

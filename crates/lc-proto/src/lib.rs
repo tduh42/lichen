@@ -77,4 +77,5 @@ pub mod content {
     pub const SEARCH: u8 = 0x07;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
+    pub const GROUP_LEAVE: u8 = 0x12;
 }

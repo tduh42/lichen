@@ -1326,6 +1326,27 @@ class AppModel(val app: Application) {
         e.display(res)
     }
 
+    /** Invites contacts into a group we administer (ADR-0017). */
+    fun addMembers(members: List<ByteArray>, gid: ByteArray): String? = try {
+        core.addMembers(gid, members, now())
+        groups = core.groups()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** Leaves a group (closes it when we are its admin); the conversation stays. */
+    fun leaveGroup(gid: ByteArray): String? = try {
+        core.leaveGroup(gid, now())
+        groups = core.groups()
+        shares = core.shares()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
     fun removeMember(member: ByteArray, gid: ByteArray): String? = try {
         core.removeMember(gid, member, now())
         groups = core.groups()

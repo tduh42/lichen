@@ -2262,7 +2262,11 @@ impl Core {
                 if let Ok(Some(datagram)) = &result
                     && matches!(
                         datagram.first(),
-                        Some(&lc_proto::content::GROUP_STATE | &lc_proto::content::SENDER_KEY)
+                        Some(
+                            &lc_proto::content::GROUP_STATE
+                                | &lc_proto::content::SENDER_KEY
+                                | &lc_proto::content::GROUP_LEAVE
+                        )
                     )
                 {
                     self.on_group_control(&c, datagram, now);

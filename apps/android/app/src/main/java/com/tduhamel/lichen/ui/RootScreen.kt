@@ -128,7 +128,9 @@ fun RootScreen(model: AppModel) {
             composable("contact") { ContactScreen(model, back = { nav.popBackStack() }) }
             composable("group/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
-                if (chat != null) GroupScreen(model, chat, back = { nav.popBackStack() })
+                if (chat != null) {
+                    GroupScreen(model, chat, back = { nav.popBackStack() }, left = { nav.popBackStack("messages", inclusive = false) })
+                }
             }
             composable("pairing") { PairingScreen(model, back = { nav.popBackStack() }) }
             composable("chat/{id}") { e ->

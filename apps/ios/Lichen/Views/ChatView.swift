@@ -11,6 +11,7 @@ struct ChatView: View {
     /// The verification sheet: an empty value for the current identity, else a pending one.
     @State private var verifying: Data?
     @State private var renaming = false
+    @Environment(\.dismiss) private var dismissChat
     /// The bottom-most message on screen: new ones follow only when it is the last one.
     @State private var bottomVisible: Int64?
     /// Messages that arrived while reading above.
@@ -146,6 +147,10 @@ struct ChatView: View {
             #endif
         }
         .onAppear { if draft.isEmpty { draft = model.draft(chat) } }
+        // A group we left, closed or were removed from: back to the conversations.
+        .onChange(of: model.groups.map(\.gid)) { _, gids in
+            if case let .group(gid) = chat, !gids.contains(gid) { dismissChat() }
+        }
         .onChange(of: draft) { model.setDraft(chat, draft) }
         .onDisappear {
             if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
@@ -778,7 +783,7 @@ private struct Composer: View {
 }
 
 /// Our position for this chat, from the composer's menu: the same shares as the map's panel.
-private struct ChatShareSheet: View {
+struct ChatShareSheet: View {
     let chat: ChatID
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss

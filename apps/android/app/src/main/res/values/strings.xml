@@ -227,7 +227,7 @@
     <string name="hop_limit">Hop limit</string>
     <string name="hop_limit_note">Each hop costs the relays airtime; messages fit up to 8</string>
     <string name="media">Media</string>
-    <string name="media_never_flooded">Never flooded: a LoRa announcement, the content over iroh or Tor (L7)</string>
+    <string name="media_never_flooded">Never flooded: a LoRa announcement, the content over iroh or Tor</string>
     <string name="remove_from_group">Remove from the group</string>
     <string name="not_changed">Not changed</string>
     <string name="sender_keys_up_to_date">Sender keys up to date</string>
@@ -528,4 +528,14 @@
     <string name="zoom_range">zoom %1$d–%2$d</string>
     <string name="pause">Pause</string>
     <string name="resume">Resume</string>
+    <string name="precision_shared_with_group">Precision shared with the group</string>
+    <string name="invite">Invite</string>
+    <string name="leave_group">Leave the group</string>
+    <string name="close_group">Close the group</string>
+    <string name="leave_group_q">Leave the group?</string>
+    <string name="close_group_q">Close the group?</string>
+    <string name="leave_group_note">You stop receiving its messages and your location shares with it stop. What you received stays on this phone.</string>
+    <string name="close_group_note">Every member stops receiving it. The messages already received stay on each phone.</string>
+    <string name="invite_none">Contacts appear here once their identity is known: scan their code or exchange a message.</string>
+    <string name="invite_note">New members get the current keys: they can read messages recorded before they joined.</string>
 </resources>
