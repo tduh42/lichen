@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.hex
 
 /** "Add a contact" (mockup `contact`, §4.7): show my code, scan theirs, compare the safety number. */
@@ -76,7 +77,12 @@ fun ContactScreen(model: AppModel, back: () -> Unit) {
         ) {
             val c = added
             if (c != null) {
-                VerifyPanel(model, c.key, null, back)
+                VerifyPanel(model, c.key, null) {
+                    // Their conversation opens, ready for the first message (the list shows
+                    // contacts once there is a message).
+                    model.openChat = ChatId.contact(c.key)
+                    back()
+                }
             } else {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     listOf(false to R.string.my_code, true to R.string.scan).forEachIndexed { i, (scan, label) ->
@@ -201,7 +207,18 @@ fun VerifyPanel(model: AppModel, node: ByteArray, pending: ByteArray?, done: () 
             Text(stringResource(R.string.same_on_both_phones), fontSize = 13.sp, color = t.tx2)
         }
         val id = shown
-        if (numbers != null && id != null) {
+        // Already verified (a scanned code): nothing to approve; the numbers are a check.
+        val verified = model.contact(node)?.verified == true && !isNew && !stale
+        if (numbers != null && id != null && verified) {
+            Text(stringResource(R.string.verified_by_scan), fontSize = 13.sp, color = t.tx2)
+            PrimaryButton(stringResource(R.string.done)) { done() }
+            TextButton(onClick = {
+                model.setVerified(node, id, false)
+                done()
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.they_differ), color = t.sosFg, fontWeight = FontWeight.SemiBold)
+            }
+        } else if (numbers != null && id != null) {
             PrimaryButton(stringResource(R.string.numbers_match)) {
                 val ok = if (isNew) model.acceptIdentity(node, id) else model.setVerified(node, id, true)
                 if (ok) done() else refresh(true)

@@ -24,7 +24,12 @@ struct AddContactView: View {
             .pickerStyle(.segmented)
 
             if let added {
-                VerifyPanel(node: added.key) { finish() }
+                VerifyPanel(node: added.key) {
+                    // Their conversation opens, ready for the first message (the list shows
+                    // contacts once there is a message).
+                    if next == nil { model.debugOpen = .contact(key: added.key) }
+                    finish()
+                }
             } else if tab == .myCode {
                 myCode
             } else {
@@ -118,7 +123,17 @@ struct VerifyPanel: View {
             }
             .padding(16)
             .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
-            if numbers != nil, let shown {
+            // Already verified (a scanned code): nothing to approve; the numbers are a check.
+            let verified = model.contact(node)?.verified == true && !isNew && !stale
+            if numbers != nil, verified {
+                Text("Verified by the scan. Their phone shows the same numbers once it knows you: after your first message, or when they scan your code.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Done") { done() }
+                    .buttonStyle(.primary)
+            }
+            if numbers != nil, let shown, !verified {
                 Button("The numbers match") {
                     let ok = isNew ? model.acceptIdentity(node, expected: shown)
                                    : model.setVerified(node, identity: shown, true)
@@ -135,6 +150,15 @@ struct VerifyPanel: View {
                         .background(Theme.sosBg, in: RoundedRectangle(cornerRadius: 14))
                         .foregroundStyle(Theme.sosFg)
                 }
+            }
+            if verified, let shown {
+                Button("They differ") {
+                    model.setVerified(node, identity: shown, false)
+                    done()
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.sosFg)
+                .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
         .onAppear { if shown == nil { refresh(stale: false) } }

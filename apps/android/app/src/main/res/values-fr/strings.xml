@@ -241,4 +241,6 @@
     <string name="group_details">Détails du groupe</string>
     <string name="network">Réseau</string>
     <string name="network_note">Un companion en Wi-Fi, ou une radio USB relayée par un ordinateur (lichen bridge ; l\'émulateur Android la joint à 10.0.2.2:5000).</string>
+    <string name="done">Terminé</string>
+    <string name="verified_by_scan">Vérifié par le scan. Son téléphone affiche les mêmes chiffres dès qu\'il te connaît : après ton premier message, ou quand il scanne ton code.</string>
 </resources>
