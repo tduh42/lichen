@@ -228,8 +228,10 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
 | 0x13 | GROUP_JOIN | §10.5 | ADR-0020 |
+| 0x14 | SENDER_KEYS | §10.2 (from the admin) | ADR-0021 |
+| 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed) | ADR-0021 |
 
-An unknown type is handed to the app as "unsupported", with no error on the network.
+An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
 
 Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006), or after a restart (§6.1). The receiver drops a datagram byte-identical to one received from the same peer within the last hour. TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
 
@@ -333,8 +335,10 @@ A group is a set of members who each hold the **sender key** of every other memb
 
 ```
 gid (16, random) ‖ epoch u32 ‖ admin id (32) ‖ name_len (1) ‖ name (UTF-8, ≤ 32) ‖ n (1, 1..32: 1 only when the admin closes the group)
-‖ n × (id (32) ‖ node (32) ‖ name_len (1) ‖ name (≤ 32))
+‖ n × (id (32) ‖ node (32) ‖ name_len (1) ‖ name (≤ 32)) ‖ [cause (1)]
 ```
+
+`cause`, present when the list lost members compared with the previous state: 1 = they left (GROUP_LEAVE, §10.4), 2 = the admin removed them. Absent or another value: "no longer in the group". The phones show it in the conversation ("Bob left", "Camille removed Bob").
 
 Members are identities (§2); `node` is where to reach them (MeshCore routing).
 
@@ -343,6 +347,7 @@ Members are identities (§2); `node` is where to reach them (MeshCore routing).
 - A receiver that is no longer listed forgets the group (reported to the app).
 - The admin adds members (an invitation) with a new `epoch` listing them, sent to every member, newcomers included; the newcomers must be contacts whose identity is known. The keys follow the "only adds" rule of §10.2 (ADR-0017).
 - The admin leaves by closing the group: a last GROUP_STATE (new `epoch`) that lists the admin alone, so every member forgets the group; then the admin forgets it too.
+- The admin renames the group with a new `epoch` carrying the new name, sent to every member; nobody is gone, so no key changes. A group may start with the admin alone (to invite in person, §10.5); it sends no state until it has members.
 
 ### 10.2 Sender keys (pairwise datagram, type 0x10 SENDER_KEY)
 
@@ -350,7 +355,18 @@ Members are identities (§2); `node` is where to reach them (MeshCore routing).
 gid (16) ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32
 ```
 
-- Every member draws a random sender key per group and sends it to every other member. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows. A GROUP_STATE that only **adds** members keeps the keys: each member sends its current key to the newcomers, who could therefore read messages under those keys recorded before they joined (ADR-0014).
+- Every member draws a random sender key per group. A new GROUP_STATE whose member list **lost** someone makes every remaining member draw a new key (`key_epoch + 1`) and send it to the remaining members only: the departed member cannot read what follows. A GROUP_STATE that only **adds** members keeps the keys: newcomers receive the current keys and could therefore read messages under them recorded before they joined (ADR-0014).
+- **The admin relays keys on additions** (ADR-0021), so that newcomers and members need no session with each other, only with the admin:
+  - A member that joins (a state for an unknown `gid` that lists it) sends its first key to the **admin only**. On a state that only adds members, the others send nothing.
+  - On admitting members, the admin sends each newcomer, after the state, one **SENDER_KEYS** with every member's current key it holds, its own included.
+  - On a SENDER_KEY from member X, the admin forwards X's key in a SENDER_KEYS: to every other member when it held no key of X (X joined, or the group was just created); otherwise to the members it admitted in the last 10 minutes (a key in flight during an admission). The admin remembers its admissions in memory only.
+  - A key rotation after a departure, and the new key after a restart, still go from the member to every other member directly: they do not depend on the admin being reachable.
+
+```
+SENDER_KEYS (0x14) = gid (16) ‖ n (1, 1..32) ‖ n × (owner id (32) ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32)
+```
+
+- A receiver accepts SENDER_KEYS only from the group's admin (the session's identity, §4.6), ignores an entry for itself, and keeps an entry for an owner not listed yet as a key that came before its state. A relayed key never replaces a newer one: an entry with the `key_epoch` it holds is ignored, and it is adopted only when the receiver holds no key of that owner or the entry is newer (`(e − current) mod 256` in 1..127). A SENDER_KEY from its owner is always adopted.
 - Our own sender key and its counter are never stored: after a restart, the app draws a new key (`key_epoch + 1`) and sends it to the members once the node is connected, so a counter is never reused under a key (as for sessions, ADR-0003). The other members' keys and replay windows are stored with the group (ADR-0010): they do not resend them.
 - A receiver keeps the current and the previous key of each member (messages in flight during a rekey), and drops keys of members who left.
 
@@ -396,7 +412,7 @@ An admin can let people join in person, without knowing them first: their app sh
 - **Admission**: the admin's app accepts a GROUP_JOIN whose token is known, not expired or revoked, for a group it still administers and that is not full; it then adds the sender as an invitation does (§10.1, ADR-0017: new epoch, state to everyone, sender keys). From a member already listed (who lost the group, e.g. a phone restored from its phrase), it sends the state and its sender key again to that member alone. Anything else is dropped without an answer. The joiner's identity is the one of the authenticated session; holding the token is the authorization.
 - **Keys**: as for any addition, newcomers receive the members' current sender keys (ADR-0017): what was recorded under them before is readable to them.
 
-Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`).
+Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[group_state]]` and `[[sender_keys]]` for §10.1–10.2).
 
 ## 11. Search (ADR-0016)
 

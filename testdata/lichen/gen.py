@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
-group invitations and GROUP_JOIN (§10.5).
+GROUP_STATE and SENDER_KEYS (§10.1–10.2), group invitations and GROUP_JOIN (§10.5).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
     python3 -I testdata/lichen/gen.py > testdata/lichen/content.toml
@@ -9,7 +9,7 @@ import base64
 import hashlib
 import struct
 
-TEXT, REPLY, REACTION, GROUP_JOIN = 0x01, 0x08, 0x09, 0x13
+TEXT, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x08, 0x09, 0x11, 0x13, 0x14
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -31,7 +31,7 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §10.5), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -138,3 +138,77 @@ for name, text in bad_invites:
     print(f'text = "{text}"')
     print()
 
+
+def name(n: str) -> bytes:
+    b = n.encode()[:32]
+    return bytes([len(b)]) + b
+
+
+def group_state(gid: bytes, epoch: int, admin: bytes, gname: str, members, cause=None) -> bytes:
+    v = bytes([GROUP_STATE]) + gid + struct.pack("<I", epoch) + admin + name(gname) + bytes([len(members)])
+    for ident, node, n in members:
+        v += ident + node + name(n)
+    if cause is not None:
+        v += bytes([cause])
+    return v
+
+
+def sender_keys(gid: bytes, entries) -> bytes:
+    v = bytes([SENDER_KEYS]) + gid + bytes([len(entries)])
+    for owner, epoch, key, nxt in entries:
+        v += owner + bytes([epoch]) + key + struct.pack("<I", nxt)
+    return v
+
+
+gid = hashlib.sha256(b"rando vercors").digest()[:16]
+lea = hashlib.sha256(b"lea").digest()
+julien_node = hashlib.sha256(b"julien node").digest()
+lea_node = hashlib.sha256(b"lea node").digest()
+three = [(camille, camille_node, "Camille"), (julien, julien_node, "Julien"), (lea, lea_node, "Léa")]
+states = [
+    ("three members", 3, "Rando Vercors", three, None),
+    ("julien left", 4, "Rando Vercors", [three[0], three[2]], 1),
+    ("julien removed", 4, "Rando Vercors", [three[0], three[2]], 2),
+    ("renamed", 5, "Vercors, dimanche", [three[0], three[2]], None),
+    ("closed", 6, "Vercors, dimanche", [three[0]], None),
+]
+for nm, epoch, gname, members, cause in states:
+    print("[[group_state]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"epoch = {epoch}")
+    print(f'admin = "{camille.hex()}"')
+    print(f'group_name = "{gname}"')
+    print(f"members = {len(members)}")
+    print(f"cause = {cause if cause is not None else -1}")
+    print(f'datagram = "{group_state(gid, epoch, camille, gname, members, cause).hex()}"')
+    print()
+
+keys = [
+    ("one key", [(julien, 1, hashlib.sha256(b"julien key").digest(), 7)]),
+    ("the admin's and two members'", [
+        (camille, 0, hashlib.sha256(b"camille key").digest(), 0),
+        (julien, 1, hashlib.sha256(b"julien key").digest(), 7),
+        (lea, 255, hashlib.sha256(b"lea key").digest(), 65536),
+    ]),
+]
+for nm, entries in keys:
+    print("[[sender_keys]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"n = {len(entries)}")
+    print(f'owners = "{"".join(o.hex() for o, _, _, _ in entries)}"')
+    print(f'datagram = "{sender_keys(gid, entries).hex()}"')
+    print()
+
+bad = [
+    ("sender keys, none", bytes([SENDER_KEYS]) + gid + bytes([0])),
+    ("sender keys, cut in an entry", sender_keys(gid, keys[0][1])[:-3]),
+    ("sender keys, bytes after the entries", sender_keys(gid, keys[0][1]) + b"\x00"),
+    ("group state, two bytes after the members", group_state(gid, 3, camille, "Rando Vercors", three) + b"\x01\x02"),
+]
+for nm, d in bad:
+    print("[[bad_group_control]]")
+    print(f'name = "{nm}"')
+    print(f'datagram = "{d.hex()}"')
+    print()
