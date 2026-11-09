@@ -253,9 +253,8 @@ impl Demo {
 
     fn act(&mut self, a: Action) {
         let app_key = self.net.key(self.app);
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs() as u32);
+        // The simulated clock (the real one in the app, which runs the demo in real time).
+        let ts = (self.unix_s() & 0xFFFF_FFFF) as u32;
         match a {
             Action::Dm { from, text } => {
                 let _ = self
@@ -470,8 +469,7 @@ impl Demo {
                         let Content::Text { text, .. } = &content else {
                             continue;
                         };
-                        // Camille also gives it a 👍 (§6.2), well after her answer: the two would
-                        // otherwise cross the app's next message on a busy link.
+                        // Camille also gives it a 👍 (§6.2), soon after her answer.
                         let app_identity = self
                             .net
                             .with_core_ref(bot, |c| {
@@ -482,7 +480,7 @@ impl Demo {
                             .flatten();
                         if let (Some(id), true) = (app_identity, name == "Camille") {
                             self.pending.push((
-                                now + 24 * SEC,
+                                now + 8 * SEC,
                                 Action::React {
                                     from: bot,
                                     target: lc_core::content::message_ref(&id, &content.encode()),
@@ -1352,13 +1350,18 @@ mod persistence {
 
         let core = LichenCore::new("t".into(), vec![1; 32], vec![101; 32], data.clone()).unwrap();
         core.connect(0);
-        let mut sent = false;
+        let (mut sent, mut posted) = (false, false);
         run(&demo, &core, 0, 8 * 60_000, |c, now| {
             if !sent
                 && now > 40_000
                 && let Some(k) = c.contacts().into_iter().find(|k| k.name == "Camille")
             {
                 sent = c.send_text(k.key, "first".into(), 1, now).is_ok();
+            }
+            // Our own post in the group: its history does not depend on a flood getting
+            // through the demo's busiest minute.
+            if !posted && let Some(g) = c.groups().into_iter().next() {
+                posted = c.send_group_text(g.gid, "hello all".into(), 2, now).is_ok();
             }
         });
         let camille = core

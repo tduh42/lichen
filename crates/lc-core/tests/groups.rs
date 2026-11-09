@@ -204,6 +204,31 @@ fn group_of_five_then_removal() {
     );
 }
 
+/// A group of 5 created from contacts around one repeater, over ten seeds: when every member
+/// holds every key (median and worst, seconds).
+#[test]
+#[ignore = "measurement, prints numbers for docs/measurements.md"]
+fn setup_timings() {
+    let mut v = Vec::new();
+    for seed in 1..=10 {
+        let (mut net, m) = star(200 + seed);
+        let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+        let t0 = net.now;
+        let gid = net
+            .with_core(m[0], |c, now| c.create_group("g", &keys[1..], now))
+            .unwrap()
+            .unwrap();
+        net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m, &gid));
+        v.push((net.now - t0) / 1000);
+    }
+    v.sort_unstable();
+    println!(
+        "group of 5 keys everywhere: median {} s, worst {} s, all {v:?}",
+        v[v.len() / 2],
+        v[v.len() - 1]
+    );
+}
+
 #[test]
 fn limits() {
     let (mut net, m) = star(12);

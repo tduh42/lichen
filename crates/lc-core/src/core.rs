@@ -468,6 +468,9 @@ struct Peer {
     answered_intro: Option<AnsweredIntro>,
     /// The peer answered no HELLO: it may have a new identity, introduce again (§4.6).
     intro_needed: bool,
+    /// A datagram went unacknowledged: a new handshake runs while the session stays, and
+    /// anything that still arrives under the session ends it (ADR-0006).
+    suspect: bool,
     /// The peer may not know our identity (we scanned its invitation): probes go anonymous
     /// from the first (§4.5).
     unknown_to_peer: bool,
@@ -511,6 +514,14 @@ impl Peer {
     fn replace_pending(&mut self, s: Session) {
         if self.in_flight.as_ref().is_some_and(|f| f.on_pending) {
             self.requeue_in_flight();
+        }
+        // We suspected the session was lost, and the peer starts a new one: it was (a
+        // restart). What was in flight goes again under the new session (ADR-0006).
+        if std::mem::take(&mut self.suspect) {
+            self.requeue_in_flight();
+            self.session = None;
+            self.initiating = None;
+            self.introducing = None;
         }
         self.pending = Some(Box::new(s));
     }
@@ -1523,6 +1534,19 @@ impl Core {
 
     /// The radio is busy with a frame of `airtime_ms` until it has cleared the path (`hops`
     /// repeaters, `None` for a flood): the next data frame waits (§7.3).
+    /// After a frame the peer answers at once (the last fragment of a round, HELLO, INTRO):
+    /// our next data frame waits for the answer to come back along `path`. Otherwise it
+    /// collides, at a repeater we share, with that answer (§7.4).
+    fn expect_answer(&mut self, path: &OwnedPath) {
+        let t_ack = self.radio.airtime_us(2 + path.bytes.len() + 24) / 1000;
+        let k = match path.hops() {
+            0 => 1,
+            1 => 3,
+            _ => 7,
+        };
+        self.next_slot += t_ack * k + 200;
+    }
+
     fn occupy(&mut self, now: Millis, airtime_ms: Millis, hops: Option<u8>) {
         let k = match hops {
             Some(0) => 1,
@@ -1550,6 +1574,11 @@ impl Core {
         {
             if init.attempt + 1 >= HELLO_TRIES {
                 peer.initiating = None;
+                // Silent through every HELLO: the session kept meanwhile is lost too.
+                if std::mem::take(&mut peer.suspect) {
+                    peer.session = None;
+                    peer.pending = None;
+                }
                 // It may have a new identity: introduce again next time (§4.6).
                 peer.intro_needed = true;
                 self.fail_queue(peer, FailReason::Unreachable, now);
@@ -1569,6 +1598,10 @@ impl Core {
         {
             if intro.attempt + 1 >= HELLO_TRIES {
                 peer.introducing = None;
+                if std::mem::take(&mut peer.suspect) {
+                    peer.session = None;
+                    peer.pending = None;
+                }
                 self.fail_queue(peer, FailReason::Unreachable, now);
             } else {
                 intro.attempt += 1;
@@ -1713,6 +1746,9 @@ impl Core {
                     }
                 }
                 self.send_raw(&path, &frame, now);
+                if peer.active().is_some_and(|s| s.awaiting_ack()) {
+                    self.expect_answer(&path);
+                }
                 self.rr_last = Some(*k);
             }
         }
@@ -1734,26 +1770,29 @@ impl Core {
                         self.events.push_back(Event::Delivered { id: f.msg.id });
                     }
                     None => self.location_done(f.msg.id, false),
+                    // The new handshake will tell: sent again under the new session.
+                    Some(FailReason::Timeout) if peer.suspect => peer.queue.push_front(f.msg),
                     Some(reason) => self.fail_message(peer, f.msg, reason, now),
                 }
             }
         }
 
-        // The peer may have lost the session (restart): new handshake, then resend (ADR-0006).
+        // The peer may have lost the session (restart): a new handshake (ADR-0006). The session
+        // stays meanwhile: on a busy repeater the frames were more likely lost than the session,
+        // and an ACK that still arrives under it ends the handshake.
         let silent = peer
             .active()
             .and_then(|s| s.in_flight())
             .filter(|&(_, _, acked)| !acked)
             .map(|(_, rounds, _)| rounds);
         if silent.is_some_and(|r| r >= SILENT_ROUNDS_BEFORE_REHANDSHAKE)
-            && peer.in_flight.as_ref().is_some_and(|f| !f.msg.retried)
-            && let Some(f) = peer.in_flight.take()
+            && peer.initiating.is_none()
+            && peer.introducing.is_none()
+            && let Some(f) = peer.in_flight.as_mut()
+            && !f.msg.retried
         {
-            let mut msg = f.msg;
-            msg.retried = true;
-            peer.queue.push_front(msg);
-            peer.session = None;
-            peer.pending = None;
+            f.msg.retried = true;
+            peer.suspect = true;
             self.begin_session(k, peer, path, now);
         }
     }
@@ -1807,6 +1846,7 @@ impl Core {
         if let Ok(n) = intro::seal_intro(node[0], k[0], &msg, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&intro.path, &frame, now);
+            self.expect_answer(&intro.path);
         }
     }
 
@@ -1962,6 +2002,7 @@ impl Core {
         if let Ok(n) = handshake::seal_hello(&s, &ends, &hello, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&init.path, &frame, now);
+            self.expect_answer(&init.path);
         }
     }
 
@@ -2249,6 +2290,7 @@ impl Core {
                 p.introducing = None;
                 p.intro_needed = false;
                 p.unknown_to_peer = false;
+                p.suspect = false;
                 p.fin = Some(fin);
             }
             self.events.push_back(Event::SessionEstablished { peer: c });
@@ -2485,6 +2527,7 @@ impl Core {
                 p.initiating = None;
                 p.introducing = None;
                 p.unknown_to_peer = false;
+                p.suspect = false;
             }
             self.events.push_back(Event::SessionEstablished { peer: c });
             self.tick(now);
@@ -2523,6 +2566,12 @@ impl Core {
             if outcome.is_some() {
                 // Something arrived under the session: our INTRO_FIN got through (§4.6).
                 peer.fin = None;
+            }
+            if peer.suspect && matches!(outcome, Some((Ok(_), false))) {
+                // The peer still has the session: no new handshake (ADR-0006).
+                peer.suspect = false;
+                peer.initiating = None;
+                peer.introducing = None;
             }
             self.peers.insert(c, peer);
             if let Some((result, _)) = outcome {

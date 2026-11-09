@@ -268,3 +268,22 @@ Same scenarios as above, one run each (fake network, SF8 / 62.5 kHz, no loss), b
 | A group of 5 created from contacts, around one repeater (`--test groups group_of_five`, seed 11): every key everywhere | 718 s, 1108 frames | 305 s, 872 frames |
 
 No member opens a session with a newcomer any more. Most of the remaining time is spent at the admin: its frames to one member collide, at the shared repeater, with another member's answers (ACKs, HELLO_ACK), and a transfer that times out starts a new handshake, whose answers collide in turn (`cargo test -p lc-core --release --test invite -- --ignored key_timeline --nocapture` prints who holds which keys over time). That is the next thing to fix.
+
+## 2026-11-09 — Collisions at a shared repeater: keep the session, leave room for answers (§7.1, §7.3)
+
+The rest of the delay above, and the slow first minutes of the demo (Camille's 👍 and answers taking about 2 minutes), came from the same place. Nodes behind one repeater cannot hear each other; their frames collide at the repeater. Two things made it worse:
+
+- After 3 silent rounds the sender dropped its session and started a handshake. The ACK that arrived a moment later under the old session was thrown away, and the HELLO / HELLO_ACK exchange fought the same collisions: several tries, about 12 s apart. Now the session is kept while the handshake runs, and anything that arrives under it ends the handshake (§7.1).
+- A node sent its next data frame to another peer while the answer it was waiting for (an ACK, a HELLO_ACK) was coming back through the shared repeater. Now the next data frame waits for that answer too (§7.3).
+
+Ten seeds each, median / worst, seconds (`cargo test -p lc-core --release --test invite --test groups -- --ignored join_timings setup_timings --nocapture`):
+
+| | Relay only | + keep the session | + room for answers |
+|---|---|---|---|
+| A group of 5 from contacts: every key everywhere | 412 / 485 | 298 / 435 | 237 / 269 |
+| Two people join by invitation: both admitted | 78 / 191 | 79 / 191 | 108 / 129 |
+| Two people join by invitation: every key everywhere | 195 / 222 | 159 / 222 | 130 / 171 |
+
+Admission is about 30 s slower in the median (the admin waits for answers between frames to different members) but never 191 s; what matters to the conversation, everyone reading everyone, comes sooner.
+
+The demo (`lc-ffi` test `reactions_and_a_reply_with_camille`, with Camille's 👍 back at 8 s after her answer): her answer to the app's 60 s message arrives at 90 s instead of 185 s, without a new session; the 👍 at 166 s instead of 218 s. What remains is the demo's busiest minute: the app, Camille and the crest repeater all talk through the hub, Camille's exchanges with Julien (group setup through the hub and the crest) collide at the hub with the app's frames, four retries in a row.

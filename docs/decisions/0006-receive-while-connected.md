@@ -10,7 +10,8 @@
 ## Decision
 
 - The iOS app enables the `bluetooth-central` background mode and CoreBluetooth state restoration, to stay connected in the background. The Android app will do the same with a foreground service.
-- Unicast: losses are recovered by the sender's ACK rounds. After 2 rounds without any ACK, the sender runs a new handshake (the recipient may have restarted), then resends the datagram.
+- Unicast: losses are recovered by the sender's ACK rounds. After 3 rounds without any ACK, the sender runs a new handshake (the recipient may have restarted), then resends the datagram.
+- Amended 2026-11-09 (§7.1): the session is kept during that handshake, and anything that still arrives under it ends the handshake. On a busy repeater, frames are lost far more often than sessions: dropping the session threw away the ACK that came a moment later, and the handshake then fought the same collisions (about 2 minutes in the demo's first minutes, `docs/measurements.md`).
 - Groups: a message flooded during a disconnection is lost. This limit is documented in the app ("received only while the phone is connected").
 
 ## Consequences

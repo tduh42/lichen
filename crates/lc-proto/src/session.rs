@@ -127,6 +127,13 @@ impl Session {
             .map(|s| (s.tag(), s.rounds_without_ack(), s.acknowledged()))
     }
 
+    /// True when the last fragment of a round went out and the sender waits for the ACK.
+    pub fn awaiting_ack(&self) -> bool {
+        self.sender
+            .as_ref()
+            .is_some_and(|s| s.state() == SendState::WaitingAck)
+    }
+
     /// Starts sending `datagram` in `chunk`-byte fragments. Returns its `tag`.
     pub fn send(&mut self, datagram: &[u8], chunk: usize, now: Millis) -> Result<u16, SendError> {
         if self.exhausted() {

@@ -329,3 +329,40 @@ fn sessions_renew_after_their_limits() {
     net.run_until(net.now + 10 * MIN, |_| false);
     assert_eq!(established(&net.take_events(a)), 0, "no renewal");
 }
+
+/// Frames lost for a while, not the session (a busy repeater, ADR-0006 as amended): Bob is cut
+/// off for three rounds, the sender starts a new handshake but keeps the session, and the
+/// datagram is delivered under it as soon as Bob hears again, without a new session.
+#[test]
+fn lost_frames_keep_the_session() {
+    let (mut net, a, b) = chain(1, 0, 6, true);
+    let first = send(&mut net, a, b, file(60, 1));
+    let (mut sa, mut sb) = (Seen::default(), Seen::default());
+    assert!(net.run_until(net.now + 5 * MIN, |n| {
+        collect(n, a, &mut sa);
+        collect(n, b, &mut sb);
+        sa.delivered.contains(&first)
+    }));
+    net.take_events(a);
+    // Bob drops off the repeater while a datagram is on its way, then comes back.
+    let repeater = b - 1;
+    let id = send(&mut net, a, b, file(60, 2));
+    net.run_until(net.now + 500, |_| false);
+    net.unlink_all(b);
+    net.run_until(net.now + 40_000, |_| false);
+    net.link(repeater, b);
+    let mut sessions = 0;
+    assert!(net.run_until(net.now + 10 * MIN, |n| {
+        for e in n.take_events(a) {
+            match e {
+                Event::Delivered { id: d } => sa.delivered.push(d),
+                Event::SessionEstablished { .. } => sessions += 1,
+                _ => {}
+            }
+        }
+        collect(n, b, &mut sb);
+        sa.delivered.contains(&id)
+    }));
+    assert_eq!(sessions, 0, "a new session was made");
+    assert_eq!(sb.received.len(), 2);
+}

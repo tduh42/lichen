@@ -283,3 +283,36 @@ fn key_timeline() {
         complete(n, &everyone, &gid, 5)
     });
 }
+
+/// Two people join by invitation, over ten seeds: when both are admitted, and when the group
+/// holds every key (median and worst, seconds).
+#[test]
+#[ignore = "measurement, prints numbers for docs/measurements.md"]
+fn join_timings() {
+    let (mut admitted, mut keys) = (Vec::new(), Vec::new());
+    for seed in 1..=10 {
+        let (mut net, m, j, gid) = setup(100 + seed, 2);
+        let inv = invite(&mut net, m[0], &gid);
+        for &x in &j {
+            net.with_core(x, |c, now| c.join(&inv, now))
+                .unwrap()
+                .unwrap();
+        }
+        let everyone: Vec<usize> = m.iter().chain(&j).copied().collect();
+        let t0 = net.now;
+        net.run_until(net.now + 60 * MIN, |n| {
+            j.iter().all(|&x| size(n, x, &gid) == Some(5))
+        });
+        admitted.push((net.now - t0) / 1000);
+        net.run_until(net.now + 60 * MIN, |n| complete(n, &everyone, &gid, 5));
+        keys.push((net.now - t0) / 1000);
+    }
+    for (what, mut v) in [("admitted", admitted), ("every key", keys)] {
+        v.sort_unstable();
+        println!(
+            "{what}: median {} s, worst {} s, all {v:?}",
+            v[v.len() / 2],
+            v[v.len() - 1]
+        );
+    }
+}
