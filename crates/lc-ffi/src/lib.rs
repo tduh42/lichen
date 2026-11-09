@@ -275,8 +275,11 @@ pub struct SosStatus {
     /// No fresh fix: BEACONs without a position go to the groups.
     pub beacon_only: bool,
     pub recipients: u32,
-    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds.
+    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds: queued,
+    /// not sent; nobody confirms reception.
     pub last_queued_s: Option<u64>,
+    /// Conversations whose last SOS position could not be queued.
+    pub refused: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
@@ -1097,7 +1100,8 @@ struct Inner {
     /// Unix ms minus `now_ms`, from `set_clock`.
     clock_offset: Option<i64>,
     /// Our reactions being sent: core id → conversation and target (§6.2).
-    reaction_inflight: HashMap<u64, (Chat, MessageRef)>,
+    /// Our reactions on their way, with the timestamp of the change each carries.
+    reaction_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
@@ -1397,7 +1401,7 @@ impl Inner {
         };
         // Not accepted now: it stays pending and goes again at the next start.
         if let Ok(id) = id {
-            self.reaction_inflight.insert(id, (chat, target));
+            self.reaction_inflight.insert(id, (chat, target, ts));
         }
     }
 
@@ -1410,7 +1414,7 @@ impl Inner {
         for p in st.pending_reactions(&me).unwrap_or_default() {
             if p.expires_ms.is_some_and(|e| e <= now) {
                 if let Some(st) = &self.store {
-                    let _ = st.reaction_done(&p.chat, &p.target, &me);
+                    let _ = st.reaction_done(&p.chat, &p.target, &me, p.ts);
                 }
             } else {
                 self.submit_reaction(p.chat, p.target, &p.emoji, p.ts);
@@ -1567,7 +1571,7 @@ impl Inner {
         (fragments, airtime_ms): (u8, u64),
         outbox: bool,
         wire: Option<&[u8]>,
-    ) -> StoredMessage {
+    ) -> Result<StoredMessage, LichenError> {
         let msg_ref = self.reference(&chat, true, None, wire.unwrap_or(&content.encode()));
         let status = if outbox {
             Status::Queued
@@ -1591,24 +1595,31 @@ impl Inner {
             read: true,
             msg_ref,
         };
-        let stored = self
-            .store
-            .as_ref()
-            .and_then(|s| s.insert(&row).ok())
-            .unwrap_or(row);
-        if stored.id != 0 {
-            if outbox {
-                let expires = stored.at_ms + self.outbox_expiry_ms;
-                if let Some(st) = &self.store {
-                    let _ = st.set_expiry(stored.id, Some(expires));
-                }
-                self.track(stored.id, id, chat, expires, status, fragments);
-            } else {
-                self.inflight.insert(id, stored.id);
+        // Accepted means stored (recheck R02): a message the phone cannot keep is not sent.
+        let Some(stored) = self.store.as_ref().and_then(|s| s.insert(&row).ok()) else {
+            let _ = self.core.cancel(id);
+            return Err(LichenError::Storage);
+        };
+        if outbox {
+            let expires = stored.at_ms + self.outbox_expiry_ms;
+            if let Some(st) = &self.store {
+                let _ = st.set_expiry(stored.id, Some(expires));
             }
+            self.track(stored.id, id, chat, expires, status, fragments);
+        } else {
+            self.inflight.insert(id, stored.id);
         }
         self.persist();
-        self.present(stored)
+        Ok(self.present(stored))
+    }
+
+    /// Nothing is sent that the phone could not keep (recheck R02): the database must be open.
+    fn writable(&self) -> Result<(), LichenError> {
+        if self.store.is_some() {
+            Ok(())
+        } else {
+            Err(LichenError::Storage)
+        }
     }
 
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
@@ -1835,12 +1846,12 @@ impl Inner {
             Event::Delivered { id } | Event::GroupSent { id }
                 if self.reaction_inflight.contains_key(id) =>
             {
-                if let (Some((chat, target)), Some(me), Some(st)) = (
+                if let (Some((chat, target, ts)), Some(me), Some(st)) = (
                     self.reaction_inflight.remove(id),
                     self.core.key().copied(),
                     &self.store,
                 ) {
-                    let _ = st.reaction_done(&chat, &target, &me);
+                    let _ = st.reaction_done(&chat, &target, &me, ts);
                 }
                 return false;
             }
@@ -1923,6 +1934,12 @@ impl LichenCore {
         Ok(Arc::new(Self {
             inner: Mutex::new(inner),
         }))
+    }
+
+    /// False when the phone's message database could not be opened (recheck R02): nothing can
+    /// be sent or kept, and the app says so instead of running without it.
+    pub fn storage_ok(&self) -> bool {
+        self.lock().store.is_some()
     }
 
     pub fn connect(&self, now_ms: u64) {
@@ -2370,6 +2387,7 @@ impl LichenCore {
         let k = key(&to)?;
         let content = Content::Text { sent_at, text };
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let datagram = content.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
@@ -2382,7 +2400,7 @@ impl LichenCore {
             sent_at,
             now_ms,
         )?;
-        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, true, None))
+        i.stored_outgoing(Chat::Contact(k), content, id, estimate, true, None)
     }
 
     /// Fragments and airtime (first round) of a datagram of `len` bytes to `to`.
@@ -2411,11 +2429,12 @@ impl LichenCore {
             data: voice.data,
         };
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let datagram = content.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
         let id = i.core.send_media(&k, datagram, now_ms)?;
-        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None))
+        i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None)
     }
 
     /// Sends the preview of an image prepared by [`prepare_image`]; its full variant goes out
@@ -2429,6 +2448,7 @@ impl LichenCore {
     ) -> Result<StoredMessage, LichenError> {
         let k = key(&to)?;
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let media_id = i.core.random_id();
         let variant = |full: bool, data: Vec<u8>| Content::Image {
@@ -2449,7 +2469,7 @@ impl LichenCore {
             let _ = st.put_media(&media_id, &Chat::Contact(k), &full.encode());
         }
         // What we keep in our history is the full image; its reference, the preview sent.
-        Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false, Some(&datagram)))
+        i.stored_outgoing(Chat::Contact(k), full, id, estimate, false, Some(&datagram))
     }
 
     /// How a small file would go over LoRa to `to` (§13.2, ADR-0023): its size on the air,
@@ -2491,17 +2511,18 @@ impl LichenCore {
         }
         let (content, datagram) = small_file(name, data, sent_at).ok_or(LichenError::TooLarge)?;
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let estimate = i.core.estimate_send(&k, datagram.len());
         let id = i.core.send_media(&k, datagram.clone(), now_ms)?;
-        Ok(i.stored_outgoing(
+        i.stored_outgoing(
             Chat::Contact(k),
             content,
             id,
             estimate,
             false,
             Some(&datagram),
-        ))
+        )
     }
 
     /// Announces content offered over the bridge (§14.1) to a contact or a group. `media_id`
@@ -2521,6 +2542,7 @@ impl LichenCore {
     ) -> Result<StoredMessage, LichenError> {
         let c = chat.to_store()?;
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let media_id: [u8; 8] = match <[u8; 8]>::try_from(media_id.as_slice()) {
             Ok(m) => m,
@@ -2546,7 +2568,7 @@ impl LichenCore {
             Chat::Contact(k) => {
                 let estimate = i.core.estimate_send(&k, datagram.len());
                 let id = i.core.send_datagram(&k, datagram, now_ms)?;
-                Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None))
+                i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None)
             }
             Chat::Group(g) => {
                 i.core.send_group_datagram(&g, &datagram, now_ms)?;
@@ -2591,6 +2613,7 @@ impl LichenCore {
             return Err(LichenError::Empty);
         }
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let target = i
             .store
@@ -2615,7 +2638,7 @@ impl LichenCore {
                 i.core.estimate_group_send(datagram.len()),
             ),
         };
-        Ok(i.stored_outgoing(c, content, id, estimate, true, None))
+        i.stored_outgoing(c, content, id, estimate, true, None)
     }
 
     /// Reacts to message `message_id` with `emoji` (empty removes our reaction), §6.2: shown
@@ -2739,11 +2762,12 @@ impl LichenCore {
     ) -> Result<StoredMessage, LichenError> {
         let g = self::gid(&gid)?;
         let mut i = self.lock();
+        i.writable()?;
         i.last_now = now_ms;
         let id = i.core.send_group_text(&g, &text, sent_at, now_ms)?;
         let content = Content::Text { sent_at, text };
         let estimate = i.core.estimate_group_send(content.encode().len());
-        Ok(i.stored_outgoing(Chat::Group(g), content, id, estimate, true, None))
+        i.stored_outgoing(Chat::Group(g), content, id, estimate, true, None)
     }
 
     /// Invites contacts (nodes whose identity is known) into a group we administer (ADR-0017).
@@ -2863,6 +2887,28 @@ impl LichenCore {
     }
 
     /// Up to `limit` messages of `chat` before message `before_id`, oldest first.
+    /// The messages from `from_id` (included) to `before_id` (excluded), oldest first: to show a
+    /// search result or a quoted message older than what is loaded, in one read (recheck R08).
+    /// 20,000 at most; empty when `from_id` is no longer there is up to the caller to notice.
+    pub fn history_from(
+        &self,
+        chat: ChatRef,
+        from_id: i64,
+        before_id: i64,
+    ) -> Result<Vec<StoredMessage>, LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let Some(store) = i.store.as_ref() else {
+            return Ok(Vec::new());
+        };
+        Ok(store
+            .history_from(&c, from_id, before_id, 20_000)
+            .map_err(|_| LichenError::Storage)?
+            .into_iter()
+            .map(|m| i.present(m))
+            .collect())
+    }
+
     pub fn history(
         &self,
         chat: ChatRef,
@@ -3107,6 +3153,7 @@ impl LichenCore {
             beacon_only: st.beacon_only,
             recipients: st.recipients,
             last_queued_s: st.last_queued,
+            refused: st.refused,
         }
     }
 
@@ -3369,13 +3416,20 @@ pub fn seed_from_phrase(words: Vec<String>) -> Result<Vec<u8>, LichenError> {
 }
 
 /// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report
-/// title.pdf" becomes "Very long rep….pdf". Path separators are dropped.
+/// title.pdf" becomes "Very long rep….pdf". A name received from someone else is only a label:
+/// path separators and control characters are dropped, and so are leading dots and spaces, so
+/// that the result is never "." or "..", nor a hidden file. It may be empty: callers name it
+/// themselves then. Apps still write a copy into a folder of its own (§13.2).
 #[uniffi::export]
 pub fn fit_file_name(name: String, max_bytes: u32) -> String {
     let name: String = name
         .chars()
-        .filter(|c| !matches!(c, '/' | '\\' | '\0'))
+        .filter(|c| !matches!(c, '/' | '\\' | ':') && !c.is_control())
         .collect();
+    let name = name
+        .trim_start_matches(|c: char| c == '.' || c.is_whitespace())
+        .trim_end()
+        .to_owned();
     let max = max_bytes as usize;
     if name.len() <= max {
         return name;
@@ -3587,6 +3641,13 @@ mod tests {
         assert!(
             matches!(&all[0].message, Message::Text { text, .. } if text == "Earlier message 1")
         );
+        // A search result far back, in one read (recheck R08).
+        let newest = core.history(chat.clone(), None, 100).unwrap();
+        let gap = core
+            .history_from(chat.clone(), all[3].id, newest[0].id)
+            .unwrap();
+        assert_eq!(gap.len(), 147);
+        assert_eq!(gap[0].id, all[3].id);
         // On a real database, refused.
         let dir = std::env::temp_dir().join(format!("lichen-fill-{}", std::process::id()));
         let real = LichenCore::new(
@@ -3686,6 +3747,34 @@ mod essentials {
         core.set_pinned(chat.clone(), false).unwrap();
         core.set_muted(chat, None).unwrap();
         assert!(core.chat_prefs().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod storage {
+    use super::*;
+
+    /// A database that cannot be opened is reported, and nothing is sent as if it were kept
+    /// (recheck R02).
+    #[test]
+    fn nothing_is_sent_without_storage() {
+        let file = std::env::temp_dir().join(format!("lichen-not-a-dir-{}", std::process::id()));
+        std::fs::write(&file, b"x").unwrap();
+        let core = LichenCore::new(
+            "t".into(),
+            vec![1; 32],
+            vec![150; 32],
+            Some(file.display().to_string()),
+        )
+        .unwrap();
+        assert!(!core.storage_ok());
+        assert!(matches!(
+            core.send_text(vec![9; 32], "hello".into(), 1, 1),
+            Err(LichenError::Storage)
+        ));
+        let _ = std::fs::remove_file(&file);
+        let fine = LichenCore::new("t".into(), vec![1; 32], vec![151; 32], None).unwrap();
+        assert!(fine.storage_ok());
     }
 }
 
@@ -3890,10 +3979,14 @@ mod file_names {
         assert_eq!(fit_file_name("topo.gpx".into(), 32), "topo.gpx");
         let cut = fit_file_name("Compte rendu de la réunion du conseil.pdf".into(), 32);
         assert!(cut.len() <= 32 && cut.ends_with("….pdf"), "{cut}");
-        assert_eq!(
-            fit_file_name("../../etc/passwd".into(), 64),
-            "....etcpasswd"
-        );
+        assert_eq!(fit_file_name("../../etc/passwd".into(), 64), "etcpasswd");
+        // Never a path component of its own, nor a hidden file (recheck R01).
+        for hostile in [".", "..", "...", " .. ", "/..", "..\\", "\u{0}..", "\n", ""] {
+            assert_eq!(fit_file_name(hostile.into(), 64), "", "{hostile:?}");
+        }
+        assert_eq!(fit_file_name(".bashrc".into(), 64), "bashrc");
+        assert_eq!(fit_file_name("a\u{7}b:c.txt".into(), 64), "abc.txt");
+        assert_eq!(fit_file_name("..pdf".into(), 64), "pdf");
         let no_ext = fit_file_name("x".repeat(80), 64);
         assert_eq!(no_ext.len(), 64);
         let accents = fit_file_name(format!("{}.txt", "é".repeat(40)), 32);

@@ -195,6 +195,10 @@
     <string name="identity_problem_unavailable">Le stockage sécurisé du téléphone est illisible pour le moment. Rien n’a été modifié : déverrouille le téléphone, puis réessaie.</string>
     <string name="identity_problem_corrupt">Ce qui est enregistré sur ce téléphone n’est pas une identité valide. Restaure-la depuis ses 24 mots, ou crée une nouvelle identité.</string>
     <string name="identity_problem_not_saved">Ta nouvelle identité n’a pas pu être enregistrée sur ce téléphone. Réessaie.</string>
+    <string name="file_too_large">Ce fichier dépasse 64 Mo, le maximum que lichen peut envoyer.</string>
+    <string name="message_no_longer_here">Ce message n’est plus sur ce téléphone.</string>
+    <string name="storage_problem_title">Tes messages ne peuvent pas être enregistrés pour le moment</string>
+    <string name="storage_problem">La base de messages de ce téléphone n’a pas pu être ouverte, souvent parce que le téléphone est plein. Rien n’a été envoyé ni supprimé : libère de la place, puis réessaie.</string>
     <string name="identity_not_saved">L’identité n’a pas pu être enregistrée sur ce téléphone. Réessaie.</string>
     <string name="try_again">Réessayer</string>
     <string name="restore_from_words">Restaurer depuis mes 24 mots</string>
@@ -494,8 +498,10 @@
     <string name="sos_nobody">Personne ne le reçoit</string>
     <string name="sos_nobody_note">Partage ta position avec un contact ou rejoins un groupe.</string>
     <string name="sos_notification_no_gps">Pas de position GPS : lance une recherche radio depuis lichen.</string>
-    <string name="sos_sent_note">À nouveau toutes les 2 minutes. Personne ne confirme la réception : surveille les réponses.</string>
-    <string name="sos_sent_to">Envoyé %1$s à %2$d conversations</string>
+    <string name="sos_sent_note">À nouveau toutes les 2 minutes. Elle part dès que la radio a du temps d’antenne, et personne ne confirme la réception : surveille les réponses.</string>
+    <string name="sos_sent_to">En file %1$s pour %2$d conversations</string>
+    <string name="sos_refused">%1$d conversations ne peuvent pas recevoir ta position</string>
+    <string name="sos_refused_note">Un groupe que tu as quitté ou qui a été fermé, ou une identité pas encore prête. Les autres la reçoivent quand même.</string>
     <string name="sos_silent">SOS · rien entendu depuis %1$s</string>
     <string name="sos_silent_note">Ses balises ne t’arrivent plus : déplace-toi, ou demande au groupe.</string>
     <string name="sos_starting">Démarrage</string>

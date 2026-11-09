@@ -18,6 +18,7 @@ import com.tduhamel.lichen.core.Conversation
 import com.tduhamel.lichen.core.DemoNetwork
 import com.tduhamel.lichen.core.Estimate
 import com.tduhamel.lichen.core.LoraFile
+import com.tduhamel.lichen.ui.clearOldShares
 import com.tduhamel.lichen.core.GroupInfo
 import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
@@ -123,6 +124,9 @@ class AppModel(val app: Application) {
 
         /** A first identity could not be saved. */
         NOT_SAVED,
+
+        /** The message database cannot be opened: nothing could be sent or kept (recheck R02). */
+        STORAGE,
     }
 
     enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
@@ -356,6 +360,7 @@ class AppModel(val app: Application) {
     private var debugVoiceSent = false
 
     init {
+        clearOldShares(app)
         refreshAll()
         Notifications.channels(app)
         if (ble.permitted()) ble.start()
@@ -384,8 +389,9 @@ class AppModel(val app: Application) {
         val seed = loadIdentity()
         identitySeed = seed
         if (seed == null) return makeCore(IdentityStore.randomBytes(32), persistent = false)
-        identityProblem = null
-        return makeCore(seed, persistent = true)
+        val made = makeCore(seed, persistent = true)
+        identityProblem = if (made.storageOk()) null else IdentityProblem.STORAGE
+        return made
     }
 
     /** Reads the identity again ([IdentityProblemScreen]); the app starts with it once it is back. */
@@ -412,8 +418,8 @@ class AppModel(val app: Application) {
         if (isDemo) stopDemo()
         resetState()
         identitySeed = seed
-        identityProblem = null
         replaceCore(makeCore(seed, persistent = true))
+        identityProblem = if (core.storageOk()) null else IdentityProblem.STORAGE
         refreshAll()
         shares = core.shares()
         positions = core.positions(now())
@@ -463,6 +469,7 @@ class AppModel(val app: Application) {
             "unavailable" -> identityProblem = IdentityProblem.UNAVAILABLE
             "corrupt" -> identityProblem = IdentityProblem.CORRUPT
             "notsaved" -> identityProblem = IdentityProblem.NOT_SAVED
+            "storage" -> identityProblem = IdentityProblem.STORAGE
         }
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
@@ -955,21 +962,32 @@ class AppModel(val app: Application) {
         }
     }
 
-    /** The text typed in `chat` and not sent, kept across screens and restarts. */
-    fun draft(chat: ChatId): String = prefs.getString(DRAFT + chat.route, "") ?: ""
+    /** The text typed in `chat` and not sent, kept across screens and restarts, for this
+     * identity (or the demo) only (recheck R07). */
+    fun draft(chat: ChatId): String = prefs.getString(draftKey(chat), "") ?: ""
 
     fun setDraft(chat: ChatId, text: String) {
-        prefs.edit { if (text.isEmpty()) remove(DRAFT + chat.route) else putString(DRAFT + chat.route, text) }
+        prefs.edit { if (text.isEmpty()) remove(draftKey(chat)) else putString(draftKey(chat), text) }
     }
 
-    /** Loads earlier pages until message `id` is there (a search result), 20 pages at most. */
-    fun loadUntil(chat: ChatId, id: Long) {
+    private fun draftKey(chat: ChatId): String =
+        DRAFT + (if (isDemo) "demo" else core.fingerprint().joinToString("")) + "|" + chat.route
+
+    /**
+     * Makes message `id` (a search result, a quoted message) part of the loaded history: what
+     * lies between it and the oldest message shown is read at once (recheck R08). False when it
+     * is no longer on this phone.
+     */
+    fun loadUntil(chat: ChatId, id: Long): Boolean {
         if (chats[chat] == null) load(chat)
-        var pages = 0
-        while (chats[chat]?.none { it.id == id } == true && olderAvailable[chat] == true && pages < 20) {
-            loadOlder(chat)
-            pages++
-        }
+        val loaded = chats[chat].orEmpty()
+        if (loaded.any { it.id == id }) return true
+        val first = loaded.firstOrNull()?.id ?: return false
+        if (id >= first) return false
+        val gap = runCatching { core.historyFrom(chat.ref, id, first) }.getOrNull() ?: return false
+        if (gap.firstOrNull()?.id != id) return false
+        chats[chat] = gap + loaded
+        return true
     }
 
     // ----- chat essentials (pins, mutes, search) -----
@@ -1011,6 +1029,7 @@ class AppModel(val app: Application) {
     /** Deletes a conversation's messages; the contact or the group stays. */
     fun deleteConversation(chat: ChatId) {
         runCatching { core.deleteConversation(chat.ref) }
+        setDraft(chat, "")
         chats.remove(chat)
         conversations = core.conversations()
     }
@@ -1670,7 +1689,8 @@ class AppModel(val app: Application) {
         private const val TOR = "lichen.tor"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
-        private const val DRAFT = "lichen.draft."
+        /** Drafts by identity; the older ones (`lichen.draft.<route>`) are left unread. */
+        private const val DRAFT = "lichen.draftById."
         private const val HISTORY_PAGE = 100u
     }
 }

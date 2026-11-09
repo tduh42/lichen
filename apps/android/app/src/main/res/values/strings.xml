@@ -192,6 +192,10 @@
     <string name="identity_problem_unavailable">The phone’s secure storage can’t be read at the moment. Nothing was changed: unlock the phone, then try again.</string>
     <string name="identity_problem_corrupt">What is stored on this phone is not a valid identity. Restore it from its 24 words, or start a new identity.</string>
     <string name="identity_problem_not_saved">Your new identity could not be saved on this phone. Try again.</string>
+    <string name="file_too_large">This file is larger than 64 MB, the most lichen can send.</string>
+    <string name="message_no_longer_here">This message is no longer on this phone.</string>
+    <string name="storage_problem_title">Your messages can’t be saved right now</string>
+    <string name="storage_problem">The message database on this phone could not be opened, often because the phone is full. Nothing was sent or deleted: free some space, then try again.</string>
     <string name="identity_not_saved">The identity could not be saved on this phone. Try again.</string>
     <string name="try_again">Try again</string>
     <string name="restore_from_words">Restore from my 24 words</string>
@@ -489,8 +493,10 @@
     <string name="sos_nobody">Nobody receives it</string>
     <string name="sos_nobody_note">Share your position with a contact or join a group.</string>
     <string name="sos_notification_no_gps">No GPS position: search for them by radio from lichen.</string>
-    <string name="sos_sent_note">Again every 2 minutes. Nobody confirms reception: watch for answers.</string>
-    <string name="sos_sent_to">Sent %1$s to %2$d conversations</string>
+    <string name="sos_sent_note">Again every 2 minutes. It leaves as soon as the radio has airtime, and nobody confirms reception: watch for answers.</string>
+    <string name="sos_sent_to">Queued %1$s for %2$d conversations</string>
+    <string name="sos_refused">%1$d conversations can’t get your position</string>
+    <string name="sos_refused_note">A group you left or that was closed, or an identity not ready yet. The others still get it.</string>
     <string name="sos_silent">SOS · nothing heard since %1$s</string>
     <string name="sos_silent_note">Their beacons no longer reach you: move, or ask the group.</string>
     <string name="sos_starting">Starting</string>

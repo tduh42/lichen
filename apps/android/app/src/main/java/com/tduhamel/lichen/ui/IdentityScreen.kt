@@ -263,13 +263,17 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
     ) {
         Spacer(Modifier.weight(1f))
         Icon(Icons.Outlined.Key, null, tint = t.sos, modifier = Modifier.size(40.dp))
-        Text(stringResource(R.string.identity_problem_title), fontSize = 24.sp, fontWeight = FontWeight.Bold, color = t.tx)
+        Text(
+            stringResource(if (problem == AppModel.IdentityProblem.STORAGE) R.string.storage_problem_title else R.string.identity_problem_title),
+            fontSize = 24.sp, fontWeight = FontWeight.Bold, color = t.tx,
+        )
         Text(
             stringResource(
                 when (problem) {
                     AppModel.IdentityProblem.UNAVAILABLE -> R.string.identity_problem_unavailable
                     AppModel.IdentityProblem.CORRUPT -> R.string.identity_problem_corrupt
                     AppModel.IdentityProblem.NOT_SAVED -> R.string.identity_problem_not_saved
+                    AppModel.IdentityProblem.STORAGE -> R.string.storage_problem
                 },
             ),
             fontSize = 15.sp, color = t.tx2,
@@ -277,7 +281,9 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
         error?.let { Banner(BannerKind.SOS, it) }
         Spacer(Modifier.weight(1f))
         PrimaryButton(stringResource(R.string.try_again), Modifier.fillMaxWidth()) { model.retryIdentity() }
-        SecondaryButton(stringResource(R.string.restore_from_words)) { restoring = true }
+        if (problem != AppModel.IdentityProblem.STORAGE) {
+            SecondaryButton(stringResource(R.string.restore_from_words)) { restoring = true }
+        }
         if (problem == AppModel.IdentityProblem.CORRUPT) {
             TextButton({ confirmNew = true }, Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.new_identity), color = t.sos, fontSize = 15.sp)

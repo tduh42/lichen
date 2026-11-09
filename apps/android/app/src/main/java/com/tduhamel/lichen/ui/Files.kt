@@ -55,6 +55,43 @@ import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.fragmentsText
 import java.io.File
+import java.util.UUID
+
+/** The most a file can be: what the Internet bridge carries (§14.1, 64 MiB). */
+const val FILE_MAX = 64 shl 20
+
+/** [readPicked]'s answer for a file over [FILE_MAX]. */
+val TOO_LARGE = FileDraft("", ByteArray(0))
+
+/**
+ * A picked document, read only when it is at most [FILE_MAX] (recheck R04): the size the
+ * provider reports is checked first, and reading stops one byte past the limit whatever it said.
+ * Null when it cannot be read or is empty, [TOO_LARGE] when too large. Call off the main thread.
+ */
+fun readPicked(context: Context, uri: android.net.Uri): FileDraft? = runCatching {
+    val cr = context.contentResolver
+    var name: String? = null
+    var size: Long? = null
+    cr.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME, android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+        if (c.moveToFirst()) {
+            name = c.getString(0)
+            if (!c.isNull(1)) size = c.getLong(1)
+        }
+    }
+    if ((size ?: 0) > FILE_MAX) return TOO_LARGE
+    val data = cr.openInputStream(uri)?.use { input ->
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (out.size() <= FILE_MAX) {
+            val n = input.read(buf)
+            if (n < 0) break
+            out.write(buf, 0, n)
+        }
+        if (out.size() > FILE_MAX) return TOO_LARGE
+        out.toByteArray()
+    } ?: return null
+    if (data.isEmpty()) null else FileDraft(name ?: uri.lastPathSegment ?: "file", data)
+}.getOrNull()
 
 /** A file picked in the composer. */
 class FileDraft(val name: String, val data: ByteArray)
@@ -70,15 +107,31 @@ fun fileIcon(name: String): ImageVector = when (name.substringAfterLast('.', "")
     else -> Icons.AutoMirrored.Outlined.InsertDriveFile
 }
 
-/** A copy of a file under its own name in the shared cache folder (the FileProvider's). */
+/**
+ * A new file for `name` in a folder of its own under the shared cache folder (the
+ * FileProvider's). A received name is only a label, and a copy another app was given access to is
+ * never overwritten by another file (recheck R01, R06). [clearOldShares] removes them later.
+ */
+fun uniqueShareFile(context: Context, name: String): File? {
+    val dir = File(File(context.cacheDir, "shared"), UUID.randomUUID().toString())
+    if (!dir.mkdirs()) return null
+    val out = File(dir, fitFileName(name, 120u).ifEmpty { "file" })
+    return out.takeIf { it.canonicalFile.parentFile == dir.canonicalFile }
+}
+
+/** Copies made to open or share files more than a day ago: the apps given them are done. */
+fun clearOldShares(context: Context) {
+    val cutoff = System.currentTimeMillis() - 24 * 3_600_000L
+    File(context.cacheDir, "shared").listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.deleteRecursively() }
+}
+
+/** A copy of a file under its own name, in a folder of its own (the FileProvider's). */
 private fun sharedCopy(context: Context, name: String, data: ByteArray? = null, file: File? = null): File? {
-    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
-    val safe = fitFileName(name, 120u).ifEmpty { "file" }
-    val out = File(dir, safe)
+    val out = uniqueShareFile(context, name) ?: return null
     return runCatching {
         when {
             data != null -> out.writeBytes(data)
-            file != null -> file.copyTo(out, overwrite = true)
+            file != null -> file.copyTo(out)
             else -> return null
         }
         out
@@ -155,13 +208,19 @@ fun SendFileSheet(model: AppModel, chat: ChatId, draft: FileDraft, done: (String
     val context = LocalContext.current
     val res = LocalResources.current
     var mode by remember { mutableStateOf<FileRoute?>(null) }
+    // Why the last try failed: the sheet and its file stay (recheck R05).
+    var failure by remember { mutableStateOf<String?>(null) }
     val size = Formatter.formatShortFileSize(context, draft.data.size.toLong())
     // The file as it would go over LoRa, compressed when smaller; null when it does not fit.
     val lora = remember(draft) { model.loraFile(chat, draft.name, draft.data) }
     val loraOK = lora != null
     val irohOK = model.bridgeOnline
     val torOK = model.torStatus == AppModel.TorStatus.READY
-    val chosen = mode ?: when {
+    // The route picked, as long as it is still ready (recheck R05); else the best one ready.
+    val chosen = when {
+        mode == FileRoute.LORA && loraOK -> FileRoute.LORA
+        mode == FileRoute.IROH && irohOK -> FileRoute.IROH
+        mode == FileRoute.TOR && torOK -> FileRoute.TOR
         loraOK -> FileRoute.LORA
         irohOK -> FileRoute.IROH
         torOK -> FileRoute.TOR
@@ -215,19 +274,19 @@ fun SendFileSheet(model: AppModel, chat: ChatId, draft: FileDraft, done: (String
             }
             if (chosen == null) Banner(BannerKind.WARN, stringResource(R.string.file_no_lora_title), stringResource(R.string.file_no_lora_note))
             Text(stringResource(R.string.airtime_left_files, (model.airtimeLeftMs / 1000u).toLong()), fontSize = 13.sp, color = t.tx2)
+            failure?.let { Banner(BannerKind.SOS, it) }
             PrimaryButton(
                 stringResource(if (chosen == FileRoute.LORA) R.string.send_over_lora else R.string.send_announcement),
                 Modifier.padding(top = 8.dp),
                 enabled = chosen != null,
             ) {
-                done(
-                    when (chosen) {
-                        FileRoute.LORA -> model.sendFile(draft.data, draft.name, chat)
-                        FileRoute.IROH, FileRoute.TOR ->
-                            model.sendOverBridge(draft.data, draft.name, chat, anonymous = chosen == FileRoute.TOR, kind = 3u)
-                        null -> null
-                    },
-                )
+                val e = when (chosen) {
+                    FileRoute.LORA -> model.sendFile(draft.data, draft.name, chat)
+                    FileRoute.IROH, FileRoute.TOR ->
+                        model.sendOverBridge(draft.data, draft.name, chat, anonymous = chosen == FileRoute.TOR, kind = 3u)
+                    null -> return@PrimaryButton
+                }
+                if (e != null) failure = e else done(null)
             }
         }
     }

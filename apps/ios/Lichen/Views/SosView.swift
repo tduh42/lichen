@@ -87,9 +87,13 @@ struct SosView: View {
                    action: model.locationDenied ? (String(localized: "Settings"), {
                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                    }) : nil)
+        } else if let st, st.refused > 0 {
+            Banner(kind: .warn, title: String(localized: "\(st.refused) conversations can’t get your position"),
+                   message: String(localized: "A group you left or that was closed, or an identity not ready yet. The others still get it."))
         } else if let at = st?.lastQueuedS {
-            Banner(kind: .ok, title: String(localized: "Sent \(MapScreen.ago(at)) to \(st?.recipients ?? 0) conversations"),
-                   message: String(localized: "Again every 2 minutes. Nobody confirms reception: watch for answers."))
+            // Queued, not sent: it leaves when the radio has airtime (recheck R09).
+            Banner(kind: .ok, title: String(localized: "Queued \(MapScreen.ago(at)) for \(st?.recipients ?? 0) conversations"),
+                   message: String(localized: "Again every 2 minutes. It leaves as soon as the radio has airtime, and nobody confirms reception: watch for answers."))
         } else {
             Banner(kind: .ok, title: String(localized: "Starting"),
                    message: String(localized: "The first position goes out in a moment."))

@@ -509,6 +509,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 `ts u32 ‖ kind u8 (2) ‖ name_len u8 ‖ name (UTF-8, 1..=64 bytes) ‖ data (1..=8,192 bytes)`
 
 - The name says what it is (its extension); the receiver opens it with whatever handles that type, and never runs it.
+- The name is a label, never a path: whoever writes a copy (to open or share it) drops separators, control characters and leading dots and spaces, writes it into a new folder of its own, and never removes or overwrites anything at a path derived from it. A name such as `..` must not reach the file system.
 - It is a medium: refused when its first round does not fit in the hour (§13.4). Its cost is shown before sending: 8 KB is about 53 fragments, measured in `docs/measurements.md`.
 - Anything larger goes over the Internet bridge (§14.1, `kind` 3).
 

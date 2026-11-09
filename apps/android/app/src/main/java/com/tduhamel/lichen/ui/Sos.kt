@@ -136,6 +136,11 @@ private fun SosStatusBanner(model: AppModel) {
                 null
             },
         )
+        st != null && st.refused > 0u -> Banner(
+            BannerKind.WARN,
+            stringResource(R.string.sos_refused, st.refused.toInt()),
+            stringResource(R.string.sos_refused_note),
+        )
         st?.lastQueuedS != null -> Banner(
             BannerKind.OK,
             stringResource(R.string.sos_sent_to, ago(st.lastQueuedS!!), st.recipients.toInt()),

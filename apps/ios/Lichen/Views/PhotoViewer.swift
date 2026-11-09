@@ -121,8 +121,13 @@ struct PhotoViewer: View {
     private func shareFile(_ shown: Shown) -> URL? {
         if let file = shown.file { return file }
         guard let jpeg = shown.image.jpegData(compressionQuality: 0.9) else { return nil }
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lichen-photo.jpg")
-        return (try? jpeg.write(to: url)) != nil ? url : nil
+        // A folder of its own per share: an earlier share keeps its own bytes (recheck R06).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("share", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let url = dir.appendingPathComponent("lichen-photo.jpg")
+        guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil else { return nil }
+        return (try? jpeg.write(to: url, options: .withoutOverwriting)) != nil ? url : nil
     }
 
     private func hashOf(_ m: StoredMessage) -> Data {

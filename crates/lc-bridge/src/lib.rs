@@ -82,11 +82,30 @@ impl std::fmt::Display for FetchError {
 
 impl std::error::Error for FetchError {}
 
+/// Most bytes of offers kept in memory; older ones are read from disk when there is a directory.
+const MEM_MAX: usize = 128 << 20;
+
+/// An offer: its content and when it was (last) offered.
+#[derive(Debug)]
+struct Offered {
+    bytes: Arc<Vec<u8>>,
+    at: SystemTime,
+}
+
 /// Blobs we offer: in memory, and on disk when a directory is given (they survive restarts).
+/// Both expire after [`OFFER_DAYS`] (§14.2, recheck R11); offering the same content again
+/// renews it.
 #[derive(Debug, Default)]
 struct Offers {
     dir: Option<PathBuf>,
-    mem: Mutex<HashMap<Hash, Arc<Vec<u8>>>>,
+    mem: Mutex<HashMap<Hash, Offered>>,
+}
+
+/// Offered at `at` and not expired yet (a clock set back counts as fresh).
+fn fresh(at: SystemTime) -> bool {
+    SystemTime::now()
+        .duration_since(at)
+        .map_or(true, |age| age < Duration::from_secs(OFFER_DAYS * 86_400))
 }
 
 impl Offers {
@@ -100,27 +119,67 @@ impl Offers {
             let _ = std::fs::write(p, &bytes);
         }
         if let Ok(mut m) = self.mem.lock() {
-            m.insert(h, Arc::new(bytes));
+            m.insert(
+                h,
+                Offered {
+                    bytes: Arc::new(bytes),
+                    at: SystemTime::now(),
+                },
+            );
+            m.retain(|_, o| fresh(o.at));
+            // Bounded: the oldest leave memory first (still on disk when there is a directory).
+            while m.len() > 1 && m.values().map(|o| o.bytes.len()).sum::<usize>() > MEM_MAX {
+                let Some(oldest) = m.iter().min_by_key(|(_, o)| o.at).map(|(k, _)| *k) else {
+                    break;
+                };
+                m.remove(&oldest);
+            }
         }
         h
     }
 
     fn get(&self, h: &Hash) -> Option<Arc<Vec<u8>>> {
-        if let Some(b) = self.mem.lock().ok().and_then(|m| m.get(h).cloned()) {
-            return Some(b);
+        if let Ok(mut m) = self.mem.lock() {
+            match m.get(h) {
+                Some(o) if fresh(o.at) => return Some(o.bytes.clone()),
+                Some(_) => {
+                    m.remove(h);
+                }
+                None => {}
+            }
         }
         let p = self.path(h)?;
         let fresh = std::fs::metadata(&p)
             .and_then(|m| m.modified())
             .ok()
-            .and_then(|t| SystemTime::now().duration_since(t).ok())
-            .is_some_and(|age| age < Duration::from_secs(OFFER_DAYS * 86_400));
+            .is_some_and(fresh);
         if !fresh {
             let _ = std::fs::remove_file(&p);
             return None;
         }
         let bytes = std::fs::read(&p).ok()?;
         (hash(&bytes) == *h).then(|| Arc::new(bytes))
+    }
+}
+
+#[cfg(test)]
+mod offers {
+    use super::*;
+
+    /// An offer expires after 7 days in memory too (recheck R11); offered again, it is back.
+    #[test]
+    fn offers_expire_in_memory() {
+        let o = Offers::default();
+        let h = o.put(b"photo".to_vec());
+        assert!(o.get(&h).is_some());
+        if let Ok(mut m) = o.mem.lock()
+            && let Some(x) = m.get_mut(&h)
+        {
+            x.at = SystemTime::now() - Duration::from_secs(OFFER_DAYS * 86_400 + 1);
+        }
+        assert!(o.get(&h).is_none());
+        assert_eq!(o.put(b"photo".to_vec()), h);
+        assert!(o.get(&h).is_some());
     }
 }
 

@@ -641,6 +641,16 @@
         }
       }
     },
+    "%u conversations can’t get your position": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%u conversations ne peuvent pas recevoir ta position"
+          }
+        }
+      }
+    },
     "1 h": {
       "localizations": {
         "fr": {
@@ -821,6 +831,16 @@
         }
       }
     },
+    "A group you left or that was closed, or an identity not ready yet. The others still get it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un groupe que tu as quitté ou qui a été fermé, ou une identité pas encore prête. Les autres la reçoivent quand même."
+          }
+        }
+      }
+    },
     "A message not on this phone": {
       "localizations": {
         "fr": {
@@ -951,12 +971,12 @@
         }
       }
     },
-    "Again every 2 minutes. Nobody confirms reception: watch for answers.": {
+    "Again every 2 minutes. It leaves as soon as the radio has airtime, and nobody confirms reception: watch for answers.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "À nouveau toutes les 2 minutes. Personne ne confirme la réception : surveille les réponses."
+            "value": "À nouveau toutes les 2 minutes. Elle part dès que la radio a du temps d’antenne, et personne ne confirme la réception : surveille les réponses."
           }
         }
       }
@@ -3941,6 +3961,16 @@
         }
       }
     },
+    "Queued %@ for %u conversations": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En file %@ pour %u conversations"
+          }
+        }
+      }
+    },
     "Radio": {
       "localizations": {
         "fr": {
@@ -4571,16 +4601,6 @@
         }
       }
     },
-    "Sent %@ to %u conversations": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Envoyé %@ à %u conversations"
-          }
-        }
-      }
-    },
     "Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.": {
       "localizations": {
         "fr": {
@@ -5011,6 +5031,16 @@
         }
       }
     },
+    "The message database on this phone could not be opened, often because the phone is full. Nothing was sent or deleted: free some space, then try again.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base de messages de ce téléphone n’a pas pu être ouverte, souvent parce que le téléphone est plein. Rien n’a été envoyé ni supprimé : libère de la place, puis réessaie."
+          }
+        }
+      }
+    },
     "The message is empty.": {
       "localizations": {
         "fr": {
@@ -5291,6 +5321,16 @@
         }
       }
     },
+    "This file is larger than 64 MB, the most lichen can send.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier dépasse 64 Mo, le maximum que lichen peut envoyer."
+          }
+        }
+      }
+    },
     "This image could not be read.": {
       "localizations": {
         "fr": {
@@ -5347,6 +5387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce message date d'avant les réponses : on ne peut pas y répondre."
+          }
+        }
+      }
+    },
+    "This message is no longer on this phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce message n’est plus sur ce téléphone."
           }
         }
       }
@@ -6097,6 +6147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ta dernière mesure : %d dBm, %@"
+          }
+        }
+      }
+    },
+    "Your messages can’t be saved right now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes messages ne peuvent pas être enregistrés pour le moment"
           }
         }
       }

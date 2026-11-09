@@ -200,7 +200,8 @@ struct IdentityProblemView: View {
             Image(systemName: "person.badge.key")
                 .font(.system(size: 40, weight: .regular))
                 .foregroundStyle(Theme.sos)
-            Text("Your identity can’t be used right now")
+            Text(problem == .storage ? String(localized: "Your messages can’t be saved right now")
+                 : String(localized: "Your identity can’t be used right now"))
                 .font(.system(.title2, weight: .bold))
                 .foregroundStyle(Theme.tx)
             Text(explanation)
@@ -213,8 +214,10 @@ struct IdentityProblemView: View {
             Spacer()
             Button("Try again") { model.retryIdentity() }
                 .buttonStyle(.primary)
-            Button("Restore from my 24 words") { restoring = true }
-                .buttonStyle(.secondary)
+            if problem != .storage {
+                Button("Restore from my 24 words") { restoring = true }
+                    .buttonStyle(.secondary)
+            }
             if problem == .corrupt {
                 Button("Start a new identity", role: .destructive) { confirmNew = true }
                     .frame(maxWidth: .infinity)
@@ -241,6 +244,8 @@ struct IdentityProblemView: View {
             String(localized: "What is stored on this phone is not a valid identity. Restore it from its 24 words, or start a new identity.")
         case .notSaved:
             String(localized: "Your new identity could not be saved on this phone. Try again.")
+        case .storage:
+            String(localized: "The message database on this phone could not be opened, often because the phone is full. Nothing was sent or deleted: free some space, then try again.")
         }
     }
 }

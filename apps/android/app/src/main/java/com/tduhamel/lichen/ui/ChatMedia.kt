@@ -489,6 +489,8 @@ fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original
     val context = LocalContext.current
     val res = LocalResources.current
     var mode by remember { mutableStateOf<PhotoMode?>(null) }
+    // Why the last try failed: the sheet and its photo stay (recheck R05).
+    var failure by remember { mutableStateOf<String?>(null) }
     val irohOK = model.bridgeOnline
     val torOK = model.torStatus == AppModel.TorStatus.READY
     // LoRa previews go to contacts only; groups get the announcement (§14.1).
@@ -545,18 +547,18 @@ fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original
                 mode = PhotoMode.TOR
             }
             Text(stringResource(R.string.airtime_left_images, (model.airtimeLeftMs / 1000u).toLong()), fontSize = 13.sp, color = t.tx2)
+            failure?.let { Banner(BannerKind.SOS, it) }
             PrimaryButton(
                 stringResource(if (chosen == PhotoMode.LORA) R.string.send_preview else R.string.send_announcement),
                 Modifier.padding(top = 8.dp),
                 enabled = sendable,
             ) {
-                done(
-                    if (chosen == PhotoMode.LORA) {
-                        model.sendImage(image, chat)
-                    } else {
-                        model.sendOverBridge(original, com.tduhamel.lichen.model.photoName(original), chat, anonymous = chosen == PhotoMode.TOR)
-                    },
-                )
+                val e = if (chosen == PhotoMode.LORA) {
+                    model.sendImage(image, chat)
+                } else {
+                    model.sendOverBridge(original, com.tduhamel.lichen.model.photoName(original), chat, anonymous = chosen == PhotoMode.TOR)
+                }
+                if (e != null) failure = e else done(null)
             }
         }
     }

@@ -33,11 +33,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let c = UNMutableNotificationContent()
         c.title = title
         c.body = body
-        c.sound = sos ? .defaultCritical : .default
+        // Critical alerts need an entitlement Apple grants case by case; lichen has none, so an
+        // SOS is a normal notification marked time-sensitive (recheck R10). The system shows it
+        // as active when the time-sensitive capability is not there either.
+        c.sound = .default
+        c.interruptionLevel = sos ? .timeSensitive : .active
         c.threadIdentifier = Self.thread(chat)
         c.userInfo = Self.info(chat)
         let r = UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil)
-        UNUserNotificationCenter.current().add(r)
+        UNUserNotificationCenter.current().add(r) { error in
+            if let error { NSLog("lichen: notification not posted: \(error.localizedDescription)") }
+        }
     }
 
     /// Removes the notifications of a conversation that was opened.

@@ -147,7 +147,10 @@ struct ChatView: View {
                 .onChange(of: jumpTo) {
                     guard let id = jumpTo else { return }
                     jumpTo = nil
-                    model.loadUntil(chat, id)
+                    guard model.loadUntil(chat, id) else {
+                        error = String(localized: "This message is no longer on this phone.")
+                        return
+                    }
                     highlight = id
                     Task {
                         try? await Task.sleep(for: .milliseconds(100))
@@ -199,8 +202,11 @@ struct ChatView: View {
             model.load(chat)
             if let f = model.focus, f.chat == chat {
                 model.focus = nil
-                model.loadUntil(chat, f.id)
-                highlight = f.id
+                if model.loadUntil(chat, f.id) {
+                    highlight = f.id
+                } else {
+                    error = String(localized: "This message is no longer on this phone.")
+                }
             }
             // Before marking them read: where the unread messages start.
             let unread = messages.filter { !$0.outgoing && !$0.read }
@@ -1048,13 +1054,15 @@ private struct Composer: View {
         .photosPicker(isPresented: $picking, selection: $picked, matching: .images)
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             guard case let .success(url) = result else { return }
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url), !data.isEmpty else {
-                error = String(localized: "This file could not be read.")
-                return
+            preparing = true
+            Task {
+                defer { preparing = false }
+                // Off the main thread, and never more than the bridge carries (recheck R04).
+                switch await Task.detached(operation: { readPicked(url) }).value {
+                case let .success(draft): file = draft
+                case let .failure(problem): error = problem.message
+                }
             }
-            file = FileDraft(name: url.lastPathComponent, data: data)
         }
         .sheet(item: $file) { draft in
             SendFileSheet(chat: chat, draft: draft) { e in
@@ -1386,6 +1394,8 @@ private struct SendPhotoSheet: View {
     let done: (String?) -> Void
     @Environment(AppModel.self) private var model
     @State private var mode: Mode?
+    /// Why the last try failed: the sheet and its photo stay (recheck R05).
+    @State private var failure: String?
 
     enum Mode { case lora, iroh, tor }
 
@@ -1475,13 +1485,15 @@ private struct SendPhotoSheet: View {
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. Images are never flooded.")
                         .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
+                    if let failure { Banner(kind: .sos, title: failure) }
                     Button(bridgeChosen ? String(localized: "Send the announcement") : String(localized: "Send the preview")) {
-                        if bridgeChosen, let original {
-                            done(model.sendOverBridge(original, name: Self.name(of: original), to: chat,
-                                                      anonymous: chosen == .tor))
+                        let e = if bridgeChosen, let original {
+                            model.sendOverBridge(original, name: Self.name(of: original), to: chat,
+                                                 anonymous: chosen == .tor)
                         } else {
-                            done(model.sendImage(image, to: chat))
+                            model.sendImage(image, to: chat)
                         }
+                        if let e { failure = e } else { done(nil) }
                     }
                     .buttonStyle(.primary)
                     .disabled(!sendable)
@@ -1568,6 +1580,33 @@ private func fileSymbol(_ name: String) -> String {
     }
 }
 
+/// The most a file can be: what the Internet bridge carries (§14.1, 64 MiB).
+private let fileMax = 64 << 20
+
+private struct PickProblem: Error {
+    let message: String
+}
+
+/// A picked file, read in full only when it is at most `fileMax`: the size the system reports
+/// is checked first, and reading stops one byte past the limit whatever it said (recheck R04).
+private func readPicked(_ url: URL) -> Result<FileDraft, PickProblem> {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    let tooLarge = PickProblem(message: String(localized: "This file is larger than 64 MB, the most lichen can send."))
+    if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > fileMax {
+        return .failure(tooLarge)
+    }
+    guard let handle = try? FileHandle(forReadingFrom: url) else {
+        return .failure(PickProblem(message: String(localized: "This file could not be read.")))
+    }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: fileMax + 1), !data.isEmpty else {
+        return .failure(PickProblem(message: String(localized: "This file could not be read.")))
+    }
+    if data.count > fileMax { return .failure(tooLarge) }
+    return .success(FileDraft(name: url.lastPathComponent, data: data))
+}
+
 private func byteCount(_ n: Int) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
 }
@@ -1584,6 +1623,8 @@ private struct SendFileSheet: View {
     /// The file as it would go over LoRa, compressed or not; nil when it does not fit.
     @State private var lora: LoraFile?
     @State private var checked = false
+    /// Why the last try failed: the sheet and its file stay (recheck R05).
+    @State private var failure: String?
 
     enum Mode { case lora, iroh, tor }
 
@@ -1594,8 +1635,14 @@ private struct SendFileSheet: View {
     private var loraOK: Bool { !isGroup && lora != nil }
     private var irohOK: Bool { model.bridgeOnline }
     private var torOK: Bool { model.torStatus == .ready }
+    /// The route picked, as long as it is still ready (recheck R05); else the best one ready.
     private var chosen: Mode? {
-        if let mode { return mode }
+        switch mode {
+        case .lora where loraOK: return .lora
+        case .iroh where irohOK: return .iroh
+        case .tor where torOK: return .tor
+        default: break
+        }
         if loraOK { return .lora }
         if irohOK { return .iroh }
         return torOK ? .tor : nil
@@ -1660,13 +1707,15 @@ private struct SendFileSheet: View {
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. The recipient opens it with the app for its type.")
                         .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
+                    if let failure { Banner(kind: .sos, title: failure) }
                     Button(chosen == .lora ? String(localized: "Send over LoRa") : String(localized: "Send the announcement")) {
-                        switch chosen {
-                        case .lora: done(model.sendFile(draft.data, name: draft.name, to: chat))
+                        let e: String? = switch chosen {
+                        case .lora: model.sendFile(draft.data, name: draft.name, to: chat)
                         case .iroh, .tor:
-                            done(model.sendOverBridge(draft.data, name: draft.name, to: chat, anonymous: chosen == .tor, kind: 3))
-                        case nil: break
+                            model.sendOverBridge(draft.data, name: draft.name, to: chat, anonymous: chosen == .tor, kind: 3)
+                        case nil: nil
                         }
+                        if let e { failure = e } else if chosen != nil { done(nil) }
                     }
                     .buttonStyle(.primary)
                     .disabled(chosen == nil)

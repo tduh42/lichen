@@ -137,6 +137,9 @@ final class AppModel {
         case corrupt
         /// A first identity could not be saved.
         case notSaved
+        /// The message database cannot be opened (full or damaged storage): nothing could be
+        /// sent or kept (recheck R02).
+        case storage
     }
     @ObservationIgnored let companion = Companion()
     @ObservationIgnored private var timer: Timer?
@@ -159,10 +162,13 @@ final class AppModel {
     private static let nodeKeyDefault = "lichen.nodeKey"
 
     init() {
+        Self.clearOpenCopies()
+        UserDefaults.standard.removeObject(forKey: "lichen.drafts")
         switch Self.loadIdentity() {
         case let .success(seed):
             identitySeed = seed
             core = Self.makeCore(seed: seed)
+            if !core.storageOk() { identityProblem = .storage }
         case let .failure(problem):
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
@@ -210,6 +216,7 @@ final class AppModel {
         case "unavailable": identityProblem = .unavailable
         case "corrupt": identityProblem = .corrupt
         case "notSaved": identityProblem = .notSaved
+        case "storage": identityProblem = .storage
         default: break
         }
 
@@ -264,6 +271,7 @@ final class AppModel {
         identitySeed = seed
         identityProblem = nil
         core = Self.makeCore(seed: seed)
+        if !core.storageOk() { identityProblem = .storage }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
         conversations = core.conversations()
@@ -376,6 +384,7 @@ final class AppModel {
         case let .success(seed):
             identitySeed = seed
             core = Self.makeCore(seed: seed)
+            if !core.storageOk() { identityProblem = .storage }
         case let .failure(problem):
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
@@ -732,27 +741,38 @@ final class AppModel {
         }
     }
 
-    /// The text typed in `chat` and not sent, kept across screens and restarts.
+    /// The text typed in `chat` and not sent, kept across screens and restarts, for this
+    /// identity (or the demo) only (recheck R07).
     func draft(_ chat: ChatID) -> String {
-        (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String])?[chat.storageKey] ?? ""
+        (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String])?[draftKey(chat)] ?? ""
     }
 
     func setDraft(_ chat: ChatID, _ text: String) {
         var all = (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String]) ?? [:]
-        all[chat.storageKey] = text.isEmpty ? nil : text
+        all[draftKey(chat)] = text.isEmpty ? nil : text
         UserDefaults.standard.set(all, forKey: Self.draftsDefault)
     }
 
-    private static let draftsDefault = "lichen.drafts"
+    private func draftKey(_ chat: ChatID) -> String {
+        "\(isDemo ? "demo" : core.fingerprint().joined())|\(chat.storageKey)"
+    }
 
-    /// Loads earlier pages until message `id` is there (a search result), 20 pages at most.
-    func loadUntil(_ chat: ChatID, _ id: Int64) {
+    /// Drafts by identity; the older ones, by conversation only, are dropped.
+    private static let draftsDefault = "lichen.drafts.byIdentity"
+
+    /// Makes message `id` (a search result, a quoted message) part of the loaded history: what
+    /// lies between it and the oldest message shown is read at once (recheck R08). False when
+    /// it is no longer on this phone.
+    @discardableResult
+    func loadUntil(_ chat: ChatID, _ id: Int64) -> Bool {
         if chats[chat] == nil { load(chat) }
-        var pages = 0
-        while !(chats[chat]?.contains { $0.id == id } ?? true), olderAvailable[chat] == true, pages < 20 {
-            loadOlder(chat)
-            pages += 1
-        }
+        if chats[chat]?.contains(where: { $0.id == id }) ?? false { return true }
+        guard let first = chats[chat]?.first?.id, id < first,
+              let gap = try? core.historyFrom(chat: chat, fromId: id, beforeId: first),
+              gap.first?.id == id
+        else { return false }
+        chats[chat] = gap + (chats[chat] ?? [])
+        return true
     }
 
     // MARK: chat essentials (pins, mutes, search)
@@ -799,6 +819,7 @@ final class AppModel {
     /// Deletes a conversation's messages; the contact or the group stays.
     func deleteConversation(_ chat: ChatID) {
         try? core.deleteConversation(chat: chat)
+        setDraft(chat, "")
         chats[chat] = nil
         conversations = core.conversations()
     }
@@ -868,18 +889,33 @@ final class AppModel {
 
     /// A copy of a file under its own name, to open or share it (QuickLook and other apps go
     /// by the name's extension).
+    ///
+    /// A received name is only a label (recheck R01): every copy goes into a new folder of its
+    /// own, nothing is ever removed or overwritten at a path derived from it, and the result must
+    /// stay inside that folder. The copies are deleted at the next start.
     func openable(name: String, data: Data? = nil, file: URL? = nil) -> URL? {
-        guard let dir = Self.folder("open") else { return nil }
+        guard let root = Self.folder("open") else { return nil }
+        let dir = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let safe = fitFileName(name: name, maxBytes: 120)
-        let url = dir.appendingPathComponent(safe.isEmpty ? "file" : safe)
-        try? FileManager.default.removeItem(at: url)
+        let url = dir.appendingPathComponent(safe.isEmpty ? "file" : safe, isDirectory: false)
+        guard url.standardizedFileURL.deletingLastPathComponent().path == dir.standardizedFileURL.path,
+              (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false)) != nil
+        else { return nil }
         if let data {
-            return (try? data.write(to: url)) != nil ? url : nil
+            return (try? data.write(to: url, options: .withoutOverwriting)) != nil ? url : nil
         }
         if let file {
             return (try? FileManager.default.copyItem(at: file, to: url)) != nil ? url : nil
         }
         return nil
+    }
+
+    /// Copies made to open or share files, from the previous run: nothing holds them any more.
+    static func clearOpenCopies() {
+        guard let base = dataDirectory() else { return }
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: base).appendingPathComponent("open", isDirectory: true))
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
+        try? FileManager.default.removeItem(at: tmp)
     }
 
     func sendImage(_ image: PreparedImage, to chat: ChatID) -> String? {

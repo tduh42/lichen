@@ -185,13 +185,13 @@ private fun best(context: Context, m: StoredMessage, a: Message.Announce?, origi
 
 /** Shares the original as it is, else the thumbnail as a JPEG (most apps do not open AVIF). */
 private fun share(context: Context, s: Shown) {
-    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+    // A folder of its own per share: an earlier share keeps its own bytes (recheck R06).
     val file = if (s.file != null) {
-        File(dir, s.file.name).also { s.file.copyTo(it, overwrite = true) }
+        uniqueShareFile(context, s.file.name)?.also { s.file.copyTo(it) } ?: return
     } else {
-        File(dir, "lichen-photo.jpg").also { f ->
+        uniqueShareFile(context, "lichen-photo.jpg")?.also { f ->
             f.outputStream().use { s.bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-        }
+        } ?: return
     }
     val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", file)
     val send = Intent(Intent.ACTION_SEND)

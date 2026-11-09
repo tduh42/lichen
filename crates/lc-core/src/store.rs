@@ -748,6 +748,23 @@ impl Store {
         Ok(v)
     }
 
+    /// The messages of `chat` from `from` (included) up to `before` (excluded), oldest first,
+    /// `limit` at most: what lies between a search result and the oldest message shown.
+    pub fn history_from(
+        &self,
+        chat: &Chat,
+        from: i64,
+        before: i64,
+        limit: u32,
+    ) -> Result<Vec<Message>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id >= ?3
+             AND id < ?4 ORDER BY id LIMIT ?5"
+        ))?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes(), from, before, limit], row)?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
     /// Every conversation with a message: the last message and the number of unread ones,
     /// most recent first.
     pub fn conversations(&self) -> Result<Vec<(Message, u32)>, Error> {
@@ -994,21 +1011,24 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
-    /// `reactor`'s reaction to `target` was delivered (or given up): no longer pending.
+    /// `reactor`'s reaction to `target` with timestamp `ts` was delivered (or given up): no
+    /// longer pending. A newer change of the same reaction stays pending (recheck R03).
     pub fn reaction_done(
         &self,
         chat: &Chat,
         target: &MessageRef,
         reactor: &PubKey,
+        ts: u32,
     ) -> Result<(), Error> {
         self.conn.execute(
             "UPDATE reactions SET pending = 0
-             WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND reactor = ?4",
+             WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND reactor = ?4 AND ts = ?5",
             params![
                 chat.kind(),
                 chat.bytes(),
                 target.as_slice(),
-                reactor.as_slice()
+                reactor.as_slice(),
+                ts
             ],
         )?;
         Ok(())
@@ -1427,7 +1447,18 @@ mod tests {
             Some(("❤️".to_string(), 5))
         );
         assert_eq!(s.pending_reactions(&me).unwrap().len(), 1);
-        s.reaction_done(&a, &t, &me).unwrap();
+        // Changed before the first was delivered: the old delivery leaves the new one pending.
+        assert!(
+            s.upsert_reaction(&a, &t, &me, "👍", 6, true, Some(99))
+                .unwrap()
+        );
+        s.reaction_done(&a, &t, &me, 5).unwrap();
+        assert_eq!(s.pending_reactions(&me).unwrap().len(), 1);
+        assert!(
+            s.upsert_reaction(&a, &t, &me, "❤️", 7, true, Some(99))
+                .unwrap()
+        );
+        s.reaction_done(&a, &t, &me, 7).unwrap();
         assert!(s.pending_reactions(&me).unwrap().is_empty());
         // Removed: empty, left out.
         assert!(

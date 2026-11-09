@@ -128,6 +128,7 @@ import com.tduhamel.lichen.model.writtenEarlierMs
 fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit) {
     val t = lichen
     var error by remember { mutableStateOf<String?>(null) }
+    val noLongerHere = stringResource(R.string.message_no_longer_here)
     // The verification sheet: an empty array for the current identity, else a pending one.
     var verifying by remember { mutableStateOf<ByteArray?>(null) }
     var renaming by remember { mutableStateOf(false) }
@@ -155,8 +156,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.load(chat)
         model.focus?.takeIf { it.first == chat }?.let { (_, id) ->
             model.focus = null
-            model.loadUntil(chat, id)
-            highlight = id
+            if (model.loadUntil(chat, id)) highlight = id else error = noLongerHere
         }
         // Before marking them read: where the unread messages start.
         val unread = model.chats[chat].orEmpty().filter { !it.outgoing && !it.read }
@@ -319,8 +319,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                         reply = { replyTo = m },
                         // A quote tapped: its original, loading earlier pages if needed.
                         openQuote = { id ->
-                            model.loadUntil(chat, id)
-                            highlight = id
+                            if (model.loadUntil(chat, id)) highlight = id else error = noLongerHere
                         },
                     ) { error = it }
                 }
@@ -769,17 +768,14 @@ private fun Composer(
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val picked = withContext(Dispatchers.IO) {
-                runCatching {
-                    val cr = context.contentResolver
-                    val name = cr.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                        if (c.moveToFirst()) c.getString(0) else null
-                    } ?: uri.lastPathSegment ?: "file"
-                    val data = cr.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
-                    FileDraft(name, data)
-                }.getOrNull()
+            // Never more than the bridge carries (recheck R04): the size the provider reports
+            // first, then reading stops one byte past the limit whatever it said.
+            val picked = withContext(Dispatchers.IO) { readPicked(context, uri) }
+            when (picked) {
+                null -> onError(res.getString(R.string.file_unreadable))
+                TOO_LARGE -> onError(res.getString(R.string.file_too_large))
+                else -> file = picked
             }
-            if (picked == null || picked.data.isEmpty()) onError(res.getString(R.string.file_unreadable)) else file = picked
         }
     }
     // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document.

@@ -122,8 +122,12 @@ pub struct SosStatus {
     pub beacon_only: bool,
     /// Conversations that get it now: every share and group with a fix, the groups without.
     pub recipients: u32,
-    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds.
+    /// When the last SOS position or BEACON was handed to the radio queue, Unix seconds: queued,
+    /// not sent (recheck R09); it leaves when the radio has airtime.
     pub last_queued: Option<u64>,
+    /// Conversations whose last SOS position could not even be queued (the group is gone, no
+    /// identity yet).
+    pub refused: u32,
 }
 
 /// Location state of the core.
@@ -138,6 +142,8 @@ pub(crate) struct Locations {
     sos_extra: HashSet<Chat>,
     /// Last SOS position per share target.
     sos_at: HashMap<Chat, u64>,
+    /// Targets whose last SOS position could not be queued.
+    sos_refused: HashSet<Chat>,
     /// Newest position time per sender and conversation (§12.1 freshness).
     heard: HashMap<(PubKey, Option<GroupId>), u64>,
     /// Direct positions not finished yet (queued or in flight), and their peer: never
@@ -349,6 +355,7 @@ impl Core {
                 s.last = None;
             }
             self.loc.sos_at.clear();
+            self.loc.sos_refused.clear();
         }
         self.tick(now);
     }
@@ -377,7 +384,12 @@ impl Core {
             groups
         };
         let last = if fix_fresh {
-            self.loc.sos_at.values().max().copied()
+            self.loc
+                .sos_at
+                .iter()
+                .filter(|(c, _)| !self.loc.sos_refused.contains(c))
+                .map(|(_, at)| *at)
+                .max()
         } else {
             self.last_sos_beacon()
         };
@@ -387,6 +399,11 @@ impl Core {
             beacon_only: self.loc.sos && !fix_fresh,
             recipients: u32::try_from(recipients).unwrap_or(u32::MAX),
             last_queued: if self.loc.sos { last } else { None },
+            refused: if self.loc.sos && fix_fresh {
+                u32::try_from(self.loc.sos_refused.len()).unwrap_or(u32::MAX)
+            } else {
+                0
+            },
         }
     }
 
@@ -399,17 +416,17 @@ impl Core {
         }
     }
 
-    /// Sends `position` to `chat` (a datagram or a group flood).
-    fn send_position(&mut self, chat: &Chat, position: &Position, now: Millis) {
+    /// Sends `position` to `chat` (a datagram or a group flood). False when it could not even
+    /// be queued.
+    fn send_position(&mut self, chat: &Chat, position: &Position, now: Millis) -> bool {
         let body = Content::Location(*position).encode();
         match chat {
             Chat::Contact(k) => {
                 let id = self.enqueue_location(k, body);
                 self.loc.in_flight.insert(id, *k);
+                true
             }
-            Chat::Group(g) => {
-                let _ = self.send_group(g, &body, false, now);
-            }
+            Chat::Group(g) => self.send_group(g, &body, false, now).is_ok(),
         }
     }
 
@@ -420,7 +437,7 @@ impl Core {
         };
         if self.check_target(chat).is_ok() {
             let p = position_for(&fix, precision, t, FLAG_END);
-            self.send_position(chat, &p, now);
+            let _ = self.send_position(chat, &p, now);
         }
     }
 
@@ -513,7 +530,7 @@ impl Core {
             }
         }
         for (chat, p) in out {
-            self.send_position(&chat, &p, now);
+            let _ = self.send_position(&chat, &p, now);
         }
     }
 
@@ -535,7 +552,11 @@ impl Core {
                 if let Some(s) = self.loc.shares.iter_mut().find(|s| s.chat == c) {
                     s.last = Some((p, t));
                 }
-                self.send_position(&c, &p, now);
+                if self.send_position(&c, &p, now) {
+                    self.loc.sos_refused.remove(&c);
+                } else {
+                    self.loc.sos_refused.insert(c);
+                }
             }
         }
     }
