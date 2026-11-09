@@ -56,6 +56,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import com.tduhamel.lichen.core.InviteCode
 import kotlinx.coroutines.delay
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.GroupInfo
@@ -78,6 +81,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     var consent by remember(g?.gid?.hex()) { mutableStateOf(g?.let { model.searchConsent(it.gid) } ?: false) }
     var inviting by remember { mutableStateOf(false) }
     var showingCode by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
@@ -117,6 +121,18 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                 item { Text(stringResource(R.string.remove_hint), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp)) }
             }
             if (isAdmin) {
+                item {
+                    CardList(Modifier.padding(top = 10.dp)) {
+                        Box(Modifier.clickable { renaming = true }) {
+                            CardRow(stringResource(R.string.group_name_label)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(g.name, fontSize = 15.sp, color = t.tx2)
+                                    Icon(Icons.Outlined.Edit, null, tint = t.tx2)
+                                }
+                            }
+                        }
+                    }
+                }
                 item { SectionLabel(stringResource(R.string.invite), Modifier.padding(top = 10.dp)) }
                 item {
                     CardList {
@@ -175,9 +191,13 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     if (sharing && g != null) ChatShareSheet(model, ChatId.group(g.gid)) { sharing = false }
     if (inviting && g != null) InviteDialog(model, g) { inviting = false }
     if (showingCode && g != null) InviteCodeSheet(model, g) { showingCode = false }
+    if (renaming && g != null) RenameGroupDialog(model, g, { error = it }) { renaming = false }
     // Debug extra `screen invite`: the code sheet at once.
     LaunchedEffect(g?.gid?.hex()) {
-        if (model.debugScreen == "invite" && g != null && model.nodeKey?.contentEquals(g.admin) == true) showingCode = true
+        if (model.debugScreen == "invite" && g != null && model.nodeKey?.contentEquals(g.admin) == true) {
+            showingCode = true
+            model.debugScreen = null
+        }
     }
     if (leaving && g != null) {
         val admin = model.nodeKey?.contentEquals(g.admin) == true
@@ -391,4 +411,35 @@ private fun InviteCodeSheet(model: AppModel, g: GroupInfo, dismiss: () -> Unit) 
             PrimaryButton(stringResource(R.string.done), onClick = dismiss)
         }
     }
+}
+
+/** Renames the group (the admin): every member sees the new name and a line in the chat. */
+@Composable
+private fun RenameGroupDialog(model: AppModel, g: GroupInfo, failed: (String) -> Unit, dismiss: () -> Unit) {
+    val t = lichen
+    var name by remember { mutableStateOf(g.name) }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text(stringResource(R.string.rename_group)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(stringResource(R.string.rename_group_note), fontSize = 14.sp, color = t.tx2)
+                OutlinedTextField(
+                    name, { name = it },
+                    Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = fieldColors(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = {
+                model.renameGroup(g.gid, name)?.let(failed)
+                dismiss()
+            }) { Text(stringResource(R.string.rename), color = t.tx) }
+        },
+        dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel), color = t.tx) } },
+        containerColor = t.s1,
+    )
 }

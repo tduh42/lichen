@@ -215,7 +215,7 @@ fun ConversationsScreen(
 
 /** One line for the conversation list ("Camille: …" in groups). */
 private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, res: android.content.res.Resources): String {
-    val text = m.message.display(res)
+    val text = m.message.display(res, model.nodeKey)
     val author = m.author
     return if (author != null && !m.outgoing) "${model.name(author)}: $text" else text
 }

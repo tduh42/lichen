@@ -633,4 +633,24 @@
     <string name="joined_group">You joined %1$s</string>
     <string name="joined_group_note">%1$s added you. The other members\' keys arrive over the next minutes.</string>
     <string name="open_group">Open the group</string>
+    <!-- Membership notices and renaming (ADR-0021) -->
+    <string name="names_and">%1$s and %2$s</string>
+    <string name="notice_you_created">You created the group</string>
+    <string name="notice_created">%1$s created the group</string>
+    <string name="notice_added_you">%1$s added you</string>
+    <string name="notice_joined">%1$s joined</string>
+    <string name="notice_left">%1$s left</string>
+    <string name="notice_you_removed">You removed %1$s</string>
+    <string name="notice_removed">%1$s removed %2$s</string>
+    <string name="notice_gone">No longer in the group: %1$s</string>
+    <string name="notice_removed_you">%1$s removed you</string>
+    <string name="notice_you_closed">You closed the group</string>
+    <string name="notice_closed">%1$s closed the group</string>
+    <string name="notice_you_renamed">You renamed the group “%1$s”</string>
+    <string name="notice_renamed">%1$s renamed the group “%2$s”</string>
+    <string name="notice_you_left">You left the group</string>
+    <string name="notice_changed">The group changed</string>
+    <string name="group_name_label">Name</string>
+    <string name="rename_group">Rename the group</string>
+    <string name="rename_group_note">Every member sees the new name.</string>
 </resources>

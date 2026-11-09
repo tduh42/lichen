@@ -102,6 +102,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tduhamel.lichen.model.noticeText
+import androidx.compose.ui.text.style.TextAlign
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.Message
@@ -280,6 +282,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                     item(key = "day" + dayOf(m.atMs)) { DaySeparator(context, m.atMs) }
                 }
                 if (m.id == dividerBefore) item(key = "unread") { UnreadDivider(unreadAtOpen) }
+                val notice = m.message as? Message.Notice
+                if (notice != null) {
+                    item(key = m.id) { NoticeLine(model, notice) }
+                    return@forEachIndexed
+                }
                 item(key = m.id) {
                     MessageBubble(
                         model, m, chat.group, highlight == m.id,
@@ -920,4 +927,17 @@ private fun Composer(
 private fun timeLeft(expiresAtMs: Long): String {
     val s = maxOf(0L, expiresAtMs - System.currentTimeMillis()) / 1000.0
     return if (s >= 3600) "${kotlin.math.ceil(s / 3600).toInt()} h" else "${maxOf(1, kotlin.math.ceil(s / 60).toInt())} min"
+}
+
+/** A membership change in a group (ADR-0021): "Léa joined", "Camille removed Bob". */
+@Composable
+private fun NoticeLine(model: AppModel, n: Message.Notice) {
+    val res = LocalContext.current.resources
+    Text(
+        n.noticeText(res, model.nodeKey) { node, name -> model.contact(node)?.name ?: name },
+        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+        fontSize = 12.sp,
+        color = lichen.tx2,
+        textAlign = TextAlign.Center,
+    )
 }

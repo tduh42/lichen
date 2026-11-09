@@ -640,4 +640,24 @@
     <string name="joined_group">Tu as rejoint %1$s</string>
     <string name="joined_group_note">%1$s t\'a ajouté. Les clés des autres membres arrivent dans les minutes qui suivent.</string>
     <string name="open_group">Ouvrir le groupe</string>
+    <!-- Membership notices and renaming (ADR-0021) -->
+    <string name="names_and">%1$s et %2$s</string>
+    <string name="notice_you_created">Tu as créé le groupe</string>
+    <string name="notice_created">%1$s a créé le groupe</string>
+    <string name="notice_added_you">%1$s t\'a ajouté au groupe</string>
+    <string name="notice_joined">%1$s a rejoint le groupe</string>
+    <string name="notice_left">%1$s a quitté le groupe</string>
+    <string name="notice_you_removed">Tu as retiré %1$s</string>
+    <string name="notice_removed">%1$s a retiré %2$s</string>
+    <string name="notice_gone">Ne fait plus partie du groupe : %1$s</string>
+    <string name="notice_removed_you">%1$s t\'a retiré du groupe</string>
+    <string name="notice_you_closed">Tu as fermé le groupe</string>
+    <string name="notice_closed">%1$s a fermé le groupe</string>
+    <string name="notice_you_renamed">Tu as renommé le groupe « %1$s »</string>
+    <string name="notice_renamed">%1$s a renommé le groupe « %2$s »</string>
+    <string name="notice_you_left">Tu as quitté le groupe</string>
+    <string name="notice_changed">Le groupe a changé</string>
+    <string name="group_name_label">Nom</string>
+    <string name="rename_group">Renommer le groupe</string>
+    <string name="rename_group_note">Tous les membres voient le nouveau nom.</string>
 </resources>

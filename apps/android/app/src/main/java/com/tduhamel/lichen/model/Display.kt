@@ -61,8 +61,9 @@ fun FailReason.display(res: Resources): String = res.getString(
     },
 )
 
-/** One line for a message: its text, or what it is. */
-fun Message.display(res: Resources): String = when (this) {
+/** One line for a message: its text, or what it is. `me`: our node, for notices ("You"). */
+fun Message.display(res: Resources, me: ByteArray? = null): String = when (this) {
+    is Message.Notice -> noticeText(res, me) { _, name -> name }
     is Message.Text -> text
     is Message.Voice -> res.getString(R.string.voice_message_length, clock(durationMs.toDouble() / 1000))
     is Message.Image -> res.getString(R.string.photo)
@@ -73,6 +74,35 @@ fun Message.display(res: Resources): String = when (this) {
         } else {
             res.getString(R.string.unsupported_content, contentType.toInt(), body.size)
         }
+}
+
+/**
+ * A membership notice as a sentence (ADR-0021): "You" for ourselves (`me`, our node), the
+ * others named by `name(node, name then)`.
+ */
+fun Message.Notice.noticeText(res: Resources, me: ByteArray?, name: (ByteArray, String) -> String): String {
+    val mine = me != null && actor.contentEquals(me)
+    val who = name(actor, actorName)
+    val names = subjects.map { name(it.node, it.name) }.let { list ->
+        when (list.size) {
+            0 -> ""
+            1 -> list[0]
+            else -> res.getString(R.string.names_and, list.dropLast(1).joinToString(", "), list.last())
+        }
+    }
+    return when (kind.toInt()) {
+        1 -> if (mine) res.getString(R.string.notice_you_created) else res.getString(R.string.notice_created, who)
+        2 -> res.getString(R.string.notice_added_you, who)
+        3 -> res.getString(R.string.notice_joined, names)
+        4 -> res.getString(R.string.notice_left, names)
+        5 -> if (mine) res.getString(R.string.notice_you_removed, names) else res.getString(R.string.notice_removed, who, names)
+        6 -> res.getString(R.string.notice_gone, names)
+        7 -> res.getString(R.string.notice_removed_you, who)
+        8 -> if (mine) res.getString(R.string.notice_you_closed) else res.getString(R.string.notice_closed, who)
+        9 -> if (mine) res.getString(R.string.notice_you_renamed, text) else res.getString(R.string.notice_renamed, who, text)
+        10 -> res.getString(R.string.notice_you_left)
+        else -> res.getString(R.string.notice_changed)
+    }
 }
 
 /** "LoRa", "LoRa · direct", "LoRa · 2 hops". */

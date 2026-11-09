@@ -1621,6 +1621,16 @@ class AppModel(val app: Application) {
         e.display(res)
     }
 
+    /** Renames a group we administer; its members see the change. */
+    fun renameGroup(gid: ByteArray, name: String): String? = try {
+        core.renameGroup(gid, name.trim(), now())
+        groups = core.groups()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
     fun removeMember(member: ByteArray, gid: ByteArray): String? = try {
         core.removeMember(gid, member, now())
         groups = core.groups()
