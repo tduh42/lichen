@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""lichen content vectors (protocol.md §6.2): message references, REPLY and REACTION.
+"""lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
+group invitations and GROUP_JOIN (§10.5).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
     python3 -I testdata/lichen/gen.py > testdata/lichen/content.toml
 """
+import base64
 import hashlib
 import struct
 
-TEXT, REPLY, REACTION = 0x01, 0x08, 0x09
+TEXT, REPLY, REACTION, GROUP_JOIN = 0x01, 0x08, 0x09, 0x13
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -29,7 +31,7 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §10.5), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -90,3 +92,49 @@ for name, d in malformed:
     print(f'name = "{name}"')
     print(f'datagram = "{d.hex()}"')
     print()
+
+def invite(admin: bytes, node: bytes, token: bytes, expires: int, admin_name: str, group_name: str) -> str:
+    a, g = admin_name.encode()[:32], group_name.encode()[:32]
+    raw = admin + node + token + struct.pack("<I", expires) + bytes([len(a)]) + a + bytes([len(g)]) + g
+    return "lichen:1:g:" + base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+camille_node = hashlib.sha256(b"camille node").digest()
+token = hashlib.sha256(b"token").digest()[:16]
+invites = [
+    ("rando vercors", 1_793_000_600, "Camille", "Rando Vercors"),
+    ("names in french", 1_793_000_601, "Camille Brès", "Été à l'Écrins"),
+    ("no names", 1_793_000_602, "", ""),
+]
+for name, exp, an, gn in invites:
+    print("[[invite]]")
+    print(f'name = "{name}"')
+    print(f'admin = "{camille.hex()}"')
+    print(f'node = "{camille_node.hex()}"')
+    print(f'token = "{token.hex()}"')
+    print(f"expires = {exp}")
+    print(f'admin_name = "{an}"')
+    print(f'group_name = "{gn}"')
+    print(f'text = "{invite(camille, camille_node, token, exp, an, gn)}"')
+    print()
+
+print("[[group_join]]")
+print('name = "join"')
+print(f'token = "{token.hex()}"')
+print(f'datagram = "{(bytes([GROUP_JOIN]) + token).hex()}"')
+print()
+
+ok = invite(camille, camille_node, token, 1_793_000_600, "Camille", "Rando Vercors")
+bad_invites = [
+    ("a contact card, not an invitation", "lichen:1:" + base64.urlsafe_b64encode(camille + camille_node + b"Camille").decode().rstrip("=")),
+    ("cut in the token", "lichen:1:g:" + base64.urlsafe_b64encode(camille + camille_node + token[:8]).decode().rstrip("=")),
+    ("not base64url", ok[:-3] + "!!!"),
+    ("a name longer than 32 bytes", "lichen:1:g:" + base64.urlsafe_b64encode(camille + camille_node + token + struct.pack("<I", 1) + bytes([33]) + b"x" * 33 + bytes([0])).decode().rstrip("=")),
+    ("bytes after the group name", ok + "AA"),
+]
+for name, text in bad_invites:
+    print("[[bad_invite]]")
+    print(f'name = "{name}"')
+    print(f'text = "{text}"')
+    print()
+

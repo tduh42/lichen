@@ -1,4 +1,4 @@
-# lichen content vectors (protocol.md §6.2), produced by testdata/lichen/gen.py, an
+# lichen content vectors (protocol.md §6.2, §10.5), produced by testdata/lichen/gen.py, an
 # independent oracle (Python hashlib). Do not edit by hand: regenerate instead.
 
 [[ref]]
@@ -80,4 +80,59 @@ datagram = "096c03df6a3abf2693286fac44fffe"
 [[malformed]]
 name = "reaction over 32 bytes"
 datagram = "096c03df6a3abf2693286fac44f09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918d"
+
+[[invite]]
+name = "rando vercors"
+admin = "3f56e90b04e7a4b50e3ec2446c13055e9cb1d0851c17c9ce8a52ea3ca76623cc"
+node = "02e5d3195780781af93b8766b39921534bf6201ad04ac4c23b5f76345f2a900e"
+token = "3c469e9d6c5875d37a43f353d4f88e61"
+expires = 1793000600
+admin_name = "Camille"
+group_name = "Rando Vercors"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmGYBN9qB0NhbWlsbGUNUmFuZG8gVmVyY29ycw"
+
+[[invite]]
+name = "names in french"
+admin = "3f56e90b04e7a4b50e3ec2446c13055e9cb1d0851c17c9ce8a52ea3ca76623cc"
+node = "02e5d3195780781af93b8766b39921534bf6201ad04ac4c23b5f76345f2a900e"
+token = "3c469e9d6c5875d37a43f353d4f88e61"
+expires = 1793000601
+admin_name = "Camille Brès"
+group_name = "Été à l'Écrins"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmGZBN9qDUNhbWlsbGUgQnLDqHMSw4l0w6kgw6AgbCfDiWNyaW5z"
+
+[[invite]]
+name = "no names"
+admin = "3f56e90b04e7a4b50e3ec2446c13055e9cb1d0851c17c9ce8a52ea3ca76623cc"
+node = "02e5d3195780781af93b8766b39921534bf6201ad04ac4c23b5f76345f2a900e"
+token = "3c469e9d6c5875d37a43f353d4f88e61"
+expires = 1793000602
+admin_name = ""
+group_name = ""
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmGaBN9qAAA"
+
+[[group_join]]
+name = "join"
+token = "3c469e9d6c5875d37a43f353d4f88e61"
+datagram = "133c469e9d6c5875d37a43f353d4f88e61"
+
+[[bad_invite]]
+name = "a contact card, not an invitation"
+text = "lichen:1:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDkNhbWlsbGU"
+
+[[bad_invite]]
+name = "cut in the token"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXT"
+
+[[bad_invite]]
+name = "not base64url"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmGYBN9qB0NhbWlsbGUNUmFuZG8gVmVyY29!!!"
+
+[[bad_invite]]
+name = "a name longer than 32 bytes"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmEBAAAAIXh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eAA"
+
+[[bad_invite]]
+name = "bytes after the group name"
+text = "lichen:1:g:P1bpCwTnpLUOPsJEbBMFXpyx0IUcF8nOilLqPKdmI8wC5dMZV4B4Gvk7h2azmSFTS_YgGtBKxMI7X3Y0XyqQDjxGnp1sWHXTekPzU9T4jmGYBN9qB0NhbWlsbGUNUmFuZG8gVmVyY29ycwAA"
 

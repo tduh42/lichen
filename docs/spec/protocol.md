@@ -227,6 +227,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
+| 0x13 | GROUP_JOIN | §10.5 | ADR-0020 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network.
 
@@ -385,6 +386,18 @@ gid (16) ‖ epoch u32
 - A member who is not the admin leaves by sending GROUP_LEAVE to the admin (`epoch` the state it holds), and forgets the group at once: its state, the members' sender keys and its own (reported to the app). The conversation already received stays on the phone.
 - The admin, on a GROUP_LEAVE from a listed member other than itself (the sender's identity is the session's, §4.6), removes it as an admin removal does (§10.1: new `epoch`, every remaining member rotates its key, §10.2). A GROUP_LEAVE for a group the receiver does not administer, or from someone not listed, is ignored.
 - Until the admin has removed the member, the others keep sending under keys the leaver held: it deleted them, and a leaver that kept them could read only what is sent before the rotation (the same exposure as a removal waiting for the admin).
+### 10.5 Invitation by QR code (pairwise datagram, type 0x13 GROUP_JOIN, ADR-0020)
+
+An admin can let people join in person, without knowing them first: their app shows an **invitation** that people scan.
+
+- **Invitation**: `lichen:1:g:` followed by the unpadded base64url of `admin identity (32) ‖ admin node (32) ‖ token (16) ‖ expires u32 (Unix seconds) ‖ n (1) ‖ admin name (n ≤ 32 bytes of UTF-8) ‖ m (1) ‖ group name (m ≤ 32 bytes of UTF-8)`. It carries no key and no group id: only the admin's public identity and an unguessable token (random, 16 bytes) that the admin's app maps to the group.
+- **Validity**: 10 minutes from its creation, for any number of joiners until the group is full. Closing the invitation (or the app stopping) revokes the token at once.
+- **Joining**: the joiner's app adds the admin as a contact, **verified** (scanned in person, as a contact card, §4.7), and sends **GROUP_JOIN** `token (16)` to the admin over a pairwise session (introduced if needed, §4.6). The request is an internal message, sent again with a backoff like GROUP_LEAVE.
+- **Admission**: the admin's app accepts a GROUP_JOIN whose token is known, not expired or revoked, for a group it still administers and that is not full; it then adds the sender as an invitation does (§10.1, ADR-0017: new epoch, state to everyone, sender keys). Anything else is dropped without an answer. The joiner's identity is the one of the authenticated session; holding the token is the authorization.
+- **Keys**: as for any addition, newcomers receive the members' current sender keys (ADR-0017): what was recorded under them before is readable to them.
+
+Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`).
+
 ## 11. Search (ADR-0016)
 
 Group members (the **searchers**) locate another member (the **target**) from the target's group floods heard **directly**: each searcher's phone records their SNR and RSSI with its own GPS position, shares them in the group, and fuses everyone's measurements and bearings in a particle filter (local computation, not on the wire). Phones and stock radios only; regulatory constraints and the threat model stay in `design.md`.
