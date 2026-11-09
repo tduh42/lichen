@@ -31,12 +31,32 @@
         }
       }
     },
+    "%@ added you. The other members' keys arrive over the next minutes.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ t'a ajouté. Les clés des autres membres arrivent dans les minutes qui suivent."
+          }
+        }
+      }
+    },
     "%@ added, verified": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ ajouté, vérifié"
+          }
+        }
+      }
+    },
+    "%@ becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ devient un contact vérifié : tu as scanné son code en personne. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
           }
         }
       }
@@ -67,6 +87,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ est injoignable"
+          }
+        }
+      }
+    },
+    "%@ joined with your invitation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a rejoint le groupe avec ton invitation"
           }
         }
       }
@@ -921,12 +951,42 @@
         }
       }
     },
+    "Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toute personne qui le scanne pendant qu'il est affiché peut rejoindre le groupe : tu peux la retirer du groupe. Les nouveaux venus peuvent lire les messages enregistrés sous les clés actuelles."
+          }
+        }
+      }
+    },
     "Appearance": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Apparence"
+          }
+        }
+      }
+    },
+    "Ask %@ to show a new code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande à %@ d'afficher un nouveau code."
+          }
+        }
+      }
+    },
+    "Asking %@ to add you…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande à %@ de t'ajouter…"
           }
         }
       }
@@ -1397,6 +1457,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de créer le groupe."
+          }
+        }
+      }
+    },
+    "Could not join the group.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de rejoindre le groupe."
           }
         }
       }
@@ -2191,6 +2261,16 @@
         }
       }
     },
+    "In lichen: Add a contact › Scan. They join %@ and you become a verified contact for them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dans lichen : Ajouter un contact › Scanner. La personne rejoint %@ et tu deviens pour elle un contact vérifié."
+          }
+        }
+      }
+    },
     "In reply to %@: %@": {
       "localizations": {
         "fr": {
@@ -2221,6 +2301,26 @@
         }
       }
     },
+    "Invitation code for %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code d'invitation pour %@"
+          }
+        }
+      }
+    },
+    "Invitation from %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invitation de %@"
+          }
+        }
+      }
+    },
     "Invite": {
       "localizations": {
         "fr": {
@@ -2231,12 +2331,72 @@
         }
       }
     },
+    "Invite contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inviter des contacts"
+          }
+        }
+      }
+    },
+    "Invite with a QR code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inviter avec un QR code"
+          }
+        }
+      }
+    },
     "Its messages are deleted from this phone. The contact stays.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ses messages sont supprimés de ce téléphone. Le contact reste."
+          }
+        }
+      }
+    },
+    "Join": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre"
+          }
+        }
+      }
+    },
+    "Join %@?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre %@ ?"
+          }
+        }
+      }
+    },
+    "Join a group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre un groupe"
+          }
+        }
+      }
+    },
+    "Joined": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ont rejoint"
           }
         }
       }
@@ -2641,12 +2801,12 @@
         }
       }
     },
-    "Members are contacts you have already talked with in lichen. Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
+    "Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group's QR code. Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen. Chaque membre reçoit les clés d'envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en flood et signés."
+            "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les clés d'envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en inondation et signés."
           }
         }
       }
@@ -2777,6 +2937,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Jamais diffusés : une annonce LoRa, le contenu par iroh ou Tor"
+          }
+        }
+      }
+    },
+    "New code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouveau code"
           }
         }
       }
@@ -3231,6 +3401,16 @@
         }
       }
     },
+    "Open the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir le groupe"
+          }
+        }
+      }
+    },
     "Opening a secure session": {
       "localizations": {
         "fr": {
@@ -3337,6 +3517,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "En pause : radio déconnectée"
+          }
+        }
+      }
+    },
+    "People next to you scan it and join, for 10 minutes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les personnes à côté de toi le scannent et rejoignent le groupe, pendant 10 minutes"
           }
         }
       }
@@ -4441,6 +4631,16 @@
         }
       }
     },
+    "Sunday hike": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sortie du dimanche"
+          }
+        }
+      }
+    },
     "System": {
       "localizations": {
         "fr": {
@@ -4571,6 +4771,16 @@
         }
       }
     },
+    "The phone's clock is not set yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'horloge du téléphone n'est pas encore réglée."
+          }
+        }
+      }
+    },
     "The phone's storage could not be read or written.": {
       "localizations": {
         "fr": {
@@ -4671,6 +4881,16 @@
         }
       }
     },
+    "Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son téléphone t'ajoute par LoRa, en général en une ou deux minutes. Tu peux fermer cet écran : le groupe apparaîtra dans tes conversations."
+          }
+        }
+      }
+    },
     "Their phone is not reachable: offline, or the app is closed.": {
       "localizations": {
         "fr": {
@@ -4761,12 +4981,52 @@
         }
       }
     },
+    "This code has expired": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce code a expiré"
+          }
+        }
+      }
+    },
     "This image could not be read.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de lire cette image."
+          }
+        }
+      }
+    },
+    "This invitation could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette invitation est illisible."
+          }
+        }
+      }
+    },
+    "This invitation has expired": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette invitation a expiré"
+          }
+        }
+      }
+    },
+    "This invitation has expired: ask for a new one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette invitation a expiré : demandes-en une nouvelle."
           }
         }
       }
@@ -5051,6 +5311,16 @@
         }
       }
     },
+    "Valid for %lld:%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valable encore %lld:%@"
+          }
+        }
+      }
+    },
     "Verified by the scan. Their phone shows the same numbers once it knows you: after your first message, or when they scan your code.": {
       "localizations": {
         "fr": {
@@ -5287,6 +5557,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Toi"
+          }
+        }
+      }
+    },
+    "You are already in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu fais déjà partie de %@"
+          }
+        }
+      }
+    },
+    "You joined %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as rejoint %@"
           }
         }
       }
@@ -5781,12 +6071,32 @@
         }
       }
     },
+    "the admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "l'admin"
+          }
+        }
+      }
+    },
     "the app stopped before delivery": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "l'app s'est arrêtée avant la remise"
+          }
+        }
+      }
+    },
+    "the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le groupe"
           }
         }
       }

@@ -185,7 +185,7 @@ struct ChatView: View {
             model.notifier.visibleChat = chat
             model.notifier.clear(chat)
             #if DEBUG
-            if model.debugScreen == "group", isGroup { showingGroup = true }
+            if model.debugScreen == "group" || model.debugScreen == "invite", isGroup { showingGroup = true }
             #endif
         }
         .onAppear { if draft.isEmpty { draft = model.draft(chat) } }

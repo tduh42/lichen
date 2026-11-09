@@ -70,6 +70,13 @@ final class AppModel {
     var demoRadioOff = false
     /// A chat to open (debug launch argument `-open <name>`, for screenshots).
     var debugOpen: ChatID?
+    /// Invitations we accepted, by admin node: the group's name, until it arrives (§10.5).
+    var joining: [Data: String] = [:]
+    /// Groups that arrived after we accepted their invitation, by admin node.
+    var joinedByInvite: [Data: Data] = [:]
+    /// An invitation to scan at launch (debug `-screen join`: Camille's, on the demo).
+    var debugInvite: String?
+    @ObservationIgnored private var debugInviteMade = false
     var tab = Tab.messages
 
     enum Tab: Hashable { case messages, map, search, settings }
@@ -545,6 +552,19 @@ final class AppModel {
                let c = contacts.first(where: { $0.name == name }) {
                 _ = setShare(.contact(key: c.key), precision: .m100, hours: 1.25)
             }
+            // -screen invite: a group of your own, alone, to invite people with a QR code.
+            if isDemo, debugScreen == "invite", !debugInviteMade,
+               let gid = try? core.createGroup(name: String(localized: "Sunday hike"), members: [], nowMs: now()) {
+                debugInviteMade = true
+                groups = core.groups()
+                debugOpen = .group(gid: gid)
+            }
+            // -screen join: Camille shows an invitation to a group of hers, and you scan it.
+            if isDemo, debugScreen == "join", !debugInviteMade,
+               contacts.contains(where: { $0.name == "Camille" }) {
+                debugInviteMade = true
+                debugInvite = demo?.camilleInvite()
+            }
             // -media YES: a 4 s voice message to Camille (she answers with hers).
             if UserDefaults.standard.bool(forKey: "media"), !debugVoiceSent,
                let c = contacts.first(where: { $0.name == "Camille" }) {
@@ -596,15 +616,18 @@ final class AppModel {
                 notifier.message(chat, title: title(of: chat),
                                  body: String(localized: "\(who) reacted \(emoji) to “\(what)”"))
             }
-        case .groupJoined, .groupUpdated, .groupLeft:
-            groups = core.groups()
-            contacts = core.contacts().filter(\.person)
-            #if DEBUG
-            if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
-               let g = groups.first(where: { $0.name == name }) {
-                debugOpen = .group(gid: g.gid)
+        case let .groupJoined(gid, _, admin):
+            if joining.removeValue(forKey: admin) != nil { joinedByInvite[admin] = gid }
+            groupsChanged()
+        case .groupUpdated, .groupLeft:
+            groupsChanged()
+        case let .memberJoined(gid, node):
+            groupsChanged()
+            let chat = ChatID.group(gid: gid)
+            if !isMuted(chat) {
+                notifier.message(chat, title: title(of: chat),
+                                 body: String(localized: "\(name(of: node)) joined with your invitation"))
             }
-            #endif
         case let .groupMessage(gid, from, message, snr, _):
             lastSnr[from] = snr
             let chat = ChatID.group(gid: gid)
@@ -928,6 +951,65 @@ final class AppModel {
 
     /// Airtime left this hour, milliseconds.
     var airtimeLeftMs: UInt64 { budget.limitMs - min(budget.usedMs, budget.limitMs) }
+
+    private func groupsChanged() {
+        groups = core.groups()
+        contacts = core.contacts().filter(\.person)
+        #if DEBUG
+        if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
+           let g = groups.first(where: { $0.name == name }) {
+            debugOpen = .group(gid: g.gid)
+        }
+        #endif
+    }
+
+    // MARK: invitations by QR code (protocol.md §10.5)
+
+    /// An invitation to a group we administer, for its QR code: 10 minutes, any number of
+    /// people, until revoked.
+    func createInvite(_ gid: Data) -> Result<InviteCode, LichenError> {
+        do {
+            let code = try core.createInvite(gid: gid, nowMs: now())
+            #if DEBUG
+            // -inviteDemo YES: Léa, next to you on the demo network, scans it.
+            if isDemo, UserDefaults.standard.bool(forKey: "inviteDemo") { demo?.guestScans(text: code.text) }
+            #endif
+            return .success(code)
+        } catch let e as LichenError {
+            return .failure(e)
+        } catch {
+            return .failure(.BadCode)
+        }
+    }
+
+    /// The invitation's screen closed: its code admits no one any more.
+    func revokeInvite(_ token: Data) { core.revokeInvite(token: token) }
+
+    func parseInvite(_ text: String) -> Result<InviteInfo, LichenError> {
+        do {
+            return .success(try core.parseInvite(text: text, nowMs: now()))
+        } catch let e as LichenError {
+            return .failure(e)
+        } catch {
+            return .failure(.BadCode)
+        }
+    }
+
+    /// Asks the admin of a scanned invitation to add us (they become a verified contact); the
+    /// group arrives as `groupJoined`.
+    func acceptInvite(_ text: String, _ info: InviteInfo) -> String? {
+        do {
+            _ = try core.acceptInvite(text: text, nowMs: now())
+            joining[info.admin] = info.groupName
+            contacts = core.contacts().filter(\.person)
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not join the group.")
+        }
+    }
 
     /// Invites contacts into a group we administer (ADR-0017).
     func addMembers(_ members: [Data], to gid: Data) -> String? {
@@ -1498,6 +1580,8 @@ extension LichenError {
         case .Storage: return String(localized: "The phone's storage could not be read or written.")
         case .NotCancellable: return String(localized: "Part of it already went out: it can no longer be cancelled.")
         case .NotReferable: return String(localized: "This message is from before replies existed: it cannot be answered.")
+        case .NoClock: return String(localized: "The phone's clock is not set yet.")
+        case .Expired: return String(localized: "This invitation has expired: ask for a new one.")
         }
     }
 }

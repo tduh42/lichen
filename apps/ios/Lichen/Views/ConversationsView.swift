@@ -91,6 +91,10 @@ struct ConversationsView: View {
             .onChange(of: model.debugOpen) {
                 if let chat = model.debugOpen { path = [chat] }
             }
+            #if DEBUG
+            // -screen join: the scanner opens on the demo's invitation.
+            .onChange(of: model.debugInvite) { if model.debugInvite != nil { addingContact = true } }
+            #endif
             .onAppear {
                 // A chat asked for before this list appeared (SOS reply, debug `-open`).
                 if let chat = model.debugOpen, path.isEmpty { path = [chat] }

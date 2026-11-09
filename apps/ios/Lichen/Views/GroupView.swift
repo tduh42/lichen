@@ -8,6 +8,7 @@ struct GroupView: View {
     @State private var error: String?
     @State private var consent = false
     @State private var inviting = false
+    @State private var showingCode = false
     @State private var leaving = false
     @State private var removing: ContactInfo?
     @Environment(\.dismiss) private var dismiss
@@ -22,6 +23,27 @@ struct GroupView: View {
                         ForEach(Array(g.members.enumerated()), id: \.element.key) { i, m in
                             if i > 0 { CardDivider(inset: 68) }
                             memberRow(m, group: g)
+                        }
+                    }
+                    if isAdmin {
+                        SectionLabel("Invite").padding(.top, 10)
+                        CardList {
+                            Button { showingCode = true } label: {
+                                CardRow(title: String(localized: "Invite with a QR code"),
+                                        subtitle: String(localized: "People next to you scan it and join, for 10 minutes")) {
+                                    Image(systemName: "qrcode").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            CardDivider()
+                            Button { inviting = true } label: {
+                                CardRow(title: String(localized: "Invite contacts")) {
+                                    Image(systemName: "person.badge.plus").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     SectionLabel("Location").padding(.top, 10)
@@ -56,14 +78,9 @@ struct GroupView: View {
                         CardRow(title: String(localized: "Media"),
                                 subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor"))
                     }
-                    HStack(spacing: 8) {
-                        if isAdmin {
-                            Button("Invite") { inviting = true }.buttonStyle(.secondary)
-                        }
-                        Button(isAdmin ? "Close the group" : "Leave the group") { leaving = true }
-                            .buttonStyle(.destructive)
-                    }
-                    .padding(.top, 12)
+                    Button(isAdmin ? "Close the group" : "Leave the group") { leaving = true }
+                        .buttonStyle(.destructive)
+                        .padding(.top, 12)
                 }
                 .padding(16)
             }
@@ -83,6 +100,7 @@ struct GroupView: View {
         }
         .sheet(isPresented: $sharing) { ChatShareSheet(chat: .group(gid: gid)) }
         .sheet(isPresented: $inviting) { InviteSheet(gid: gid) }
+        .sheet(isPresented: $showingCode) { InviteCodeSheet(gid: gid) }
         .confirmationDialog(isAdmin ? "Close the group?" : "Leave the group?", isPresented: $leaving, titleVisibility: .visible) {
             Button(isAdmin ? "Close the group" : "Leave the group", role: .destructive) {
                 // The chat closes itself once the group is gone (ChatView), this screen with it.
@@ -99,7 +117,12 @@ struct GroupView: View {
         } message: { _ in
             Text("Everyone gets new keys: they cannot read what follows.")
         }
-        .onAppear { consent = model.searchConsent(gid) }
+        .onAppear {
+            consent = model.searchConsent(gid)
+            #if DEBUG
+            if model.debugScreen == "invite", isAdmin { showingCode = true }
+            #endif
+        }
         .alert("Not changed", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -212,6 +235,105 @@ private struct InviteSheet: View {
                     .disabled(picked.isEmpty)
                 }
             }
+        }
+    }
+}
+
+/// The group's invitation as a QR code (the admin, protocol.md §10.5): people next to them scan
+/// it and join while it is on screen, for 10 minutes. Closing it revokes the code.
+private struct InviteCodeSheet: View {
+    let gid: Data
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    @State private var code: InviteCode?
+    @State private var error: String?
+    /// Members when the sheet opened: the others joined with this code.
+    @State private var before: Set<Data> = []
+
+    var body: some View {
+        let group = model.groups.first { $0.gid == gid }
+        let joined = (group?.members ?? []).filter { !before.contains($0.key) }
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 16) {
+                    if let code, let image = QRCode.image(code.text) {
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            let left = Int(code.expires) - Int(ctx.date.timeIntervalSince1970)
+                            VStack(spacing: 14) {
+                                Image(uiImage: image)
+                                    .interpolation(.none)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .padding(14)
+                                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                                    .frame(maxWidth: 280)
+                                    .opacity(left > 0 ? 1 : 0.15)
+                                    .accessibilityLabel(String(localized: "Invitation code for \(group?.name ?? "")"))
+                                if left > 0 {
+                                    Text("Valid for \(left / 60):\(String(format: "%02d", left % 60))")
+                                        .font(Theme.figure(17))
+                                        .foregroundStyle(Theme.tx)
+                                        .monospacedDigit()
+                                } else {
+                                    Banner(kind: .warn, title: String(localized: "This code has expired"),
+                                           action: (String(localized: "New code"), { make() }))
+                                }
+                            }
+                        }
+                        Text("In lichen: Add a contact › Scan. They join \(group?.name ?? "") and you become a verified contact for them.")
+                            .font(.system(.subheadline))
+                            .foregroundStyle(Theme.tx2)
+                            .multilineTextAlignment(.center)
+                    }
+                    if let error { Banner(kind: .sos, title: error) }
+                    if !joined.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            SectionLabel("Joined")
+                            CardList {
+                                ForEach(Array(joined.enumerated()), id: \.element.key) { i, m in
+                                    if i > 0 { CardDivider(inset: 68) }
+                                    HStack(spacing: 12) {
+                                        Avatar(name: m.name, key: m.key, size: 40)
+                                        Text(m.name).font(.system(.callout))
+                                        Spacer()
+                                        Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.okFg)
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                }
+                            }
+                        }
+                    }
+                    Text("Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.")
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+            }
+            .screen()
+            .navigationTitle(group?.name ?? String(localized: "Invite"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .onAppear {
+            before = Set(group?.members.map(\.key) ?? [])
+            make()
+        }
+        .onDisappear { if let code { model.revokeInvite(code.token) } }
+    }
+
+    /// A new code; the previous one is revoked.
+    private func make() {
+        if let code { model.revokeInvite(code.token) }
+        switch model.createInvite(gid) {
+        case let .success(c):
+            code = c
+            error = nil
+        case let .failure(e):
+            error = e.display
         }
     }
 }

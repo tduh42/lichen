@@ -11,19 +11,24 @@ struct AddContactView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tab = Tab.myCode
     @State private var added: ContactInfo?
+    @State private var invite: ScannedInvite?
     @State private var error: String?
 
     enum Tab: Hashable { case myCode, scan }
 
     var body: some View {
         VStack(spacing: 16) {
-            Picker("Mode", selection: $tab) {
-                Text("My code").tag(Tab.myCode)
-                Text("Scan").tag(Tab.scan)
+            if invite == nil {
+                Picker("Mode", selection: $tab) {
+                    Text("My code").tag(Tab.myCode)
+                    Text("Scan").tag(Tab.scan)
+                }
+                .pickerStyle(.segmented)
             }
-            .pickerStyle(.segmented)
 
-            if let added {
+            if let invite {
+                JoinPanel(text: invite.text, info: invite.info) { finish() }
+            } else if let added {
                 VerifyPanel(node: added.key) {
                     // Their conversation opens, ready for the first message (the list shows
                     // contacts once there is a message).
@@ -33,26 +38,47 @@ struct AddContactView: View {
             } else if tab == .myCode {
                 myCode
             } else {
-                ScanPanel { text in
-                    switch model.addCard(text) {
-                    case let .success(c): added = c
-                    case let .failure(e): error = e.display
-                    }
-                }
+                ScanPanel { text in scanned(text) }
             }
             if let error {
                 Banner(kind: .sos, title: error)
             }
             Spacer(minLength: 0)
-            if added == nil {
+            if added == nil, invite == nil {
                 Button(next == nil ? String(localized: "Close") : String(localized: "Later")) { finish() }
                     .buttonStyle(.secondary)
             }
         }
         .padding(16)
         .screen()
-        .navigationTitle("Add a contact")
+        .navigationTitle(invite == nil ? String(localized: "Add a contact") : String(localized: "Join a group"))
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            #if DEBUG
+            if let text = model.debugInvite {
+                model.debugInvite = nil
+                tab = .scan
+                scanned(text)
+            }
+            #endif
+        }
+    }
+
+    /// A contact card adds the contact; a group invitation asks to join (§10.5).
+    private func scanned(_ text: String) {
+        error = nil
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lichen:1:g:") {
+            switch model.parseInvite(text) {
+            case let .success(info): invite = ScannedInvite(text: text, info: info)
+            case let .failure(e):
+                error = e == .BadCode ? String(localized: "This invitation could not be read.") : e.display
+            }
+            return
+        }
+        switch model.addCard(text) {
+        case let .success(c): added = c
+        case let .failure(e): error = e.display
+        }
     }
 
     private func finish() {
@@ -79,6 +105,86 @@ struct AddContactView: View {
             Banner(kind: .warn, title: String(localized: "Connect your radio first"),
                    message: String(localized: "Your code carries your radio's address, so people can reach you."))
         }
+    }
+}
+
+private struct ScannedInvite {
+    let text: String
+    let info: InviteInfo
+}
+
+/// A scanned group invitation (§10.5): what it is, then the request to the admin until the
+/// group arrives.
+private struct JoinPanel: View {
+    let text: String
+    let info: InviteInfo
+    let done: () -> Void
+    @Environment(AppModel.self) private var model
+    @State private var asked = false
+    @State private var error: String?
+
+    var body: some View {
+        let admin = info.adminName.isEmpty ? String(localized: "the admin") : info.adminName
+        let name = info.groupName.isEmpty ? String(localized: "the group") : info.groupName
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                Avatar(name: name, key: info.admin, size: 48)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Join \(name)?").font(.system(.title3, weight: .semibold))
+                    Text("Invitation from \(admin)")
+                        .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
+            if let gid = model.joinedByInvite[info.admin] {
+                Banner(kind: .ok, title: String(localized: "You joined \(name)"),
+                       message: String(localized: "\(admin) added you. The other members' keys arrive over the next minutes."))
+                Button("Open the group") {
+                    model.debugOpen = .group(gid: gid)
+                    done()
+                }
+                .buttonStyle(.primary)
+            } else if asked {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Asking \(admin) to add you…").font(.system(.callout, weight: .medium))
+                }
+                Text("Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.")
+                    .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Close") { done() }.buttonStyle(.secondary)
+            } else if info.member {
+                Banner(kind: .ok, title: String(localized: "You are already in \(name)"))
+                Button("Close") { done() }.buttonStyle(.secondary)
+            } else if info.expired {
+                Banner(kind: .warn, title: String(localized: "This invitation has expired"),
+                       message: String(localized: "Ask \(admin) to show a new code."))
+                Button("Close") { done() }.buttonStyle(.secondary)
+            } else {
+                Text("\(admin) becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.")
+                    .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Join") { join() }
+                    .buttonStyle(.primary)
+                Button("Cancel") { done() }.buttonStyle(.secondary)
+            }
+            if let error { Banner(kind: .sos, title: error) }
+        }
+        // Banners take their own height, not the screen's.
+        .fixedSize(horizontal: false, vertical: true)
+        .onAppear {
+            #if DEBUG
+            // -joinNow YES: as if "Join" were tapped.
+            if UserDefaults.standard.bool(forKey: "joinNow"), !asked, !info.member, !info.expired { join() }
+            #endif
+        }
+    }
+
+    private func join() {
+        error = model.acceptInvite(text, info)
+        if error == nil { asked = true }
     }
 }
 
@@ -212,6 +318,7 @@ private struct ScanPanel: View {
             }
             HStack {
                 TextField("Or paste a code: lichen:1:…", text: $pasted)
+                    .accessibilityIdentifier("pasteCode")
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .font(.system(.subheadline, design: .monospaced))

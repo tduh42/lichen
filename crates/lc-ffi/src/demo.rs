@@ -787,6 +787,29 @@ impl DemoNetwork {
         d.pending.push((at, Action::GuestJoins(text)));
     }
 
+    /// Camille shows an invitation to a group of hers, "Refuge tonight", created for it (debug
+    /// `-screen join`, §10.5): its QR code's text, once her node is up.
+    pub fn camille_invite(&self) -> Option<String> {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let camille = d.camille;
+        d.net
+            .with_core(camille, |c, now| {
+                let known = c
+                    .groups()
+                    .find(|g| g.name == "Refuge tonight")
+                    .map(|g| g.gid);
+                let gid = match known {
+                    Some(g) => g,
+                    None => c.create_group("Refuge tonight", &[], now).ok()?,
+                };
+                c.create_invite(&gid, now).ok().map(|i| i.encode())
+            })
+            .flatten()
+    }
+
     /// Camille also in SOS (at the refuge, with GPS) from `after_s` for `for_s` seconds: two
     /// incidents at once, one ending (debug `sosdemo2`).
     pub fn camille_sos(&self, after_s: u64, for_s: u64) {
