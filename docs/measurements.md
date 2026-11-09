@@ -233,3 +233,16 @@ The Android emulator cannot use the Mac's USB devices: `lichen bridge` relays th
 - Self-calibration: on a field with n = 3.4 (defaults 2.8), while Julien reports GPS the fitted path loss predicts the true mean RSSI within 4 dB from 300 m to 2 km (the default is more than 10 dB off at 1 km). The exponent and the offset trade against each other over a limited span of distances, so the fit is judged by its predictions.
 - The 95 % ellipse held Julien for every searcher in the end-to-end test; the error falls as the searchers close in (RSSI ranging at 6 dB is ±60 % per reading).
 - These are simulated: the field test (L8c) fits the path loss and the shadowing for real, with `lichen search --csv` on each radio.
+
+## 2026-11-09 — Replies and reactions on the air (ADR-0019)
+
+`cargo test -p lc-core --release --test groups -- --ignored reply_and_reaction_costs --nocapture`: alice sends to bob through one repeater on an established session, then to a group of five around the same repeater. Every transmission is counted: the sender's frames, the repeater's relays, the receiver's acknowledgements (sent twice, §7.3). SF8 / 62.5 kHz.
+
+| Content | Plaintext | Direct, 1 hop | Group of 5, 2 copies |
+|---|---|---|---|
+| Text, 20 characters | 25 B | 6 frames, 2.17 s | 4 frames, 3.06 s |
+| Reply, same text | 33 B | 6 frames, 2.25 s | 4 frames, 3.22 s |
+| Reaction 👍 | 17 B | 6 frames, 2.09 s | 4 frames, 2.89 s |
+
+A reaction costs about what a short text does: in a direct conversation the relayed data frame and the two relayed acknowledgements dominate (the 8 bytes saved are 4 % of the airtime); in a group, the 64-byte signature and the two copies do. The apps show this cost before a reaction is sent, as before any send. The 8-byte reference adds 3 to 5 % to a reply.
+

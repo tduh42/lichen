@@ -75,6 +75,8 @@ pub mod content {
     pub const VOICE: u8 = 0x05;
     pub const MEDIA_REQUEST: u8 = 0x06;
     pub const SEARCH: u8 = 0x07;
+    pub const REPLY: u8 = 0x08;
+    pub const REACTION: u8 = 0x09;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
     pub const GROUP_LEAVE: u8 = 0x12;

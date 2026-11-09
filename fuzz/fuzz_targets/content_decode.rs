@@ -8,7 +8,8 @@ fuzz_target!(|data: &[u8]| {
     if let Some(c) = Content::decode(data) {
         let again = Content::decode(&c.encode());
         assert_eq!(again.as_ref(), Some(&c));
-        if !matches!(c, Content::Location(_) | Content::Text { .. }) {
+        // Texts decode lossily (invalid UTF-8 becomes U+FFFD), positions normalise.
+        if !matches!(c, Content::Location(_) | Content::Text { .. } | Content::Reply { .. }) {
             assert_eq!(c.encode(), data);
         }
     }

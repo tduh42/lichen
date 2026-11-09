@@ -143,7 +143,11 @@ impl Bot {
         }
         Some(match content {
             Content::Text { text, .. } if text.starts_with("echo:") => return None,
-            Content::Text { text, .. } => format!("echo: {text} · {radio}"),
+            Content::Text { text, .. } | Content::Reply { text, .. } => {
+                format!("echo: {text} · {radio}")
+            }
+            // A reaction is not answered (it would be an endless exchange).
+            Content::Reaction { .. } => return None,
             Content::Voice { frames, data, .. } => format!(
                 "got your voice message: {:.1} s in {} bytes · {radio}",
                 f32::from(*frames) * 0.04,

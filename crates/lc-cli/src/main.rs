@@ -216,6 +216,15 @@ fn describe(core: &Core, e: &Event) -> String {
         } => {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
+                Content::Reply { text, target, .. } => {
+                    format!("\"{text}\" (reply to {})", hex::encode(target))
+                }
+                Content::Reaction { emoji, target, .. } if emoji.is_empty() => {
+                    format!("reaction to {} removed", hex::encode(target))
+                }
+                Content::Reaction { emoji, target, .. } => {
+                    format!("reacts {emoji} to {}", hex::encode(target))
+                }
                 Content::Location(p) => describe_position(p),
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",
@@ -266,6 +275,15 @@ fn describe(core: &Core, e: &Event) -> String {
         } => {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),
+                Content::Reply { text, target, .. } => {
+                    format!("\"{text}\" (reply to {})", hex::encode(target))
+                }
+                Content::Reaction { emoji, target, .. } if emoji.is_empty() => {
+                    format!("reaction to {} removed", hex::encode(target))
+                }
+                Content::Reaction { emoji, target, .. } => {
+                    format!("reacts {emoji} to {}", hex::encode(target))
+                }
                 Content::Location(p) => describe_position(p),
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",

@@ -310,7 +310,16 @@ const POSITION_KEEP_S: u64 = 24 * 3600;
 impl From<Content> for Message {
     fn from(c: Content) -> Self {
         match c {
-            Content::Text { sent_at, text } => Self::Text { sent_at, text },
+            // A reply is a text; its quote comes with the stored message (§6.2).
+            Content::Text { sent_at, text } | Content::Reply { sent_at, text, .. } => {
+                Self::Text { sent_at, text }
+            }
+            // Reactions are state, never shown as messages.
+            c @ Content::Reaction { .. } => {
+                let mut body = c.encode();
+                let content_type = body.remove(0);
+                Self::Other { content_type, body }
+            }
             Content::Location(p) => Self::Other {
                 content_type: lc_proto::content::LOCATION,
                 body: p.encode().to_vec(),

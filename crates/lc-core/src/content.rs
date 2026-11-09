@@ -2,6 +2,7 @@
 
 use lc_proto::content;
 use lc_proto::location::{self, Position};
+use sha2::{Digest, Sha256};
 
 /// Identifies an image across its variants.
 pub type MediaId = [u8; 8];
@@ -22,6 +23,25 @@ pub const fn voice_bits(mode: u8) -> Option<usize> {
         3 => Some(96),
         _ => None,
     }
+}
+
+/// A message reference (§6.2): names a message of a conversation on every phone.
+pub type MessageRef = [u8; 8];
+
+/// Longest reaction, in bytes (§6.2).
+pub const REACTION_MAX: usize = 32;
+
+/// The reference of the message with `plaintext` (`content_type ‖ body` as sent) by `author`
+/// (an identity key), §6.2.
+pub fn message_ref(author: &[u8; 32], plaintext: &[u8]) -> MessageRef {
+    let mut h = Sha256::new();
+    h.update(b"lichen/1 ref");
+    h.update(author);
+    h.update(plaintext);
+    let d = h.finalize();
+    let mut r = [0u8; 8];
+    r.copy_from_slice(d.get(..8).unwrap_or(&[0; 8]));
+    r
 }
 
 /// Transports of an announcement (§14.1).
@@ -77,6 +97,18 @@ pub enum Content {
     MediaRequest { media_id: MediaId, full: bool },
     /// Content offered over the Internet bridge (§14.1).
     Announce(Announce),
+    /// A text answering message `target` of the same conversation (§6.2).
+    Reply {
+        sent_at: u32,
+        target: MessageRef,
+        text: String,
+    },
+    /// The sender's reaction to message `target` (§6.2); empty removes it.
+    Reaction {
+        sent_at: u32,
+        target: MessageRef,
+        emoji: String,
+    },
     /// A type this version does not interpret.
     Other { content_type: u8, body: Vec<u8> },
 }
@@ -160,6 +192,30 @@ impl Content {
                 v.extend_from_slice(a.name.as_bytes().get(..end).unwrap_or(&[]));
                 v
             }
+            Content::Reply {
+                sent_at,
+                target,
+                text,
+            } => {
+                let mut v = Vec::with_capacity(13 + text.len());
+                v.push(content::REPLY);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.extend_from_slice(target);
+                v.extend_from_slice(text.as_bytes());
+                v
+            }
+            Content::Reaction {
+                sent_at,
+                target,
+                emoji,
+            } => {
+                let mut v = Vec::with_capacity(13 + emoji.len());
+                v.push(content::REACTION);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.extend_from_slice(target);
+                v.extend_from_slice(emoji.as_bytes());
+                v
+            }
             Content::Other { content_type, body } => {
                 let mut v = Vec::with_capacity(1 + body.len());
                 v.push(*content_type);
@@ -188,6 +244,28 @@ impl Content {
             decode_image(body)
         } else if content_type == content::ANNOUNCE {
             decode_announce(body)
+        } else if content_type == content::REPLY {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let (target, text) = rest.split_first_chunk::<8>()?;
+            if text.is_empty() {
+                return None;
+            }
+            Some(Content::Reply {
+                sent_at: u32::from_le_bytes(*ts),
+                target: *target,
+                text: String::from_utf8_lossy(text).into_owned(),
+            })
+        } else if content_type == content::REACTION {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let (target, emoji) = rest.split_first_chunk::<8>()?;
+            if emoji.len() > REACTION_MAX {
+                return None;
+            }
+            Some(Content::Reaction {
+                sent_at: u32::from_le_bytes(*ts),
+                target: *target,
+                emoji: std::str::from_utf8(emoji).ok()?.to_owned(),
+            })
         } else if content_type == content::MEDIA_REQUEST {
             let (id, rest) = body.split_first_chunk::<8>()?;
             let full = match rest {

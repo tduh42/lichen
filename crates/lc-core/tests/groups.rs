@@ -462,3 +462,85 @@ fn invite_leave_close() {
         );
     }
 }
+
+/// What a text, a reply and a reaction cost on the air (§6.2): every transmission counted,
+/// relays and acknowledgements included. Direct: alice → bob through the hub (one hop), on an
+/// established session. Group: alice to the five members, flooded twice through the hub.
+#[test]
+#[ignore = "measurement, prints numbers for docs/measurements.md"]
+fn reply_and_reaction_costs() {
+    use lc_core::content::message_ref;
+    let (mut net, m) = star(23);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("g", &keys[1..], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m, &gid)));
+    let bob = keys[1];
+    // A first message opens the session; it is not counted.
+    net.with_core(m[0], |c, now| c.send_text(&bob, "hello", 1, now))
+        .unwrap()
+        .unwrap();
+    settle(&mut net);
+    let airtime = |n: &Net| -> u64 { n.nodes.iter().map(|x| x.tx_airtime_ms).sum() };
+    let frames = |n: &Net| -> u64 { n.nodes.iter().map(|x| x.tx_frames).sum() };
+    let me = net.with_core_ref(m[0], |c| *c.key().unwrap()).unwrap();
+    let hello = Content::Text {
+        sent_at: 1,
+        text: "hello".into(),
+    };
+    let target = message_ref(&me, &hello.encode());
+    let text = "See you at the hut!!";
+    let contents = [
+        (
+            "text, 20 characters",
+            Content::Text {
+                sent_at: 2,
+                text: text.into(),
+            },
+        ),
+        (
+            "reply, 20 characters",
+            Content::Reply {
+                sent_at: 3,
+                target,
+                text: text.into(),
+            },
+        ),
+        (
+            "reaction 👍",
+            Content::Reaction {
+                sent_at: 4,
+                target,
+                emoji: "👍".into(),
+            },
+        ),
+    ];
+    println!(
+        "| Content | Plaintext | Direct, 1 hop (frames, airtime) | Group of 5, 2 copies (frames, airtime) |"
+    );
+    println!("|---|---|---|---|");
+    for (name, c) in contents {
+        let d = c.encode();
+        let (f0, a0) = (frames(&net), airtime(&net));
+        net.with_core(m[0], |core, now| core.send_datagram(&bob, d.clone(), now))
+            .unwrap()
+            .unwrap();
+        settle(&mut net);
+        let (f1, a1) = (frames(&net), airtime(&net));
+        net.with_core(m[0], |core, now| core.send_group_datagram(&gid, &d, now))
+            .unwrap()
+            .unwrap();
+        settle(&mut net);
+        let (f2, a2) = (frames(&net), airtime(&net));
+        println!(
+            "| {name} | {} B | {} frames, {:.2} s | {} frames, {:.2} s |",
+            d.len(),
+            f1 - f0,
+            (a1 - a0) as f64 / 1000.0,
+            f2 - f1,
+            (a2 - a1) as f64 / 1000.0
+        );
+    }
+}
