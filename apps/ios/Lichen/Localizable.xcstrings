@@ -1991,6 +1991,16 @@
         }
       }
     },
+    "Full thumbnail · LoRa · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vignette complète · LoRa · %@"
+          }
+        }
+      }
+    },
     "Group": {
       "localizations": {
         "fr": {
@@ -3211,12 +3221,32 @@
         }
       }
     },
+    "Opens the photo full screen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre la photo en plein écran"
+          }
+        }
+      }
+    },
     "Or paste a code: lichen:1:…": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ou colle un code : lichen:1:…"
+          }
+        }
+      }
+    },
+    "Original · %@ · %@, hash verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original · %@ · %@, empreinte vérifiée"
           }
         }
       }
@@ -3447,6 +3477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Preset"
+          }
+        }
+      }
+    },
+    "Preview · LoRa · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aperçu · LoRa · %@"
           }
         }
       }

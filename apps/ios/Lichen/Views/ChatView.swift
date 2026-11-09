@@ -751,6 +751,7 @@ private struct ImageCard: View {
     let message: StoredMessage
     @Environment(AppModel.self) private var model
     @State private var error: String?
+    @State private var viewing = false
 
     var body: some View {
         if case let .image(_, mediaId, full, width, height, fullLen, data) = message.message {
@@ -786,6 +787,11 @@ private struct ImageCard: View {
                 }
                 .frame(width: 250, height: 250 * CGFloat(max(height, 1)) / CGFloat(max(width, 1)))
                 .clipped()
+                // Full screen, zoomable.
+                .contentShape(Rectangle())
+                .onTapGesture { viewing = true }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens the photo full screen")
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text("Photo").font(.system(.footnote, weight: .semibold))
@@ -819,6 +825,11 @@ private struct ImageCard: View {
             .background(Theme.s1)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+            .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: message) }
+            #if DEBUG
+            // -screen photo: the viewer on the first photo received.
+            .onAppear { if model.debugScreen == "photo", !message.outgoing { viewing = true } }
+            #endif
             .alert("Not sent", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
@@ -1346,6 +1357,7 @@ private struct BridgeSection: View {
     /// Its own card (no LoRa preview in this conversation).
     let standalone: Bool
     @Environment(AppModel.self) private var model
+    @State private var viewing = false
 
     var body: some View {
         if case let .announce(_, _, _, hash, size, providers, name) = announce.message {
@@ -1354,6 +1366,9 @@ private struct BridgeSection: View {
                 if standalone, let file, let ui = UIImage(contentsOfFile: file.path) {
                     Image(uiImage: ui).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .onTapGesture { viewing = true }
+                        .accessibilityAddTraits(.isButton)
+                        .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
                 }
                 HStack {
                     Text(verbatim: name).font(.system(.footnote, weight: .semibold)).lineLimit(1)
