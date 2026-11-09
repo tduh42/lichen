@@ -47,16 +47,24 @@ final class Stickers {
         emoji.replacingOccurrences(of: "\u{FE0F}", with: "")
     }
 
-    func animation(_ emoji: String) -> LottieAnimation? {
+    /// Already parsed: shown at once.
+    func cached(_ emoji: String) -> LottieAnimation? { cache[Self.key(emoji)] }
+
+    /// The animation of `emoji`, read and parsed off the main thread (tens of milliseconds
+    /// each), then kept.
+    func animation(_ emoji: String) async -> LottieAnimation? {
         let k = Self.key(emoji)
         if let a = cache[k] { return a }
-        guard let dir, let entry = all.first(where: { Self.key($0.emoji) == k }),
-              let packed = try? Data(contentsOf: dir.appendingPathComponent(entry.file)),
-              // Apple's "zlib" is raw DEFLATE (RFC 1951), as the files are stored.
-              let json = try? (packed as NSData).decompressed(using: .zlib) as Data,
-              let a = try? LottieAnimation.from(data: json)
-        else { return nil }
-        cache[k] = a
+        guard let dir, let entry = all.first(where: { Self.key($0.emoji) == k }) else { return nil }
+        let url = dir.appendingPathComponent(entry.file)
+        let a = await Task.detached(priority: .userInitiated) { () -> LottieAnimation? in
+            guard let packed = try? Data(contentsOf: url),
+                  // Apple's "zlib" is raw DEFLATE (RFC 1951), as the files are stored.
+                  let json = try? (packed as NSData).decompressed(using: .zlib) as Data
+            else { return nil }
+            return try? LottieAnimation.from(data: json)
+        }.value
+        if let a { cache[k] = a }
         return a
     }
 }
@@ -67,19 +75,27 @@ struct StickerView: View {
     let emoji: String
     var size: CGFloat = 132
     @State private var replay = 0
+    @State private var animation: LottieAnimation?
+    @State private var looked = false
 
     var body: some View {
         Group {
-            if let a = Stickers.shared.animation(emoji) {
+            if let a = animation ?? Stickers.shared.cached(emoji) {
                 LottieView(animation: a)
                     .playing(loopMode: .repeat(3))
                     .resizable()
                     .id(replay)
-            } else {
+            } else if looked {
                 Text(verbatim: emoji).font(.system(size: size * 0.7))
+            } else {
+                Color.clear
             }
         }
         .frame(width: size, height: size)
+        .task(id: emoji) {
+            animation = await Stickers.shared.animation(emoji)
+            looked = true
+        }
         .contentShape(Rectangle())
         .onTapGesture { replay += 1 }
         .accessibilityLabel(Text("Sticker \(emoji)"))
@@ -90,18 +106,21 @@ struct StickerView: View {
 struct StickerThumb: View {
     let emoji: String
     var size: CGFloat = 56
+    @State private var animation: LottieAnimation?
 
     var body: some View {
         Group {
-            if let a = Stickers.shared.animation(emoji) {
+            if let a = animation ?? Stickers.shared.cached(emoji) {
                 LottieView(animation: a)
                     .currentProgress(0.4)
                     .resizable()
             } else {
-                Text(verbatim: emoji).font(.system(size: size * 0.7))
+                // The emoji itself while its animation is read.
+                Text(verbatim: emoji).font(.system(size: size * 0.6))
             }
         }
         .frame(width: size, height: size)
+        .task(id: emoji) { animation = await Stickers.shared.animation(emoji) }
     }
 }
 

@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,6 +57,8 @@ import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.model.AppModel
 import org.json.JSONArray
 import java.nio.ByteBuffer
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.zip.Inflater
 
 /**
@@ -65,9 +68,13 @@ import java.util.zip.Inflater
 object Stickers {
     class Entry(val emoji: String, val file: String, val group: String)
 
-    private var entries: List<Entry>? = null
-    private val cache = mutableMapOf<String, LottieComposition>()
+    @Volatile private var entries: List<Entry>? = null
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, LottieComposition>()
 
+    /** Already parsed: shown at once. */
+    fun cached(emoji: String): LottieComposition? = cache[key(emoji)]
+
+    @Synchronized
     fun all(context: Context): List<Entry> = entries ?: runCatching {
         val json = context.assets.open("noto/manifest.json").use { it.readBytes().decodeToString() }
         val a = JSONArray(json)
@@ -80,6 +87,7 @@ object Stickers {
     /** Without the variation selector: "❤" and "❤️" are the same sticker. */
     private fun key(emoji: String) = emoji.replace("️", "")
 
+    /** Parses the animation (tens of milliseconds): off the main thread. */
     fun composition(context: Context, emoji: String): LottieComposition? {
         val k = key(emoji)
         cache[k]?.let { return it }
@@ -107,12 +115,21 @@ object Stickers {
     }
 }
 
+/** The animation of `emoji`, parsed off the main thread; null until then (or without it). */
+@Composable
+private fun rememberSticker(emoji: String): LottieComposition? {
+    val context = LocalContext.current.applicationContext
+    val state = produceState(Stickers.cached(emoji), emoji) {
+        if (value == null) value = withContext(Dispatchers.Default) { Stickers.composition(context, emoji) }
+    }
+    return state.value
+}
+
 /** A sticker: its animation played three times, again on a tap; the plain emoji when this
  * phone does not have it (a newer set, §6.3). */
 @Composable
 fun StickerView(emoji: String, size: Dp = 132.dp) {
-    val context = LocalContext.current
-    val composition = remember(emoji) { Stickers.composition(context, emoji) }
+    val composition = rememberSticker(emoji)
     var replay by remember { mutableIntStateOf(0) }
     val label = stringResource(R.string.sticker_named, emoji)
     Box(
@@ -134,8 +151,7 @@ fun StickerView(emoji: String, size: Dp = 132.dp) {
 /** A still sticker for the picker (dozens at once would cost too much animating). */
 @Composable
 fun StickerThumb(emoji: String, size: Dp = 56.dp) {
-    val context = LocalContext.current
-    val composition = remember(emoji) { Stickers.composition(context, emoji) }
+    val composition = rememberSticker(emoji)
     Box(Modifier.size(size), contentAlignment = Alignment.Center) {
         if (composition != null) {
             LottieAnimation(composition, { 0.4f }, Modifier.fillMaxSize())
