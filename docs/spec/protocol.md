@@ -222,6 +222,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x05 | VOICE | §13.1 | L6 |
 | 0x06 | MEDIA_REQUEST | §13.3 | L6 |
 | 0x07 | SEARCH | §11 (groups only) | L8 |
+| 0x08 | REPLY | `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, §6.2 | ADR-0019 |
+| 0x09 | REACTION | `ts u32 ‖ ref (8) ‖ emoji (UTF-8, 0..=32 bytes)`, §6.2 | ADR-0019 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
@@ -232,14 +234,30 @@ Delivery is at least once: a datagram that was delivered but whose ACKs were all
 
 ### 6.1 Outbox and restart (ADR-0018)
 
-What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT messages, direct or group, and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
+What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT and REPLY messages, direct or group, and of its own REACTIONs (§6.2), and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
 
 1. **States.** *Queued*: accepted, nothing transmitted; the user may cancel it, and it disappears. *Sending*: at least one frame of it went out; it can no longer be cancelled, since it may already have arrived. Then one of: *delivered* (direct: the `COMPLETE` ACK, §7.1), *sent to the group* (the first copy of every fragment has left, §10.3; nobody acknowledges), or *failed* with a reason.
 2. **Radio away.** A TEXT is accepted while the companion is disconnected. Nothing is transmitted and no timer or retry counter advances until it is back (no frame can leave, so none is counted lost); a transfer in progress resumes where it stopped. When the companion that comes back is another node, sessions and paths, which belonged to the old node, are dropped; the messages stay queued.
-3. **Restart.** At start, unfinished TEXT intents (queued or sending) are submitted again with their stored plaintext. Unfinished media fail ("interrupted"): media are never queued for later (§13.4).
+3. **Restart.** At start, unfinished TEXT, REPLY and REACTION intents (queued or sending) are submitted again with their stored plaintext. Unfinished media fail ("interrupted"): media are never queued for later (§13.4).
 4. **Expiry.** An unfinished message that is not being transmitted when its expiry passes stops and fails ("expired"): never sent if it was queued; if it was sending, its transfer is abandoned (ABORT `CANCELLED`, §7.2) and it may have arrived. A message being transmitted at that moment finishes normally.
 5. **Retry.** A failed message sent again by the user is the same message: the same stored plaintext, a new expiry. No failure is retried automatically: an unreachable peer would cost shared airtime for nothing.
-6. **Duplicates.** A receiver that keeps a history drops a TEXT or VOICE whose plaintext equals one it already stored from the same sender in the same conversation (direct, or group and author), however long ago. With the sender's timestamp in the plaintext, this covers a resend after a restart on either side and a group message sent again under a new sender key. It changes nothing on the air.
+6. **Duplicates.** A receiver that keeps a history drops a TEXT, REPLY or VOICE whose plaintext equals one it already stored from the same sender in the same conversation (direct, or group and author), however long ago. With the sender's timestamp in the plaintext, this covers a resend after a restart on either side and a group message sent again under a new sender key. It changes nothing on the air.
+
+### 6.2 Message references, replies and reactions (ADR-0019)
+
+**Reference.** A message is referred to by `ref = SHA-256("lichen/1 ref" ‖ author ‖ plaintext)[0..8]`, where `author` is its author's identity key (§2, 32 bytes) and `plaintext` its datagram plaintext as sent, `content_type ‖ body`: without the signature in a group (§10.3), the preview for an image (§13.2, which the full variant later replaces). Sender and receivers compute it, nothing carries it; a resend (§6.1) has the same reference. References are compared within one conversation (a contact, or a group); one that matches no stored message refers to "a message not on this phone". Vectors: `testdata/lichen/content.toml`.
+
+**REPLY (0x08)**: `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, a text answering the message `ref` of the same conversation. It carries no excerpt: the receiver shows the original when it has it. Otherwise it follows TEXT: outbox (§6.1), duplicates, one group fragment up to 62 bytes of text.
+
+**REACTION (0x09)**: `ts u32 ‖ ref (8) ‖ emoji`, the emoji in UTF-8, 0 to 32 bytes; empty removes the sender's reaction. Anything else (not UTF-8, longer) is dropped. Not a message of the history:
+
+1. **State.** Per conversation, target `ref` and sender identity, the reaction with the greatest `ts` holds; equal `ts`, the greater bytes. Repeats and any order of arrival converge.
+2. **Out of order.** A reaction whose target is not stored yet is kept and applies when the target arrives.
+3. **Outbox.** The sender's own reaction is applied at once, kept until delivered or sent to the group (§6.1), submitted again after a restart, and given up after 24 hours.
+
+**Authorship.** A reply or reaction is authenticated as its sender's by its session or signature (§4, §10.3). The target's author is part of `ref`: a reference to a message names its author, and only that author's message matches it.
+
+**Older clients** show REPLY and REACTION as unsupported content (§6); nothing else changes on the air.
 
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 

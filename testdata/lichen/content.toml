@@ -1,0 +1,83 @@
+# lichen content vectors (protocol.md §6.2), produced by testdata/lichen/gen.py, an
+# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.
+
+[[ref]]
+name = "camille text"
+author = "3f56e90b04e7a4b50e3ec2446c13055e9cb1d0851c17c9ce8a52ea3ca76623cc"
+plaintext = "014002df6a4869212049276d20617420746865207265667567652e"
+ref = "3abf2693286fac44"
+
+[[ref]]
+name = "julien same text"
+author = "e23c3d7ff76f6e6235ce091f2fcd5fd35748677799d1637acf5ba2bca350e258"
+plaintext = "014002df6a4869212049276d20617420746865207265667567652e"
+ref = "5c95a28295294eee"
+
+[[ref]]
+name = "camille later text"
+author = "3f56e90b04e7a4b50e3ec2446c13055e9cb1d0851c17c9ce8a52ea3ca76623cc"
+plaintext = "014102df6a4869212049276d20617420746865207265667567652e"
+ref = "5083506d044f7c80"
+
+[[reply]]
+name = "reply"
+ts = 1793000060
+target = "3abf2693286fac44"
+text = "On my way, see you at the hut"
+datagram = "087c02df6a3abf2693286fac444f6e206d79207761792c2073656520796f752061742074686520687574"
+
+[[reply]]
+name = "reply in french"
+ts = 1793000061
+target = "3abf2693286fac44"
+text = "J'arrive, à tout à l'heure"
+datagram = "087d02df6a3abf2693286fac444a276172726976652c20c3a020746f757420c3a0206c276865757265"
+
+[[reaction]]
+name = "thumbs up"
+ts = 1793000120
+target = "3abf2693286fac44"
+emoji = "👍"
+datagram = "09b802df6a3abf2693286fac44f09f918d"
+
+[[reaction]]
+name = "heart, later"
+ts = 1793000180
+target = "3abf2693286fac44"
+emoji = "❤️"
+datagram = "09f402df6a3abf2693286fac44e29da4efb88f"
+
+[[reaction]]
+name = "family (a long grapheme)"
+ts = 1793000181
+target = "3abf2693286fac44"
+emoji = "👨‍👩‍👧‍👦"
+datagram = "09f502df6a3abf2693286fac44f09f91a8e2808df09f91a9e2808df09f91a7e2808df09f91a6"
+
+[[reaction]]
+name = "removed"
+ts = 1793000240
+target = "3abf2693286fac44"
+emoji = ""
+datagram = "093003df6a3abf2693286fac44"
+
+[[malformed]]
+name = "reply without text"
+datagram = "086c03df6a3abf2693286fac44"
+
+[[malformed]]
+name = "reply cut in its reference"
+datagram = "086c03df6a3abf2693"
+
+[[malformed]]
+name = "reaction cut in its reference"
+datagram = "096c03df6a3abf269328"
+
+[[malformed]]
+name = "reaction not UTF-8"
+datagram = "096c03df6a3abf2693286fac44fffe"
+
+[[malformed]]
+name = "reaction over 32 bytes"
+datagram = "096c03df6a3abf2693286fac44f09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918d"
+
