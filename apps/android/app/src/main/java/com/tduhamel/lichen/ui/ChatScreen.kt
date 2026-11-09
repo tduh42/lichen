@@ -1,5 +1,14 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.border
+import com.tduhamel.lichen.core.QuoteKind
+import com.tduhamel.lichen.core.Quote
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -136,6 +145,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var dividerBefore by remember(chat) { mutableStateOf<Long?>(null) }
     var unreadAtOpen by remember(chat) { mutableIntStateOf(0) }
     var highlight by remember(chat) { mutableStateOf<Long?>(null) }
+    // The message being answered (§6.2).
+    var replyTo by remember(chat) { mutableStateOf<StoredMessage?>(null) }
     LaunchedEffect(chat) {
         model.load(chat)
         model.focus?.takeIf { it.first == chat }?.let { (_, id) ->
@@ -269,7 +280,17 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                     item(key = "day" + dayOf(m.atMs)) { DaySeparator(context, m.atMs) }
                 }
                 if (m.id == dividerBefore) item(key = "unread") { UnreadDivider(unreadAtOpen) }
-                item(key = m.id) { MessageBubble(model, m, chat.group, highlight == m.id) { error = it } }
+                item(key = m.id) {
+                    MessageBubble(
+                        model, m, chat.group, highlight == m.id,
+                        reply = { replyTo = m },
+                        // A quote tapped: its original, loading earlier pages if needed.
+                        openQuote = { id ->
+                            model.loadUntil(chat, id)
+                            highlight = id
+                        },
+                    ) { error = it }
+                }
             }
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
@@ -297,7 +318,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
             }
         }
-        Composer(model, chat) { error = it }
+        Composer(model, chat, replyTo, { replyTo = null }) { error = it }
     }
 
     val node = chat.contactKey
@@ -430,7 +451,15 @@ private fun UnreadDivider(count: Int) {
 }
 
 @Composable
-private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, highlighted: Boolean, onError: (String) -> Unit) {
+private fun MessageBubble(
+    model: AppModel,
+    m: StoredMessage,
+    isGroup: Boolean,
+    highlighted: Boolean,
+    reply: () -> Unit,
+    openQuote: (Long) -> Unit,
+    onError: (String) -> Unit,
+) {
     val t = lichen
     val res = LocalResources.current
     val author = m.author
@@ -444,7 +473,11 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, h
     var selecting by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val press = if (text != null || cancellable || retriable) Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true }) else Modifier
+    val press = if (text != null || cancellable || retriable || m.referable) {
+        Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true })
+    } else {
+        Modifier
+    }
     // A text reads as one: author, text, time and status. Media keep their buttons.
     val merge = if (text != null) Modifier.semantics(mergeDescendants = true) {} else Modifier
     Column(
@@ -458,6 +491,38 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, h
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+            if (m.referable) {
+                // React (§6.2): six choices, what it costs, ours again removes it.
+                val mine = m.reactions.firstOrNull { it.mine }?.emoji
+                Row(Modifier.padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    ReactionChoices.forEach { e ->
+                        Box(
+                            Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(if (e == mine) t.s2 else Color.Transparent)
+                                .clickable {
+                                    menu = false
+                                    model.react(m, if (e == mine) "" else e)?.let(onError)
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) { Text(e, fontSize = 22.sp) }
+                    }
+                }
+                model.reactionCost(ChatId.of(m.chat))?.let { cost ->
+                    Text(
+                        stringResource(R.string.reaction_cost, secondsText(cost.airtimeMs)),
+                        fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.reply)) },
+                    onClick = {
+                        menu = false
+                        reply()
+                    },
+                )
+            }
             if (text != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.copy)) },
@@ -499,6 +564,9 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, h
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
         }
+        m.quote?.let { q ->
+            QuoteBox(model, q, ChatId.of(m.chat), Modifier.clickable(enabled = q.messageId != null) { q.messageId?.let(openQuote) })
+        }
         if (!MediaContent(model, m)) {
             Text(
                 m.message.display(res),
@@ -509,6 +577,7 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, h
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
+        if (m.reactions.isNotEmpty()) ReactionChips(model, m, onError)
         if (m.outgoing && !isGroup && status is MessageStatus.Sending && status.total.toInt() > 1) {
             FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
         }
@@ -529,6 +598,65 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, h
         }
     }
     if (selecting && text != null) SelectTextDialog(text) { selecting = false }
+}
+
+/** The reactions offered (§6.2). */
+private val ReactionChoices = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
+
+/** What a reply answers (§6.2): its author and the start of it, or that it is not here. */
+@Composable
+private fun QuoteBox(model: AppModel, q: Quote, chat: ChatId, modifier: Modifier = Modifier) {
+    val t = lichen
+    val author = when {
+        q.outgoing -> stringResource(R.string.you)
+        q.author != null -> model.name(q.author!!)
+        else -> model.title(chat)
+    }
+    val excerpt = when {
+        q.messageId == null -> stringResource(R.string.not_on_this_phone)
+        q.kind == QuoteKind.TEXT -> q.excerpt
+        q.kind == QuoteKind.VOICE -> stringResource(R.string.voice_message)
+        q.kind == QuoteKind.PHOTO -> stringResource(R.string.photo)
+        else -> stringResource(R.string.a_message)
+    }
+    Row(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(t.s1)
+            .border(1.dp, t.line, RoundedCornerShape(12.dp))
+            .height(IntrinsicSize.Min)
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(t.tx2, RoundedCornerShape(2.dp)))
+        Column {
+            if (q.messageId != null) Text(author, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+            Text(excerpt, fontSize = 12.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** The reactions to a message, by emoji; tapping one adds or removes ours. */
+@Composable
+private fun ReactionChips(model: AppModel, m: StoredMessage, onError: (String) -> Unit) {
+    val t = lichen
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        m.reactions.forEach { r ->
+            Text(
+                if (r.count.toInt() > 1) "${r.emoji} ${r.count}" else r.emoji,
+                fontSize = 14.sp,
+                color = t.tx,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(t.s2)
+                    .border(if (r.mine) 1.5.dp else 1.dp, if (r.mine) t.tx else t.line, CircleShape)
+                    .clickable { model.react(m, if (r.mine) "" else r.emoji)?.let(onError) }
+                    .heightIn(min = 32.dp)
+                    .padding(horizontal = 10.dp, vertical = 5.dp),
+            )
+        }
+    }
 }
 
 /** A message's text, to select part of it. */
@@ -583,7 +711,13 @@ private fun caption(m: StoredMessage, isGroup: Boolean): String? {
 }
 
 @Composable
-private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
+private fun Composer(
+    model: AppModel,
+    chat: ChatId,
+    replyTo: StoredMessage?,
+    clearReply: () -> Unit,
+    onError: (String) -> Unit,
+) {
     val t = lichen
     val res = LocalResources.current
     val context = LocalContext.current
@@ -637,6 +771,22 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
         if (model.recorder.recording && model.recorder.chat == chat) {
             RecordingBar(model, chat, onError)
             return@Column
+        }
+        replyTo?.let { r ->
+            val res2 = LocalResources.current
+            val who = when {
+                r.outgoing -> stringResource(R.string.replying_to_yourself)
+                r.author != null -> stringResource(R.string.replying_to, model.name(r.author!!))
+                else -> stringResource(R.string.replying_to, model.title(chat))
+            }
+            Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Outlined.Reply, null, tint = t.tx2, modifier = Modifier.size(18.dp))
+                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                    Text(who, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+                    Text(r.message.display(res2), fontSize = 12.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = clearReply) { Icon(Icons.Filled.Close, stringResource(R.string.cancel_reply), tint = t.tx2) }
+            }
         }
         model.share(chat)?.let { share ->
             val until = timeOf(context, share.untilS.toLong() * 1000)
@@ -727,8 +877,13 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             } else {
                 IconButton(
                     onClick = {
-                        val e = model.send(text, chat)
-                        if (e != null) onError(e) else draft = ""
+                        val e = if (replyTo != null) model.reply(text, replyTo) else model.send(text, chat)
+                        if (e != null) {
+                            onError(e)
+                        } else {
+                            draft = ""
+                            clearReply()
+                        }
                     },
                     // Texts wait for the radio (§6.1); not with a throwaway identity.
                     enabled = text.isNotEmpty() && model.identityProblem == null,

@@ -588,4 +588,14 @@
         <item quantity="many">%d messages non lus</item>
         <item quantity="other">%d messages non lus</item>
     </plurals>
+    <!-- Replies and reactions (protocol.md §6.2) -->
+    <string name="reaction_cost">≈ %1$s s de temps d\'antenne</string>
+    <string name="not_on_this_phone">Un message absent de ce téléphone</string>
+    <string name="a_message">Message</string>
+    <string name="voice_message">Message vocal</string>
+    <string name="replying_to">Réponse à %1$s</string>
+    <string name="replying_to_yourself">Réponse à toi-même</string>
+    <string name="cancel_reply">Annuler la réponse</string>
+    <string name="reacted_to">%1$s a réagi %2$s à « %3$s »</string>
+    <string name="err_not_referable">Ce message date d\'avant les réponses : on ne peut pas y répondre.</string>
 </resources>

@@ -34,6 +34,7 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.NoPosition -> res.getString(R.string.err_no_position)
     is LichenException.Storage -> res.getString(R.string.err_storage)
     is LichenException.NotCancellable -> res.getString(R.string.err_not_cancellable)
+    is LichenException.NotReferable -> res.getString(R.string.err_not_referable)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {

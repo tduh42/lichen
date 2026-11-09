@@ -581,4 +581,14 @@
         <item quantity="one">%d unread message</item>
         <item quantity="other">%d unread messages</item>
     </plurals>
+    <!-- Replies and reactions (protocol.md §6.2) -->
+    <string name="reaction_cost">≈ %1$s s of airtime</string>
+    <string name="not_on_this_phone">A message not on this phone</string>
+    <string name="a_message">Message</string>
+    <string name="voice_message">Voice message</string>
+    <string name="replying_to">Replying to %1$s</string>
+    <string name="replying_to_yourself">Replying to yourself</string>
+    <string name="cancel_reply">Cancel the reply</string>
+    <string name="reacted_to">%1$s reacted %2$s to “%3$s”</string>
+    <string name="err_not_referable">This message is from before replies existed: it cannot be answered.</string>
 </resources>

@@ -737,6 +737,15 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.Progress, is LichenEvent.Delivered, is LichenEvent.Failed, is LichenEvent.GroupSent -> Unit
+            is LichenEvent.Reacted -> {
+                val chat = ChatId.of(e.chat)
+                e.target?.let { upsert(it) }
+                // A reaction to one of ours, as messaging apps do; never for a muted chat.
+                val target = e.target
+                if (target != null && target.outgoing && e.emoji.isNotEmpty() && !isMuted(chat)) {
+                    notify(chat, title(chat), res.getString(R.string.reacted_to, name(e.by), e.emoji, target.message.display(res)))
+                }
+            }
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
                 groups = core.groups()
                 contacts = people()
@@ -992,6 +1001,31 @@ class AppModel(val app: Application) {
     } catch (e: LichenException) {
         e.display(res)
     }
+
+    // ----- replies and reactions (protocol.md §6.2) -----
+
+    /** Answers `target` with `text` (a text that waits for the radio like any other). */
+    fun reply(text: String, target: StoredMessage): String? = try {
+        val sentAt = (System.currentTimeMillis() / 1000).toUInt()
+        upsert(core.sendReply(target.chat, target.id, text, sentAt, now()))
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** Reacts to `m` with `emoji` (empty: removes ours). */
+    fun react(m: StoredMessage, emoji: String): String? = try {
+        upsert(core.sendReaction(m.id, emoji, now()))
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** What a reaction costs us in `chat`. */
+    fun reactionCost(chat: ChatId): Estimate? = runCatching { core.estimateReaction(chat.ref) }.getOrNull()
 
     /** Cancels a text that is still waiting and none of which went out: it disappears. */
     fun cancel(m: StoredMessage): String? = try {
