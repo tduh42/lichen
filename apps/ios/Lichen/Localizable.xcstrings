@@ -2511,6 +2511,16 @@
         }
       }
     },
+    "Key verified": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé vérifiée"
+          }
+        }
+      }
+    },
     "Larger than announced: dropped.": {
       "localizations": {
         "fr": {
@@ -5001,6 +5011,16 @@
         }
       }
     },
+    "Their key changed: compare": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa clé a changé : comparer"
+          }
+        }
+      }
+    },
     "Their key is not known yet: exchange a message first, or scan their code.": {
       "localizations": {
         "fr": {
@@ -5457,6 +5477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Vérifié par le scan. Son téléphone affiche les mêmes chiffres dès qu'il te connaît : après ton premier message, ou quand il scanne ton code."
+          }
+        }
+      }
+    },
+    "Verify their key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier sa clé"
           }
         }
       }

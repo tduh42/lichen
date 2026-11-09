@@ -653,4 +653,7 @@
     <string name="group_name_label">Name</string>
     <string name="rename_group">Rename the group</string>
     <string name="rename_group_note">Every member sees the new name.</string>
+    <string name="key_changed_compare">Their key changed: compare</string>
+    <string name="key_verified">Key verified</string>
+    <string name="verify_their_key">Verify their key</string>
 </resources>

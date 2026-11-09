@@ -104,6 +104,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.model.noticeText
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.material.icons.outlined.GppMaybe
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.Message
@@ -246,12 +247,36 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             actions = {
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
+                } else {
+                    // Their key, always within reach: to verify, verified, or changed.
+                    val c = chat.contactKey?.let { model.contact(it) }
+                    val pending = model.conflicts[chat.hex]
+                    if (c?.identity != null) {
+                        IconButton(onClick = { verifying = pending ?: ByteArray(0) }) {
+                            when {
+                                pending != null -> Icon(Icons.Outlined.GppMaybe, stringResource(R.string.key_changed_compare), tint = t.sos)
+                                c.verified -> Icon(Icons.Outlined.Lock, stringResource(R.string.key_verified), tint = t.tx2)
+                                else -> Icon(Icons.Outlined.LockOpen, stringResource(R.string.verify_their_key), tint = t.warn)
+                            }
+                        }
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = t.s1, titleContentColor = t.tx, navigationIconContentColor = t.tx,
             ),
         )
+        // A new key waiting for the user stays in sight, above the messages.
+        if (!chat.group && model.conflicts.containsKey(chat.hex)) {
+            Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
+                Banner(
+                    BannerKind.SOS,
+                    stringResource(R.string.key_changed_title, model.title(chat)),
+                    stringResource(R.string.key_changed_note),
+                    stringResource(R.string.compare) to { model.conflicts[chat.hex]?.let { verifying = it } },
+                )
+            }
+        }
         Box(Modifier.weight(1f)) {
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -389,12 +414,8 @@ private fun SessionLine(model: AppModel, chat: ChatId, verify: (ByteArray) -> Un
     val key = chat.contactKey ?: return
     val c = model.contact(key)
     when {
-        model.conflicts.containsKey(chat.hex) -> Banner(
-            BannerKind.SOS,
-            stringResource(R.string.key_changed_title, model.title(chat)),
-            stringResource(R.string.key_changed_note),
-            stringResource(R.string.compare) to { model.conflicts[chat.hex]?.let(verify) },
-        )
+        // Pinned above the list instead.
+        model.conflicts.containsKey(chat.hex) -> Unit
         c?.identity != null -> Box(Modifier.fillMaxWidth().clickable { verify(ByteArray(0)) }) {
             TintedLine(
                 if (c.verified) Icons.Outlined.Lock else Icons.Outlined.LockOpen,

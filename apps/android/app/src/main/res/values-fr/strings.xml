@@ -660,4 +660,7 @@
     <string name="group_name_label">Nom</string>
     <string name="rename_group">Renommer le groupe</string>
     <string name="rename_group_note">Tous les membres voient le nouveau nom.</string>
+    <string name="key_changed_compare">Sa clé a changé : comparer</string>
+    <string name="key_verified">Clé vérifiée</string>
+    <string name="verify_their_key">Vérifier sa clé</string>
 </resources>

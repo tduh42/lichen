@@ -31,6 +31,14 @@ struct ChatView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // A new key waiting for the user stays in sight, above the messages.
+            if case let .contact(key) = chat, let pending = model.conflicts[key] {
+                Banner(kind: .sos, title: String(localized: "\(model.title(of: chat))'s key changed"),
+                       message: String(localized: "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers."),
+                       action: (String(localized: "Compare"), { verifying = pending }))
+                    .padding(.horizontal, 14)
+                    .padding(.top, 8)
+            }
             ScrollViewReader { proxy in
                 ScrollView {
                     // Not lazy: pages of 100 messages, and exact heights let the view open on the
@@ -168,6 +176,18 @@ struct ChatView: View {
                     Button { showingGroup = true } label: { Image(systemName: "info.circle") }
                         .accessibilityLabel("Group details")
                 }
+            } else if case let .contact(key) = chat, let c = model.contact(key), c.identity != nil {
+                // Their key, always within reach: to verify, verified, or changed.
+                ToolbarItem(placement: .topBarTrailing) {
+                    let pending = model.conflicts[key]
+                    Button { verifying = pending ?? Data() } label: {
+                        Image(systemName: pending != nil ? "exclamationmark.shield" : c.verified ? "lock" : "lock.open")
+                            .foregroundStyle(pending != nil ? Theme.sos : c.verified ? Theme.tx2 : Theme.warn)
+                    }
+                    .accessibilityLabel(pending != nil ? String(localized: "Their key changed: compare")
+                                        : c.verified ? String(localized: "Key verified")
+                                        : String(localized: "Verify their key"))
+                }
             }
         }
         .navigationDestination(isPresented: $showingGroup) {
@@ -259,11 +279,9 @@ struct ChatView: View {
 
     @ViewBuilder private var sessionLine: some View {
         if case let .contact(key) = chat {
-            if let pending = model.conflicts[key] {
-                Banner(kind: .sos, title: String(localized: "\(model.title(of: chat))'s key changed"),
-                       message: String(localized: "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers."),
-                       action: (String(localized: "Compare"), { verifying = pending }))
-                    .padding(.top, 4)
+            if model.conflicts[key] != nil {
+                // Pinned above the list instead.
+                EmptyView()
             } else if let c = model.contact(key), c.identity != nil {
                 Button { verifying = Data() } label: {
                     Label(c.verified
