@@ -131,10 +131,19 @@ fn two_people_join_with_one_invitation() {
         net.run_until(net.now + 60 * MIN, |n| complete(n, &everyone, &gid, 5)),
         "the joiners did not get in"
     );
-    println!(
-        "two joiners, group of 5 with every key: {} s",
-        (net.now - started) / 1000
-    );
+    let keys_s = (net.now - started) / 1000;
+    println!("two joiners, group of 5 with every key: {keys_s} s");
+    // The admin relays the keys (§10.2): no session between a member and a newcomer.
+    assert!(keys_s < 300, "{keys_s} s");
+    for &member in &m[1..] {
+        let strangers: Vec<_> = j.iter().map(|&x| net.key(x)).collect();
+        assert!(
+            !net.take_events(member).iter().any(
+                |e| matches!(e, Event::SessionEstablished { peer } if strangers.contains(peer))
+            ),
+            "member {member} opened a session with a newcomer"
+        );
+    }
     let admin = net.take_events(m[0]);
     for &x in &j {
         let node = net.key(x);
@@ -236,4 +245,41 @@ fn an_expired_invitation_admits_no_one() {
         .unwrap()
         .unwrap();
     nobody_admitted(&mut net, &m, j[0], &gid);
+}
+
+/// Who holds which keys, second by second, while two people join (to tune the relay).
+#[test]
+#[ignore = "measurement, prints a timeline"]
+fn key_timeline() {
+    let (mut net, m, j, gid) = setup(21, 2);
+    let inv = invite(&mut net, m[0], &gid);
+    for &x in &j {
+        net.with_core(x, |c, now| c.join(&inv, now))
+            .unwrap()
+            .unwrap();
+    }
+    let everyone: Vec<usize> = m.iter().chain(&j).copied().collect();
+    let t0 = net.now;
+    let mut last = String::new();
+    println!("keys held / members − 1: alice bob carol dave eve");
+    net.run_until(net.now + 10 * MIN, |n| {
+        let row: Vec<String> = everyone
+            .iter()
+            .map(|&x| {
+                n.nodes[x]
+                    .core
+                    .as_ref()
+                    .and_then(|c| c.groups().find(|g| g.gid == gid))
+                    .map_or("-".into(), |g| {
+                        format!("{}/{}", g.keys_known(), g.members.len() - 1)
+                    })
+            })
+            .collect();
+        let row = row.join(" ");
+        if row != last {
+            println!("{:>4} s  {row}", (n.now - t0) / 1000);
+            last = row;
+        }
+        complete(n, &everyone, &gid, 5)
+    });
 }

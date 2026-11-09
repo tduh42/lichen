@@ -572,6 +572,9 @@ pub struct Core {
     /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
     /// them.
     pub(crate) invites: HashMap<[u8; 16], (GroupId, Millis)>,
+    /// Members we admitted, with when (§10.2): a key of another member that changes soon
+    /// after reaches them through us. In memory only.
+    pub(crate) admitted: Vec<(GroupId, PubKey, Millis)>,
     /// Group frames waiting for their time (the second fragment is spaced out).
     pub(crate) group_tx: VecDeque<crate::group::GroupFrame>,
     /// The radio is shared by every session: the next data frame may go at this time.
@@ -647,6 +650,7 @@ impl Core {
             group_copies: crate::group::COPIES,
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
+            admitted: Vec::new(),
             group_tx: VecDeque::new(),
             next_slot: 0,
             session_max_age: SESSION_MAX_AGE_MS,
@@ -1095,6 +1099,30 @@ impl Core {
         let mut id = [0u8; 8];
         self.rng.fill_bytes(&mut id);
         id
+    }
+
+    /// Queues a group control datagram for `to`, merged into one still waiting for it when
+    /// possible (§10.2): a newer GROUP_STATE of the same group replaces the waiting one, and
+    /// SENDER_KEYS of the same group join the waiting one.
+    pub(crate) fn enqueue_control(&mut self, to: &PubKey, datagram: Vec<u8>) {
+        if let Some(p) = self.peers.get_mut(to) {
+            for m in p.queue.iter_mut().filter(|m| m.internal && !m.started) {
+                if let Some(merged) = crate::group::merge_control(&m.datagram, &datagram) {
+                    m.datagram = merged;
+                    return;
+                }
+            }
+        }
+        self.enqueue_internal(to, datagram);
+    }
+
+    /// The datagrams waiting for peer `k` (tests).
+    #[cfg(test)]
+    pub(crate) fn queued(&self, k: &PubKey) -> Vec<Vec<u8>> {
+        self.peers
+            .get(k)
+            .map(|p| p.queue.iter().map(|m| m.datagram.clone()).collect())
+            .unwrap_or_default()
     }
 
     /// Peer `k` may not know our identity yet (§4.5): its probes go anonymous.
@@ -2506,6 +2534,7 @@ impl Core {
                                 | &lc_proto::content::SENDER_KEY
                                 | &lc_proto::content::GROUP_LEAVE
                                 | &lc_proto::content::GROUP_JOIN
+                                | &lc_proto::content::SENDER_KEYS
                         )
                     )
                 {

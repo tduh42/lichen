@@ -31,6 +31,8 @@ pub const COPIES: u8 = 2;
 const PARTIAL_MS: Millis = 300_000;
 /// Keys that arrived before their group state are kept this long.
 const PENDING_KEY_MS: Millis = 600_000;
+/// The admin forwards a member's new key to the members it admitted this recently (§10.2).
+const ADMITTED_MS: Millis = 600_000;
 /// Version byte of [`Group::snapshot`]: 2 since members are identities with a node (ADR-0013).
 const SNAPSHOT_VERSION: u8 = 2;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
@@ -297,12 +299,24 @@ pub fn gid_hash(gid: &GroupId) -> u16 {
 /// A key that arrived before its group state.
 #[derive(Clone, Debug)]
 pub(crate) struct PendingKey {
+    /// The key's owner.
     from: PubKey,
+    /// Relayed by this identity (§10.2), to check against the admin once the state is here;
+    /// `None`: from its owner.
+    via: Option<PubKey>,
     gid: GroupId,
     epoch: u8,
     key: [u8; 32],
     next_counter: u32,
     at: Millis,
+}
+
+/// One key in SENDER_KEYS: owner, key epoch, key, next counter (§10.2).
+type KeyEntry = (PubKey, u8, [u8; 32], u32);
+
+/// `e` is a later key epoch than `current` (epochs wrap, §10.2).
+fn newer(e: u8, current: u8) -> bool {
+    (1..=127).contains(&e.wrapping_sub(current))
 }
 
 // ----- control datagrams (§10.1, §10.2) ----------------------------------------------------
@@ -327,7 +341,7 @@ fn take_name(b: &mut &[u8]) -> Option<String> {
     if n > 32 {
         return None;
     }
-    Some(String::from_utf8_lossy(take(b, n)?).into_owned())
+    String::from_utf8(take(b, n)?.to_vec()).ok()
 }
 
 /// The group state as sent by the admin.
@@ -338,6 +352,16 @@ pub(crate) struct State {
     admin: PubKey,
     name: String,
     members: Vec<Member>,
+    /// Why members are gone (§10.1): [`cause::LEFT`] or [`cause::REMOVED`].
+    cause: Option<u8>,
+}
+
+/// GROUP_STATE `cause` values (§10.1).
+pub mod cause {
+    /// They left (GROUP_LEAVE).
+    pub const LEFT: u8 = 1;
+    /// The admin removed them.
+    pub const REMOVED: u8 = 2;
 }
 
 impl State {
@@ -353,6 +377,7 @@ impl State {
             v.extend_from_slice(&m.node);
             put_name(&mut v, &m.name);
         }
+        v.extend(self.cause);
         v
     }
 
@@ -381,7 +406,12 @@ impl State {
             });
         }
         let distinct: HashSet<&PubKey> = members.iter().map(|m| &m.key).collect();
-        if !b.is_empty() || distinct.len() != n || !distinct.contains(&admin) {
+        let cause = match b {
+            [] => None,
+            [c] => Some(*c),
+            _ => return None,
+        };
+        if distinct.len() != n || !distinct.contains(&admin) {
             return None;
         }
         Some(Self {
@@ -390,6 +420,7 @@ impl State {
             admin,
             name,
             members,
+            cause,
         })
     }
 }
@@ -401,6 +432,146 @@ fn encode_sender_key(gid: &GroupId, epoch: u8, key: &[u8; 32], next_counter: u32
     v.extend_from_slice(key);
     v.extend_from_slice(&next_counter.to_le_bytes());
     v
+}
+
+/// SENDER_KEYS (0x14, §10.2): keys the admin relays.
+fn encode_sender_keys(gid: &GroupId, entries: &[KeyEntry]) -> Vec<u8> {
+    let mut v = vec![content::SENDER_KEYS];
+    v.extend_from_slice(gid);
+    v.push(entries.len() as u8);
+    for (owner, epoch, key, next) in entries {
+        v.extend_from_slice(owner);
+        v.push(*epoch);
+        v.extend_from_slice(key);
+        v.extend_from_slice(&next.to_le_bytes());
+    }
+    v
+}
+
+fn decode_sender_keys(datagram: &[u8]) -> Option<(GroupId, Vec<KeyEntry>)> {
+    let (&t, mut b) = datagram.split_first()?;
+    if t != content::SENDER_KEYS {
+        return None;
+    }
+    let gid: GroupId = take(&mut b, 16)?.try_into().ok()?;
+    let n = usize::from(*take(&mut b, 1)?.first()?);
+    if !(1..=MAX_MEMBERS).contains(&n) || b.len() != n * 69 {
+        return None;
+    }
+    let mut entries = Vec::with_capacity(n);
+    for _ in 0..n {
+        let owner: PubKey = take(&mut b, 32)?.try_into().ok()?;
+        let epoch = *take(&mut b, 1)?.first()?;
+        let key: [u8; 32] = take(&mut b, 32)?.try_into().ok()?;
+        let next = u32::from_le_bytes(take(&mut b, 4)?.try_into().ok()?);
+        entries.push((owner, epoch, key, next));
+    }
+    Some((gid, entries))
+}
+
+/// A group control datagram as decoded (§10.1, §10.2): for vectors and the fuzzer.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Control {
+    State {
+        gid: GroupId,
+        epoch: u32,
+        admin: PubKey,
+        name: String,
+        members: Vec<Member>,
+        cause: Option<u8>,
+    },
+    SenderKey {
+        gid: GroupId,
+        epoch: u8,
+        key: [u8; 32],
+        next_counter: u32,
+    },
+    /// Keys the admin relays: (owner, key epoch, key, next counter).
+    SenderKeys {
+        gid: GroupId,
+        entries: Vec<(PubKey, u8, [u8; 32], u32)>,
+    },
+}
+
+impl Control {
+    pub fn decode(datagram: &[u8]) -> Option<Self> {
+        match *datagram.first()? {
+            content::GROUP_STATE => State::decode(datagram).map(|s| Self::State {
+                gid: s.gid,
+                epoch: s.epoch,
+                admin: s.admin,
+                name: s.name,
+                members: s.members,
+                cause: s.cause,
+            }),
+            content::SENDER_KEY => {
+                decode_sender_key(datagram).map(|(gid, epoch, key, next_counter)| Self::SenderKey {
+                    gid,
+                    epoch,
+                    key,
+                    next_counter,
+                })
+            }
+            content::SENDER_KEYS => {
+                decode_sender_keys(datagram).map(|(gid, entries)| Self::SenderKeys { gid, entries })
+            }
+            _ => None,
+        }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        match self {
+            Self::State {
+                gid,
+                epoch,
+                admin,
+                name,
+                members,
+                cause,
+            } => State {
+                gid: *gid,
+                epoch: *epoch,
+                admin: *admin,
+                name: name.clone(),
+                members: members.clone(),
+                cause: *cause,
+            }
+            .encode(),
+            Self::SenderKey {
+                gid,
+                epoch,
+                key,
+                next_counter,
+            } => encode_sender_key(gid, *epoch, key, *next_counter),
+            Self::SenderKeys { gid, entries } => encode_sender_keys(gid, entries),
+        }
+    }
+}
+
+/// `new` merged into `queued`, both waiting for the same peer (§10.2): a newer state of the
+/// same group replaces the older; keys of the same group join (the newer entry per owner).
+pub(crate) fn merge_control(queued: &[u8], new: &[u8]) -> Option<Vec<u8>> {
+    match (queued.first(), new.first()) {
+        (Some(&content::GROUP_STATE), Some(&content::GROUP_STATE)) => {
+            let (q, n) = (State::decode(queued)?, State::decode(new)?);
+            (q.gid == n.gid && n.epoch > q.epoch).then(|| new.to_vec())
+        }
+        (Some(&content::SENDER_KEYS), Some(&content::SENDER_KEYS)) => {
+            let (qg, mut entries) = decode_sender_keys(queued)?;
+            let (ng, more) = decode_sender_keys(new)?;
+            if qg != ng {
+                return None;
+            }
+            for e in more {
+                match entries.iter_mut().find(|q| q.0 == e.0) {
+                    Some(q) => *q = e,
+                    None => entries.push(e),
+                }
+            }
+            (entries.len() <= MAX_MEMBERS).then(|| encode_sender_keys(&qg, &entries))
+        }
+        _ => None,
+    }
 }
 
 fn decode_sender_key(datagram: &[u8]) -> Option<(GroupId, u8, [u8; 32], u32)> {
@@ -580,7 +751,10 @@ impl Core {
         g.epoch += 1;
         self.dirty_groups.insert(*gid);
         self.broadcast_state(gid, &[]);
-        self.send_my_key(gid, Some(&ids));
+        // The newcomers get every key from us, after the state (§10.2).
+        self.send_bundle(gid, &ids);
+        self.admitted.retain(|(_, _, at)| at + ADMITTED_MS > now);
+        self.admitted.extend(ids.iter().map(|id| (*gid, *id, now)));
         self.events.push_back(Event::GroupUpdated { gid: *gid });
         self.tick(now);
         Ok(())
@@ -734,6 +908,7 @@ impl Core {
                 admin: g.admin,
                 name: g.name.clone(),
                 members: g.members.clone(),
+                cause: None,
             }
             .encode();
             self.enqueue_internal(node, state);
@@ -785,6 +960,7 @@ impl Core {
             admin: g.admin,
             name: g.name.clone(),
             members: g.members.clone(),
+            cause: None,
         }
         .encode();
         let targets: Vec<PubKey> = g
@@ -795,7 +971,7 @@ impl Core {
             .chain(also.iter().copied())
             .collect();
         for k in targets {
-            self.enqueue_internal(&k, state.clone());
+            self.enqueue_control(&k, state.clone());
         }
     }
 
@@ -853,6 +1029,12 @@ impl Core {
             Some(&content::GROUP_JOIN) if datagram.len() == 17 => {
                 self.on_group_join(&node, datagram, now);
             }
+            Some(&content::SENDER_KEYS) => {
+                if let Some((gid, entries)) = decode_sender_keys(datagram) {
+                    let from = *from;
+                    self.on_sender_keys(&from, gid, entries, now);
+                }
+            }
             _ => {}
         }
     }
@@ -892,7 +1074,8 @@ impl Core {
                         announce_key: false,
                     },
                 );
-                self.send_my_key(&gid, None);
+                // Our first key goes to the admin, who forwards it (§10.2).
+                self.send_my_key(&gid, Some(&[state.admin]));
                 self.events.push_back(Event::GroupJoined {
                     gid,
                     name: state.name,
@@ -918,9 +1101,9 @@ impl Core {
                 for k in &removed {
                     g.keys.remove(k);
                 }
-                if removed.is_empty() {
-                    self.send_my_key(&gid, Some(&added));
-                } else {
+                // Only adds: the admin carries our key to the newcomers (§10.2).
+                let _ = added;
+                if !removed.is_empty() {
                     self.rotate_my_key(&gid);
                 }
                 self.events.push_back(Event::GroupUpdated { gid });
@@ -930,7 +1113,13 @@ impl Core {
         let pending: Vec<PendingKey> = std::mem::take(&mut self.pending_keys);
         for p in pending {
             if p.gid == gid {
-                self.on_sender_key(&p.from, p.gid, p.epoch, p.key, p.next_counter, now);
+                match p.via {
+                    None => self.on_sender_key(&p.from, p.gid, p.epoch, p.key, p.next_counter, now),
+                    Some(via) => {
+                        let entry = (p.from, p.epoch, p.key, p.next_counter);
+                        self.on_sender_keys(&via, gid, vec![entry], now);
+                    }
+                }
             } else if p.at + PENDING_KEY_MS > now {
                 self.pending_keys.push(p);
             }
@@ -950,6 +1139,7 @@ impl Core {
             if self.pending_keys.len() < 32 {
                 self.pending_keys.push(PendingKey {
                     from: *from,
+                    via: None,
                     gid,
                     epoch,
                     key,
@@ -962,9 +1152,92 @@ impl Core {
         if !g.is_member(from) {
             return;
         }
-        let mk = g.keys.entry(*from).or_default();
-        if mk.current.as_ref().is_some_and(|c| c.epoch == epoch) {
+        let first = g.keys.get(from).is_none_or(|mk| mk.current.is_none());
+        if !self.adopt_key(gid, from, epoch, key, next, false, now) {
             return;
+        }
+        // The admin forwards it (§10.2): to everyone for a member's first key, else to the
+        // members it admitted lately (a key in flight during their admission).
+        let me = self.key;
+        let Some(g) = self.groups.get(&gid) else {
+            return;
+        };
+        if Some(g.admin) != me {
+            return;
+        }
+        self.admitted.retain(|(_, _, at)| at + ADMITTED_MS > now);
+        let targets: Vec<PubKey> = g
+            .members
+            .iter()
+            .filter(|m| m.key != *from && Some(m.key) != me)
+            .filter(|m| {
+                first
+                    || self
+                        .admitted
+                        .iter()
+                        .any(|(a, id, _)| *a == gid && *id == m.key)
+            })
+            .map(|m| m.node)
+            .collect();
+        let datagram = encode_sender_keys(&gid, &[(*from, epoch, key, next)]);
+        for node in targets {
+            self.enqueue_control(&node, datagram.clone());
+        }
+    }
+
+    /// SENDER_KEYS from `from` (§10.2): keys the admin relays. Only from the group's admin;
+    /// a relayed key never replaces a newer one.
+    fn on_sender_keys(&mut self, from: &PubKey, gid: GroupId, entries: Vec<KeyEntry>, now: Millis) {
+        let me = self.key;
+        let admin = self.groups.get(&gid).map(|g| g.admin);
+        if admin.is_some_and(|a| a != *from) {
+            return;
+        }
+        for (owner, epoch, key, next) in entries {
+            if Some(owner) == me {
+                continue;
+            }
+            let listed = self.groups.get(&gid).is_some_and(|g| g.is_member(&owner));
+            if !listed {
+                // A group or an owner whose state has not reached us yet.
+                if self.pending_keys.len() < 32 {
+                    self.pending_keys.push(PendingKey {
+                        from: owner,
+                        via: Some(*from),
+                        gid,
+                        epoch,
+                        key,
+                        next_counter: next,
+                        at: now,
+                    });
+                }
+                continue;
+            }
+            self.adopt_key(gid, &owner, epoch, key, next, true, now);
+        }
+    }
+
+    /// Stores `owner`'s key; a relayed one only when newer than ours. True when adopted; held
+    /// envelopes are tried again.
+    #[allow(clippy::too_many_arguments)]
+    fn adopt_key(
+        &mut self,
+        gid: GroupId,
+        owner: &PubKey,
+        epoch: u8,
+        key: [u8; 32],
+        next: u32,
+        relayed: bool,
+        now: Millis,
+    ) -> bool {
+        let Some(g) = self.groups.get_mut(&gid) else {
+            return false;
+        };
+        let mk = g.keys.entry(*owner).or_default();
+        match mk.current.as_ref() {
+            Some(c) if c.epoch == epoch => return false,
+            Some(c) if relayed && !newer(epoch, c.epoch) => return false,
+            _ => {}
         }
         mk.previous = mk.current.take();
         mk.current = Some(KeyState::new(epoch, key, next));
@@ -973,6 +1246,34 @@ impl Core {
         let held: Vec<Held> = std::mem::take(&mut self.held).into();
         for h in held {
             self.on_group_envelope(&h.payload, h.snr4, h.rssi, h.at.max(now));
+        }
+        true
+    }
+
+    /// One SENDER_KEYS to each newcomer (identities) with every current key we hold, ours
+    /// included (§10.2).
+    fn send_bundle(&mut self, gid: &GroupId, newcomers: &[PubKey]) {
+        let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
+            return;
+        };
+        let mut out = Vec::new();
+        for id in newcomers {
+            let Some(node) = g.members.iter().find(|m| m.key == *id).map(|m| m.node) else {
+                continue;
+            };
+            let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, g.my_key, g.my_counter)];
+            for m in &g.members {
+                if m.key == me || m.key == *id {
+                    continue;
+                }
+                if let Some(c) = g.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
+                    entries.push((m.key, c.epoch, c.key, c.floor));
+                }
+            }
+            out.push((node, encode_sender_keys(gid, &entries)));
+        }
+        for (node, datagram) in out {
+            self.enqueue_control(&node, datagram);
         }
     }
 
@@ -1449,6 +1750,84 @@ mod tests {
             }
         }
         v
+    }
+
+    /// Keys `node` will receive, from what is queued for it: (owner, key epoch).
+    fn relayed_to(core: &Core, node: &PubKey) -> Vec<(PubKey, u8)> {
+        core.queued(node)
+            .iter()
+            .filter_map(|d| decode_sender_keys(d))
+            .flat_map(|(_, e)| e.into_iter().map(|(o, ep, _, _)| (o, ep)))
+            .collect()
+    }
+
+    /// The admin relays (§10.2): a newcomer gets every key in one bundle; a member's new key
+    /// soon after reaches the newcomer too; a newcomer's first key goes to everyone.
+    #[test]
+    fn the_admin_relays_keys_to_newcomers() {
+        let (a, b) = ([0xA1; 32], [0xB1; 32]);
+        let mut core = core_with_group(&[(a, [1; 32], 0), (b, [2; 32], 0)]);
+        let me = *core.key().unwrap();
+        let (n, n_id) = ([0x4E; 32], [0x4F; 32]);
+        core.add_contact(n, "newcomer", None);
+        core.set_identity(&n, n_id, false);
+        core.add_members(&GID, &[n], 1_000).unwrap();
+        let mut got = relayed_to(&core, &n);
+        got.sort_unstable();
+        let mut want = vec![(a, 0), (b, 0), (me, 0)];
+        want.sort_unstable();
+        assert_eq!(got, want, "one bundle, ours included");
+
+        // `a` restarted just before: its new key reaches the newcomer through us.
+        let a_node = [1; 32];
+        core.on_sender_key(&a, GID, 1, [9; 32], 0, 2_000);
+        assert!(relayed_to(&core, &n).contains(&(a, 1)));
+        assert!(
+            relayed_to(&core, &a_node).is_empty(),
+            "not back to its owner"
+        );
+        // …but not to a member admitted long ago (it sent its key there itself).
+        assert!(relayed_to(&core, &[2; 32]).is_empty());
+
+        // The newcomer's first key goes to every other member.
+        core.on_sender_key(&n_id, GID, 0, [7; 32], 0, 3_000);
+        assert!(relayed_to(&core, &a_node).contains(&(n_id, 0)));
+        assert!(relayed_to(&core, &[2; 32]).contains(&(n_id, 0)));
+    }
+
+    /// A relayed key comes only from the admin and never replaces a newer one (§10.2).
+    #[test]
+    fn relayed_keys_are_checked() {
+        let (admin, owner) = ([0xA1; 32], [0xB1; 32]);
+        let mut core = core_with_group(&[(admin, [1; 32], 0), (owner, [2; 32], 0)]);
+        if let Some(g) = core.groups.get_mut(&GID) {
+            g.admin = admin;
+        }
+        let epoch_of = |core: &Core| {
+            core.groups[&GID].keys[&owner]
+                .current
+                .as_ref()
+                .map(|k| (k.epoch, k.key))
+        };
+        // From a member who is not the admin: ignored.
+        core.on_sender_keys(&owner, GID, vec![(admin, 5, [5; 32], 0)], 0);
+        assert_eq!(
+            core.groups[&GID].keys[&admin]
+                .current
+                .as_ref()
+                .map(|k| k.epoch),
+            Some(0)
+        );
+        // The same epoch, or an older one (wrapping): ignored.
+        core.on_sender_keys(&admin, GID, vec![(owner, 0, [8; 32], 0)], 0);
+        core.on_sender_keys(&admin, GID, vec![(owner, 200, [8; 32], 0)], 0);
+        assert_eq!(epoch_of(&core), Some((0, [2; 32])));
+        // A newer one: adopted.
+        core.on_sender_keys(&admin, GID, vec![(owner, 1, [3; 32], 0)], 0);
+        assert_eq!(epoch_of(&core), Some((1, [3; 32])));
+        // From its owner, any other epoch is adopted.
+        core.on_sender_key(&owner, GID, 0, [4; 32], 0, 0);
+        assert_eq!(epoch_of(&core), Some((0, [4; 32])));
     }
 
     /// A member who holds Bob's sender key (every member does) forges a message in Bob's name

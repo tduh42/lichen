@@ -114,3 +114,59 @@ fn group_join() {
         assert_eq!(datagram, h(v, "datagram"), "{}", s(v, "name"));
     }
 }
+
+#[test]
+fn group_states() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "group_state") {
+        let d = h(v, "datagram");
+        let Some(Control::State {
+            gid,
+            epoch,
+            admin,
+            name,
+            members,
+            cause,
+        }) = Control::decode(&d)
+        else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(i64::from(epoch), v["epoch"].as_integer().unwrap());
+        assert_eq!(admin.to_vec(), h(v, "admin"));
+        assert_eq!(name, s(v, "group_name"));
+        assert_eq!(members.len() as i64, v["members"].as_integer().unwrap());
+        let want = v["cause"].as_integer().unwrap();
+        assert_eq!(cause.map_or(-1, i64::from), want, "{}", s(v, "name"));
+        let back = Control::State {
+            gid,
+            epoch,
+            admin,
+            name,
+            members,
+            cause,
+        };
+        assert_eq!(back.encode(), d, "{}", s(v, "name"));
+    }
+}
+
+#[test]
+fn sender_keys() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "sender_keys") {
+        let d = h(v, "datagram");
+        let Some(Control::SenderKeys { gid, entries: keys }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(keys.len() as i64, v["n"].as_integer().unwrap());
+        let owners: Vec<u8> = keys.iter().flat_map(|k| k.0).collect();
+        assert_eq!(owners, h(v, "owners"));
+        assert_eq!(Control::SenderKeys { gid, entries: keys }.encode(), d);
+    }
+    for v in entries(&t, "bad_group_control") {
+        assert_eq!(Control::decode(&h(v, "datagram")), None, "{}", s(v, "name"));
+    }
+}

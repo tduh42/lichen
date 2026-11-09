@@ -257,3 +257,14 @@ A reaction costs about what a short text does: in a direct conversation the rela
 | Group of 5, every member holding every sender key | 489 s |
 
 The joiner's zero-hop advert, an anonymous probe and an introduction come before GROUP_JOIN; admission then sends the new state to the four others. The joiners read alice's messages once admitted (her key travels with the state); bob's and carol's keys need a session between them and each newcomer, through the repeater, which is most of the 489 s. A message posted before a key arrives is held and read when it does (§10.3). Before the anonymous probe (§4.5), the joiners never found a path: their keyed probes could not be checked by alice.
+
+## 2026-11-09 — The admin relays sender keys (ADR-0021)
+
+Same scenarios as above, one run each (fake network, SF8 / 62.5 kHz, no loss), before and after the relay of §10.2 and the merging of group control datagrams still waiting for a peer (a newer state replaces the queued one, relayed keys for the same group join one SENDER_KEYS):
+
+| Scenario | Before | After |
+|---|---|---|
+| Two people join a group of 3 by invitation (`--test invite`, seed 21): every key everywhere | 489 s | 194 s |
+| A group of 5 created from contacts, around one repeater (`--test groups group_of_five`, seed 11): every key everywhere | 718 s, 1108 frames | 305 s, 872 frames |
+
+No member opens a session with a newcomer any more. Most of the remaining time is spent at the admin: its frames to one member collide, at the shared repeater, with another member's answers (ACKs, HELLO_ACK), and a transfer that times out starts a new handshake, whose answers collide in turn (`cargo test -p lc-core --release --test invite -- --ignored key_timeline --nocapture` prints who holds which keys over time). That is the next thing to fix.
