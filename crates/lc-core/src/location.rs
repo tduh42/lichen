@@ -408,7 +408,7 @@ impl Core {
                 self.loc.in_flight.insert(id, *k);
             }
             Chat::Group(g) => {
-                let _ = self.send_group(g, &body, now);
+                let _ = self.send_group(g, &body, false, now);
             }
         }
     }

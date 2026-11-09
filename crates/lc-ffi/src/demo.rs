@@ -1275,3 +1275,234 @@ mod unread {
         assert_eq!(core.conversations()[0].unread, 0);
     }
 }
+
+/// The outbox as the app runs it (protocol.md §6.1, ADR-0018).
+#[cfg(test)]
+mod outbox {
+    use super::*;
+    use crate::{ChatRef, FailReason, LichenCore, LichenEvent, Message, MessageStatus, WaitReason};
+
+    fn run(demo: &DemoNetwork, core: &LichenCore, from: u64, to: u64) -> Vec<LichenEvent> {
+        let mut events = Vec::new();
+        let mut now = from;
+        while now < to {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                events.push(e);
+            }
+            now += 100;
+        }
+        events
+    }
+
+    fn camille(core: &LichenCore) -> Vec<u8> {
+        core.contacts()
+            .into_iter()
+            .find(|k| k.name == "Camille")
+            .expect("Camille is known")
+            .key
+    }
+
+    /// Camille's answers that quote `text`: one per copy she received.
+    fn copies(events: &[LichenEvent], text: &str) -> usize {
+        let quote = format!("Copy: \"{text}\"");
+        events
+            .iter()
+            .filter(|e| {
+                matches!(e, LichenEvent::MessageChanged { message }
+                    if !message.outgoing
+                        && matches!(&message.message, Message::Text { text, .. }
+                            if text.starts_with(&quote)))
+            })
+            .count()
+    }
+
+    fn status_of(core: &LichenCore, chat: &[u8], id: i64) -> MessageStatus {
+        core.history(ChatRef::Contact { key: chat.to_vec() }, None, 100)
+            .unwrap()
+            .into_iter()
+            .find(|m| m.id == id)
+            .expect("in the history")
+            .status
+    }
+
+    fn data_dir(name: &str) -> (std::path::PathBuf, Option<String>) {
+        let dir = std::env::temp_dir().join(format!("lichen-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Some(dir.to_string_lossy().into_owned());
+        (dir, data)
+    }
+
+    /// Written while the radio is away, the app restarts, the radio comes back: delivered,
+    /// once (the brief's acceptance test).
+    #[test]
+    fn a_text_written_offline_survives_a_restart() {
+        let (dir, data) = data_dir("outbox-restart");
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![111; 32], data.clone()).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 2 * 60_000);
+        let camille = camille(&core);
+
+        core.disconnect(2 * 60_000);
+        let m = core
+            .send_text(
+                camille.clone(),
+                "written offline".into(),
+                1_793_000_000,
+                2 * 60_000,
+            )
+            .unwrap();
+        assert!(
+            matches!(
+                m.status,
+                MessageStatus::Waiting {
+                    reason: WaitReason::Radio,
+                    started: false,
+                    ..
+                }
+            ),
+            "{:?}",
+            m.status
+        );
+        drop(core);
+
+        let core = LichenCore::new("t".into(), vec![2; 32], vec![111; 32], data.clone()).unwrap();
+        assert!(matches!(
+            status_of(&core, &camille, m.id),
+            MessageStatus::Waiting {
+                reason: WaitReason::Radio,
+                started: false,
+                ..
+            }
+        ));
+        core.connect(3 * 60_000);
+        let events = run(&demo, &core, 3 * 60_000, 10 * 60_000);
+        assert_eq!(status_of(&core, &camille, m.id), MessageStatus::Delivered);
+        assert_eq!(copies(&events, "written offline"), 1, "received once");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Delivered, but the app stopped before it heard so: sent again at the next start, and
+    /// Camille does not get it twice (at least once, deduplicated by the receiver).
+    #[test]
+    fn a_lost_acknowledgement_makes_no_duplicate() {
+        let (dir, data) = data_dir("outbox-ack");
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![3; 32], vec![112; 32], data.clone()).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 2 * 60_000);
+        let camille = camille(&core);
+        let m = core
+            .send_text(
+                camille.clone(),
+                "hello once".into(),
+                1_793_000_100,
+                2 * 60_000,
+            )
+            .unwrap();
+        let mut events = run(&demo, &core, 2 * 60_000, 6 * 60_000);
+        assert_eq!(status_of(&core, &camille, m.id), MessageStatus::Delivered);
+        // The acknowledgement never reached the database.
+        core.lock()
+            .store
+            .as_ref()
+            .unwrap()
+            .set_status(m.id, lc_core::store::Status::Sending { sent: 1, total: 1 })
+            .unwrap();
+        drop(core);
+
+        let core = LichenCore::new("t".into(), vec![4; 32], vec![112; 32], data.clone()).unwrap();
+        core.connect(6 * 60_000);
+        events.extend(run(&demo, &core, 6 * 60_000, 14 * 60_000));
+        assert_eq!(status_of(&core, &camille, m.id), MessageStatus::Delivered);
+        assert_eq!(copies(&events, "hello once"), 1, "no duplicate");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn cancel_expiry_and_retry() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![5; 32], vec![113; 32], None).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 2 * 60_000);
+        let camille = camille(&core);
+        core.disconnect(2 * 60_000);
+
+        // Cancelled before anything went out: gone.
+        let a = core
+            .send_text(camille.clone(), "never mind".into(), 1, 2 * 60_000)
+            .unwrap();
+        core.cancel_message(a.id).unwrap();
+        assert_eq!(
+            core.cancel_message(a.id),
+            Err(crate::LichenError::NotCancellable)
+        );
+        let h = core
+            .history(
+                ChatRef::Contact {
+                    key: camille.clone(),
+                },
+                None,
+                100,
+            )
+            .unwrap();
+        assert!(h.iter().all(|m| m.id != a.id));
+
+        // Its expiry passes while the radio is away.
+        core.set_outbox_expiry(0);
+        let b = core
+            .send_text(camille.clone(), "too late".into(), 2, 2 * 60_000)
+            .unwrap();
+        while core.poll_event().is_some() {}
+        assert_eq!(
+            status_of(&core, &camille, b.id),
+            MessageStatus::Failed {
+                reason: FailReason::Expired
+            }
+        );
+
+        // Sent again: the same message, waiting again, then delivered once.
+        core.set_outbox_expiry(24 * 3_600_000);
+        let again = core.retry_message(b.id, 2 * 60_000).unwrap();
+        assert_eq!(again.id, b.id);
+        assert!(matches!(again.status, MessageStatus::Waiting { .. }));
+        core.connect(3 * 60_000);
+        let events = run(&demo, &core, 3 * 60_000, 9 * 60_000);
+        assert_eq!(status_of(&core, &camille, b.id), MessageStatus::Delivered);
+        assert_eq!(copies(&events, "too late"), 1);
+        assert_eq!(copies(&events, "never mind"), 0);
+    }
+
+    /// A group text written offline waits, then counts as sent once it went out.
+    #[test]
+    fn a_group_text_waits_for_the_radio() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![6; 32], vec![114; 32], None).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 8 * 60_000);
+        let gid = core.groups().into_iter().next().expect("in the group").gid;
+        core.disconnect(8 * 60_000);
+        let m = core
+            .send_group_text(gid.clone(), "on my way".into(), 3, 8 * 60_000)
+            .unwrap();
+        assert!(matches!(
+            m.status,
+            MessageStatus::Waiting {
+                reason: WaitReason::Radio,
+                ..
+            }
+        ));
+        core.connect(9 * 60_000);
+        let events = run(&demo, &core, 9 * 60_000, 11 * 60_000);
+        assert!(events.iter().any(|e| matches!(e,
+            LichenEvent::MessageChanged { message }
+                if message.id == m.id && message.status == MessageStatus::Flooded)));
+    }
+}

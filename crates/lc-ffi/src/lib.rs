@@ -11,7 +11,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use lc_core::location::{self as loc, EXTRAPOLATE_MAX_S};
 use lc_core::store::{self, Chat, Status, Store, StoredPosition};
 use lc_core::{
-    Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Precision, PubKey,
+    Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Outbound, Precision,
+    PubKey, Stage,
 };
 use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
 use lc_proto::search::BearingClass;
@@ -59,6 +60,9 @@ pub enum LichenError {
     NoPosition,
     /// The phone's database could not be read or written.
     Storage,
+    /// A frame of the message already went out, or it is not waiting: it can no longer be
+    /// cancelled (§6.1).
+    NotCancellable,
 }
 
 impl std::fmt::Display for LichenError {
@@ -87,6 +91,7 @@ impl From<lc_core::Error> for LichenError {
                 wait_s: wait_ms.div_ceil(1000),
             },
             lc_core::Error::NoPosition => Self::NoPosition,
+            lc_core::Error::Started | lc_core::Error::NotQueued => Self::NotCancellable,
         }
     }
 }
@@ -498,6 +503,8 @@ pub enum FailReason {
     Interrupted,
     /// The contact, verified, now presents another identity: accept or reject it first.
     IdentityChanged,
+    /// Not delivered within its expiry (24 h, §6.1).
+    Expired,
 }
 
 impl From<CoreFail> for FailReason {
@@ -510,6 +517,7 @@ impl From<CoreFail> for FailReason {
             CoreFail::TooLarge => Self::TooLarge,
             CoreFail::Interrupted => Self::Interrupted,
             CoreFail::IdentityChanged => Self::IdentityChanged,
+            CoreFail::Expired => Self::Expired,
         }
     }
 }
@@ -555,6 +563,10 @@ pub enum LichenEvent {
     Failed {
         id: u64,
         reason: FailReason,
+    },
+    /// Group message `id` went out (its first copy, §10.3).
+    GroupSent {
+        id: u64,
     },
     GroupJoined {
         gid: Vec<u8>,
@@ -675,6 +687,7 @@ impl LichenEvent {
                 id,
                 reason: reason.into(),
             },
+            Event::GroupSent { id } => Self::GroupSent { id },
             Event::GroupJoined { gid, name, admin } => Self::GroupJoined {
                 gid: gid.to_vec(),
                 name,
@@ -778,9 +791,32 @@ impl ChatRef {
     }
 }
 
+/// Why a message we sent is waiting (§6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum WaitReason {
+    /// The radio is disconnected.
+    Radio,
+    /// Earlier messages to the same person go first.
+    Earlier,
+    /// Looking for a path to them.
+    Path,
+    /// Opening a secure session with them.
+    Handshake,
+    /// The airtime budget holds it until about `at_ms` (Unix milliseconds).
+    Budget { at_ms: i64 },
+}
+
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum MessageStatus {
     Received,
+    /// Accepted and waiting (§6.1). `started`: a frame of it already went out, so it may have
+    /// arrived and can no longer be cancelled. It stops at `expires_at_ms` (Unix ms) unless it
+    /// is being transmitted then.
+    Waiting {
+        reason: WaitReason,
+        started: bool,
+        expires_at_ms: i64,
+    },
     Sending {
         sent: u32,
         total: u8,
@@ -820,6 +856,12 @@ impl From<store::Message> for StoredMessage {
             at_ms: m.at_ms,
             status: match m.status {
                 Status::Received => MessageStatus::Received,
+                // Without the outbox's view (it is filled in by `Inner::present`).
+                Status::Queued => MessageStatus::Waiting {
+                    reason: WaitReason::Radio,
+                    started: false,
+                    expires_at_ms: 0,
+                },
                 Status::Sending { sent, total } => MessageStatus::Sending { sent, total },
                 Status::Delivered => MessageStatus::Delivered,
                 Status::Failed(r) => MessageStatus::Failed { reason: r.into() },
@@ -854,6 +896,29 @@ struct Inner {
     last_now: u64,
     /// Names the user gave contacts on this phone (node → nickname).
     nicknames: HashMap<PubKey, String>,
+    /// Unfinished texts (§6.1), by row id.
+    outbox: HashMap<i64, Pending>,
+    /// How long a text waits before it expires (ms).
+    outbox_expiry_ms: i64,
+    /// Unix ms minus `now_ms`, from `set_clock`.
+    clock_offset: Option<i64>,
+}
+
+/// How long a text waits for the radio and its recipient (§6.1).
+const OUTBOX_EXPIRY_MS: i64 = 24 * 3_600_000;
+
+/// An unfinished text in the outbox (§6.1).
+#[derive(Clone, Debug)]
+struct Pending {
+    core_id: u64,
+    chat: Chat,
+    /// Unix ms.
+    expires_ms: i64,
+    /// Its status in the database: queued, or sending once a frame went out.
+    stored: Status,
+    fragments: u8,
+    /// The status the app was last told.
+    presented: MessageStatus,
 }
 
 impl Inner {
@@ -875,7 +940,6 @@ impl Inner {
         let Ok(store) = store else {
             return;
         };
-        let _ = store.fail_unfinished();
         self.nicknames = store.nicknames().unwrap_or_default();
         for c in store.contacts().unwrap_or_default() {
             self.core.restore_contact(c);
@@ -898,6 +962,155 @@ impl Inner {
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
+        self.resume_outbox();
+    }
+
+    /// Texts unfinished when the app stopped are submitted again with their stored plaintext;
+    /// media unfinished fail (`Interrupted`), §6.1.
+    fn resume_outbox(&mut self) {
+        let Some(rows) = self.store.as_ref().and_then(|s| s.resume_unfinished().ok()) else {
+            return;
+        };
+        for (m, expires) in rows {
+            let expires = expires.unwrap_or(m.at_ms + self.outbox_expiry_ms);
+            let datagram = m.content.encode();
+            let now = self.last_now;
+            let id = match m.chat {
+                Chat::Contact(k) => self.core.send_datagram(&k, datagram, now),
+                Chat::Group(g) => self.core.send_group_datagram(&g, &datagram, now),
+            };
+            match id {
+                Ok(id) => self.track(m.id, id, m.chat, expires, m.status, m.fragments),
+                Err(_) => {
+                    if let Some(st) = &self.store {
+                        let _ = st.set_status(m.id, Status::Failed(CoreFail::Interrupted));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Follows row `row`, sent as core message `core_id`, in the outbox.
+    fn track(
+        &mut self,
+        row: i64,
+        core_id: u64,
+        chat: Chat,
+        expires_ms: i64,
+        stored: Status,
+        fragments: u8,
+    ) {
+        self.inflight.insert(core_id, row);
+        let mut p = Pending {
+            core_id,
+            chat,
+            expires_ms,
+            stored,
+            fragments,
+            presented: MessageStatus::Received,
+        };
+        p.presented = self.live_status(&p, self.core.outgoing(core_id, self.last_now));
+        self.outbox.insert(row, p);
+    }
+
+    /// Unix ms minus the app's clock.
+    fn offset(&self) -> i64 {
+        self.clock_offset
+            .unwrap_or_else(|| unix_ms() - i64::try_from(self.last_now).unwrap_or(0))
+    }
+
+    /// What the app should show for an unfinished text, from the core's view (§6.1).
+    fn live_status(&self, p: &Pending, live: Option<Outbound>) -> MessageStatus {
+        let sending = match p.stored {
+            Status::Sending { sent, total } => MessageStatus::Sending { sent, total },
+            _ => MessageStatus::Sending {
+                sent: 0,
+                total: p.fragments,
+            },
+        };
+        let Some(o) = live else {
+            return sending;
+        };
+        let reason = match o.stage {
+            Stage::Transmitting => return sending,
+            Stage::Offline => WaitReason::Radio,
+            Stage::Behind => WaitReason::Earlier,
+            Stage::FindingPath => WaitReason::Path,
+            Stage::Connecting => WaitReason::Handshake,
+            Stage::Budget { until } => WaitReason::Budget {
+                at_ms: i64::try_from(until).unwrap_or(i64::MAX) + self.offset(),
+            },
+        };
+        MessageStatus::Waiting {
+            reason,
+            started: o.started || !matches!(p.stored, Status::Queued),
+            expires_at_ms: p.expires_ms,
+        }
+    }
+
+    /// A stored message as the app should see it: an unfinished text with its live status.
+    fn present(&self, m: store::Message) -> StoredMessage {
+        let row = m.id;
+        let mut out = StoredMessage::from(m);
+        if let Some(p) = self.outbox.get(&row) {
+            out.status = self.live_status(p, self.core.outgoing(p.core_id, self.last_now));
+        }
+        out
+    }
+
+    /// Expires overdue texts and tells the app when an unfinished text's status changed
+    /// (§6.1).
+    fn refresh_outbox(&mut self) {
+        if self.outbox.is_empty() {
+            return;
+        }
+        let now_unix = unix_ms();
+        let rows: Vec<i64> = self.outbox.keys().copied().collect();
+        for row in rows {
+            let Some(p) = self.outbox.get(&row).cloned() else {
+                continue;
+            };
+            let live = self.core.outgoing(p.core_id, self.last_now);
+            let transmitting = live.is_some_and(|o| o.stage == Stage::Transmitting);
+            if p.expires_ms <= now_unix && !transmitting {
+                self.outbox.remove(&row);
+                // Found: its `Failed` event updates the row; otherwise do it here.
+                if !self.core.abandon(p.core_id) {
+                    self.inflight.remove(&p.core_id);
+                    if let Some(m) = self.store.as_ref().and_then(|s| {
+                        s.set_status(row, Status::Failed(CoreFail::Expired))
+                            .ok()
+                            .flatten()
+                    }) {
+                        self.extra
+                            .push_back(LichenEvent::MessageChanged { message: m.into() });
+                    }
+                }
+                continue;
+            }
+            let status = self.live_status(&p, live);
+            if status == p.presented {
+                continue;
+            }
+            if let Some(m) = self.store.as_ref().and_then(|s| s.get(row).ok().flatten()) {
+                let mut out = StoredMessage::from(m);
+                out.status = status.clone();
+                self.extra
+                    .push_back(LichenEvent::MessageChanged { message: out });
+            }
+            if let Some(q) = self.outbox.get_mut(&row) {
+                q.presented = status;
+            }
+        }
+    }
+
+    /// A TEXT or VOICE already stored from the same sender in `chat`: a resend (§6.1).
+    fn is_resend(&self, chat: &Chat, author: Option<&PubKey>, content: &Content) -> bool {
+        matches!(content, Content::Text { .. } | Content::Voice { .. })
+            && self
+                .store
+                .as_ref()
+                .is_some_and(|s| s.has_duplicate(chat, author, content).unwrap_or(false))
     }
 
     /// The node of identity `id` (the app knows people by node): a group member or a contact.
@@ -932,8 +1145,9 @@ impl Inner {
         }
     }
 
-    /// Saves the groups that changed.
+    /// Saves the groups that changed, and follows the outbox.
     fn persist(&mut self) {
+        self.refresh_outbox();
         let dirty = self.core.take_dirty_groups();
         let Some(st) = &self.store else {
             return;
@@ -946,25 +1160,32 @@ impl Inner {
         }
     }
 
-    /// Stores a message we just queued and tracks its delivery.
+    /// Stores a message we just queued and tracks its delivery. A text (`outbox`) waits in
+    /// the outbox until it is delivered, fails or expires (§6.1).
     fn stored_outgoing(
         &mut self,
-        to: PubKey,
+        chat: Chat,
         content: Content,
         id: u64,
         (fragments, airtime_ms): (u8, u64),
+        outbox: bool,
     ) -> StoredMessage {
+        let status = if outbox {
+            Status::Queued
+        } else {
+            Status::Sending {
+                sent: 0,
+                total: fragments,
+            }
+        };
         let row = store::Message {
             id: 0,
-            chat: Chat::Contact(to),
+            chat,
             outgoing: true,
             author: None,
             content,
             at_ms: unix_ms(),
-            status: Status::Sending {
-                sent: 0,
-                total: fragments,
-            },
+            status,
             fragments,
             airtime_ms,
             snr4: None,
@@ -976,10 +1197,18 @@ impl Inner {
             .and_then(|s| s.insert(&row).ok())
             .unwrap_or(row);
         if stored.id != 0 {
-            self.inflight.insert(id, stored.id);
+            if outbox {
+                let expires = stored.at_ms + self.outbox_expiry_ms;
+                if let Some(st) = &self.store {
+                    let _ = st.set_expiry(stored.id, Some(expires));
+                }
+                self.track(stored.id, id, chat, expires, status, fragments);
+            } else {
+                self.inflight.insert(id, stored.id);
+            }
         }
         self.persist();
-        stored.into()
+        self.present(stored)
     }
 
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
@@ -997,19 +1226,27 @@ impl Inner {
         };
         if done {
             self.inflight.remove(&core_id);
+            self.outbox.remove(&row);
+        } else if let Some(p) = self.outbox.get_mut(&row) {
+            p.stored = status;
         }
         if let Some(m) = self
             .store
             .as_ref()
             .and_then(|s| s.set_status(row, status).ok().flatten())
         {
+            let out = self.present(m);
+            if let Some(p) = self.outbox.get_mut(&row) {
+                p.presented = out.status.clone();
+            }
             self.extra
-                .push_back(LichenEvent::MessageChanged { message: m.into() });
+                .push_back(LichenEvent::MessageChanged { message: out });
         }
     }
 
-    /// Records what an event means for the history.
-    fn on_event(&mut self, e: &Event) {
+    /// Records what an event means for the history. False: a resend already received, to
+    /// keep from the app (§6.1).
+    fn on_event(&mut self, e: &Event) -> bool {
         match e {
             Event::Connected { .. } => self.save_contacts(),
             Event::ContactsUpdated
@@ -1065,6 +1302,9 @@ impl Inner {
                 snr4,
                 ..
             } => {
+                if self.is_resend(&Chat::Contact(*from), None, content) {
+                    return false;
+                }
                 self.record(store::Message {
                     id: 0,
                     chat: Chat::Contact(*from),
@@ -1086,6 +1326,9 @@ impl Inner {
                 snr4,
                 ..
             } => {
+                if self.is_resend(&Chat::Group(*gid), Some(from), content) {
+                    return false;
+                }
                 self.record(store::Message {
                     id: 0,
                     chat: Chat::Group(*gid),
@@ -1136,8 +1379,10 @@ impl Inner {
             }
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
+            Event::GroupSent { id } => self.update(*id, Status::Flooded, true),
             _ => {}
         }
+        true
     }
 }
 
@@ -1194,6 +1439,9 @@ impl LichenCore {
             nicknames: HashMap::new(),
             extra: VecDeque::new(),
             last_now: 0,
+            outbox: HashMap::new(),
+            outbox_expiry_ms: OUTBOX_EXPIRY_MS,
+            clock_offset: None,
         };
         // The history is available before the node connects.
         if let Some(id) = inner.core.key().copied() {
@@ -1206,8 +1454,103 @@ impl LichenCore {
 
     pub fn connect(&self, now_ms: u64) {
         let mut i = self.lock();
+        i.last_now = now_ms;
         i.core.connect(now_ms);
         i.persist();
+    }
+
+    /// The companion is gone (Bluetooth or USB lost): nothing goes out, texts wait and a
+    /// transfer in progress pauses until `connect` (§6.1).
+    pub fn disconnect(&self, now_ms: u64) {
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        i.core.disconnect(now_ms);
+        i.persist();
+    }
+
+    /// Cancels a text that is still waiting and none of whose frames went out; it is deleted
+    /// (§6.1).
+    pub fn cancel_message(&self, message_id: i64) -> Result<(), LichenError> {
+        let mut i = self.lock();
+        let p = i
+            .outbox
+            .get(&message_id)
+            .cloned()
+            .filter(|p| p.stored == Status::Queued)
+            .ok_or(LichenError::NotCancellable)?;
+        i.core.cancel(p.core_id)?;
+        i.outbox.remove(&message_id);
+        i.inflight.remove(&p.core_id);
+        if let Some(st) = &i.store {
+            st.delete_message(message_id)
+                .map_err(|_| LichenError::Storage)?;
+        }
+        Ok(())
+    }
+
+    /// Sends a failed text or voice message again: the same message (row and plaintext), so
+    /// that a receiver who already has it drops the copy (§6.1). A text waits again for 24 h;
+    /// a voice message is refused when over budget.
+    pub fn retry_message(
+        &self,
+        message_id: i64,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let m = i
+            .store
+            .as_ref()
+            .and_then(|s| s.get(message_id).ok().flatten())
+            .ok_or(LichenError::Storage)?;
+        if !m.outgoing || !matches!(m.status, Status::Failed(_)) {
+            return Err(LichenError::NotAllowed);
+        }
+        let datagram = m.content.encode();
+        let text = matches!(m.content, Content::Text { .. });
+        let id = match (&m.chat, &m.content) {
+            (Chat::Contact(k), Content::Text { .. }) => {
+                i.core.send_datagram(k, datagram, now_ms)?
+            }
+            (Chat::Group(g), Content::Text { .. }) => {
+                i.core.send_group_datagram(g, &datagram, now_ms)?
+            }
+            (Chat::Contact(k), Content::Voice { .. }) => i.core.send_media(k, datagram, now_ms)?,
+            _ => return Err(LichenError::NotAllowed),
+        };
+        let status = if text {
+            Status::Queued
+        } else {
+            Status::Sending {
+                sent: 0,
+                total: m.fragments,
+            }
+        };
+        let expires = text.then(|| unix_ms() + i.outbox_expiry_ms);
+        if let Some(st) = &i.store {
+            st.set_status(m.id, status)
+                .map_err(|_| LichenError::Storage)?;
+            st.set_expiry(m.id, expires)
+                .map_err(|_| LichenError::Storage)?;
+        }
+        match expires {
+            Some(e) => i.track(m.id, id, m.chat, e, status, m.fragments),
+            None => {
+                i.inflight.insert(id, m.id);
+            }
+        }
+        i.persist();
+        let row = i
+            .store
+            .as_ref()
+            .and_then(|s| s.get(m.id).ok().flatten())
+            .ok_or(LichenError::Storage)?;
+        Ok(i.present(row))
+    }
+
+    /// Tests: how long a text waits before it expires (default 24 h).
+    pub fn set_outbox_expiry(&self, ms: u64) {
+        self.lock().outbox_expiry_ms = i64::try_from(ms).unwrap_or(i64::MAX);
     }
 
     pub fn on_companion_frame(&self, frame: Vec<u8>, now_ms: u64) {
@@ -1231,19 +1574,39 @@ impl LichenCore {
 
     /// When to call `tick` (or `poll_companion`) next, in the same clock as `now_ms`.
     pub fn next_wakeup(&self) -> Option<u64> {
-        self.lock().core.next_wakeup()
+        let i = self.lock();
+        let core = i.core.next_wakeup();
+        // The next text to expire (§6.1); one already overdue waits for its transfer to end.
+        let now_unix = unix_ms();
+        let offset = i.offset();
+        let expiry = i
+            .outbox
+            .values()
+            .map(|p| p.expires_ms)
+            .filter(|&e| e > now_unix)
+            .min()
+            .map(|e| u64::try_from(e - offset).unwrap_or(0));
+        match (core, expiry) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// The next event. History changes come as `MessageChanged` right after the event that
     /// caused them.
     pub fn poll_event(&self) -> Option<LichenEvent> {
         let mut i = self.lock();
-        if let Some(e) = i.extra.pop_front() {
-            return Some(e);
-        }
-        let e = i.core.poll_event()?;
-        i.on_event(&e);
-        i.persist();
+        let e = loop {
+            if let Some(e) = i.extra.pop_front() {
+                return Some(e);
+            }
+            let e = i.core.poll_event()?;
+            let keep = i.on_event(&e);
+            i.persist();
+            if keep {
+                break e;
+            }
+        };
         let f = i.core.freq_khz();
         let core = &i.core;
         Some(LichenEvent::from_core(e, f, |gid, admin| {
@@ -1534,6 +1897,7 @@ impl LichenCore {
         let k = key(&to)?;
         let content = Content::Text { sent_at, text };
         let mut i = self.lock();
+        i.last_now = now_ms;
         let datagram = content.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
         let id = i.core.send_text(
@@ -1545,7 +1909,7 @@ impl LichenCore {
             sent_at,
             now_ms,
         )?;
-        Ok(i.stored_outgoing(k, content, id, estimate))
+        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, true))
     }
 
     /// Fragments and airtime (first round) of a datagram of `len` bytes to `to`.
@@ -1578,7 +1942,7 @@ impl LichenCore {
         let datagram = content.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
         let id = i.core.send_media(&k, datagram, now_ms)?;
-        Ok(i.stored_outgoing(k, content, id, estimate))
+        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false))
     }
 
     /// Sends the preview of an image prepared by [`prepare_image`]; its full variant goes out
@@ -1612,7 +1976,7 @@ impl LichenCore {
             let _ = st.put_media(&media_id, &Chat::Contact(k), &full.encode());
         }
         // What we keep in our history is the full image.
-        Ok(i.stored_outgoing(k, full, id, estimate))
+        Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false))
     }
 
     /// Announces content offered over the bridge (§14.1) to a contact or a group. `media_id`
@@ -1657,7 +2021,7 @@ impl LichenCore {
             Chat::Contact(k) => {
                 let estimate = i.core.estimate_send(&k, datagram.len());
                 let id = i.core.send_datagram(&k, datagram, now_ms)?;
-                Ok(i.stored_outgoing(k, content, id, estimate))
+                Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false))
             }
             Chat::Group(g) => {
                 i.core.send_group_datagram(&g, &datagram, now_ms)?;
@@ -1732,7 +2096,8 @@ impl LichenCore {
         Ok(g.to_vec())
     }
 
-    /// Floods a text to the group and returns it as stored (status `Flooded`).
+    /// Floods a text to the group and returns it as stored: waiting until its first copy has
+    /// left (then `Flooded`, without acknowledgement), §6.1.
     pub fn send_group_text(
         &self,
         gid: Vec<u8>,
@@ -1742,27 +2107,11 @@ impl LichenCore {
     ) -> Result<StoredMessage, LichenError> {
         let g = self::gid(&gid)?;
         let mut i = self.lock();
-        i.core.send_group_text(&g, &text, sent_at, now_ms)?;
-        let row = store::Message {
-            id: 0,
-            chat: Chat::Group(g),
-            outgoing: true,
-            author: None,
-            content: Content::Text { sent_at, text },
-            at_ms: unix_ms(),
-            status: Status::Flooded,
-            fragments: 1,
-            airtime_ms: 0,
-            snr4: None,
-            read: true,
-        };
-        let stored = i
-            .store
-            .as_ref()
-            .and_then(|s| s.insert(&row).ok())
-            .unwrap_or(row);
-        i.persist();
-        Ok(stored.into())
+        i.last_now = now_ms;
+        let id = i.core.send_group_text(&g, &text, sent_at, now_ms)?;
+        let content = Content::Text { sent_at, text };
+        let estimate = i.core.estimate_group_send(content.encode().len());
+        Ok(i.stored_outgoing(Chat::Group(g), content, id, estimate, true))
     }
 
     /// Invites contacts (nodes whose identity is known) into a group we administer (ADR-0017).
@@ -1825,7 +2174,7 @@ impl LichenCore {
             .history(&c, before_id, limit)
             .map_err(|_| LichenError::Storage)?
             .into_iter()
-            .map(StoredMessage::from)
+            .map(|m| i.present(m))
             .collect())
     }
 
@@ -1879,7 +2228,7 @@ impl LichenCore {
             .into_iter()
             .map(|(m, unread)| Conversation {
                 chat: ChatRef::from_store(&m.chat),
-                last: m.into(),
+                last: i.present(m),
                 unread,
             })
             .collect()
@@ -1890,7 +2239,13 @@ impl LichenCore {
     /// The wall clock: `unix_ms` is the current Unix time in milliseconds at `now_ms`. Call it
     /// at start and whenever the clock may have jumped; positions wait for it.
     pub fn set_clock(&self, unix_ms: u64, now_ms: u64) {
-        self.lock().core.set_clock(unix_ms, now_ms);
+        let mut i = self.lock();
+        i.clock_offset = Some(
+            i64::try_from(unix_ms)
+                .unwrap_or(i64::MAX)
+                .saturating_sub(i64::try_from(now_ms).unwrap_or(0)),
+        );
+        i.core.set_clock(unix_ms, now_ms);
     }
 
     /// Our position, from the location service.
@@ -2216,7 +2571,22 @@ impl LichenCore {
     /// group stays: a new message starts the conversation again.
     pub fn delete_conversation(&self, chat: ChatRef) -> Result<(), LichenError> {
         let c = chat.to_store()?;
-        if let Some(s) = self.lock().store.as_ref() {
+        let mut i = self.lock();
+        // Its waiting texts stop too.
+        let waiting: Vec<(i64, u64)> = i
+            .outbox
+            .iter()
+            .filter(|(_, p)| p.chat == c)
+            .map(|(row, p)| (*row, p.core_id))
+            .collect();
+        for (row, core_id) in waiting {
+            i.outbox.remove(&row);
+            i.inflight.remove(&core_id);
+            if i.core.cancel(core_id).is_err() {
+                i.core.abandon(core_id);
+            }
+        }
+        if let Some(s) = i.store.as_ref() {
             let _ = s.delete_chat(&c);
         }
         Ok(())
@@ -2481,5 +2851,54 @@ mod tests {
         assert_eq!(q.dark.len(), (q.width * q.width) as usize);
         // The finder pattern's corner is dark.
         assert!(q.dark[0]);
+    }
+}
+
+#[cfg(test)]
+mod receiver {
+    use super::*;
+
+    /// A copy of a message already stored is dropped, direct or group (§6.1).
+    #[test]
+    fn resends_are_dropped() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![120; 32], None).unwrap();
+        let text = |t: &str| Content::Text {
+            sent_at: 5,
+            text: t.into(),
+        };
+        let mut i = core.lock();
+        let direct = Event::Received {
+            from: [9; 32],
+            content: text("hi"),
+            snr4: 0,
+            rssi: 0,
+        };
+        assert!(i.on_event(&direct));
+        assert!(!i.on_event(&direct));
+        let group = |from: u8| Event::GroupMessage {
+            gid: [3; 16],
+            from: [from; 32],
+            content: text("hi"),
+            snr4: 0,
+            rssi: 0,
+        };
+        assert!(i.on_event(&group(1)));
+        assert!(!i.on_event(&group(1)));
+        // Another member's identical text, or another second, is another message.
+        assert!(i.on_event(&group(2)));
+        assert!(i.on_event(&Event::Received {
+            from: [9; 32],
+            content: Content::Text {
+                sent_at: 6,
+                text: "hi".into()
+            },
+            snr4: 0,
+            rssi: 0,
+        }));
+        drop(i);
+        let h = core
+            .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
+            .unwrap();
+        assert_eq!(h.len(), 2);
     }
 }

@@ -29,7 +29,10 @@ pub use rusqlite::Error;
 /// 3: images (`messages.media_id`, added to older databases; `media` table).
 /// 4: phone identities (ADR-0013): `contacts.identity`, `contacts.verified`, added likewise.
 /// 5: nicknames the user gives contacts (table added, nothing migrated).
-const VERSION: i32 = 6;
+/// 6: settings and search consents (tables added).
+/// 7: the outbox (ADR-0018): `messages.expires_ms`, added to older databases; status 5
+/// (queued).
+const VERSION: i32 = 7;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -66,6 +69,9 @@ impl Chat {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Received,
+    /// Accepted, nothing transmitted yet: it can still be cancelled (§6.1).
+    Queued,
+    /// At least one frame went out.
     Sending {
         sent: u32,
         total: u8,
@@ -85,6 +91,7 @@ fn fail_code(r: FailReason) -> i64 {
         FailReason::TooLarge => 5,
         FailReason::Interrupted => 6,
         FailReason::IdentityChanged => 7,
+        FailReason::Expired => 8,
     }
 }
 
@@ -96,6 +103,7 @@ fn fail_reason(c: i64) -> FailReason {
         5 => FailReason::TooLarge,
         6 => FailReason::Interrupted,
         7 => FailReason::IdentityChanged,
+        8 => FailReason::Expired,
         _ => FailReason::Timeout,
     }
 }
@@ -108,6 +116,7 @@ impl Status {
             Status::Delivered => (2, 0, 0),
             Status::Failed(r) => (3, fail_code(r), 0),
             Status::Flooded => (4, 0, 0),
+            Status::Queued => (5, 0, 0),
         }
     }
 
@@ -120,6 +129,7 @@ impl Status {
             2 => Status::Delivered,
             3 => Status::Failed(fail_reason(a)),
             4 => Status::Flooded,
+            5 => Status::Queued,
             _ => Status::Received,
         }
     }
@@ -182,7 +192,8 @@ CREATE TABLE IF NOT EXISTS messages (
     airtime_ms INTEGER NOT NULL,
     snr4 INTEGER,
     read INTEGER NOT NULL,
-    media_id BLOB
+    media_id BLOB,
+    expires_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
 CREATE TABLE IF NOT EXISTS media (
@@ -288,6 +299,13 @@ impl Store {
                 "ALTER TABLE contacts ADD COLUMN identity BLOB;
                  ALTER TABLE contacts ADD COLUMN verified INTEGER NOT NULL DEFAULT 0;",
             )?;
+        }
+        // And from before version 7.
+        let has_expiry = conn
+            .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'expires_ms'")?
+            .exists([])?;
+        if !has_expiry {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN expires_ms INTEGER")?;
         }
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS messages_by_media ON messages (chat_kind, chat, media_id)",
@@ -700,13 +718,63 @@ impl Store {
         Ok(n)
     }
 
-    /// Messages still sending when the app stopped: failed, to be resent by hand.
-    pub fn fail_unfinished(&self) -> Result<usize, Error> {
-        let (s, a, b) = Status::Failed(FailReason::Interrupted).columns();
+    /// Messages unfinished when the app stopped (§6.1): the texts are returned with their
+    /// expiry (Unix ms), to be sent again; the rest (media) fail as `Interrupted`.
+    pub fn resume_unfinished(&self) -> Result<Vec<(Message, Option<i64>)>, Error> {
+        let mut stmt = self.conn.prepare(&format!(
+            "SELECT {COLUMNS}, expires_ms FROM messages WHERE outgoing = 1 AND status IN (1, 5)
+             ORDER BY id"
+        ))?;
+        let rows: Vec<(Option<Message>, i64, Option<i64>)> = stmt
+            .query_map([], |r| Ok((row(r)?, r.get(0)?, r.get(14)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut texts = Vec::new();
+        for (m, id, expires) in rows {
+            match m {
+                Some(m) if matches!(m.content, Content::Text { .. }) => texts.push((m, expires)),
+                _ => {
+                    self.set_status(id, Status::Failed(FailReason::Interrupted))?;
+                }
+            }
+        }
+        Ok(texts)
+    }
+
+    /// Deletes one message (a cancelled one, §6.1).
+    pub fn delete_message(&self, id: i64) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM messages WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    /// When unfinished message `id` stops waiting (Unix ms; `None`: never), §6.1.
+    pub fn set_expiry(&self, id: i64, expires_ms: Option<i64>) -> Result<(), Error> {
         self.conn.execute(
-            "UPDATE messages SET status = ?1, status_a = ?2, status_b = ?3 WHERE status = 1",
-            params![s, a, b],
-        )
+            "UPDATE messages SET expires_ms = ?2 WHERE id = ?1",
+            params![id, expires_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Whether `content` was already received from `author` (groups; `None` in a direct
+    /// conversation) in `chat`: a resend, dropped by the receiver (§6.1).
+    pub fn has_duplicate(
+        &self,
+        chat: &Chat,
+        author: Option<&PubKey>,
+        content: &Content,
+    ) -> Result<bool, Error> {
+        self.conn
+            .prepare(
+                "SELECT 1 FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND outgoing = 0
+                 AND author IS ?3 AND content = ?4",
+            )?
+            .exists(params![
+                chat.kind(),
+                chat.bytes(),
+                author.map(|a| a.as_slice()),
+                content.encode()
+            ])
     }
 }
 
@@ -746,8 +814,12 @@ mod tests {
         // A version 2 database: no media_id column.
         {
             let c = Connection::open(&path).unwrap();
-            c.execute_batch(&SCHEMA.replace(",\n    media_id BLOB", ""))
-                .unwrap();
+            c.execute_batch(
+                &SCHEMA
+                    .replace(",\n    media_id BLOB", "")
+                    .replace(",\n    expires_ms INTEGER", ""),
+            )
+            .unwrap();
             c.pragma_update(None, "user_version", 2).unwrap();
             c.execute(
                 "INSERT INTO messages (chat_kind, chat, outgoing, content, at_ms, status, status_a,
@@ -766,6 +838,8 @@ mod tests {
         let s = Store::open(&path).unwrap();
         let a = Chat::Contact([1; 32]);
         assert_eq!(s.history(&a, None, 10).unwrap().len(), 1);
+        // The outbox column was added too (version 7).
+        assert!(s.resume_unfinished().unwrap().is_empty());
         let image = |full: bool, len: usize| Content::Image {
             sent_at: 2,
             media_id: [7; 8],
@@ -857,6 +931,18 @@ mod tests {
         let mut gm = text(g, false, "group", 40);
         gm.author = Some([2; 32]);
         s.insert(&gm).unwrap();
+        // A resend is recognised by its plaintext, sender and conversation (§6.1).
+        let c = |t: &str| Content::Text {
+            sent_at: 1,
+            text: t.into(),
+        };
+        assert!(s.has_duplicate(&b, None, &c("yo")).unwrap());
+        assert!(!s.has_duplicate(&a, None, &c("yo")).unwrap());
+        assert!(s.has_duplicate(&g, Some(&[2; 32]), &c("group")).unwrap());
+        assert!(!s.has_duplicate(&g, Some(&[4; 32]), &c("group")).unwrap());
+        assert!(!s.has_duplicate(&g, None, &c("group")).unwrap());
+        // Our own messages are not received ones.
+        assert!(!s.has_duplicate(&a, None, &c("hello")).unwrap());
         assert!(m2.id > m1.id);
         let h = s.history(&a, None, 10).unwrap();
         assert_eq!(
@@ -881,12 +967,38 @@ mod tests {
         );
         let up = s.set_status(m2.id, Status::Delivered).unwrap().unwrap();
         assert_eq!(up.status, Status::Delivered);
+        // Unfinished at a restart (§6.1): texts come back with their expiry, media fail.
         let m3 = s.insert(&text(b, true, "pending", 50)).unwrap();
-        assert_eq!(s.fail_unfinished().unwrap(), 1);
+        s.set_expiry(m3.id, Some(9_000)).unwrap();
+        let mut queued = text(b, true, "queued", 51);
+        queued.status = Status::Queued;
+        let m4 = s.insert(&queued).unwrap();
+        let mut voice = text(b, true, "", 52);
+        voice.content = Content::Voice {
+            sent_at: 1,
+            mode: 2,
+            frames: 1,
+            data: vec![0; 8],
+        };
+        let m5 = s.insert(&voice).unwrap();
+        let resumed = s.resume_unfinished().unwrap();
         assert_eq!(
-            s.get(m3.id).unwrap().unwrap().status,
+            resumed
+                .iter()
+                .map(|(m, e)| (m.id, m.status, *e))
+                .collect::<Vec<_>>(),
+            vec![
+                (m3.id, Status::Sending { sent: 0, total: 1 }, Some(9_000)),
+                (m4.id, Status::Queued, None)
+            ]
+        );
+        assert_eq!(
+            s.get(m5.id).unwrap().unwrap().status,
             Status::Failed(FailReason::Interrupted)
         );
+        s.delete_message(m3.id).unwrap();
+        s.delete_message(m4.id).unwrap();
+        s.delete_message(m5.id).unwrap();
         // Deleting a conversation leaves the others alone.
         assert_eq!(s.delete_chat(&a).unwrap(), 2);
         assert!(s.history(&a, None, 10).unwrap().is_empty());

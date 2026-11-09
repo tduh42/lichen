@@ -1089,7 +1089,7 @@ impl Core {
         let mut datagram = Vec::with_capacity(1 + n);
         datagram.push(content::SEARCH);
         datagram.extend_from_slice(body.get(..n).unwrap_or(&[]));
-        self.send_group(gid, &datagram, now)
+        self.send_group(gid, &datagram, false, now)
     }
 
     fn send_beacon(&mut self, gid: &GroupId, id: u16, now: Millis) {

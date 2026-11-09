@@ -144,6 +144,33 @@ pub enum FailReason {
     /// The contact, verified, now presents another identity: nothing goes out until the user
     /// accepts or rejects it (§4.6).
     IdentityChanged,
+    /// Its expiry passed before it was delivered (§6.1).
+    Expired,
+}
+
+/// Where a message the app sent stands while it is unfinished (§6.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stage {
+    /// The companion is disconnected: nothing goes out until it is back.
+    Offline,
+    /// Behind earlier messages to the same peer (or earlier group frames).
+    Behind,
+    /// Looking for a path to the peer (§4.5).
+    FindingPath,
+    /// Opening a session: handshake or introduction (§4.4, §4.6).
+    Connecting,
+    /// Held by the airtime budget until then (§9).
+    Budget { until: Millis },
+    /// Being transmitted, or waiting for its acknowledgement.
+    Transmitting,
+}
+
+/// An unfinished message: its stage, and whether a frame of it already went out.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Outbound {
+    pub stage: Stage,
+    /// A frame went out: it may have arrived, and it can no longer be cancelled.
+    pub started: bool,
 }
 
 /// What the app should know about.
@@ -191,6 +218,10 @@ pub enum Event {
     Failed {
         id: MsgId,
         reason: FailReason,
+    },
+    /// The first copy of every fragment of group message `id` has left (§10.3, §6.1).
+    GroupSent {
+        id: MsgId,
     },
     /// Someone added us to a group.
     GroupJoined {
@@ -282,6 +313,10 @@ pub enum Error {
     },
     /// Our position is unknown or too old.
     NoPosition,
+    /// A frame of the message already went out: it can no longer be cancelled (§6.1).
+    Started,
+    /// No unfinished message has this id.
+    NotQueued,
 }
 
 /// Core configuration.
@@ -333,6 +368,8 @@ struct Outgoing {
     /// Not before this time (retry backoff).
     not_before: Millis,
     tries: u8,
+    /// A frame of it went out: it may have arrived, so it can no longer be cancelled (§6.1).
+    started: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -489,6 +526,9 @@ pub struct Core {
     pub(crate) key: Option<PubKey>,
     /// The node's key, from `SELF_INFO`: frame headers and routing only.
     pub(crate) node: Option<PubKey>,
+    /// The companion answered and has not been reported gone since (§6.1): nothing goes on
+    /// the air, and no timer advances, while it is false.
+    online: bool,
     pub(crate) name: String,
     freq_khz: u32,
     pub(crate) radio: LoRaParams,
@@ -518,7 +558,7 @@ pub struct Core {
     /// Groups changed since the app last persisted them.
     pub(crate) dirty_groups: HashSet<GroupId>,
     /// Group frames waiting for their time (the second fragment is spaced out).
-    pub(crate) group_tx: VecDeque<(Millis, Vec<u8>)>,
+    pub(crate) group_tx: VecDeque<crate::group::GroupFrame>,
     /// The radio is shared by every session: the next data frame may go at this time.
     pub(crate) next_slot: Millis,
     /// Session renewal limits (§4.4): age and bytes sent.
@@ -570,6 +610,7 @@ impl Core {
             key: Some(public_key(&expand_seed(&config.seed))),
             prv: Some(expand_seed(&config.seed)),
             node: None,
+            online: false,
             name: String::new(),
             freq_khz: 869_618,
             radio: DEFAULT_RADIO,
@@ -621,6 +662,11 @@ impl Core {
     /// The node answered: its key is known and lichen can talk.
     pub const fn ready(&self) -> bool {
         self.node.is_some()
+    }
+
+    /// The companion is connected and answered (§6.1).
+    pub const fn online(&self) -> bool {
+        self.online
     }
 
     /// Contact `node`'s identity is now `identity`, verified or not (a contact card scanned in
@@ -758,6 +804,15 @@ impl Core {
         self.tick(now);
     }
 
+    /// The companion is gone (Bluetooth or USB lost). Nothing goes on the air and no timer
+    /// advances until [`Core::connect`] gets an answer: queued messages wait, a transfer in
+    /// progress resumes where it stopped (§6.1). Commands not answered yet are dropped.
+    pub fn disconnect(&mut self, _now: Millis) {
+        self.online = false;
+        self.commands.clear();
+        self.awaiting = None;
+    }
+
     /// Adds or updates a contact by hand (contact card, tests); a known identity is kept.
     pub fn add_contact(&mut self, key: PubKey, name: &str, out_path: Option<OwnedPath>) {
         let (identity, verified, kind) = self
@@ -831,6 +886,7 @@ impl Core {
                 internal: false,
                 not_before: 0,
                 tries: 0,
+                started: false,
             });
         self.tick(now);
         Ok(id)
@@ -872,6 +928,152 @@ impl Core {
             .sum()
     }
 
+    /// Where unfinished message `id` stands (§6.1): `None` once it is delivered, failed,
+    /// sent to its group or cancelled, and for the core's own messages.
+    pub fn outgoing(&self, id: MsgId, now: Millis) -> Option<Outbound> {
+        let budget = self.deferred_until.filter(|&u| u > now);
+        if let Some(pos) = self
+            .group_tx
+            .iter()
+            .position(|f| f.id == id && f.user && f.copy == 0)
+        {
+            let started = !self.group_tx.iter().any(|f| f.id == id && f.seq == 0);
+            let stage = if !self.online {
+                Stage::Offline
+            } else if self.group_tx.iter().take(pos).any(|f| f.id != id) {
+                Stage::Behind
+            } else {
+                Stage::Transmitting
+            };
+            return Some(Outbound { stage, started });
+        }
+        for (k, p) in &self.peers {
+            if p.in_flight
+                .as_ref()
+                .is_some_and(|f| f.msg.id == id && !f.msg.internal)
+            {
+                let stage = match (self.online, budget) {
+                    (false, _) => Stage::Offline,
+                    (true, Some(until)) => Stage::Budget { until },
+                    (true, None) => Stage::Transmitting,
+                };
+                // In flight: its session is sending it, it can only be abandoned.
+                return Some(Outbound {
+                    stage,
+                    started: true,
+                });
+            }
+            let Some(pos) = p.queue.iter().position(|m| m.id == id && !m.internal) else {
+                continue;
+            };
+            let started = p.queue.get(pos).is_some_and(|m| m.started);
+            let stage = if !self.online {
+                Stage::Offline
+            } else if p.in_flight.is_some() || p.queue.iter().take(pos).any(|m| m.not_before <= now)
+            {
+                Stage::Behind
+            } else if self.path_for(k, p).is_none() {
+                Stage::FindingPath
+            } else if p.session.is_none() && p.pending.is_none() {
+                Stage::Connecting
+            } else if let Some(until) = budget {
+                Stage::Budget { until }
+            } else {
+                Stage::Transmitting
+            };
+            return Some(Outbound { stage, started });
+        }
+        None
+    }
+
+    /// Cancels a message the app sent, as long as none of its frames went out (§6.1).
+    pub fn cancel(&mut self, id: MsgId) -> Result<(), Error> {
+        if self.group_tx.iter().any(|f| f.id == id && f.user) {
+            if !self.group_tx.iter().any(|f| f.id == id && f.seq == 0) {
+                return Err(Error::Started);
+            }
+            // The counter it took stays unused: receivers' windows accept the gap (§10.3).
+            self.group_tx.retain(|f| f.id != id);
+            return Ok(());
+        }
+        for p in self.peers.values_mut() {
+            if p.in_flight.as_ref().is_some_and(|f| f.msg.id == id) {
+                return Err(Error::Started);
+            }
+            if let Some(pos) = p.queue.iter().position(|m| m.id == id && !m.internal) {
+                if p.queue.get(pos).is_some_and(|m| m.started) {
+                    return Err(Error::Started);
+                }
+                p.queue.remove(pos);
+                return Ok(());
+            }
+        }
+        Err(Error::NotQueued)
+    }
+
+    /// Gives up an unfinished message whose expiry passed (§6.1): it leaves its queue, or its
+    /// transfer is abandoned (an ABORT goes out), and it is reported failed (`Expired`).
+    /// Returns whether it was found.
+    pub fn abandon(&mut self, id: MsgId) -> bool {
+        let expired = Event::Failed {
+            id,
+            reason: FailReason::Expired,
+        };
+        if self
+            .group_tx
+            .iter()
+            .any(|f| f.id == id && f.user && f.copy == 0)
+        {
+            self.group_tx.retain(|f| f.id != id);
+            self.events.push_back(expired);
+            return true;
+        }
+        for p in self.peers.values_mut() {
+            if p.in_flight
+                .as_ref()
+                .is_some_and(|f| f.msg.id == id && !f.msg.internal)
+            {
+                let on_pending = p.in_flight.take().is_some_and(|f| f.on_pending);
+                let session = if on_pending {
+                    p.pending.as_deref_mut()
+                } else {
+                    p.session.as_deref_mut()
+                };
+                if let Some(s) = session {
+                    s.cancel();
+                }
+                self.events.push_back(expired);
+                return true;
+            }
+            if let Some(pos) = p.queue.iter().position(|m| m.id == id && !m.internal) {
+                p.queue.remove(pos);
+                self.events.push_back(expired);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Another node answers after a reconnection (§6.1): sessions and paths belonged to the
+    /// old one. Queued messages stay; one in flight goes back to its queue.
+    fn forget_routes(&mut self) {
+        for p in self.peers.values_mut() {
+            p.requeue_in_flight();
+            p.session = None;
+            p.pending = None;
+            p.path = None;
+            p.initiating = None;
+            p.answered = None;
+            p.probing = None;
+            p.introducing = None;
+            p.fin = None;
+            p.answered_intro = None;
+        }
+        for c in self.contacts.values_mut() {
+            c.out_path = None;
+        }
+    }
+
     /// Random bytes from the core's generator (media ids).
     pub fn random_id(&mut self) -> crate::content::MediaId {
         let mut id = [0u8; 8];
@@ -894,6 +1096,7 @@ impl Core {
                 internal: true,
                 not_before: 0,
                 tries: 0,
+                started: false,
             });
     }
 
@@ -998,7 +1201,7 @@ impl Core {
         if self.deferred_until.is_some_and(|t| now >= t) {
             self.deferred_until = None;
         }
-        if self.node.is_none() {
+        if self.node.is_none() || !self.online {
             return;
         }
         self.tick_groups(now);
@@ -1021,10 +1224,14 @@ impl Core {
     /// When [`Core::tick`] or [`Core::poll_companion`] should be called next.
     pub fn next_wakeup(&self) -> Option<Millis> {
         let mut t: Option<Millis> = None;
-        let mut consider = |x: Millis| t = Some(t.map_or(x, |y: Millis| y.min(x)));
         if !self.commands.is_empty() {
-            consider(self.awaiting.map_or(0, |(_, d)| d));
+            t = Some(self.awaiting.map_or(0, |(_, d)| d));
         }
+        // Offline: only the commands of a reconnection (§6.1).
+        if !self.online {
+            return t;
+        }
+        let mut consider = |x: Millis| t = Some(t.map_or(x, |y: Millis| y.min(x)));
         if let Some(d) = self.deferred_until {
             consider(d);
         }
@@ -1079,7 +1286,11 @@ impl Core {
         let mut done = true;
         match r {
             Response::SelfInfo(si) => {
+                if self.node.is_some_and(|n| n != *si.key) {
+                    self.forget_routes();
+                }
                 self.node = Some(*si.key);
+                self.online = true;
                 self.name = String::from_utf8_lossy(si.name).into_owned();
                 self.search.tx_dbm = Some(si.tx_power_dbm);
                 self.search.max_tx_dbm = Some(si.max_tx_power_dbm);
@@ -1443,6 +1654,7 @@ impl Core {
                     && f.tag == h.tag
                 {
                     f.sent += 1;
+                    f.msg.started = true;
                     if !f.msg.internal {
                         self.events.push_back(Event::Progress {
                             id: f.msg.id,

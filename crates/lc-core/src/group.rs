@@ -33,6 +33,23 @@ const HELD_MS: Millis = 600_000;
 /// And at most this many.
 const HELD_MAX: usize = 16;
 
+/// A group frame waiting for its time (§10.3).
+#[derive(Clone, Debug)]
+pub(crate) struct GroupFrame {
+    pub(crate) due: Millis,
+    pub(crate) raw: Vec<u8>,
+    /// The message it belongs to.
+    pub(crate) id: MsgId,
+    /// Sent by the app (reported with [`Event::GroupSent`]), not by the core itself
+    /// (positions, search).
+    pub(crate) user: bool,
+    pub(crate) copy: u8,
+    /// Its rank among the message's frames: 0 leaves first.
+    pub(crate) seq: u8,
+    /// The last frame of the first copy: the message has gone out once all of it left.
+    pub(crate) ends_first_copy: bool,
+}
+
 /// An envelope from a known member whose key we do not hold yet.
 #[derive(Clone, Debug)]
 pub(crate) struct Held {
@@ -856,7 +873,7 @@ impl Core {
             text: text.to_owned(),
         }
         .encode();
-        self.send_group(gid, &body, now)
+        self.send_group(gid, &body, true, now)
     }
 
     /// Floods a datagram (`content_type ‖ body`) to the group, signed (§10.3): an
@@ -867,7 +884,7 @@ impl Core {
         datagram: &[u8],
         now: Millis,
     ) -> Result<MsgId, Error> {
-        self.send_group(gid, datagram, now)
+        self.send_group(gid, datagram, true, now)
     }
 
     /// Fragments and airtime (ms, our own floods: every copy, no relays) of a group message of
@@ -888,10 +905,12 @@ impl Core {
         )
     }
 
+    /// `user`: sent by the app, which hears when it has gone out ([`Event::GroupSent`]).
     pub(crate) fn send_group(
         &mut self,
         gid: &GroupId,
         body: &[u8],
+        user: bool,
         now: Millis,
     ) -> Result<MsgId, Error> {
         let (me, prv) = (
@@ -911,6 +930,9 @@ impl Core {
         // Each frame waits until the repeaters have re-flooded the previous one, with jitter.
         let spacing = 10 * self.radio.airtime_us(group::PAYLOAD_MAX + 6) / 1000;
         let mut due = now;
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut seq = 0u8;
         for copy in 0..self.group_copies {
             for (index, chunk) in plain.chunks(group::FRAGMENT_PLAIN_MAX).enumerate() {
                 let header = GroupHeader {
@@ -927,12 +949,19 @@ impl Core {
                     return Err(Error::TooLarge);
                 };
                 let raw = self.flood_frame(out.get(..n).unwrap_or(&[]));
-                self.group_tx.push_back((due, raw));
+                self.group_tx.push_back(GroupFrame {
+                    due,
+                    raw,
+                    id,
+                    user,
+                    copy,
+                    seq,
+                    ends_first_copy: copy == 0 && index + 1 == usize::from(total),
+                });
+                seq = seq.saturating_add(1);
                 due += spacing + Millis::from(self.rng.next_u32()) % spacing.max(1);
             }
         }
-        let id = self.next_id;
-        self.next_id += 1;
         self.tick(now);
         Ok(id)
     }
@@ -975,11 +1004,14 @@ impl Core {
         for gid in owed {
             self.send_my_key(&gid, None);
         }
-        while self.group_tx.front().is_some_and(|(due, _)| *due <= now) && now >= self.next_slot {
-            let Some((_, raw)) = self.group_tx.pop_front() else {
+        while self.group_tx.front().is_some_and(|f| f.due <= now) && now >= self.next_slot {
+            let Some(f) = self.group_tx.pop_front() else {
                 break;
             };
-            self.send_raw_packet(&raw, now);
+            self.send_raw_packet(&f.raw, now);
+            if f.user && f.ends_first_copy {
+                self.events.push_back(Event::GroupSent { id: f.id });
+            }
         }
         for g in self.groups.values_mut() {
             g.partials.retain(|p| p.at + PARTIAL_MS > now);
@@ -988,9 +1020,7 @@ impl Core {
     }
 
     pub(crate) fn next_group_wakeup(&self) -> Option<Millis> {
-        self.group_tx
-            .front()
-            .map(|(due, _)| (*due).max(self.next_slot))
+        self.group_tx.front().map(|f| f.due.max(self.next_slot))
     }
 
     /// A group envelope heard on the air (§10.3).

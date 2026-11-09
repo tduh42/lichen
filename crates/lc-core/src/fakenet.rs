@@ -524,6 +524,38 @@ impl Net {
         self.wake(i, now);
     }
 
+    /// The app of companion `i` loses its companion (Bluetooth out of range): pushes are lost,
+    /// commands go nowhere, and the app is told (`Core::disconnect`).
+    pub fn disconnect(&mut self, i: usize) {
+        let now = self.now;
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.connected = false;
+            if let Some(c) = n.core.as_mut() {
+                c.disconnect(now);
+            }
+        }
+        self.wake(i, now);
+    }
+
+    /// Moves the app of companion `from` to companion `to` (the phone paired with another
+    /// radio), disconnected; [`Net::connect`] it there.
+    pub fn move_app(&mut self, from: usize, to: usize) {
+        let now = self.now;
+        let core = self.nodes.get_mut(from).and_then(|n| {
+            n.connected = false;
+            n.wake_at = None;
+            n.core.take()
+        });
+        if let Some(mut c) = core {
+            c.disconnect(now);
+            if let Some(n) = self.nodes.get_mut(to) {
+                n.core = Some(c);
+                n.connected = false;
+                n.wake_at = None;
+            }
+        }
+    }
+
     /// Runs `f` on the app of companion `i`, then lets it act.
     pub fn with_core<T>(&mut self, i: usize, f: impl FnOnce(&mut Core, Millis) -> T) -> Option<T> {
         let now = self.now;
@@ -600,7 +632,12 @@ impl Net {
             return;
         };
         core.tick(now);
+        let connected = self.nodes.get(i).is_some_and(|n| n.connected);
         while let Some(frame) = core.poll_companion(now) {
+            // A disconnected companion never gets the command.
+            if !connected {
+                continue;
+            }
             for reply in self.companion_command(i, &frame) {
                 core.on_companion_frame(&reply, now);
             }

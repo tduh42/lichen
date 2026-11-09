@@ -329,6 +329,7 @@ fn describe(core: &Core, e: &Event) -> String {
         ),
         Event::Delivered { id } => format!("message {id} delivered"),
         Event::Failed { id, reason } => format!("message {id} failed: {reason:?}"),
+        Event::GroupSent { id } => format!("group message {id} sent"),
         Event::SearchUpdated { target } => format!("search for {} updated", short(target)),
         Event::Searched { by, .. } => format!("{} is searching for us", name_of(core, by)),
         Event::Beacon {
