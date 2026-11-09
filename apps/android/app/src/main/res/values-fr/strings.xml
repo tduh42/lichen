@@ -598,4 +598,9 @@
     <string name="cancel_reply">Annuler la réponse</string>
     <string name="reacted_to">%1$s a réagi %2$s à « %3$s »</string>
     <string name="err_not_referable">Ce message date d\'avant les réponses : on ne peut pas y répondre.</string>
+    <!-- Photo viewer -->
+    <string name="open_photo">Ouvrir la photo</string>
+    <string name="photo_original">Original · %1$s · %2$s, empreinte vérifiée</string>
+    <string name="photo_full_thumbnail">Vignette complète · LoRa · %1$s</string>
+    <string name="photo_preview">Aperçu · LoRa · %1$s</string>
 </resources>

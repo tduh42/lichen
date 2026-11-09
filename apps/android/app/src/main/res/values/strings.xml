@@ -591,4 +591,9 @@
     <string name="cancel_reply">Cancel the reply</string>
     <string name="reacted_to">%1$s reacted %2$s to “%3$s”</string>
     <string name="err_not_referable">This message is from before replies existed: it cannot be answered.</string>
+    <!-- Photo viewer -->
+    <string name="open_photo">Open the photo</string>
+    <string name="photo_original">Original · %1$s · %2$s, hash verified</string>
+    <string name="photo_full_thumbnail">Full thumbnail · LoRa · %1$s</string>
+    <string name="photo_preview">Preview · LoRa · %1$s</string>
 </resources>

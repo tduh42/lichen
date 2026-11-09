@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Files the app shares with other apps: search measurements (CSV export). -->
+<!-- Files the app shares with other apps: search measurements (CSV export), photos. -->
 <paths>
     <cache-path name="search" path="search/" />
+    <cache-path name="shared" path="shared/" />
 </paths>

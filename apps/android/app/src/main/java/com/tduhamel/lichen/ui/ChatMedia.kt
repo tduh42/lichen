@@ -158,6 +158,8 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
         (fetched?.let { decodeFile(it) } ?: decodeImage(img.data))?.asImageBitmap()
     }
     var error by remember { mutableStateOf<String?>(null) }
+    var viewing by remember { mutableStateOf(false) }
+    if (viewing) PhotoViewer(model, m) { viewing = false }
     val ratio = img.width.toFloat().coerceAtLeast(1f) / img.height.toFloat().coerceAtLeast(1f)
     Column(
         Modifier
@@ -166,7 +168,11 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
             .background(t.s1)
             .border(1.dp, t.line, RoundedCornerShape(18.dp)),
     ) {
-        Box(Modifier.fillMaxWidth().aspectRatio(ratio).background(t.s2), contentAlignment = Alignment.BottomStart) {
+        // Tapped: full screen, zoomable.
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(ratio).background(t.s2).clickable(onClickLabel = stringResource(R.string.open_photo)) { viewing = true },
+            contentAlignment = Alignment.BottomStart,
+        ) {
             if (bitmap != null) {
                 Image(
                     bitmap, stringResource(R.string.photo),
@@ -227,8 +233,14 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (standalone && file != null) {
             val bitmap = remember(file) { decodeFile(file)?.asImageBitmap() }
+            var viewing by remember { mutableStateOf(false) }
+            if (viewing) PhotoViewer(model, announce) { viewing = false }
             if (bitmap != null) {
-                Image(bitmap, a.name, Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.FillWidth)
+                Image(
+                    bitmap, a.name,
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { viewing = true },
+                    contentScale = ContentScale.FillWidth,
+                )
             }
         }
         Row {
