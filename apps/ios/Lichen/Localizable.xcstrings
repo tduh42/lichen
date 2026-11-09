@@ -251,6 +251,16 @@
         }
       }
     },
+    "%@ · ≈ %@ s of airtime, %@ %% of your hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · ≈ %2$@ s de temps d'antenne, %3$@ %% de ton heure"
+          }
+        }
+      }
+    },
     "%@'s key changed": {
       "localizations": {
         "fr": {
@@ -661,6 +671,16 @@
         }
       }
     },
+    "1-packet LoRa announcement, peer-to-peer transfer": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annonce LoRa d'un paquet, transfert de pair à pair"
+          }
+        }
+      }
+    },
     "1-packet LoRa announcement, peer-to-peer transfer (%@)": {
       "localizations": {
         "fr": {
@@ -981,6 +1001,16 @@
         }
       }
     },
+    "Airtime left: %@ s. The recipient opens it with the app for its type.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d'antenne restant : %@ s. La personne l'ouvre avec l'app de son type."
+          }
+        }
+      }
+    },
     "Allow it in Settings to record voice messages.": {
       "localizations": {
         "fr": {
@@ -1017,6 +1047,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anonyme, plus lent"
+          }
+        }
+      }
+    },
+    "Anonymous, slower: they fetch it from your onion service": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anonyme, plus lent : la personne le récupère sur ton service onion"
           }
         }
       }
@@ -1691,6 +1731,16 @@
         }
       }
     },
+    "Direct, acknowledged": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct, avec accusé de réception"
+          }
+        }
+      }
+    },
     "Direction": {
       "localizations": {
         "fr": {
@@ -1777,6 +1827,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "OK"
+          }
+        }
+      }
+    },
+    "Download": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Télécharger"
           }
         }
       }
@@ -2027,6 +2087,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rapide, ton IP est visible du pair"
+          }
+        }
+      }
+    },
+    "File": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier"
+          }
+        }
+      }
+    },
+    "File: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier : %@"
           }
         }
       }
@@ -3151,12 +3231,12 @@
         }
       }
     },
-    "No Internet connection: the photo cannot be offered.": {
+    "No Internet connection: it cannot be offered.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pas de connexion Internet : impossible de proposer la photo."
+            "value": "Pas de connexion Internet : impossible de le proposer."
           }
         }
       }
@@ -3541,6 +3621,16 @@
         }
       }
     },
+    "Opens the file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvre le fichier"
+          }
+        }
+      }
+    },
     "Opens the photo full screen": {
       "localizations": {
         "fr": {
@@ -3577,6 +3667,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Randonnée"
+          }
+        }
+      }
+    },
+    "Over LoRa": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par LoRa"
           }
         }
       }
@@ -4321,6 +4421,16 @@
         }
       }
     },
+    "Send a file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer un fichier"
+          }
+        }
+      }
+    },
     "Send a photo": {
       "localizations": {
         "fr": {
@@ -4367,6 +4477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyer un advert"
+          }
+        }
+      }
+    },
+    "Send over LoRa": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer par LoRa"
           }
         }
       }
@@ -5141,6 +5261,26 @@
         }
       }
     },
+    "This file cannot go over LoRa": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier ne peut pas passer par LoRa"
+          }
+        }
+      }
+    },
+    "This file could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier est illisible."
+          }
+        }
+      }
+    },
     "This image could not be read.": {
       "localizations": {
         "fr": {
@@ -5227,6 +5367,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aujourd'hui"
+          }
+        }
+      }
+    },
+    "Too large for LoRa (%@, up to 8 KB)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trop gros pour LoRa (%@, 8 Ko au plus)"
           }
         }
       }
@@ -5361,6 +5511,16 @@
         }
       }
     },
+    "Unavailable: turn on iroh or Tor in Settings to fetch the file.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponible : active iroh ou Tor dans les Réglages pour récupérer le fichier."
+          }
+        }
+      }
+    },
     "Unavailable: turn on iroh or Tor in Settings to fetch the original.": {
       "localizations": {
         "fr": {
@@ -5431,6 +5591,16 @@
         }
       }
     },
+    "Up to 8 KB fit in a LoRa message. Turn on iroh or Tor in Settings to send larger files over the Internet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un message LoRa contient 8 Ko au plus. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet."
+          }
+        }
+      }
+    },
     "Update": {
       "localizations": {
         "fr": {
@@ -5497,6 +5667,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version"
+          }
+        }
+      }
+    },
+    "Via Tor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par Tor"
+          }
+        }
+      }
+    },
+    "Via iroh": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par iroh"
           }
         }
       }

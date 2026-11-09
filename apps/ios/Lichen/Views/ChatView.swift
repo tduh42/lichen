@@ -1,5 +1,7 @@
 import PhotosUI
+import QuickLook
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// One conversation (mockup `chat`).
 struct ChatView: View {
@@ -529,6 +531,7 @@ private struct QuoteBox: View {
         case .text: return quote.excerpt
         case .voice: return String(localized: "Voice message")
         case .photo: return String(localized: "Photo")
+        case .file: return String(localized: "File: \(quote.excerpt)")
         case .other: return String(localized: "Message")
         }
     }
@@ -692,6 +695,8 @@ private struct MessageView: View {
                 VoiceNote(message: message)
             case .image:
                 ImageCard(message: message)
+            case .file:
+                FileCard(message: message)
             case let .announce(_, mediaId, _, _, _, _, _):
                 // Shown inside its LoRa preview's card when that preview is here.
                 if model.preview(for: mediaId, in: message.chat) == nil {
@@ -924,6 +929,9 @@ private struct Composer: View {
     @State private var original: Data?
     @State private var preparing = false
     @State private var locating = false
+    /// A file picked, waiting for its route (LoRa when small, else the bridge, ADR-0022).
+    @State private var importing = false
+    @State private var file: FileDraft?
     /// A recording stopped and not sent yet: listened to, its quality chosen, sent or dropped.
     @State private var review: Review?
 
@@ -977,6 +985,9 @@ private struct Composer: View {
                         if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
                             Button { picking = true } label: { Label("Photo", systemImage: "photo") }
                                 .disabled(!model.isConnected)
+                        }
+                        if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
+                            Button { importing = true } label: { Label("File", systemImage: "doc") }
                         }
                         Button { locating = true } label: {
                             Label("Share my location", systemImage: "location")
@@ -1035,6 +1046,22 @@ private struct Composer: View {
         .background(Theme.s1)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
         .photosPicker(isPresented: $picking, selection: $picked, matching: .images)
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+            guard case let .success(url) = result else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+                error = String(localized: "This file could not be read.")
+                return
+            }
+            file = FileDraft(name: url.lastPathComponent, data: data)
+        }
+        .sheet(item: $file) { draft in
+            SendFileSheet(chat: chat, draft: draft) { e in
+                file = nil
+                error = e
+            }
+        }
         .onChange(of: picked) {
             guard let item = picked else { return }
             picked = nil
@@ -1059,6 +1086,13 @@ private struct Composer: View {
             #if DEBUG
             // -screen share: the location sheet.
             if model.debugScreen == "share" { locating = true }
+            // -screen file / fileBig: the file sheet with a 3 KB note, or a 240 KB document.
+            if model.debugScreen == "file" || model.debugScreen == "fileBig", file == nil {
+                let big = model.debugScreen == "fileBig"
+                let line = Data("Refuge de la Pra: code 4521, wood in the shed, water 200 m north.\n".utf8)
+                file = FileDraft(name: big ? "Topo Vercors 2026.pdf" : "Refuge notes.txt",
+                                 data: Data(repeating: 0, count: 0) + Array(repeating: line, count: big ? 3_700 : 45).reduce(Data(), +))
+            }
             // -screen voiceReview: the review of a 4 s recording (a hum).
             if model.debugScreen == "voiceReview", review == nil {
                 let pcm = (0..<32_000).map { i -> Int16 in
@@ -1514,6 +1548,211 @@ private struct SendPhotoSheet: View {
     }
 }
 
+/// A file picked in the composer.
+private struct FileDraft: Identifiable {
+    let id = UUID()
+    let name: String
+    let data: Data
+}
+
+/// The SF Symbol for a file, by its extension.
+private func fileSymbol(_ name: String) -> String {
+    switch (name as NSString).pathExtension.lowercased() {
+    case "pdf": "doc.richtext"
+    case "txt", "md", "csv", "json": "doc.plaintext"
+    case "gpx", "kml", "kmz", "geojson": "map"
+    case "jpg", "jpeg", "png", "heic", "avif", "gif": "photo"
+    case "zip", "gz", "7z", "tar": "doc.zipper"
+    case "mp3", "m4a", "wav", "ogg": "waveform"
+    default: "doc"
+    }
+}
+
+private func byteCount(_ n: Int) -> String {
+    ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
+}
+
+/// How to send a picked file (ADR-0022): over LoRa when small (up to 8 KB, contacts only,
+/// its airtime shown), else over iroh or Tor; why not, when neither can.
+private struct SendFileSheet: View {
+    let chat: ChatID
+    let draft: FileDraft
+    let done: (String?) -> Void
+    @Environment(AppModel.self) private var model
+    @State private var mode: Mode?
+
+    enum Mode { case lora, iroh, tor }
+
+    private static let loraMax = 8_192
+
+    private var isGroup: Bool {
+        if case .group = chat { return true }
+        return false
+    }
+    private var loraOK: Bool { !isGroup && draft.data.count <= Self.loraMax }
+    private var irohOK: Bool { model.bridgeOnline }
+    private var torOK: Bool { model.torStatus == .ready }
+    private var chosen: Mode? {
+        if let mode { return mode }
+        if loraOK { return .lora }
+        if irohOK { return .iroh }
+        return torOK ? .tor : nil
+    }
+    private var estimate: Estimate? { model.estimateFile(chat, name: draft.name, size: draft.data.count) }
+
+    private var loraDetail: String {
+        if isGroup { return String(localized: "Contacts only: never flooded to a group") }
+        if draft.data.count > Self.loraMax {
+            return String(localized: "Too large for LoRa (\(byteCount(draft.data.count)), up to 8 KB)")
+        }
+        guard let e = estimate else { return String(localized: "Direct, acknowledged") }
+        let share = Double(e.airtimeMs) / 3_600
+        return String(localized: "\(fragmentsText(e.fragments)) · ≈ \(seconds(e.airtimeMs)) s of airtime, \(String(format: "%.0f", share)) % of your hour")
+    }
+
+    private var irohDetail: String {
+        if irohOK { return String(localized: "1-packet LoRa announcement, peer-to-peer transfer") }
+        if !model.irohEnabled { return String(localized: "iroh is off in Settings") }
+        return String(localized: "Needs an Internet connection")
+    }
+
+    private var torDetail: String {
+        switch model.torStatus {
+        case .ready: return String(localized: "Anonymous, slower: they fetch it from your onion service")
+        case .connecting, .publishing: return String(localized: "Connecting to Tor…")
+        case .failed: return String(localized: "Tor could not connect")
+        case .off: return String(localized: "Turn Tor on in Settings")
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 14) {
+                        Image(systemName: fileSymbol(draft.name))
+                            .font(.system(size: 30))
+                            .frame(width: 56, height: 56)
+                            .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(verbatim: draft.name).font(.system(.callout, weight: .semibold)).lineLimit(2)
+                            Text(byteCount(draft.data.count)).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                        }
+                    }
+                    SectionLabel("How to send it to \(model.title(of: chat))")
+                    option(title: String(localized: "Over LoRa"), detail: loraDetail,
+                           badge: loraOK ? estimate.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa" : "LoRa",
+                           kind: .lora, selected: chosen == .lora, enabled: loraOK)
+                        .onTapGesture { if loraOK { mode = .lora } }
+                    option(title: String(localized: "Via iroh"), detail: irohDetail,
+                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                        .onTapGesture { if irohOK { mode = .iroh } }
+                    option(title: String(localized: "Via Tor"), detail: torDetail,
+                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                        .onTapGesture { if torOK { mode = .tor } }
+                    if chosen == nil {
+                        Banner(kind: .warn, title: String(localized: "This file cannot go over LoRa"),
+                               message: String(localized: "Up to 8 KB fit in a LoRa message. Turn on iroh or Tor in Settings to send larger files over the Internet."))
+                    }
+                    Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. The recipient opens it with the app for its type.")
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                    Button(chosen == .lora ? String(localized: "Send over LoRa") : String(localized: "Send the announcement")) {
+                        switch chosen {
+                        case .lora: done(model.sendFile(draft.data, name: draft.name, to: chat))
+                        case .iroh, .tor:
+                            done(model.sendOverBridge(draft.data, name: draft.name, to: chat, anonymous: chosen == .tor, kind: 3))
+                        case nil: break
+                        }
+                    }
+                    .buttonStyle(.primary)
+                    .disabled(chosen == nil)
+                    .padding(.top, 8)
+                }
+                .padding(16)
+            }
+            .screen()
+            .navigationTitle("Send a file")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.s1, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(nil) } }
+            }
+        }
+    }
+
+    private func option(title: String, detail: String, badge: String, kind: TransportBadge.Kind,
+                        selected: Bool, enabled: Bool) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .strokeBorder(selected ? Theme.tx : Theme.line, lineWidth: 2)
+                .frame(width: 22, height: 22)
+                .overlay { if selected { Circle().fill(Theme.tx).frame(width: 10, height: 10) } }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.system(.subheadline, weight: .semibold))
+                Text(detail).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+            }
+            Spacer(minLength: 4)
+            TransportBadge(kind: kind, label: badge)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(selected ? Theme.s2 : Theme.s1, in: RoundedRectangle(cornerRadius: 12))
+        .opacity(enabled ? 1 : 0.5)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A file in the conversation: its icon, name and size; tap to open it (QuickLook), long
+/// press to share it. A small file came over LoRa; a larger one, see `BridgeSection`.
+private struct FileCard: View {
+    let message: StoredMessage
+    @Environment(AppModel.self) private var model
+    @State private var opened: URL?
+
+    var body: some View {
+        if case let .file(_, name, data) = message.message {
+            FileRow(name: name, size: data.count, badge: TransportBadge(kind: .lora, label: "LoRa"))
+                .padding(12)
+                .frame(width: 250, alignment: .leading)
+                .background(Theme.s1)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+                .contentShape(Rectangle())
+                .onTapGesture { opened = model.openable(name: name, data: data) }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens the file")
+                .quickLookPreview($opened)
+        }
+    }
+}
+
+/// Icon, name and size of a file, and a transport badge.
+private struct FileRow<Badge: View>: View {
+    let name: String
+    let size: Int
+    let badge: Badge
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: fileSymbol(name))
+                .font(.system(size: 22))
+                .frame(width: 40, height: 40)
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(verbatim: name).font(.system(.footnote, weight: .semibold)).lineLimit(2)
+                HStack(spacing: 6) {
+                    Text(byteCount(size)).font(.system(.caption)).foregroundStyle(Theme.tx2)
+                    badge
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 /// Content announced over LoRa and fetched over the Internet bridge (§14, mockup `chat`):
 /// size, transports, the download, "hash verified" once done.
 private struct BridgeSection: View {
@@ -1522,23 +1761,33 @@ private struct BridgeSection: View {
     let standalone: Bool
     @Environment(AppModel.self) private var model
     @State private var viewing = false
+    @State private var opened: URL?
 
     var body: some View {
-        if case let .announce(_, _, _, hash, size, providers, name) = announce.message {
+        if case let .announce(_, _, kind, hash, size, providers, name) = announce.message {
             let file = model.downloads[hash]
+            let isFile = kind == 3
             let content = VStack(alignment: .leading, spacing: 8) {
-                if standalone, let file, let ui = UIImage(contentsOfFile: file.path) {
+                if isFile {
+                    // A file (ADR-0022): opened with QuickLook once here.
+                    FileRow(name: name, size: Int(size), badge: EmptyView())
+                        .contentShape(Rectangle())
+                        .onTapGesture { if let file { opened = model.openable(name: name, file: file) } }
+                        .quickLookPreview($opened)
+                } else if standalone, let file, let ui = UIImage(contentsOfFile: file.path) {
                     Image(uiImage: ui).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .onTapGesture { viewing = true }
                         .accessibilityAddTraits(.isButton)
                         .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
                 }
-                HStack {
-                    Text(verbatim: name).font(.system(.footnote, weight: .semibold)).lineLimit(1)
-                    Spacer()
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                if !isFile {
+                    HStack {
+                        Text(verbatim: name).font(.system(.footnote, weight: .semibold)).lineLimit(1)
+                        Spacer()
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                            .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                    }
                 }
                 HStack(spacing: 6) {
                     ForEach(providers, id: \.transport) { p in
@@ -1552,6 +1801,12 @@ private struct BridgeSection: View {
                         Label("hash verified", systemImage: "checkmark.seal")
                             .font(.system(.caption2))
                             .foregroundStyle(Theme.ok)
+                    }
+                    if isFile, let file {
+                        Spacer()
+                        Button("Open") { opened = model.openable(name: name, file: file) }
+                            .font(.system(.footnote, weight: .semibold))
+                            .frame(minHeight: 44)
                     }
                 }
                 if let error = model.fetchErrors[hash] {
@@ -1573,11 +1828,14 @@ private struct BridgeSection: View {
                         let route = model.fetchRoute(providers)
                         if route.isEmpty {
                             // Offered, but nothing here reaches the sender.
-                            Text("Unavailable: turn on iroh or Tor in Settings to fetch the original.")
+                            Text(isFile ? String(localized: "Unavailable: turn on iroh or Tor in Settings to fetch the file.")
+                                        : String(localized: "Unavailable: turn on iroh or Tor in Settings to fetch the original."))
                                 .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         } else {
                             let torOnly = route.first?.transport == 2
-                            Button(model.fetchErrors[hash] != nil ? "Try again" : "Download in full resolution") {
+                            Button(model.fetchErrors[hash] != nil ? String(localized: "Try again")
+                                   : isFile ? String(localized: "Download")
+                                   : String(localized: "Download in full resolution")) {
                                 model.fetch(announce)
                             }
                             .buttonStyle(SecondaryButtonStyle(background: torOnly ? Theme.torBg : Theme.irohBg,

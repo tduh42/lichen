@@ -28,38 +28,7 @@ struct GroupView: View {
                         }
                     }
                     if isAdmin { adminCards(g) }
-                    SectionLabel("Location").padding(.top, 10)
-                    CardList {
-                        CardRow(title: String(localized: "Let this group locate me"),
-                                subtitle: String(localized: "Your phone answers their search pings even outside SOS")) {
-                            Toggle("Let this group locate me", isOn: Binding(get: { consent }, set: {
-                                consent = $0
-                                model.setSearchConsent(gid, $0)
-                            }))
-                            .labelsHidden()
-                        }
-                        CardDivider()
-                        Button { sharing = true } label: {
-                            CardRow(title: String(localized: "Precision shared with the group")) {
-                                Text(model.share(of: .group(gid: gid)).map { PrecisionText.name($0.precision) }
-                                     ?? String(localized: "Not shared"))
-                                    .font(.system(.subheadline))
-                                    .foregroundStyle(Theme.tx2)
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    SectionLabel("Diffusion").padding(.top, 10)
-                    CardList {
-                        CardRow(title: String(localized: "Hop limit"),
-                                subtitle: String(localized: "Each hop costs the relays airtime; messages fit up to 8")) {
-                            Text("8").font(Theme.figure(17)).foregroundStyle(Theme.tx2)
-                        }
-                        CardDivider()
-                        CardRow(title: String(localized: "Media"),
-                                subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor"))
-                    }
+                    locationAndDiffusion
                     Button(isAdmin ? "Close the group" : "Leave the group") { leaving = true }
                         .buttonStyle(.destructive)
                         .padding(.top, 12)
@@ -122,6 +91,42 @@ struct GroupView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(error ?? "")
+        }
+    }
+
+    /// Location and diffusion: who may locate us, what we share, what groups never flood.
+    @ViewBuilder private var locationAndDiffusion: some View {
+        SectionLabel("Location").padding(.top, 10)
+        CardList {
+            CardRow(title: String(localized: "Let this group locate me"),
+                    subtitle: String(localized: "Your phone answers their search pings even outside SOS")) {
+                Toggle("Let this group locate me", isOn: Binding(get: { consent }, set: {
+                    consent = $0
+                    model.setSearchConsent(gid, $0)
+                }))
+                .labelsHidden()
+            }
+            CardDivider()
+            Button { sharing = true } label: {
+                CardRow(title: String(localized: "Precision shared with the group")) {
+                    Text(model.share(of: .group(gid: gid)).map { PrecisionText.name($0.precision) }
+                         ?? String(localized: "Not shared"))
+                        .font(.system(.subheadline))
+                        .foregroundStyle(Theme.tx2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        SectionLabel("Diffusion").padding(.top, 10)
+        CardList {
+            CardRow(title: String(localized: "Hop limit"),
+                    subtitle: String(localized: "Each hop costs the relays airtime; messages fit up to 8")) {
+                Text("8").font(Theme.figure(17)).foregroundStyle(Theme.tx2)
+            }
+            CardDivider()
+            CardRow(title: String(localized: "Media"),
+                    subtitle: String(localized: "Never flooded: a LoRa announcement, the content over iroh or Tor"))
         }
     }
 

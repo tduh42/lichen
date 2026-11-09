@@ -852,6 +852,35 @@ final class AppModel {
         return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
     }
 
+    /// A small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact.
+    func sendFile(_ data: Data, name: String, to chat: ChatID) -> String? {
+        guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
+        return sendMedia(chat) { try core.sendFile(to: key, name: name, data: data, sentAt: $0, nowMs: $1) }
+    }
+
+    /// What a small file costs over LoRa to a contact; nil for a group.
+    func estimateFile(_ chat: ChatID, name: String, size: Int) -> Estimate? {
+        guard case let .contact(key) = chat else { return nil }
+        return try? core.estimateFile(to: key, nameLen: UInt32(fitFileName(name: name, maxBytes: 64).utf8.count),
+                                      size: UInt32(size))
+    }
+
+    /// A copy of a file under its own name, to open or share it (QuickLook and other apps go
+    /// by the name's extension).
+    func openable(name: String, data: Data? = nil, file: URL? = nil) -> URL? {
+        guard let dir = Self.folder("open") else { return nil }
+        let safe = fitFileName(name: name, maxBytes: 120)
+        let url = dir.appendingPathComponent(safe.isEmpty ? "file" : safe)
+        try? FileManager.default.removeItem(at: url)
+        if let data {
+            return (try? data.write(to: url)) != nil ? url : nil
+        }
+        if let file {
+            return (try? FileManager.default.copyItem(at: file, to: url)) != nil ? url : nil
+        }
+        return nil
+    }
+
     func sendImage(_ image: PreparedImage, to chat: ChatID) -> String? {
         guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
         return sendMedia(chat) { try core.sendImage(to: key, image: image, sentAt: $0, nowMs: $1) }
@@ -1265,16 +1294,19 @@ final class AppModel {
 
     /// Offers a photo on the bridge and announces it in one LoRa frame (§14.1); `anonymous`:
     /// over Tor only, so the recipient never learns our IP address.
-    func sendOverBridge(_ original: Data, name: String, to chat: ChatID, anonymous: Bool) -> String? {
+    /// Offers `original` over the bridge and announces it over LoRa (§14.1): `kind` 1 a photo,
+    /// 3 any file (ADR-0022).
+    func sendOverBridge(_ original: Data, name: String, to chat: ChatID, anonymous: Bool, kind: UInt8 = 1) -> String? {
         let providers = bridgeProviders(anonymous: anonymous)
         guard let bridge, !providers.isEmpty else {
-            return String(localized: "No Internet connection: the photo cannot be offered.")
+            return String(localized: "No Internet connection: it cannot be offered.")
         }
+        let name = fitFileName(name: name, maxBytes: 32)
         do {
             let offered = try bridge.offer(bytes: original)
             _ = keep(original, hash: offered.hash, name: name)
             let m = try core.sendAnnounce(
-                chat: chat, mediaId: Data(), kind: 1, hash: offered.hash, size: offered.size,
+                chat: chat, mediaId: Data(), kind: kind, hash: offered.hash, size: offered.size,
                 providers: providers, name: name,
                 sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now()
             )
@@ -1527,7 +1559,9 @@ extension Message {
         case let .voice(_, _, _, durationMs, _):
             return String(localized: "Voice message (\(clock(TimeInterval(durationMs) / 1000)))")
         case .image: return String(localized: "Photo")
+        case let .announce(_, _, kind, _, _, _, name) where kind == 3: return String(localized: "File: \(name)")
         case let .announce(_, _, _, _, _, _, name): return String(localized: "Photo: \(name)")
+        case let .file(_, name, _): return String(localized: "File: \(name)")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
         case .notice:
             return noticeText(me: UserDefaults.standard.data(forKey: "lichen.nodeKey")) { _, name in name }
@@ -1560,7 +1594,7 @@ extension Message {
     var date: Date {
         switch self {
         case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _),
-             let .announce(sentAt, _, _, _, _, _, _):
+             let .announce(sentAt, _, _, _, _, _, _), let .file(sentAt, _, _):
             if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
         case .notice, .other:
             break
