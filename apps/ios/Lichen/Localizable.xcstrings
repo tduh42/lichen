@@ -1571,6 +1571,16 @@
         }
       }
     },
+    "Discard the recording": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jeter l'enregistrement"
+          }
+        }
+      }
+    },
     "Disconnect": {
       "localizations": {
         "fr": {
@@ -2337,6 +2347,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claire"
+          }
+        }
+      }
+    },
+    "Listen to what will be sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écouter ce qui sera envoyé"
           }
         }
       }
@@ -4371,6 +4391,16 @@
         }
       }
     },
+    "Stop and listen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter et écouter"
+          }
+        }
+      }
+    },
     "Stop sharing": {
       "localizations": {
         "fr": {
@@ -4921,6 +4951,16 @@
         }
       }
     },
+    "Unavailable: turn on iroh or Tor in Settings to fetch the original.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indisponible : active iroh ou Tor dans les Réglages pour récupérer l'original."
+          }
+        }
+      }
+    },
     "Unknown contact.": {
       "localizations": {
         "fr": {
@@ -5057,6 +5097,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Messages vocaux"
+          }
+        }
+      }
+    },
+    "Voice quality": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualité de la voix"
+          }
+        }
+      }
+    },
+    "Voice quality vs time on air: %@ · ≈ %@ s": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualité de la voix contre temps d'antenne : %@ · ≈ %@ s"
           }
         }
       }

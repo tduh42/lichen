@@ -43,6 +43,8 @@ final class AppModel {
     /// Downloads in progress: the transport each one uses (1 iroh, 2 Tor).
     var fetching: [Data: UInt8] = [:]
     var fetchErrors: [Data: String] = [:]
+    /// Downloads in progress, to cancel them.
+    @ObservationIgnored private var fetchTasks: [Data: Task<Void, Never>] = [:]
 
     enum TorStatus: Equatable { case off, connecting, publishing, ready, failed }
 
@@ -1220,8 +1222,11 @@ final class AppModel {
         }
         fetching[hash] = first.transport
         fetchErrors[hash] = nil
-        Task {
-            defer { fetching[hash] = nil }
+        fetchTasks[hash] = Task {
+            defer {
+                fetching[hash] = nil
+                fetchTasks[hash] = nil
+            }
             var failure = String(localized: "Download failed.")
             for p in route {
                 fetching[hash] = p.transport
@@ -1231,6 +1236,8 @@ final class AppModel {
                         _ = try await bridge.startTor(stateDir: state, cacheDir: cache, publish: false, limitS: 180)
                     }
                     let bytes = try await bridge.fetch(transport: p.transport, provider: p.key, hash: hash, size: UInt64(size))
+                    // Cancelled meanwhile: dropped.
+                    if Task.isCancelled { return }
                     _ = keep(bytes, hash: hash, name: name)
                     return
                 } catch let e as BridgeError {
@@ -1243,8 +1250,17 @@ final class AppModel {
                     break
                 }
             }
-            fetchErrors[hash] = failure
+            if !Task.isCancelled { fetchErrors[hash] = failure }
         }
+    }
+
+    /// Stops a download: the original is offered again, without an error.
+    func cancelFetch(_ m: StoredMessage) {
+        guard case let .announce(_, _, _, hash, _, _, _) = m.message else { return }
+        fetchTasks[hash]?.cancel()
+        fetchTasks[hash] = nil
+        fetching[hash] = nil
+        fetchErrors[hash] = nil
     }
 
     /// The announcement that completes the LoRa preview `mediaId` in `chat`, if any.

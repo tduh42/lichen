@@ -78,38 +78,82 @@ final class VoiceRecorder {
     }
 }
 
-/// Plays voice messages: Codec2 frames decoded by the core, wrapped in a WAV.
+/// Plays voice messages: Codec2 frames decoded by the core, wrapped in a WAV. Follows the
+/// position (for the progress bar) and seeks.
 @MainActor @Observable
 final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
-    /// The message playing, if any.
+    /// What is playing: a message id, or `review` (a recording not sent yet).
     private(set) var playing: Int64?
+    /// Where it is, 0...1.
+    private(set) var progress: Double = 0
+    /// And in seconds.
+    private(set) var position: TimeInterval = 0
+
+    /// The id of a recording being reviewed before it is sent.
+    static let review: Int64 = -1
 
     @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var ticker: Timer?
 
+    /// Plays message `message` from the start, or stops it when it is playing.
     func toggle(_ message: StoredMessage) {
         if playing == message.id {
             stop()
             return
         }
+        play(message, from: 0)
+    }
+
+    /// Plays message `message` from `fraction` of it.
+    func play(_ message: StoredMessage, from fraction: Double) {
         guard case let .voice(_, mode, frames, _, data) = message.message,
               let pcm = decodeVoice(mode: mode, frames: frames, data: data)
         else { return }
+        play(pcm: pcm, id: message.id, from: fraction)
+    }
+
+    /// Plays 8 kHz samples under `id`.
+    func play(pcm: [Int16], id: Int64, from fraction: Double = 0) {
+        stop()
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
         try? AVAudioSession.sharedInstance().setActive(true)
-        player = try? AVAudioPlayer(data: Self.wav(pcm))
-        player?.delegate = self
-        player?.play()
-        playing = message.id
+        guard let p = try? AVAudioPlayer(data: Self.wav(pcm)) else { return }
+        p.delegate = self
+        p.currentTime = max(0, min(1, fraction)) * p.duration
+        p.play()
+        player = p
+        playing = id
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        tick()
+    }
+
+    /// Moves to `fraction` of what is playing.
+    func seek(_ fraction: Double) {
+        guard let p = player else { return }
+        p.currentTime = max(0, min(1, fraction)) * p.duration
+        tick()
     }
 
     func stop() {
+        ticker?.invalidate()
+        ticker = nil
         player?.stop()
         player = nil
         playing = nil
+        progress = 0
+        position = 0
+    }
+
+    private func tick() {
+        guard let p = player, p.duration > 0 else { return }
+        position = p.currentTime
+        progress = p.currentTime / p.duration
     }
 
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-        MainActor.assumeIsolated { playing = nil }
+        MainActor.assumeIsolated { stop() }
     }
 
     /// 8 kHz mono 16-bit little-endian WAV.

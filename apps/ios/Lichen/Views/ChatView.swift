@@ -718,6 +718,7 @@ private struct VoiceNote: View {
             // The core says whether this build plays the mode.
             let playable = decodeVoice(mode: mode, frames: 0, data: Data()) != nil
             let playing = model.player.playing == message.id
+            let total = TimeInterval(durationMs) / 1000
             HStack(spacing: 10) {
                 Button { model.player.toggle(message) } label: {
                     Image(systemName: playing ? "stop.fill" : "play.fill")
@@ -729,9 +730,36 @@ private struct VoiceNote: View {
                 .frame(minWidth: 44, minHeight: 44)
                 .disabled(!playable)
                 .accessibilityLabel(playing ? "Stop" : "Play the voice message")
-                Waveform(seed: data.prefix(32), color: message.outgoing ? Theme.actFg.opacity(0.55) : Theme.tx2)
+                // The waveform fills as it plays; a tap or a drag on it goes there.
+                let base = message.outgoing ? Theme.actFg.opacity(0.45) : Theme.tx2.opacity(0.55)
+                let done = message.outgoing ? Theme.actFg : Theme.tx
+                Waveform(seed: data.prefix(32), color: base)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { g in
+                            Waveform(seed: data.prefix(32), color: done)
+                                .mask(alignment: .leading) {
+                                    Rectangle().frame(width: g.size.width * (playing ? model.player.progress : 0))
+                                }
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                        guard playable else { return }
+                        let f = v.location.x / 110
+                        if playing { model.player.seek(f) } else { model.player.play(message, from: f) }
+                    })
+                    .frame(width: 110)
+                    .accessibilityElement()
+                    .accessibilityLabel("Position")
+                    .accessibilityValue(clock(playing ? model.player.position : 0))
+                    .accessibilityAdjustableAction { dir in
+                        guard playing else { return }
+                        let step = 2 / max(total, 1)
+                        model.player.seek(model.player.progress + (dir == .increment ? step : -step))
+                    }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(clock(TimeInterval(durationMs) / 1000)).font(.system(.footnote, weight: .semibold).monospacedDigit())
+                    Text(playing ? "\(clock(model.player.position)) / \(clock(total))" : clock(total))
+                        .font(.system(.footnote, weight: .semibold).monospacedDigit())
                     Text(codecName(mode))
                         .font(.system(.caption2))
                         .opacity(0.7)
@@ -858,6 +886,14 @@ private struct Composer: View {
     @State private var original: Data?
     @State private var preparing = false
     @State private var locating = false
+    /// A recording stopped and not sent yet: listened to, its quality chosen, sent or dropped.
+    @State private var review: Review?
+
+    struct Review {
+        let pcm: [Int16]
+        var mode: UInt8
+        var voice: PreparedVoice
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -895,6 +931,8 @@ private struct Composer: View {
             }
             if model.recorder.recording, model.recorder.chat == chat {
                 recordingBar
+            } else if let r = review {
+                reviewBar(r)
             } else {
                 HStack(spacing: 8) {
                     Menu {
@@ -983,6 +1021,14 @@ private struct Composer: View {
             #if DEBUG
             // -screen share: the location sheet.
             if model.debugScreen == "share" { locating = true }
+            // -screen voiceReview: the review of a 4 s recording (a hum).
+            if model.debugScreen == "voiceReview", review == nil {
+                let pcm = (0..<32_000).map { i -> Int16 in
+                    let t = Double(i) / 8_000
+                    return Int16(6_000 * sin(2 * .pi * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9)))
+                }
+                review = Review(pcm: pcm, mode: 2, voice: prepareVoice(pcm: pcm, mode: 2))
+            }
             // -screen media: the photo sheet with the demo landscape.
             if model.debugScreen == "media", isContact, image == nil,
                let ui = UIImage(named: "AppIcon") ?? Self.sampleImage(), let (rgba, w, h) = ui.rgba() {
@@ -991,6 +1037,8 @@ private struct Composer: View {
             #endif
         }
         .sheet(isPresented: $locating) { ChatShareSheet(chat: chat) }
+        // A recording under review belongs to this conversation: leaving it stops the playback.
+        .onDisappear { if model.player.playing == VoicePlayer.review { model.player.stop() } }
         .sheet(item: Binding(get: { image.map(ImageDraft.init) }, set: { image = $0?.image })) { draft in
             SendPhotoSheet(chat: chat, image: draft.image, original: original) { e in
                 image = nil
@@ -1061,6 +1109,19 @@ private struct Composer: View {
             }
             Spacer()
             Button {
+                // Stop and listen before sending.
+                guard let pcm = model.recorder.stop(keep: true) else { return }
+                let mode = UInt8(model.voiceMode)
+                review = Review(pcm: pcm, mode: mode, voice: prepareVoice(pcm: pcm, mode: mode))
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(.body, weight: .bold))
+                    .frame(width: 44, height: 44)
+                    .background(Theme.s2, in: Circle())
+                    .foregroundStyle(Theme.tx)
+            }
+            .accessibilityLabel("Stop and listen")
+            Button {
                 // To the conversation the recording was made in.
                 guard let to = model.recorder.chat, let pcm = model.recorder.stop(keep: true) else { return }
                 let voice = prepareVoice(pcm: pcm, mode: UInt8(model.voiceMode))
@@ -1075,6 +1136,71 @@ private struct Composer: View {
             .accessibilityLabel("Send")
         }
         .frame(minHeight: 44)
+    }
+
+    /// A stopped recording: play what will be sent (encoded, then decoded: Codec2's real
+    /// sound), choose its quality against its airtime, drop it or send it.
+    private func reviewBar(_ r: Review) -> some View {
+        let reviewing = model.player.playing == VoicePlayer.review
+        let modes: [UInt8] = [0, 2, 3]
+        let cost = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: r.mode, durationMs: r.voice.durationMs))
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Button(role: .destructive) {
+                    model.player.stop()
+                    review = nil
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(.callout, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                        .background(Theme.s2, in: Circle())
+                        .foregroundStyle(Theme.sos)
+                }
+                .accessibilityLabel("Discard the recording")
+                Button {
+                    if reviewing {
+                        model.player.stop()
+                    } else if let pcm = decodeVoice(mode: r.voice.mode, frames: r.voice.frames, data: r.voice.data) {
+                        model.player.play(pcm: pcm, id: VoicePlayer.review)
+                    }
+                } label: {
+                    Image(systemName: reviewing ? "stop.fill" : "play.fill")
+                        .font(.system(.subheadline, weight: .bold))
+                        .frame(width: 44, height: 44)
+                        .background(Theme.lora, in: Circle())
+                        .foregroundStyle(Color(hex: 0x141413))
+                }
+                .accessibilityLabel(reviewing ? "Stop" : "Listen to what will be sent")
+                Text(reviewing ? "\(clock(model.player.position)) / \(clock(TimeInterval(r.voice.durationMs) / 1000))"
+                               : clock(TimeInterval(r.voice.durationMs) / 1000))
+                    .font(.system(.subheadline, weight: .semibold).monospacedDigit())
+                Spacer()
+                Button {
+                    model.player.stop()
+                    if let e = model.sendVoice(r.voice, to: chat) { error = e } else { review = nil }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(.body, weight: .bold))
+                        .frame(width: 44, height: 44)
+                        .background(Theme.actBg, in: Circle())
+                        .foregroundStyle(Theme.actFg)
+                }
+                .accessibilityLabel("Send")
+            }
+            // Voice quality against time on air, for this message.
+            Picker("Voice quality", selection: Binding(get: { r.mode }, set: { m in
+                model.player.stop()
+                review = Review(pcm: r.pcm, mode: m, voice: prepareVoice(pcm: r.pcm, mode: m))
+            })) {
+                ForEach(modes, id: \.self) { m in Text(codecName(m)).tag(m) }
+            }
+            .pickerStyle(.segmented)
+            if let e = cost {
+                Text("Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Theme.tx2)
+            }
+        }
     }
 
     private func sharingText(_ share: ShareInfo) -> String {
@@ -1400,14 +1526,25 @@ private struct BridgeSection: View {
                             Text(via == 2 ? String(localized: "Downloading over Tor: it can take a minute…")
                                           : String(localized: "Downloading over iroh…"))
                                 .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                            Spacer()
+                            Button("Cancel") { model.cancelFetch(announce) }
+                                .font(.system(.footnote, weight: .semibold))
+                                .frame(minHeight: 44)
                         }
                     } else {
                         let route = model.fetchRoute(providers)
-                        let torOnly = route.first?.transport == 2
-                        Button("Download in full resolution") { model.fetch(announce) }
+                        if route.isEmpty {
+                            // Offered, but nothing here reaches the sender.
+                            Text("Unavailable: turn on iroh or Tor in Settings to fetch the original.")
+                                .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                        } else {
+                            let torOnly = route.first?.transport == 2
+                            Button(model.fetchErrors[hash] != nil ? "Try again" : "Download in full resolution") {
+                                model.fetch(announce)
+                            }
                             .buttonStyle(SecondaryButtonStyle(background: torOnly ? Theme.torBg : Theme.irohBg,
                                                               foreground: torOnly ? Theme.torFg : Theme.irohFg, height: 40))
-                            .disabled(route.isEmpty)
+                        }
                     }
                 }
             }
