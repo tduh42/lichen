@@ -116,7 +116,14 @@ fun RootScreen(model: AppModel) {
                     open = { nav.navigate("chat/${it.route}") },
                     pair = { nav.navigate("pairing") },
                     addContact = { nav.navigate("contact") },
+                    search = { nav.navigate("search-messages") },
                 )
+            }
+            composable("search-messages") {
+                SearchMessagesScreen(model, back = { nav.popBackStack() }) { chat, id ->
+                    if (id != null) model.focus = chat to id
+                    nav.navigate("chat/${chat.route}") { popUpTo("messages") }
+                }
             }
             composable("map") { MapScreen(model, sos = { nav.navigate("sos") }) }
             composable("search") { SearchScreen(model) }

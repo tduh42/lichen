@@ -20,6 +20,7 @@ import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Radio
+import com.tduhamel.lichen.core.ChatPrefs
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.LichenBridge
@@ -49,6 +50,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** The app's appearance setting: the system's by default. */
 enum class Appearance { SYSTEM, DARK, LIGHT }
@@ -154,6 +156,13 @@ class AppModel(val app: Application) {
 
     /** A chat to open (debug extra `open`, notifications later). */
     var openChat by mutableStateOf<ChatId?>(null)
+
+    /** Pinned and muted conversations (local, per identity). */
+    var chatPrefs by mutableStateOf(mapOf<ChatId, ChatPrefs>())
+        private set
+
+    /** A message to open its chat on (from a search): taken by that chat's screen. */
+    var focus by mutableStateOf<Pair<ChatId, Long>?>(null)
     var debugScreen by mutableStateOf<String?>(null)
 
     var appearance by mutableStateOf(
@@ -408,6 +417,7 @@ class AppModel(val app: Application) {
         contacts = people()
         groups = core.groups()
         conversations = core.conversations()
+        refreshChatPrefs()
     }
 
     private fun people() = core.contacts().filter { it.person }
@@ -520,12 +530,24 @@ class AppModel(val app: Application) {
         radioChanged(usb.device?.let { RadioState.Connected(it.productName ?: "USB") } ?: ble.state)
     }
 
+    /** The simulated network runs on a thread of its own, reads and writes in order: catching
+     * up after a pause can take seconds, and must not freeze the screen. */
+    private val demoContext = Dispatchers.Default.limitedParallelism(1)
+    private var demoReading = false
+
     private fun demoStep() {
         val d = demo ?: return
+        if (demoReading) return
+        demoReading = true
         val t = now()
-        // Radio off: the network goes on, and what it pushes is lost.
-        for (f in d.read(t)) if (!demoRadioOff) core.onCompanionFrame(f, t)
-        pump()
+        scope.launch {
+            val frames = withContext(demoContext) { d.read(t) }
+            demoReading = false
+            if (demo !== d) return@launch
+            // Radio off: the network goes on, and what it pushes is lost.
+            for (f in frames) if (!demoRadioOff) core.onCompanionFrame(f, t)
+            pump()
+        }
     }
 
     private fun resetState() {
@@ -544,6 +566,8 @@ class AppModel(val app: Application) {
         sos = false
         incidents = emptyMap()
         sosAlert = null
+        chatPrefs = emptyMap()
+        focus = null
         searchTarget = null
         searches = emptyList()
         searchedBy = emptyList()
@@ -649,15 +673,17 @@ class AppModel(val app: Application) {
         val t = now()
         core.setClock(System.currentTimeMillis().toULong(), t)
         core.tick(t)
+        val d = demo
+        val toDemo = mutableListOf<ByteArray>()
         while (true) {
             val f = core.pollCompanion(t) ?: break
-            val d = demo
             if (d != null) {
-                if (!demoRadioOff) d.write(f, t)
+                if (!demoRadioOff) toDemo.add(f)
             } else {
                 link?.write(f)
             }
         }
+        if (d != null && toDemo.isNotEmpty()) scope.launch(demoContext) { for (f in toDemo) d.write(f, t) }
         while (true) {
             handle(core.pollEvent() ?: break)
         }
@@ -702,7 +728,9 @@ class AppModel(val app: Application) {
             is LichenEvent.SessionEstablished -> secured = secured + e.peer.hex()
             is LichenEvent.Received -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
-                notify(ChatId.contact(e.from), name(e.from), e.message.display(res))
+                // A muted chat stays silent; SOS alerts have their own path, never muted.
+                val chat = ChatId.contact(e.from)
+                if (!isMuted(chat)) notify(chat, name(e.from), e.message.display(res))
                 debug.say?.let { say ->
                     debug = debug.copy(say = null)
                     send(say, ChatId.contact(e.from))
@@ -717,7 +745,7 @@ class AppModel(val app: Application) {
             is LichenEvent.GroupMessage -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
                 val chat = ChatId.group(e.gid)
-                notify(chat, title(chat), "${name(e.from)}: ${e.message.display(res)}")
+                if (!isMuted(chat)) notify(chat, title(chat), "${name(e.from)}: ${e.message.display(res)}")
             }
             is LichenEvent.MessageChanged -> {
                 upsert(e.message)
@@ -868,6 +896,47 @@ class AppModel(val app: Application) {
         prefs.edit { if (text.isEmpty()) remove(DRAFT + chat.route) else putString(DRAFT + chat.route, text) }
     }
 
+    /** Loads earlier pages until message `id` is there (a search result), 20 pages at most. */
+    fun loadUntil(chat: ChatId, id: Long) {
+        if (chats[chat] == null) load(chat)
+        var pages = 0
+        while (chats[chat]?.none { it.id == id } == true && olderAvailable[chat] == true && pages < 20) {
+            loadOlder(chat)
+            pages++
+        }
+    }
+
+    // ----- chat essentials (pins, mutes, search) -----
+
+    fun refreshChatPrefs() {
+        chatPrefs = core.chatPrefs().associateBy { ChatId.of(it.chat) }
+    }
+
+    fun isPinned(chat: ChatId): Boolean = chatPrefs[chat]?.pinnedAtMs != null
+
+    /** Muted now: its messages post no notification (SOS alerts still do). */
+    fun isMuted(chat: ChatId): Boolean = (chatPrefs[chat]?.mutedUntilMs ?: Long.MIN_VALUE) > System.currentTimeMillis()
+
+    fun setPinned(chat: ChatId, pinned: Boolean) {
+        runCatching { core.setPinned(chat.ref, pinned) }
+        refreshChatPrefs()
+    }
+
+    /** Mutes `chat` for `hours`, or until the user turns it back on (null). */
+    fun mute(chat: ChatId, hours: Int?) {
+        val until = hours?.let { System.currentTimeMillis() + it * 3_600_000L } ?: Long.MAX_VALUE
+        runCatching { core.setMuted(chat.ref, until) }
+        refreshChatPrefs()
+    }
+
+    fun unmute(chat: ChatId) {
+        runCatching { core.setMuted(chat.ref, null) }
+        refreshChatPrefs()
+    }
+
+    /** Text messages containing `query` (case and accents aside), newest first. */
+    fun searchMessages(query: String): List<StoredMessage> = core.searchMessages(query, 50u)
+
     fun markRead(chat: ChatId) {
         runCatching { core.markRead(chat.ref) }
         conversations = core.conversations()
@@ -949,7 +1018,7 @@ class AppModel(val app: Application) {
             if (needed && demoFixJob == null) {
                 demoFixJob = scope.launch {
                     while (isActive) {
-                        gotFix(d.myPosition())
+                        gotFix(withContext(demoContext) { d.myPosition() })
                         delay(10_000)
                     }
                 }

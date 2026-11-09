@@ -26,6 +26,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.outlined.NotificationsOff
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -78,6 +84,9 @@ private data class Row(
     val unread: Int,
     /** Our last message is still waiting (§6.1). */
     val waiting: Boolean = false,
+    /** Pinned since (Unix ms), and muted now. */
+    val pinnedAt: Long? = null,
+    val muted: Boolean = false,
 ) {
     /** A contact (can be renamed), not a group. */
     val contact: Boolean get() = !id.group
@@ -86,7 +95,13 @@ private data class Row(
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Unit, addContact: () -> Unit) {
+fun ConversationsScreen(
+    model: AppModel,
+    open: (ChatId) -> Unit,
+    pair: () -> Unit,
+    addContact: () -> Unit,
+    search: () -> Unit,
+) {
     val t = lichen
     val res = LocalResources.current
     var composing by remember { mutableStateOf(false) }
@@ -102,6 +117,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
                     chat, g.name, g.gid,
                     last?.let { preview(model, it, res) } ?: res.getQuantityString(R.plurals.members_count, g.members.size, g.members.size),
                     last?.atMs, res.getString(R.string.group_flood), model.unread(chat), last?.isWaiting == true,
+                    model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
                 ),
             )
         }
@@ -110,9 +126,15 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
         for (c in model.contacts) {
             val chat = ChatId.contact(c.key)
             val last = model.last(chat) ?: continue
-            add(Row(chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat), last.isWaiting))
+            add(
+                Row(
+                    chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat),
+                    last.isWaiting, model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
+                ),
+            )
         }
-    }.sortedWith(compareByDescending<Row> { it.atMs ?: 0L }.thenBy { it.title })
+        // Pinned first (the latest pinned on top), then the most recent.
+    }.sortedWith(compareByDescending<Row> { it.pinnedAt ?: Long.MIN_VALUE }.thenByDescending { it.atMs ?: 0L }.thenBy { it.title })
 
     Scaffold(
         containerColor = t.bg,
@@ -122,6 +144,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
             TopAppBar(
                 title = { Text(stringResource(R.string.tab_messages), fontSize = 22.sp) },
                 actions = {
+                    IconButton(onClick = search) { Icon(Icons.Outlined.Search, stringResource(R.string.search_messages), tint = t.tx) }
                     IconButton(onClick = addContact) { Icon(Icons.Outlined.QrCode2, stringResource(R.string.add_contact), tint = t.tx) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx),
@@ -153,7 +176,11 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
                         rows.forEachIndexed { i, row ->
                             if (i > 0) CardDivider(inset = 72.dp)
                             SwipeToDelete({ deleting = row }) {
-                                ChatRow(row, open = { open(row.id) }, delete = { deleting = row }, rename = { renaming = row })
+                                ChatRow(
+                                    row, open = { open(row.id) }, delete = { deleting = row }, rename = { renaming = row },
+                                    pin = { model.setPinned(row.id, row.pinnedAt == null) },
+                                    mute = { hours -> if (hours == 0) model.unmute(row.id) else model.mute(row.id, hours) },
+                                )
                             }
                         }
                     }
@@ -195,12 +222,37 @@ private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, 
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -> Unit) {
+private fun ChatRow(
+    row: Row,
+    open: () -> Unit,
+    delete: () -> Unit,
+    rename: () -> Unit,
+    pin: () -> Unit,
+    /** Hours to mute for, null: until turned back on, 0: unmute. */
+    mute: (Int?) -> Unit,
+) {
     val t = lichen
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
+    var muteMenu by remember { mutableStateOf(false) }
     Box {
     DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+        DropdownMenuItem(
+            text = { Text(stringResource(if (row.pinnedAt != null) R.string.unpin else R.string.pin)) },
+            leadingIcon = { Icon(Icons.Outlined.PushPin, null) },
+            onClick = {
+                menu = false
+                pin()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(if (row.muted) R.string.unmute else R.string.mute)) },
+            leadingIcon = { Icon(if (row.muted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff, null) },
+            onClick = {
+                menu = false
+                if (row.muted) mute(0) else muteMenu = true
+            },
+        )
         if (row.contact) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.rename)) },
@@ -220,6 +272,18 @@ private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -
             },
         )
     }
+    // SOS alerts are never muted.
+    DropdownMenu(muteMenu, { muteMenu = false }, containerColor = t.s1) {
+        listOf(1 to R.string.mute_1h, 8 to R.string.mute_8h, null to R.string.mute_always).forEach { (hours, label) ->
+            DropdownMenuItem(
+                text = { Text(stringResource(label)) },
+                onClick = {
+                    muteMenu = false
+                    mute(hours)
+                },
+            )
+        }
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -231,10 +295,19 @@ private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -
         Avatar(row.title, row.key)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    row.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                )
+                // The name and its glyphs take the room left; the time stays at the end.
+                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        row.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (row.pinnedAt != null) {
+                        Icon(Icons.Filled.PushPin, stringResource(R.string.pinned), tint = t.tx2, modifier = Modifier.padding(start = 6.dp).size(14.dp))
+                    }
+                    if (row.muted) {
+                        Icon(Icons.Filled.NotificationsOff, stringResource(R.string.muted), tint = t.tx2, modifier = Modifier.padding(start = 4.dp).size(14.dp))
+                    }
+                }
                 row.atMs?.let { Text(shortTime(context, it), fontSize = 13.sp, color = t.tx2) }
             }
             if (row.preview.isNotEmpty()) {
@@ -254,11 +327,12 @@ private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -
                         Modifier
                             .heightIn(min = 20.dp)
                             .widthIn(min = 20.dp)
-                            .background(t.actBg, CircleShape)
+                            // Grey when muted.
+                            .background(if (row.muted) t.s2 else t.actBg, CircleShape)
                             .padding(horizontal = 6.dp)
                             .semantics { contentDescription = label },
                         contentAlignment = Alignment.Center,
-                    ) { Text("${row.unread}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = t.actFg) }
+                    ) { Text("${row.unread}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (row.muted) t.tx2 else t.actFg) }
                 }
             }
         }

@@ -1,5 +1,14 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.height
+import kotlinx.coroutines.delay
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import android.content.ClipData
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -122,8 +131,22 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             model.recorder.cancel(chat)
         }
     }
+    // The first message that was unread when the chat opened, and how many were: the divider
+    // stays there until the chat is left. A message opened from a search is highlighted.
+    var dividerBefore by remember(chat) { mutableStateOf<Long?>(null) }
+    var unreadAtOpen by remember(chat) { mutableIntStateOf(0) }
+    var highlight by remember(chat) { mutableStateOf<Long?>(null) }
     LaunchedEffect(chat) {
         model.load(chat)
+        model.focus?.takeIf { it.first == chat }?.let { (_, id) ->
+            model.focus = null
+            model.loadUntil(chat, id)
+            highlight = id
+        }
+        // Before marking them read: where the unread messages start.
+        val unread = model.chats[chat].orEmpty().filter { !it.outgoing && !it.read }
+        dividerBefore = unread.firstOrNull()?.id
+        unreadAtOpen = unread.size
         model.markRead(chat)
         Notifications.clear(context, chat)
         // Debug extra `screen`: the group's details, or the verification sheet.
@@ -137,14 +160,15 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     val days = messages.indices.count { it == 0 || dayOf(messages[it - 1].atMs) != dayOf(messages[it].atMs) }
     val failedLast = messages.lastOrNull { it.outgoing }?.status is MessageStatus.Failed
     val top = (if (model.historyError[chat] != null) 1 else 0) + (if (model.olderAvailable[chat] == true) 1 else 0)
-    val rows = top + 1 + days + messages.size + (if (failedLast) 1 else 0)
+    val divider = if (messages.any { it.id == dividerBefore }) 1 else 0
+    val rows = top + 1 + days + divider + messages.size + (if (failedLast) 1 else 0)
     var opened by remember(chat) { mutableStateOf(false) }
     var unseen by remember(chat) { mutableIntStateOf(0) }
     // At the bottom: the last row (or the one before it) is on screen.
     val scope = rememberCoroutineScope()
     var keepAt by remember(chat) { mutableStateOf<Long?>(null) }
     LaunchedEffect(messages.firstOrNull()?.id) {
-        keepAt?.let { list.scrollToItem(rowOf(model, chat, it)) }
+        keepAt?.let { list.scrollToItem(rowOf(model, chat, it, dividerBefore)) }
         keepAt = null
     }
     val atBottom by remember {
@@ -160,7 +184,14 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         // the bottom or sent it; else it counts in the pill. Older pages move nothing (keys).
         val last = messages.lastOrNull() ?: return@LaunchedEffect
         if (!opened) {
-            list.scrollToItem(rows - 1)
+            // On a message from a search, or on the unread divider, else at the end.
+            // (A message from a search is scrolled to once its page is laid out, below.)
+            val d = dividerBefore
+            when {
+                highlight != null -> Unit
+                d != null -> list.scrollToItem(rowOf(model, chat, d, d) - 1)
+                else -> list.scrollToItem(rows - 1)
+            }
             opened = true
         } else if (last.id != lastSeen) {
             if (atBottom || last.outgoing) {
@@ -174,6 +205,18 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.markRead(chat)
     }
     LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
+    // A message from a search: once the earlier pages holding it are in the list.
+    LaunchedEffect(highlight, messages.size) {
+        val h = highlight ?: return@LaunchedEffect
+        if (messages.none { it.id == h }) return@LaunchedEffect
+        list.scrollToItem(maxOf(0, rowOf(model, chat, h, dividerBefore) - 2))
+    }
+    LaunchedEffect(highlight) {
+        if (highlight != null) {
+            delay(2_000)
+            highlight = null
+        }
+    }
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
@@ -225,7 +268,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) {
                     item(key = "day" + dayOf(m.atMs)) { DaySeparator(context, m.atMs) }
                 }
-                item(key = m.id) { MessageBubble(model, m, chat.group) { error = it } }
+                if (m.id == dividerBefore) item(key = "unread") { UnreadDivider(unreadAtOpen) }
+                item(key = m.id) { MessageBubble(model, m, chat.group, highlight == m.id) { error = it } }
             }
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
@@ -274,12 +318,13 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
 }
 
 /** The list row of message `id` (the rows: history state, session line, a separator per day,
- * the messages). */
-private fun rowOf(model: AppModel, chat: ChatId, id: Long): Int {
+ * the unread divider before message `divider`, the messages). */
+private fun rowOf(model: AppModel, chat: ChatId, id: Long, divider: Long?): Int {
     val messages = model.chats[chat].orEmpty()
     var row = (if (model.historyError[chat] != null) 1 else 0) + (if (model.olderAvailable[chat] == true) 1 else 0) + 1
     for ((i, m) in messages.withIndex()) {
         if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) row++
+        if (m.id == divider) row++
         if (m.id == id) return row
         row++
     }
@@ -369,23 +414,66 @@ private fun FailureBanner(model: AppModel, m: StoredMessage, resend: () -> Unit)
     }
 }
 
+/** "3 unread messages", before the first one that was unread when the chat opened. */
 @Composable
-private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, onError: (String) -> Unit) {
+private fun UnreadDivider(count: Int) {
+    val t = lichen
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(Modifier.weight(1f).height(1.dp).background(t.line))
+        Text(pluralStringResource(R.plurals.unread_messages, count, count), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2)
+        Box(Modifier.weight(1f).height(1.dp).background(t.line))
+    }
+}
+
+@Composable
+private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, highlighted: Boolean, onError: (String) -> Unit) {
     val t = lichen
     val res = LocalResources.current
     val author = m.author
     val status = m.status
-    // Long press: cancel a text that is still waiting, send a failed one again (§6.1).
+    val text = (m.message as? Message.Text)?.text
+    // Long press: copy or select a text; cancel one that is still waiting, send a failed one
+    // again (§6.1).
     val cancellable = status is MessageStatus.Waiting && !status.started
     val retriable = m.outgoing && status is MessageStatus.Failed && (m.message is Message.Text || m.message is Message.Voice)
     var menu by remember { mutableStateOf(false) }
-    val press = if (cancellable || retriable) Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true }) else Modifier
+    var selecting by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val press = if (text != null || cancellable || retriable) Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true }) else Modifier
+    // A text reads as one: author, text, time and status. Media keep their buttons.
+    val merge = if (text != null) Modifier.semantics(mergeDescendants = true) {} else Modifier
     Column(
-        Modifier.fillMaxWidth().padding(start = if (m.outgoing) 64.dp else 0.dp, end = if (m.outgoing) 0.dp else 64.dp).then(press),
+        Modifier
+            .fillMaxWidth()
+            .background(if (highlighted) t.warnBg else Color.Transparent, RoundedCornerShape(20.dp))
+            .padding(start = if (m.outgoing) 64.dp else 0.dp, end = if (m.outgoing) 0.dp else 64.dp)
+            .then(press)
+            .then(merge),
         horizontalAlignment = if (m.outgoing) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+            if (text != null) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.copy)) },
+                    onClick = {
+                        menu = false
+                        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("lichen", text))) }
+                    },
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.select_text)) },
+                    onClick = {
+                        menu = false
+                        selecting = true
+                    },
+                )
+            }
             if (cancellable) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.cancel_sending)) },
@@ -440,6 +528,24 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, o
             Text(footer, fontSize = 11.sp, color = t.tx2)
         }
     }
+    if (selecting && text != null) SelectTextDialog(text) { selecting = false }
+}
+
+/** A message's text, to select part of it. */
+@Composable
+private fun SelectTextDialog(text: String, close: () -> Unit) {
+    val t = lichen
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(R.string.select_text)) },
+        text = {
+            SelectionContainer(Modifier.verticalScroll(rememberScrollState())) {
+                Text(text, fontSize = 16.sp, color = t.tx)
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text(stringResource(R.string.done), color = t.tx) } },
+        containerColor = t.s1,
+    )
 }
 
 @Composable
