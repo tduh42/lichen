@@ -11,7 +11,7 @@ The apps need the message history, the contacts learned from groups (the node do
 
 - SQLite (`rusqlite`, bundled) in `lc-core::store`, driven by `lc-ffi`: the core stays IO-free, the binding layer records what the core reports and restores contacts and groups at start. One database per MeshCore node (`node-<first 8 bytes of the key>.sqlite` in the app's data directory), opened as soon as the node's key is known (at launch with the key from the Keychain, otherwise at connection).
 - Stored: messages (content, author, time, status, fragments, airtime, SNR, read), contacts, and a snapshot per group: state, members, our key epoch, the other members' sender keys and replay windows.
-- Not stored: sessions (ADR-0003), our own group sender key and its counter. After a restart, each group draws a new key under the next epoch and sends it to the members once the node is connected (protocol.md §10.2). Messages still sending when the app stopped are marked failed (`Interrupted`) for the user to resend.
+- Not stored: sessions (ADR-0003), our own group sender key and its counter. After a restart, each group draws a new key under the next epoch and sends it to the members once the node is connected (protocol.md §10.2). Messages still sending when the app stopped are marked failed (`Interrupted`) for the user to resend; since ADR-0018, unfinished texts are kept as intents and sent again, and only media are marked failed.
 - The demo network uses a database in memory.
 
 ## Consequences

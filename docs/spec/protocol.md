@@ -228,7 +228,18 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 
 An unknown type is handed to the app as "unsupported", with no error on the network.
 
-Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006). The receiver drops a datagram byte-identical to one received from the same peer within the last hour. TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
+Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006), or after a restart (§6.1). The receiver drops a datagram byte-identical to one received from the same peer within the last hour. TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
+
+### 6.1 Outbox and restart (ADR-0018)
+
+What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT messages, direct or group, and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
+
+1. **States.** *Queued*: accepted, nothing transmitted; the user may cancel it, and it disappears. *Sending*: at least one frame of it went out; it can no longer be cancelled, since it may already have arrived. Then one of: *delivered* (direct: the `COMPLETE` ACK, §7.1), *sent to the group* (the first copy of every fragment has left, §10.3; nobody acknowledges), or *failed* with a reason.
+2. **Radio away.** A TEXT is accepted while the companion is disconnected. Nothing is transmitted and no timer or retry counter advances until it is back (no frame can leave, so none is counted lost); a transfer in progress resumes where it stopped. When the companion that comes back is another node, sessions and paths, which belonged to the old node, are dropped; the messages stay queued.
+3. **Restart.** At start, unfinished TEXT intents (queued or sending) are submitted again with their stored plaintext. Unfinished media fail ("interrupted"): media are never queued for later (§13.4).
+4. **Expiry.** An unfinished message that is not being transmitted when its expiry passes stops and fails ("expired"): never sent if it was queued; if it was sending, its transfer is abandoned (ABORT `CANCELLED`, §7.2) and it may have arrived. A message being transmitted at that moment finishes normally.
+5. **Retry.** A failed message sent again by the user is the same message: the same stored plaintext, a new expiry. No failure is retried automatically: an unreachable peer would cost shared airtime for nothing.
+6. **Duplicates.** A receiver that keeps a history drops a TEXT or VOICE whose plaintext equals one it already stored from the same sender in the same conversation (direct, or group and author), however long ago. With the sender's timestamp in the plaintext, this covers a resend after a restart on either side and a group message sent again under a new sender key. It changes nothing on the air.
 
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 
@@ -344,7 +355,7 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
 - **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's identity key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
 - **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept, 16 at most, for 10 minutes, and tried again when a new sender key arrives. Sender keys travel pairwise over several hops and often arrive after a member's first post.
-- **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006).
+- **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006). For the sender, a message is "sent to the group" once the first copy of every fragment has left (§6.1); until then it waits like any queued message.
 
 
 ### 10.4 Leaving (pairwise datagram, type 0x12 GROUP_LEAVE, ADR-0017)
