@@ -136,7 +136,10 @@ struct GroupView: View {
 
     @ViewBuilder private func keysBanner(_ g: GroupInfo) -> some View {
         let others = max(g.members.count - 1, 0)
-        if Int(g.keysKnown) >= others {
+        // Alone in it (a group just created, to invite in person): no keys to wait for.
+        if others == 0 {
+            EmptyView()
+        } else if Int(g.keysKnown) >= others {
             Banner(kind: .ok, title: String(localized: "Sender keys up to date"),
                    message: String(localized: "\(Int(g.keysKnown)) / \(others) members' keys received; a departure rotates them."))
         } else {

@@ -126,7 +126,7 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
                 }
                 error?.let { item { Banner(BannerKind.SOS, it) } }
                 item {
-                    PrimaryButton(stringResource(R.string.create_group), enabled = groupName.isNotBlank() && selected.isNotEmpty()) {
+                    PrimaryButton(stringResource(R.string.create_group), enabled = groupName.isNotBlank()) {
                         val members = model.contacts.filter { it.key.contentHashCode().toString() in selected }.map { it.key }
                         error = model.createGroup(groupName.trim(), members)
                         if (error == null) {

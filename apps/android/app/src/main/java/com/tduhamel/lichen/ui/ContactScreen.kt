@@ -47,6 +47,9 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.tduhamel.lichen.core.InviteInfo
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.model.AppModel
@@ -60,11 +63,33 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
     val t = lichen
     var scanning by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<ContactInfo?>(null) }
+    var invite by remember { mutableStateOf<Pair<String, InviteInfo>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // A contact card adds the contact; a group invitation asks to join (§10.5).
+    fun scanned(text: String) {
+        error = null
+        if (text.trim().startsWith("lichen:1:g:")) {
+            val (info, e) = model.parseInvite(text)
+            invite = info?.let { text to it }
+            error = e
+            return
+        }
+        val (contact, e) = model.addCard(text)
+        added = contact
+        error = e
+    }
+    // Debug extra `screen join`: the demo's invitation, scanned.
+    LaunchedEffect(model.debugInvite) {
+        model.debugInvite?.let {
+            model.debugInvite = null
+            scanning = true
+            scanned(it)
+        }
+    }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
-            title = { Text(stringResource(R.string.add_contact), fontSize = 22.sp) },
+            title = { Text(stringResource(if (invite == null) R.string.add_contact else R.string.join_group), fontSize = 22.sp) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx, navigationIconContentColor = t.tx),
         )
         Column(
@@ -76,7 +101,10 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             val c = added
-            if (c != null) {
+            val inv = invite
+            if (inv != null) {
+                JoinPanel(model, inv.first, inv.second, done = next ?: back)
+            } else if (c != null) {
                 VerifyPanel(model, c.key, null) {
                     // Their conversation opens, ready for the first message (the list shows
                     // contacts once there is a message).
@@ -95,11 +123,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
                     }
                 }
                 if (scanning) {
-                    ScanPanel { text ->
-                        val (contact, e) = model.addCard(text)
-                        added = contact
-                        error = e
-                    }
+                    ScanPanel { text -> scanned(text) }
                 } else {
                     MyCode(model)
                 }
@@ -108,6 +132,68 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
                 if (next != null) SecondaryButton(stringResource(R.string.later), onClick = next)
             }
         }
+    }
+}
+
+/** A scanned group invitation (§10.5): what it is, then the request to the admin until the
+ * group arrives. */
+@Composable
+private fun JoinPanel(model: AppModel, text: String, info: InviteInfo, done: () -> Unit) {
+    val t = lichen
+    val admin = info.adminName.ifEmpty { stringResource(R.string.the_admin) }
+    val name = info.groupName.ifEmpty { stringResource(R.string.the_group) }
+    var asked by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    fun join() {
+        error = model.acceptInvite(text, info)
+        if (error == null) asked = true
+    }
+    // Debug extra `joinNow`: as if "Join" were tapped.
+    LaunchedEffect(Unit) { if (model.debugJoinNow && !info.member && !info.expired) join() }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            Modifier.fillMaxWidth().background(t.s1, CardShape).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Avatar(name, info.admin, 48.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(stringResource(R.string.join_q, name), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+                Text(stringResource(R.string.invitation_from, admin), fontSize = 14.sp, color = t.tx2)
+            }
+        }
+        val gid = model.joinedByInvite[info.admin.hex()]
+        when {
+            gid != null -> {
+                Banner(BannerKind.OK, stringResource(R.string.joined_group, name), stringResource(R.string.joined_group_note, admin))
+                PrimaryButton(stringResource(R.string.open_group)) {
+                    model.openChat = ChatId.group(gid)
+                    done()
+                }
+            }
+            asked -> {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    CircularProgressIndicator(Modifier.size(20.dp), color = t.tx, strokeWidth = 2.dp)
+                    Text(stringResource(R.string.asking_admin, admin), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx)
+                }
+                Text(stringResource(R.string.asking_note), fontSize = 13.sp, color = t.tx2)
+                SecondaryButton(stringResource(R.string.close), onClick = done)
+            }
+            info.member -> {
+                Banner(BannerKind.OK, stringResource(R.string.already_in, name))
+                SecondaryButton(stringResource(R.string.close), onClick = done)
+            }
+            info.expired -> {
+                Banner(BannerKind.WARN, stringResource(R.string.invite_expired_title), stringResource(R.string.ask_new_code, admin))
+                SecondaryButton(stringResource(R.string.close), onClick = done)
+            }
+            else -> {
+                Text(stringResource(R.string.join_note, admin), fontSize = 13.sp, color = t.tx2)
+                PrimaryButton(stringResource(R.string.join)) { join() }
+                SecondaryButton(stringResource(R.string.cancel), onClick = done)
+            }
+        }
+        error?.let { Banner(BannerKind.SOS, it) }
     }
 }
 

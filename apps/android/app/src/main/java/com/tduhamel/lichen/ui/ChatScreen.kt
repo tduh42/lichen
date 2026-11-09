@@ -162,7 +162,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         Notifications.clear(context, chat)
         // Debug extra `screen`: the group's details, or the verification sheet.
         when (model.debugScreen) {
-            "group" -> if (chat.group) details()
+            "group", "invite" -> if (chat.group) details()
             "verify" -> if (!chat.group) verifying = ByteArray(0)
         }
     }

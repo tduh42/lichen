@@ -240,7 +240,7 @@
     <string name="to_verify">to verify</string>
     <string name="new_group">New group</string>
     <string name="group_name">Group name</string>
-    <string name="new_group_note">Members are contacts you have already talked with in lichen. Every member gets the others\' sender keys over encrypted sessions. Group messages are flooded and signed.</string>
+    <string name="new_group_note">Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group\'s QR code. Every member gets the others\' sender keys over encrypted sessions. Group messages are flooded and signed.</string>
     <string name="create_group">Create group</string>
     <string name="group_details">Group details</string>
     <string name="network">Network</string>
@@ -602,4 +602,35 @@
     <string name="discard_recording">Discard the recording</string>
     <string name="listen_before_sending">Listen to what will be sent</string>
     <string name="voice_quality_cost">Voice quality vs time on air: %1$s · ≈ %2$s s</string>
+    <!-- Group invitations by QR code (§10.5) -->
+    <string name="err_no_clock">The phone\'s clock is not set yet.</string>
+    <string name="err_invite_expired">This invitation has expired: ask for a new one.</string>
+    <string name="joined_with_invite">%1$s joined with your invitation</string>
+    <string name="sunday_hike">Sunday hike</string>
+    <string name="invite_unreadable">This invitation could not be read.</string>
+    <string name="invite_qr">Invite with a QR code</string>
+    <string name="invite_qr_note">People next to you scan it and join, for 10 minutes</string>
+    <string name="invite_contacts">Invite contacts</string>
+    <string name="valid_for">Valid for %1$d:%2$02d</string>
+    <string name="code_expired">This code has expired</string>
+    <string name="new_code">New code</string>
+    <string name="invite_scan_hint">In lichen: Add a contact › Scan. They join %1$s and you become a verified contact for them.</string>
+    <string name="joined_header">Joined</string>
+    <string name="invite_warning">Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.</string>
+    <string name="invitation_code_for">Invitation code for %1$s</string>
+    <string name="join_group">Join a group</string>
+    <string name="join_q">Join %1$s?</string>
+    <string name="invitation_from">Invitation from %1$s</string>
+    <string name="the_admin">the admin</string>
+    <string name="the_group">the group</string>
+    <string name="join">Join</string>
+    <string name="join_note">%1$s becomes a verified contact: you scanned their code in person. Members can read what was sent under the group\'s current keys.</string>
+    <string name="asking_admin">Asking %1$s to add you…</string>
+    <string name="asking_note">Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.</string>
+    <string name="already_in">You are already in %1$s</string>
+    <string name="invite_expired_title">This invitation has expired</string>
+    <string name="ask_new_code">Ask %1$s to show a new code.</string>
+    <string name="joined_group">You joined %1$s</string>
+    <string name="joined_group_note">%1$s added you. The other members\' keys arrive over the next minutes.</string>
+    <string name="open_group">Open the group</string>
 </resources>

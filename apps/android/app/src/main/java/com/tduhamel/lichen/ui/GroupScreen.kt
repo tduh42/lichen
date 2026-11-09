@@ -41,6 +41,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.outlined.PersonAddAlt
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.text.style.TextAlign
+import com.tduhamel.lichen.core.InviteCode
+import kotlinx.coroutines.delay
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.GroupInfo
@@ -62,6 +77,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     var error by remember { mutableStateOf<String?>(null) }
     var consent by remember(g?.gid?.hex()) { mutableStateOf(g?.let { model.searchConsent(it.gid) } ?: false) }
     var inviting by remember { mutableStateOf(false) }
+    var showingCode by remember { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
     var sharing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
@@ -97,8 +113,26 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                     }
                 }
             }
-            if (isAdmin) {
+            if (isAdmin && g.members.size > 1) {
                 item { Text(stringResource(R.string.remove_hint), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp)) }
+            }
+            if (isAdmin) {
+                item { SectionLabel(stringResource(R.string.invite), Modifier.padding(top = 10.dp)) }
+                item {
+                    CardList {
+                        Box(Modifier.clickable { showingCode = true }) {
+                            CardRow(stringResource(R.string.invite_qr), stringResource(R.string.invite_qr_note)) {
+                                Icon(Icons.Outlined.QrCode2, null, tint = t.tx2)
+                            }
+                        }
+                        CardDivider()
+                        Box(Modifier.clickable { inviting = true }) {
+                            CardRow(stringResource(R.string.invite_contacts)) {
+                                Icon(Icons.Outlined.PersonAddAlt, null, tint = t.tx2)
+                            }
+                        }
+                    }
+                }
             }
             item { SectionLabel(stringResource(R.string.location), Modifier.padding(top = 10.dp)) }
             item {
@@ -131,18 +165,20 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                 }
             }
             item {
-                Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (isAdmin) SecondaryButton(stringResource(R.string.invite), Modifier.weight(1f)) { inviting = true }
-                    SecondaryButton(
-                        stringResource(if (isAdmin) R.string.close_group else R.string.leave_group), Modifier.weight(1f),
-                        background = t.sosBg, foreground = t.sosFg,
-                    ) { leaving = true }
-                }
+                SecondaryButton(
+                    stringResource(if (isAdmin) R.string.close_group else R.string.leave_group), Modifier.padding(top = 12.dp),
+                    background = t.sosBg, foreground = t.sosFg,
+                ) { leaving = true }
             }
         }
     }
     if (sharing && g != null) ChatShareSheet(model, ChatId.group(g.gid)) { sharing = false }
     if (inviting && g != null) InviteDialog(model, g) { inviting = false }
+    if (showingCode && g != null) InviteCodeSheet(model, g) { showingCode = false }
+    // Debug extra `screen invite`: the code sheet at once.
+    LaunchedEffect(g?.gid?.hex()) {
+        if (model.debugScreen == "invite" && g != null && model.nodeKey?.contentEquals(g.admin) == true) showingCode = true
+    }
     if (leaving && g != null) {
         val admin = model.nodeKey?.contentEquals(g.admin) == true
         AlertDialog(
@@ -190,6 +226,8 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
 private fun KeysBanner(g: GroupInfo) {
     val others = maxOf(g.members.size - 1, 0)
     val known = g.keysKnown.toInt()
+    // Alone in it (a group just created, to invite in person): no keys to wait for.
+    if (others == 0) return
     if (known >= others) {
         Banner(BannerKind.OK, stringResource(R.string.sender_keys_up_to_date), stringResource(R.string.sender_keys_received, known, others))
     } else {
@@ -278,4 +316,79 @@ private fun InviteDialog(model: AppModel, g: GroupInfo, dismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel), color = t.tx) } },
         containerColor = t.s1,
     )
+}
+
+/**
+ * The group's invitation as a QR code (the admin, protocol.md §10.5): people next to them scan it
+ * and join while it is on screen, for 10 minutes. Closing it revokes the code.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InviteCodeSheet(model: AppModel, g: GroupInfo, dismiss: () -> Unit) {
+    val t = lichen
+    var code by remember { mutableStateOf<InviteCode?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // Members when the sheet opened: the others joined with this code.
+    val before = remember { g.members.map { it.key.hex() }.toSet() }
+    var nowS by remember { mutableLongStateOf(System.currentTimeMillis() / 1000) }
+    fun make() {
+        code?.let { model.revokeInvite(it.token) }
+        val (c, e) = model.createInvite(g.gid)
+        code = c
+        error = e
+    }
+    LaunchedEffect(Unit) {
+        make()
+        while (true) {
+            delay(1000)
+            nowS = System.currentTimeMillis() / 1000
+        }
+    }
+    DisposableEffect(Unit) { onDispose { code?.let { model.revokeInvite(it.token) } } }
+    val group = model.groups.firstOrNull { it.gid.contentEquals(g.gid) } ?: g
+    val joined = group.members.filter { it.key.hex() !in before }
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(group.name, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+            code?.let { c ->
+                val left = c.expires.toLong() - nowS
+                QrImage(
+                    c.text, stringResource(R.string.invitation_code_for, group.name),
+                    Modifier.widthIn(max = 280.dp).fillMaxWidth().alpha(if (left > 0) 1f else 0.15f),
+                )
+                if (left > 0) {
+                    Text(stringResource(R.string.valid_for, (left / 60).toInt(), (left % 60).toInt()), style = figure(17.sp), color = t.tx)
+                } else {
+                    Banner(BannerKind.WARN, stringResource(R.string.code_expired), action = stringResource(R.string.new_code) to { make() })
+                }
+                Text(stringResource(R.string.invite_scan_hint, group.name), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
+            }
+            error?.let { Banner(BannerKind.SOS, it) }
+            if (joined.isNotEmpty()) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SectionLabel(stringResource(R.string.joined_header))
+                    CardList {
+                        joined.forEachIndexed { i, m ->
+                            if (i > 0) CardDivider(inset = 68.dp)
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Avatar(m.name, m.key, 40.dp)
+                                Text(m.name, fontSize = 16.sp, color = t.tx, modifier = Modifier.weight(1f))
+                                Icon(Icons.Filled.CheckCircle, null, tint = t.okFg)
+                            }
+                        }
+                    }
+                }
+            }
+            Text(stringResource(R.string.invite_warning), fontSize = 13.sp, color = t.tx2)
+            PrimaryButton(stringResource(R.string.done), onClick = dismiss)
+        }
+    }
 }

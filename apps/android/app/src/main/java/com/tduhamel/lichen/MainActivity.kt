@@ -106,6 +106,8 @@ class MainActivity : ComponentActivity() {
             offline = e.getInt("offline"),
             online = e.getInt("online"),
             expiry = e.getInt("expiry"),
+            inviteDemo = e.getBoolean("inviteDemo"),
+            joinNow = e.getBoolean("joinNow"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")

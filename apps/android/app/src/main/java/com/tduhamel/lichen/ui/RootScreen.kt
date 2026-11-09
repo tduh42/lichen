@@ -79,6 +79,8 @@ fun RootScreen(model: AppModel) {
             "contact", "identity", "sos" -> nav.navigate(model.debugScreen!!)
         }
     }
+    // Debug extra `screen join`: the scanner opens on the demo's invitation.
+    LaunchedEffect(model.debugInvite) { if (model.debugInvite != null) nav.navigate("contact") }
 
     Scaffold(
         containerColor = lichen.bg,

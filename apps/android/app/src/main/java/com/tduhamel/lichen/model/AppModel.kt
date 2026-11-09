@@ -10,6 +10,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.InviteInfo
+import com.tduhamel.lichen.core.InviteCode
 import com.tduhamel.lichen.core.Budget
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.Conversation
@@ -103,6 +105,10 @@ class AppModel(val app: Application) {
         val online: Int = 0,
         /** Texts expire after that many seconds instead of 24 h. */
         val expiry: Int = 0,
+        /** Léa, next to you on the demo network, scans the group invitation you show. */
+        val inviteDemo: Boolean = false,
+        /** A scanned invitation is joined at once, as if "Join" were tapped. */
+        val joinNow: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -156,6 +162,18 @@ class AppModel(val app: Application) {
 
     /** A chat to open (debug extra `open`, notifications later). */
     var openChat by mutableStateOf<ChatId?>(null)
+
+    /** Invitations we accepted, by admin node (hex): the group's name, until it arrives (§10.5). */
+    var joining by mutableStateOf(mapOf<String, String>())
+        private set
+
+    /** Groups that arrived after we accepted their invitation, by admin node (hex). */
+    var joinedByInvite by mutableStateOf(mapOf<String, ByteArray>())
+        private set
+
+    /** An invitation to scan at launch (debug `screen join`: Camille's, on the demo). */
+    var debugInvite by mutableStateOf<String?>(null)
+    private var debugInviteMade = false
 
     /** Pinned and muted conversations (local, per identity). */
     var chatPrefs by mutableStateOf(mapOf<ChatId, ChatPrefs>())
@@ -329,6 +347,9 @@ class AppModel(val app: Application) {
     private var demoJob: Job? = null
     private var wake: Job? = null
     private var debug = DebugOptions()
+
+    /** Debug extra `joinNow`: a scanned invitation is joined at once. */
+    val debugJoinNow: Boolean get() = debug.joinNow
     private var debugApplied = false
     private var debugVoiceSent = false
 
@@ -723,6 +744,7 @@ class AppModel(val app: Application) {
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
+                debugInvites()
                 debugFill()
                 debugOpen()
                 debugVoice()
@@ -750,9 +772,19 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
+                if (e is LichenEvent.GroupJoined && joining.containsKey(e.admin.hex())) {
+                    joining = joining - e.admin.hex()
+                    joinedByInvite = joinedByInvite + (e.admin.hex() to e.gid)
+                }
                 groups = core.groups()
                 contacts = people()
                 debugOpen()
+            }
+            is LichenEvent.MemberJoined -> {
+                groups = core.groups()
+                contacts = people()
+                val chat = ChatId.group(e.gid)
+                if (!isMuted(chat)) notify(chat, title(chat), res.getString(R.string.joined_with_invite, name(e.node)))
             }
             is LichenEvent.GroupMessage -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
@@ -837,6 +869,26 @@ class AppModel(val app: Application) {
         debugFilled = true
         runCatching { core.demoFillHistory(ChatId.contact(c.key).ref, debug.fill.toUInt()) }
         conversations = core.conversations()
+    }
+
+    /** Debug `screen invite`: a group of your own, alone, to invite people with a QR code;
+     * `screen join`: Camille shows an invitation to a group of hers, and you scan it. */
+    private fun debugInvites() {
+        if (!isDemo || debugInviteMade) return
+        when (debugScreen) {
+            "invite" -> {
+                val gid = runCatching { core.createGroup(res.getString(R.string.sunday_hike), emptyList(), now()) }.getOrNull() ?: return
+                debugInviteMade = true
+                groups = core.groups()
+                openChat = ChatId.group(gid)
+            }
+            "join" -> {
+                val d = demo ?: return
+                if (contacts.none { it.name == "Camille" }) return
+                debugInviteMade = true
+                scope.launch { debugInvite = withContext(demoContext) { d.camilleInvite() } }
+            }
+        }
     }
 
     private fun debugOpen() {
@@ -1507,6 +1559,41 @@ class AppModel(val app: Application) {
     fun createGroup(name: String, members: List<ByteArray>): String? = try {
         core.createGroup(name, members, now())
         groups = core.groups()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    // ----- invitations by QR code (protocol.md §10.5) -----
+
+    /** An invitation to a group we administer, for its QR code: 10 minutes, any number of
+     * people, until revoked; or an error to show. */
+    fun createInvite(gid: ByteArray): Pair<InviteCode?, String?> = try {
+        val code = core.createInvite(gid, now())
+        // Debug extra `inviteDemo`: Léa, next to you on the demo network, scans it.
+        val d = demo
+        if (debug.inviteDemo && d != null) scope.launch(demoContext) { d.guestScans(code.text) }
+        code to null
+    } catch (e: LichenException) {
+        null to e.display(res)
+    }
+
+    /** The invitation's screen closed: its code admits no one any more. */
+    fun revokeInvite(token: ByteArray) = core.revokeInvite(token)
+
+    fun parseInvite(text: String): Pair<InviteInfo?, String?> = try {
+        core.parseInvite(text.trim(), now()) to null
+    } catch (e: LichenException) {
+        null to if (e is LichenException.BadCode) res.getString(R.string.invite_unreadable) else e.display(res)
+    }
+
+    /** Asks the admin of a scanned invitation to add us (they become a verified contact); the
+     * group arrives as `GroupJoined`. */
+    fun acceptInvite(text: String, info: InviteInfo): String? = try {
+        core.acceptInvite(text.trim(), now())
+        joining = joining + (info.admin.hex() to info.groupName)
+        contacts = people()
         pump()
         null
     } catch (e: LichenException) {
