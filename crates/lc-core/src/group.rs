@@ -254,7 +254,14 @@ type GapPlan = ((PubKey, u8), Option<PubKey>, Vec<u32>, Vec<u32>);
 fn recoverable(body: &[u8]) -> bool {
     matches!(
         body.first(),
-        Some(&(content::TEXT | content::REPLY | content::REACTION | content::ANNOUNCE))
+        Some(
+            &(content::TEXT
+                | content::REPLY
+                | content::REACTION
+                | content::ANNOUNCE
+                | content::STICKER
+                | content::GIF)
+        )
     )
 }
 

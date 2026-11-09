@@ -143,6 +143,10 @@ enum Action {
         target: lc_core::content::MessageRef,
         emoji: &'static str,
     },
+    /// Camille answers a sticker with one of hers (§6.3).
+    CamilleSticker,
+    /// Julien posts a GIF in the group, a sunrise over the mountains (§6.3).
+    JulienGif,
 }
 
 struct Demo {
@@ -348,6 +352,35 @@ impl Demo {
                     .net
                     .with_core(from, |c, now| c.send_datagram(&app_key, reaction, now));
             }
+            Action::CamilleSticker => {
+                let sticker = Content::Sticker {
+                    sent_at: ts,
+                    set: lc_core::content::STICKER_SET_NOTO,
+                    emoji: "🥳".into(),
+                }
+                .encode();
+                let camille = self.camille;
+                let _ = self
+                    .net
+                    .with_core(camille, |c, now| c.send_datagram(&app_key, sticker, now));
+            }
+            Action::JulienGif => {
+                if let Some(gid) = self.group {
+                    let gif = Content::Gif {
+                        sent_at: ts,
+                        provider: lc_core::content::GIF_GIPHY,
+                        width: 200,
+                        height: 102,
+                        id: "l4KidtNiqsus526M8".into(),
+                        title: "sunset sunrise denali".into(),
+                    }
+                    .encode();
+                    let julien = self.julien;
+                    let _ = self
+                        .net
+                        .with_core(julien, |c, now| c.send_group_datagram(&gid, &gif, now));
+                }
+            }
             Action::GuestJoins(text) => {
                 let Some(guest) = self.guest else {
                     return;
@@ -510,6 +543,13 @@ impl Demo {
                     }
                     Event::Received {
                         from,
+                        content: Content::Sticker { .. },
+                        ..
+                    } if from == app_key && bot == self.camille => {
+                        self.pending.push((now + 5 * SEC, Action::CamilleSticker));
+                    }
+                    Event::Received {
+                        from,
                         content: Content::Image { full, media_id, .. },
                         ..
                     } if from == app_key && bot == self.camille => {
@@ -607,6 +647,7 @@ impl Demo {
                     text: "Leaving the col now, at the refuge around 2 pm.".into(),
                 },
             ));
+            self.pending.push((now + 50 * SEC, Action::JulienGif));
         }
     }
 }
@@ -1370,6 +1411,8 @@ mod persistence {
             | Message::Announce { .. }
             | Message::Notice { .. }
             | Message::File { .. }
+            | Message::Sticker { .. }
+            | Message::Gif { .. }
             | Message::Other { .. } => "",
         }
     }

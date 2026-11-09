@@ -287,3 +287,35 @@ async fn over_n0_relay_only() {
     a.shutdown().await;
     b.shutdown().await;
 }
+
+/// A GIPHY GIF by id (§6.3), directly then through Tor; an id that does not exist is not
+/// found, and anything but letters and digits is refused before any connection. Needs the
+/// Internet: `cargo test -p lc-bridge --release -- --ignored gif --nocapture`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs the Internet and the Tor network"]
+async fn gif_by_id() {
+    let b = Bridge::new(None).unwrap();
+    let t = std::time::Instant::now();
+    let webp = b.gif("3o7abKhOpu0NwenH3O", false).await.unwrap();
+    eprintln!("direct: {} bytes in {:?}", webp.len(), t.elapsed());
+    assert_eq!(webp.get(..4), Some(&b"RIFF"[..]));
+    assert_eq!(webp.get(8..12), Some(&b"WEBP"[..]));
+    assert_eq!(
+        b.gif("zzzznotagif000", false).await,
+        Err(FetchError::NotFound)
+    );
+    assert_eq!(b.gif("../../x", false).await, Err(FetchError::NotFound));
+    let root = std::env::temp_dir().join(format!("lc-bridge-gif-{}", std::process::id()));
+    b.start_tor(
+        &root.join("state"),
+        &root.join("cache"),
+        Duration::from_secs(180),
+    )
+    .await
+    .unwrap();
+    let t = std::time::Instant::now();
+    let over_tor = b.gif("3o7abKhOpu0NwenH3O", true).await.unwrap();
+    eprintln!("through Tor: {} bytes in {:?}", over_tor.len(), t.elapsed());
+    assert_eq!(over_tor, webp);
+    b.shutdown().await;
+}

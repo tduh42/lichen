@@ -226,6 +226,68 @@ fn group_recovery() {
 }
 
 #[test]
+fn stickers_and_gifs() {
+    let t = load();
+    for v in entries(&t, "sticker") {
+        let c = Content::Sticker {
+            sent_at: ts(v),
+            set: v["set"].as_integer().unwrap() as u8,
+            emoji: s(v, "emoji").to_owned(),
+        };
+        assert_eq!(c.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(
+            Content::decode(&h(v, "datagram")),
+            Some(c),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "gif") {
+        let c = Content::Gif {
+            sent_at: ts(v),
+            provider: v["provider"].as_integer().unwrap() as u8,
+            width: v["width"].as_integer().unwrap() as u16,
+            height: v["height"].as_integer().unwrap() as u16,
+            id: s(v, "id").to_owned(),
+            title: s(v, "title").to_owned(),
+        };
+        assert_eq!(c.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(
+            Content::decode(&h(v, "datagram")),
+            Some(c),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "bad_content") {
+        assert!(
+            !matches!(
+                Content::decode(&h(v, "datagram")),
+                Some(Content::Sticker { .. } | Content::Gif { .. })
+            ),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "gif_link") {
+        assert_eq!(
+            lc_core::content::gif_link(s(v, "text")),
+            Some((s(v, "id").to_owned(), s(v, "title").to_owned())),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "not_gif_link") {
+        assert_eq!(
+            lc_core::content::gif_link(s(v, "text")),
+            None,
+            "{}",
+            s(v, "name")
+        );
+    }
+}
+
+#[test]
 fn small_files() {
     let t = load();
     for v in entries(&t, "file") {

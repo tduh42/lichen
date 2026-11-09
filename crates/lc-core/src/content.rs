@@ -39,6 +39,13 @@ pub type MessageRef = [u8; 8];
 
 /// Longest reaction, in bytes (§6.2).
 pub const REACTION_MAX: usize = 32;
+/// Longest sticker emoji, GIF id and GIF title, in bytes (§6.3).
+pub const STICKER_MAX: usize = 32;
+pub const GIF_ID_MAX: usize = 32;
+pub const GIF_TITLE_MAX: usize = 64;
+/// Sticker set 1: Noto Animated Emoji; GIF provider 1: GIPHY (§6.3).
+pub const STICKER_SET_NOTO: u8 = 1;
+pub const GIF_GIPHY: u8 = 1;
 
 /// The reference of the message with `plaintext` (`content_type ‖ body` as sent) by `author`
 /// (an identity key), §6.2.
@@ -124,6 +131,21 @@ pub enum Content {
         sent_at: u32,
         name: String,
         data: Vec<u8>,
+    },
+    /// An animated sticker every phone ships, named by its emoji (§6.3).
+    Sticker {
+        sent_at: u32,
+        set: u8,
+        emoji: String,
+    },
+    /// A GIF a provider serves, named by its id (§6.3): the receiver builds the address.
+    Gif {
+        sent_at: u32,
+        provider: u8,
+        width: u16,
+        height: u16,
+        id: String,
+        title: String,
     },
     /// A membership notice this phone records in a group's conversation (§6, 0xE0, local:
     /// never on the air).
@@ -360,6 +382,35 @@ impl Content {
                 }
                 v
             }
+            Content::Sticker {
+                sent_at,
+                set,
+                emoji,
+            } => {
+                let mut v = vec![content::STICKER];
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.push(*set);
+                v.extend_from_slice(emoji.as_bytes());
+                v
+            }
+            Content::Gif {
+                sent_at,
+                provider,
+                width,
+                height,
+                id,
+                title,
+            } => {
+                let mut v = vec![content::GIF];
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.push(*provider);
+                v.extend_from_slice(&width.to_le_bytes());
+                v.extend_from_slice(&height.to_le_bytes());
+                v.push(id.len().min(255) as u8);
+                v.extend_from_slice(id.as_bytes());
+                v.extend_from_slice(title.as_bytes());
+                v
+            }
             Content::Notice(n) => {
                 let mut v = vec![NOTICE];
                 n.encode_body(&mut v);
@@ -430,6 +481,19 @@ impl Content {
                 media_id: *id,
                 full,
             })
+        } else if content_type == content::STICKER {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let (&set, emoji) = rest.split_first()?;
+            if emoji.is_empty() || emoji.len() > STICKER_MAX {
+                return None;
+            }
+            Some(Content::Sticker {
+                sent_at: u32::from_le_bytes(*ts),
+                set,
+                emoji: std::str::from_utf8(emoji).ok()?.to_owned(),
+            })
+        } else if content_type == content::GIF {
+            decode_gif(body)
         } else if content_type == NOTICE {
             Notice::decode_body(body).map(Content::Notice)
         } else {
@@ -498,6 +562,98 @@ fn decode_announce(body: &[u8]) -> Option<Content> {
         providers,
         name: String::from_utf8(name.to_vec()).ok()?,
     }))
+}
+
+/// A GIF id: 1..=32 ASCII letters and digits (§6.3), so that it can only ever be one path
+/// segment of the provider's fixed address.
+fn gif_id_ok(id: &[u8]) -> bool {
+    (1..=GIF_ID_MAX).contains(&id.len()) && id.iter().all(u8::is_ascii_alphanumeric)
+}
+
+/// `ts ‖ provider ‖ width u16 ‖ height u16 ‖ id_len ‖ id ‖ title` (§6.3).
+fn decode_gif(body: &[u8]) -> Option<Content> {
+    let (head, rest) = body.split_first_chunk::<10>()?;
+    let [t0, t1, t2, t3, provider, w0, w1, h0, h1, n] = *head;
+    let (id, title) = rest.split_at_checked(usize::from(n))?;
+    if !gif_id_ok(id) || title.len() > GIF_TITLE_MAX {
+        return None;
+    }
+    Some(Content::Gif {
+        sent_at: u32::from_le_bytes([t0, t1, t2, t3]),
+        provider,
+        width: u16::from_le_bytes([w0, w1]),
+        height: u16::from_le_bytes([h0, h1]),
+        id: std::str::from_utf8(id).ok()?.to_owned(),
+        title: std::str::from_utf8(title).ok()?.to_owned(),
+    })
+}
+
+/// The GIPHY id and title of a link to a GIF (§6.3), when `text` is only that link:
+/// `https://giphy.com/gifs/[slug-]{id}`, `https://media[0-9].giphy.com/media/[v1.…/]{id}/…`,
+/// `https://i.giphy.com/{id}.(gif|webp)`. The slug, if any, gives the title.
+pub fn gif_link(text: &str) -> Option<(String, String)> {
+    let rest = text.trim().strip_prefix("https://")?;
+    if rest.contains(char::is_whitespace) {
+        return None;
+    }
+    let rest = rest.split(['?', '#']).next()?;
+    let (host, path) = rest.split_once('/')?;
+    let host = host.to_ascii_lowercase();
+    let mut segments = path.split('/').filter(|s| !s.is_empty());
+    let (id, title) = match host.as_str() {
+        "giphy.com" | "www.giphy.com" => {
+            if segments.next()? != "gifs" {
+                return None;
+            }
+            let last = segments.next()?;
+            match last.rsplit_once('-') {
+                Some((slug, id)) => (id, slug.replace('-', " ")),
+                None => (last, String::new()),
+            }
+        }
+        "i.giphy.com" => {
+            let first = segments.next()?;
+            if first == "media" {
+                (media_id(&mut segments)?, String::new())
+            } else {
+                let (id, ext) = first.rsplit_once('.')?;
+                if !matches!(ext, "gif" | "webp") {
+                    return None;
+                }
+                (id, String::new())
+            }
+        }
+        h if h == "media.giphy.com"
+            || (h.len() == 16
+                && h.starts_with("media")
+                && h.as_bytes().get(5).is_some_and(u8::is_ascii_digit)
+                && h.ends_with(".giphy.com")) =>
+        {
+            if segments.next()? != "media" {
+                return None;
+            }
+            (media_id(&mut segments)?, String::new())
+        }
+        _ => return None,
+    };
+    if !gif_id_ok(id.as_bytes()) {
+        return None;
+    }
+    let mut title = title.trim().to_owned();
+    while title.len() > GIF_TITLE_MAX {
+        title.pop();
+    }
+    Some((id.to_owned(), title))
+}
+
+/// The id in `/media/[v1.…/]{id}/…`.
+fn media_id<'a>(segments: &mut impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    let first = segments.next()?;
+    if first.starts_with("v1.") {
+        segments.next()
+    } else {
+        Some(first)
+    }
 }
 
 /// `ts ‖ 2 ‖ name_len ‖ name ‖ data`, or `ts ‖ 3 ‖ name_len ‖ name ‖ size u32 ‖ deflate`

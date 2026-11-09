@@ -204,6 +204,13 @@ impl LichenBridge {
         })
     }
 
+    /// GIPHY GIF `id` (§6.3): its animated WebP, else the GIF itself, through Tor when
+    /// `via_tor` (Tor must be started), directly otherwise. The address is built from the id,
+    /// host and path fixed by the spec.
+    pub async fn gif(&self, id: String, via_tor: bool) -> Result<Vec<u8>, BridgeError> {
+        Ok(self.bridge.gif(&id, via_tor).await?)
+    }
+
     /// Fetches announced content from one of its providers (`transport` 1 iroh, 2 Tor),
     /// verified against its hash.
     pub async fn fetch(

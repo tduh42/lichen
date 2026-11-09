@@ -1,4 +1,4 @@
-# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an
+# lichen content vectors (protocol.md §6.2, §6.3, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an
 # independent oracle (Python hashlib). Do not edit by hand: regenerate instead.
 
 [[ref]]
@@ -386,4 +386,165 @@ datagram = "02010000000305612e74787404000000ffffffff"
 [[bad_file]]
 name = "compressed: size cut"
 datagram = "02010000000305612e7478740400"
+
+[[sticker]]
+name = "tears of joy"
+ts = 1793002000
+set = 1
+emoji = "😂"
+datagram = "0a100adf6a01f09f9882"
+
+[[sticker]]
+name = "red heart, with its variation selector"
+ts = 1793002001
+set = 1
+emoji = "❤️"
+datagram = "0a110adf6a01e29da4efb88f"
+
+[[sticker]]
+name = "an unknown set"
+ts = 1793002002
+set = 9
+emoji = "👍"
+datagram = "0a120adf6a09f09f918d"
+
+[[gif]]
+name = "a GIPHY GIF with its title"
+ts = 1793002010
+provider = 1
+width = 200
+height = 150
+id = "3o7abKhOpu0NwenH3O"
+title = "happy dance"
+datagram = "0b1a0adf6a01c800960012336f3761624b684f7075304e77656e48334f68617070792064616e6365"
+
+[[gif]]
+name = "no title, shape unknown"
+ts = 1793002011
+provider = 1
+width = 0
+height = 0
+id = "l0MYt5jPR6QX5pnqM"
+title = ""
+datagram = "0b1b0adf6a0100000000116c304d5974356a505236515835706e714d"
+
+[[gif]]
+name = "an unknown provider"
+ts = 1793002012
+provider = 7
+width = 200
+height = 200
+id = "abc123"
+title = "a cat"
+datagram = "0b1c0adf6a07c800c800066162633132336120636174"
+
+[[bad_content]]
+name = "sticker, no emoji"
+datagram = "0a0100000001"
+
+[[bad_content]]
+name = "sticker, 33 bytes"
+datagram = "0a0100000001616161616161616161616161616161616161616161616161616161616161616161"
+
+[[bad_content]]
+name = "sticker, not UTF-8"
+datagram = "0a0100000001ff"
+
+[[bad_content]]
+name = "gif, empty id"
+datagram = "0b0100000001000000000078"
+
+[[bad_content]]
+name = "gif, an id with a slash"
+datagram = "0b0100000001000000000561622f6364"
+
+[[bad_content]]
+name = "gif, an id with a dot"
+datagram = "0b010000000100000000022e2e"
+
+[[bad_content]]
+name = "gif, an id of 33 bytes"
+datagram = "0b01000000010000000021616161616161616161616161616161616161616161616161616161616161616161"
+
+[[bad_content]]
+name = "gif, a title of 65 bytes"
+datagram = "0b010000000100000000036162637474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474747474"
+
+[[bad_content]]
+name = "gif, id length past the end"
+datagram = "0b01000000010000000014616263"
+
+[[bad_content]]
+name = "gif, cut in the header"
+datagram = "0b010000"
+
+[[gif_link]]
+name = "a GIF page"
+text = "https://giphy.com/gifs/happy-dance-3o7abKhOpu0NwenH3O"
+id = "3o7abKhOpu0NwenH3O"
+title = "happy dance"
+
+[[gif_link]]
+name = "www, a query"
+text = "https://www.giphy.com/gifs/cat-funny-l0MYt5jPR6QX5pnqM?utm_source=x"
+id = "l0MYt5jPR6QX5pnqM"
+title = "cat funny"
+
+[[gif_link]]
+name = "a page without a slug"
+text = "https://giphy.com/gifs/l0MYt5jPR6QX5pnqM"
+id = "l0MYt5jPR6QX5pnqM"
+title = ""
+
+[[gif_link]]
+name = "the media host"
+text = "https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif"
+id = "3o7abKhOpu0NwenH3O"
+title = ""
+
+[[gif_link]]
+name = "a numbered media host, v1 token"
+text = "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjEx/3o7abKhOpu0NwenH3O/200w.webp"
+id = "3o7abKhOpu0NwenH3O"
+title = ""
+
+[[gif_link]]
+name = "i.giphy.com"
+text = "https://i.giphy.com/3o7abKhOpu0NwenH3O.webp"
+id = "3o7abKhOpu0NwenH3O"
+title = ""
+
+[[gif_link]]
+name = "spaces around"
+text = "  https://giphy.com/gifs/wave-abc123  "
+id = "abc123"
+title = "wave"
+
+[[not_gif_link]]
+name = "plain http"
+text = "http://giphy.com/gifs/happy-3o7abKhOpu0NwenH3O"
+
+[[not_gif_link]]
+name = "another host"
+text = "https://evil.example/gifs/happy-3o7abKhOpu0NwenH3O"
+
+[[not_gif_link]]
+name = "a look-alike host"
+text = "https://giphy.com.evil.example/gifs/x-abc"
+
+[[not_gif_link]]
+name = "text around the link"
+text = "look https://giphy.com/gifs/x-abc"
+
+[[not_gif_link]]
+name = "a stickers page"
+text = "https://giphy.com/stickers/x-abc"
+
+[[not_gif_link]]
+name = "an id with a dot"
+text = "https://i.giphy.com/ab.cd.webp.png"
+
+[[not_gif_link]]
+name = "a path climbing out"
+text = "https://media.giphy.com/media/../x/giphy.gif"
 

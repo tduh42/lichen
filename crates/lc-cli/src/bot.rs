@@ -117,6 +117,17 @@ impl Bot {
                         Err(e) => println!("  !! reaction not sent: {e:?}"),
                     }
                 }
+                // A sticker or a GIF is echoed as it came, with our time (§6.3).
+                if self.echo
+                    && let Some(echo) = echoed(content)
+                {
+                    match core.send_datagram(from, echo.encode(), now) {
+                        Ok(id) => {
+                            println!("  -> {} {} (message {id})", short(from), describe(&echo))
+                        }
+                        Err(e) => println!("  !! echo not sent: {e:?}"),
+                    }
+                }
                 if let Some(reply) = self.reply(core, from, content, &radio, now) {
                     report(
                         core.send_text(from, &reply, unix_now(), now),
@@ -165,8 +176,11 @@ impl Bot {
                 format!("echo: {text} · {radio}")
             }
             // A reaction is not answered (it would be an endless exchange); a notice never
-            // comes from the air.
-            Content::Reaction { .. } | Content::Notice(_) => return None,
+            // comes from the air; a sticker or a GIF is echoed as it is.
+            Content::Reaction { .. }
+            | Content::Notice(_)
+            | Content::Sticker { .. }
+            | Content::Gif { .. } => return None,
             Content::Voice { frames, data, .. } => format!(
                 "got your voice message: {:.1} s in {} bytes · {radio}",
                 f32::from(*frames) * 0.04,
@@ -352,6 +366,42 @@ fn wav(pcm: &[i16], rate: u32) -> Vec<u8> {
         out.extend_from_slice(&s.to_le_bytes());
     }
     out
+}
+
+/// A sticker or a GIF sent back as it came, with our own time (§6.3).
+fn echoed(content: &Content) -> Option<Content> {
+    match content {
+        Content::Sticker { set, emoji, .. } => Some(Content::Sticker {
+            sent_at: unix_now(),
+            set: *set,
+            emoji: emoji.clone(),
+        }),
+        Content::Gif {
+            provider,
+            width,
+            height,
+            id,
+            title,
+            ..
+        } => Some(Content::Gif {
+            sent_at: unix_now(),
+            provider: *provider,
+            width: *width,
+            height: *height,
+            id: id.clone(),
+            title: title.clone(),
+        }),
+        _ => None,
+    }
+}
+
+/// How a sticker or a GIF reads in the log.
+fn describe(content: &Content) -> String {
+    match content {
+        Content::Sticker { emoji, .. } => format!("sticker {emoji}"),
+        Content::Gif { id, title, .. } => format!("GIF {id} \"{title}\""),
+        _ => String::new(),
+    }
 }
 
 #[cfg(test)]

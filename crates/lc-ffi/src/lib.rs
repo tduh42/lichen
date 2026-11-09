@@ -363,6 +363,23 @@ pub enum Message {
         name: String,
         data: Vec<u8>,
     },
+    /// An animated sticker the apps ship (§6.3): `set` 1 is Noto Animated Emoji, named by
+    /// its emoji. Without its animation, show the emoji.
+    Sticker {
+        sent_at: u32,
+        set: u8,
+        emoji: String,
+    },
+    /// A GIF its provider serves (§6.3): `provider` 1 is GIPHY; load it with
+    /// `LichenBridge::gif`. `width` × `height` 0 when unknown.
+    Gif {
+        sent_at: u32,
+        provider: u8,
+        width: u16,
+        height: u16,
+        id: String,
+        title: String,
+    },
     /// A membership change in a group, recorded by this phone (ADR-0021): `kind` is one of
     /// `lc_core::content::notice` (1 created, 2 added us, 3 joined, 4 left, 5 removed, 6 no
     /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left).
@@ -476,6 +493,30 @@ impl From<Content> for Message {
                 sent_at,
                 name,
                 data,
+            },
+            Content::Sticker {
+                sent_at,
+                set,
+                emoji,
+            } => Self::Sticker {
+                sent_at,
+                set,
+                emoji,
+            },
+            Content::Gif {
+                sent_at,
+                provider,
+                width,
+                height,
+                id,
+                title,
+            } => Self::Gif {
+                sent_at,
+                provider,
+                width,
+                height,
+                id,
+                title,
             },
             Content::Notice(n) => Self::Notice {
                 kind: n.kind,
@@ -1011,6 +1052,10 @@ pub enum QuoteKind {
     Photo,
     /// A file; the excerpt is its name.
     File,
+    /// A sticker; the excerpt is its emoji.
+    Sticker,
+    /// A GIF; the excerpt is its title.
+    Gif,
     Other,
 }
 
@@ -1300,6 +1345,8 @@ impl Inner {
             }
             Content::Voice { .. } => (QuoteKind::Voice, String::new()),
             Content::File { name, .. } => (QuoteKind::File, name.clone()),
+            Content::Sticker { emoji, .. } => (QuoteKind::Sticker, emoji.clone()),
+            Content::Gif { title, .. } => (QuoteKind::Gif, title.clone()),
             Content::Announce(a) if a.kind == 3 => (QuoteKind::File, a.name.clone()),
             Content::Image { .. } | Content::Announce(_) => (QuoteKind::Photo, String::new()),
             _ => (QuoteKind::Other, String::new()),
@@ -1515,7 +1562,11 @@ impl Inner {
     fn is_resend(&self, chat: &Chat, author: Option<&PubKey>, content: &Content) -> bool {
         matches!(
             content,
-            Content::Text { .. } | Content::Reply { .. } | Content::Voice { .. }
+            Content::Text { .. }
+                | Content::Reply { .. }
+                | Content::Voice { .. }
+                | Content::Sticker { .. }
+                | Content::Gif { .. }
         ) && self
             .store
             .as_ref()
@@ -2010,14 +2061,16 @@ impl LichenCore {
             return Err(LichenError::NotAllowed);
         }
         let datagram = m.content.encode();
-        let text = matches!(m.content, Content::Text { .. } | Content::Reply { .. });
+        let text = matches!(
+            m.content,
+            Content::Text { .. }
+                | Content::Reply { .. }
+                | Content::Sticker { .. }
+                | Content::Gif { .. }
+        );
         let id = match (&m.chat, &m.content) {
-            (Chat::Contact(k), Content::Text { .. } | Content::Reply { .. }) => {
-                i.core.send_datagram(k, datagram, now_ms)?
-            }
-            (Chat::Group(g), Content::Text { .. } | Content::Reply { .. }) => {
-                i.core.send_group_datagram(g, &datagram, now_ms)?
-            }
+            (Chat::Contact(k), _) if text => i.core.send_datagram(k, datagram, now_ms)?,
+            (Chat::Group(g), _) if text => i.core.send_group_datagram(g, &datagram, now_ms)?,
             (Chat::Contact(k), Content::Voice { .. }) => i.core.send_media(k, datagram, now_ms)?,
             _ => return Err(LichenError::NotAllowed),
         };
@@ -2652,6 +2705,61 @@ impl LichenCore {
             ),
         };
         i.stored_outgoing(c, content, id, estimate, true, None)
+    }
+
+    /// Sends a sticker (§6.3): a message like a text, through the outbox (§6.1), to a contact
+    /// or a group. `emoji` names a Noto Animated Emoji the apps ship.
+    pub fn send_sticker(
+        &self,
+        chat: ChatRef,
+        emoji: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        if emoji.is_empty() || emoji.len() > lc_core::content::STICKER_MAX {
+            return Err(LichenError::TooLarge);
+        }
+        self.send_message(
+            chat,
+            Content::Sticker {
+                sent_at,
+                set: lc_core::content::STICKER_SET_NOTO,
+                emoji,
+            },
+            now_ms,
+        )
+    }
+
+    /// Sends a GIPHY GIF by its id (§6.3): only the id, its shape and title travel. A message
+    /// like a text, through the outbox (§6.1), to a contact or a group.
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_gif(
+        &self,
+        chat: ChatRef,
+        id: String,
+        width: u16,
+        height: u16,
+        title: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let mut title = title;
+        while title.len() > lc_core::content::GIF_TITLE_MAX {
+            title.pop();
+        }
+        let content = Content::Gif {
+            sent_at,
+            provider: lc_core::content::GIF_GIPHY,
+            width,
+            height,
+            id,
+            title,
+        };
+        // What a receiver would refuse is not sent (an id that is not letters and digits).
+        if Content::decode(&content.encode()).as_ref() != Some(&content) {
+            return Err(LichenError::NotAllowed);
+        }
+        self.send_message(chat, content, now_ms)
     }
 
     /// Reacts to message `message_id` with `emoji` (empty removes our reaction), §6.2: shown
@@ -3426,6 +3534,46 @@ pub fn seed_from_phrase(words: Vec<String>) -> Result<Vec<u8>, LichenError> {
     lc_core::identity::seed_from_phrase(&words)
         .map(|s| s.to_vec())
         .ok_or(LichenError::BadCode)
+}
+
+impl LichenCore {
+    /// A message that waits in the outbox like a text (§6.1).
+    fn send_message(
+        &self,
+        chat: ChatRef,
+        content: Content,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let c = chat.to_store()?;
+        let mut i = self.lock();
+        i.writable()?;
+        i.last_now = now_ms;
+        let datagram = content.encode();
+        let (id, estimate) = match c {
+            Chat::Contact(k) => (
+                i.core.send_datagram(&k, datagram.clone(), now_ms)?,
+                i.core.estimate_send(&k, datagram.len()),
+            ),
+            Chat::Group(g) => (
+                i.core.send_group_datagram(&g, &datagram, now_ms)?,
+                i.core.estimate_group_send(datagram.len()),
+            ),
+        };
+        i.stored_outgoing(c, content, id, estimate, true, None)
+    }
+}
+
+/// A GIPHY link turned into a GIF (§6.3): its id and title (from the link's slug, may be
+/// empty). None unless `text` is only such a link.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct GifLink {
+    pub id: String,
+    pub title: String,
+}
+
+#[uniffi::export]
+pub fn gif_link(text: String) -> Option<GifLink> {
+    lc_core::content::gif_link(&text).map(|(id, title)| GifLink { id, title })
 }
 
 /// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report

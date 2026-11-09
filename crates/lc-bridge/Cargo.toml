@@ -24,6 +24,12 @@ tor-config.workspace = true
 tor-rtcompat.workspace = true
 safelog.workspace = true
 futures.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+http-body-util.workspace = true
+tokio-rustls.workspace = true
+rustls.workspace = true
+webpki-roots.workspace = true
 
 [dev-dependencies]
 tor-llcrypto.workspace = true

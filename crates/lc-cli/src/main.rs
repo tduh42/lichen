@@ -227,6 +227,8 @@ fn describe(core: &Core, e: &Event) -> String {
                 }
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
+                Content::Sticker { emoji, .. } => format!("sticker {emoji}"),
+                Content::Gif { id, title, .. } => format!("GIF {id} \"{title}\""),
                 Content::File { name, data, .. } => {
                     format!("file \"{name}\", {} bytes", data.len())
                 }
@@ -302,6 +304,8 @@ fn describe(core: &Core, e: &Event) -> String {
                 }
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
+                Content::Sticker { emoji, .. } => format!("sticker {emoji}"),
+                Content::Gif { id, title, .. } => format!("GIF {id} \"{title}\""),
                 Content::File { name, data, .. } => {
                     format!("file \"{name}\", {} bytes", data.len())
                 }

@@ -77,6 +77,8 @@ pub mod content {
     pub const SEARCH: u8 = 0x07;
     pub const REPLY: u8 = 0x08;
     pub const REACTION: u8 = 0x09;
+    pub const STICKER: u8 = 0x0A;
+    pub const GIF: u8 = 0x0B;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
     pub const GROUP_LEAVE: u8 = 0x12;

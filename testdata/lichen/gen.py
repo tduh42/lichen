@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
-GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), group invitations and GROUP_JOIN (§10.5), small
+GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), group invitations and GROUP_JOIN (§10.5), stickers, GIFs and GIPHY links (§6.3), small
 files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
@@ -13,6 +13,7 @@ import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 GROUP_MISSING, GROUP_RESEND = 0x15, 0x16
+STICKER, GIF = 0x0A, 0x0B
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -34,7 +35,7 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §6.3, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -353,3 +354,95 @@ for nm, d in bad_files:
     print(f'name = "{nm}"')
     print(f'datagram = "{d.hex()}"')
     print()
+
+
+def sticker(ts: int, s: int, emoji: str) -> bytes:
+    return bytes([STICKER]) + struct.pack("<I", ts) + bytes([s]) + emoji.encode()
+
+
+def gif(ts: int, provider: int, w: int, h: int, gid: str, title: str) -> bytes:
+    i = gid.encode()
+    return bytes([GIF]) + struct.pack("<IBHHB", ts, provider, w, h, len(i)) + i + title.encode()
+
+
+stickers = [
+    ("tears of joy", 1_793_002_000, 1, "\U0001F602"),
+    ("red heart, with its variation selector", 1_793_002_001, 1, "\u2764\ufe0f"),
+    ("an unknown set", 1_793_002_002, 9, "\U0001F44D"),
+]
+for nm, ts, st, emoji in stickers:
+    print("[[sticker]]")
+    print(f'name = "{nm}"')
+    print(f"ts = {ts}")
+    print(f"set = {st}")
+    print(f'emoji = "{emoji}"')
+    print(f'datagram = "{sticker(ts, st, emoji).hex()}"')
+    print()
+
+gifs = [
+    ("a GIPHY GIF with its title", 1_793_002_010, 1, 200, 150, "3o7abKhOpu0NwenH3O", "happy dance"),
+    ("no title, shape unknown", 1_793_002_011, 1, 0, 0, "l0MYt5jPR6QX5pnqM", ""),
+    ("an unknown provider", 1_793_002_012, 7, 200, 200, "abc123", "a cat"),
+]
+for nm, ts, prov, w, h, gid_, title in gifs:
+    print("[[gif]]")
+    print(f'name = "{nm}"')
+    print(f"ts = {ts}")
+    print(f"provider = {prov}")
+    print(f"width = {w}")
+    print(f"height = {h}")
+    print(f'id = "{gid_}"')
+    print(f'title = "{title}"')
+    print(f'datagram = "{gif(ts, prov, w, h, gid_, title).hex()}"')
+    print()
+
+bad_content = [
+    ("sticker, no emoji", sticker(1, 1, "")),
+    ("sticker, 33 bytes", sticker(1, 1, "a" * 33)),
+    ("sticker, not UTF-8", bytes([STICKER]) + struct.pack("<I", 1) + bytes([1, 0xFF])),
+    ("gif, empty id", gif(1, 1, 0, 0, "", "x")),
+    ("gif, an id with a slash", gif(1, 1, 0, 0, "ab/cd", "")),
+    ("gif, an id with a dot", gif(1, 1, 0, 0, "..", "")),
+    ("gif, an id of 33 bytes", gif(1, 1, 0, 0, "a" * 33, "")),
+    ("gif, a title of 65 bytes", gif(1, 1, 0, 0, "abc", "t" * 65)),
+    ("gif, id length past the end", bytes([GIF]) + struct.pack("<IBHHB", 1, 1, 0, 0, 20) + b"abc"),
+    ("gif, cut in the header", bytes([GIF, 1, 0, 0])),
+]
+for nm, d in bad_content:
+    print("[[bad_content]]")
+    print(f'name = "{nm}"')
+    print(f'datagram = "{d.hex()}"')
+    print()
+
+links = [
+    ("a GIF page", "https://giphy.com/gifs/happy-dance-3o7abKhOpu0NwenH3O", "3o7abKhOpu0NwenH3O", "happy dance"),
+    ("www, a query", "https://www.giphy.com/gifs/cat-funny-l0MYt5jPR6QX5pnqM?utm_source=x", "l0MYt5jPR6QX5pnqM", "cat funny"),
+    ("a page without a slug", "https://giphy.com/gifs/l0MYt5jPR6QX5pnqM", "l0MYt5jPR6QX5pnqM", ""),
+    ("the media host", "https://media.giphy.com/media/3o7abKhOpu0NwenH3O/giphy.gif", "3o7abKhOpu0NwenH3O", ""),
+    ("a numbered media host, v1 token", "https://media4.giphy.com/media/v1.Y2lkPTc5MGI3NjEx/3o7abKhOpu0NwenH3O/200w.webp", "3o7abKhOpu0NwenH3O", ""),
+    ("i.giphy.com", "https://i.giphy.com/3o7abKhOpu0NwenH3O.webp", "3o7abKhOpu0NwenH3O", ""),
+    ("spaces around", "  https://giphy.com/gifs/wave-abc123  ", "abc123", "wave"),
+]
+for nm, text, gid_, title in links:
+    print("[[gif_link]]")
+    print(f'name = "{nm}"')
+    print(f'text = "{text}"')
+    print(f'id = "{gid_}"')
+    print(f'title = "{title}"')
+    print()
+
+not_links = [
+    ("plain http", "http://giphy.com/gifs/happy-3o7abKhOpu0NwenH3O"),
+    ("another host", "https://evil.example/gifs/happy-3o7abKhOpu0NwenH3O"),
+    ("a look-alike host", "https://giphy.com.evil.example/gifs/x-abc"),
+    ("text around the link", "look https://giphy.com/gifs/x-abc"),
+    ("a stickers page", "https://giphy.com/stickers/x-abc"),
+    ("an id with a dot", "https://i.giphy.com/ab.cd.webp.png"),
+    ("a path climbing out", "https://media.giphy.com/media/../x/giphy.gif"),
+]
+for nm, text in not_links:
+    print("[[not_gif_link]]")
+    print(f'name = "{nm}"')
+    print(f'text = "{text}"')
+    print()
+

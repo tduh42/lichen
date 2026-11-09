@@ -5,6 +5,7 @@
 //! Async (tokio), unlike the IO-free core: the app runs it next to the core.
 
 mod tor;
+pub mod web;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -466,6 +467,50 @@ impl Bridge {
             }
             _ => Err(FetchError::Protocol("unknown transport".into())),
         }
+    }
+
+    /// GIPHY GIF `id` (§6.3, ADR-0025): its animated WebP, else the GIF itself, through Tor
+    /// when `via_tor` (Tor must be started), directly otherwise.
+    pub async fn gif(&self, id: &str, via_tor: bool) -> Result<Vec<u8>, FetchError> {
+        let paths = web::giphy_paths(id).ok_or(FetchError::NotFound)?;
+        let client = if via_tor {
+            Some(
+                self.tor
+                    .lock()
+                    .await
+                    .as_ref()
+                    .map(tor::Tor::client)
+                    .ok_or_else(|| FetchError::Unreachable("Tor is not started".into()))?,
+            )
+        } else {
+            None
+        };
+        let limit = Duration::from_secs(if via_tor { 90 } else { 30 });
+        for path in paths {
+            let work = async {
+                match &client {
+                    Some(c) => {
+                        let s = c
+                            .connect((web::GIPHY_HOST, 443))
+                            .await
+                            .map_err(|e| FetchError::Unreachable(e.to_string()))?;
+                        web::get(s, web::GIPHY_HOST, &path).await
+                    }
+                    None => {
+                        let s = tokio::net::TcpStream::connect((web::GIPHY_HOST, 443))
+                            .await
+                            .map_err(|e| FetchError::Unreachable(e.to_string()))?;
+                        web::get(s, web::GIPHY_HOST, &path).await
+                    }
+                }
+            };
+            match tokio::time::timeout(limit, work).await {
+                Ok(Err(FetchError::NotFound)) => {}
+                Ok(result) => return result,
+                Err(_) => return Err(FetchError::Timeout),
+            }
+        }
+        Err(FetchError::NotFound)
     }
 
     /// Fetches over iroh from a full address (tests, or an address learned otherwise).

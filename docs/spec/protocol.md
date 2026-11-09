@@ -224,6 +224,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x07 | SEARCH | §11 (groups only) | L8 |
 | 0x08 | REPLY | `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, §6.2 | ADR-0019 |
 | 0x09 | REACTION | `ts u32 ‖ ref (8) ‖ emoji (UTF-8, 0..=32 bytes)`, §6.2 | ADR-0019 |
+| 0x0A | STICKER | §6.3 | ADR-0025 |
+| 0x0B | GIF | §6.3 | ADR-0025 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
@@ -239,7 +241,7 @@ Delivery is at least once: a datagram that was delivered but whose ACKs were all
 
 ### 6.1 Outbox and restart (ADR-0018)
 
-What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT and REPLY messages, direct or group, and of its own REACTIONs (§6.2), and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
+What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT, REPLY, STICKER and GIF messages (§6.3), direct or group, and of its own REACTIONs (§6.2), and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
 
 1. **States.** *Queued*: accepted, nothing transmitted; the user may cancel it, and it disappears. *Sending*: at least one frame of it went out; it can no longer be cancelled, since it may already have arrived. Then one of: *delivered* (direct: the `COMPLETE` ACK, §7.1), *sent to the group* (the first copy of every fragment has left, §10.3; nobody acknowledges), or *failed* with a reason.
 2. **Radio away.** A TEXT is accepted while the companion is disconnected. Nothing is transmitted and no timer or retry counter advances until it is back (no frame can leave, so none is counted lost); a transfer in progress resumes where it stopped. When the companion that comes back is another node, sessions and paths, which belonged to the old node, are dropped; the messages stay queued.
@@ -263,6 +265,26 @@ What the user sends is a **message intent**: the conversation, the datagram's pl
 **Authorship.** A reply or reaction is authenticated as its sender's by its session or signature (§4, §10.3). The target's author is part of `ref`: a reference to a message names its author, and only that author's message matches it.
 
 **Older clients** show REPLY and REACTION as unsupported content (§6); nothing else changes on the air.
+
+### 6.3 Stickers and GIFs (ADR-0025)
+
+Both are messages like TEXT: the outbox (§6.1), groups (§10.3), references, replies and reactions (§6.2), recovery (§10.6). Neither carries an image: a sticker names an animation every phone ships, a GIF names one a provider serves.
+
+**STICKER (0x0A)**: `ts u32 ‖ set u8 ‖ emoji (UTF-8, 1..=32 bytes)`.
+
+- `set` 1: Noto Animated Emoji (Google, CC BY 4.0), the animation of that emoji's characters. The apps ship a choice of them; a receiver without the animation of a sticker shows its emoji, large. Another `set` is shown the same way.
+- A sticker never makes the phone fetch anything.
+- One fragment, direct or in a group.
+
+**GIF (0x0B)**: `ts u32 ‖ provider u8 ‖ width u16 ‖ height u16 ‖ id_len u8 ‖ id (1..=32 bytes of [A-Za-z0-9]) ‖ title (UTF-8, 0..=64 bytes)`.
+
+- `provider` 1: GIPHY. The receiver builds the address itself, with a host and a rendition fixed here: `https://media.giphy.com/media/{id}/200w.webp` (animated WebP, 200 pixels wide), `200w.gif` as a fallback. No address travels: a contact cannot make a phone load a resource of its choosing. An unknown provider is shown as unsupported, with the title.
+- `width` × `height`: the shape to reserve before it loads, 0 × 0 when unknown. `title`: what it shows, for screen readers and the conversation list.
+- Loading it tells the provider the phone's IP address. Through Tor (§14) when the user has Tor on; otherwise the apps load it when the user taps, unless they chose to load GIFs automatically. Off-grid, the receiver shows its title and loads it once online.
+- One fragment direct; in a group, one fragment with a title of about 45 bytes, two beyond.
+- A sender turns a GIPHY link into a GIF: `giphy.com/gifs/[slug-]{id}`, `media[0-9].giphy.com/media/[v1.…/]{id}/…`, `i.giphy.com/{id}.(gif|webp)`, over HTTPS; the slug gives the title ("happy-dance" → "happy dance").
+
+Vectors: `testdata/lichen/content.toml` (`[[sticker]]`, `[[gif]]`, `[[bad_content]]`, `[[gif_link]]`).
 
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 
@@ -423,7 +445,7 @@ Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[grou
 
 Group messages are flooded twice and never acknowledged (§10.3): when both copies collide at a busy repeater, the message is lost for every member behind it. A member that notices a gap asks for it over a pairwise session. An envelope is encrypted under its author's sender key and **signed** by the author, so any member who holds it can hand it on: the receiver authenticates it exactly as if heard on the air.
 
-**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION and ANNOUNCE are kept (and the later message types that say so); positions and search packets go stale, are not worth resending, and do not use message counters anyway.
+**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER and GIF are kept; positions and search packets go stale, are not worth resending, and do not use message counters anyway.
 
 **Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. Nothing is missing before the first message received under a key: what came before may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed only when that member sends another message.
 

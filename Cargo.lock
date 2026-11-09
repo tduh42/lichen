@@ -3246,11 +3246,16 @@ dependencies = [
  "futures",
  "hex",
  "hkdf",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "iroh",
  "libc",
+ "rustls",
  "safelog",
  "sha2 0.11.1",
  "tokio",
+ "tokio-rustls",
  "tor-cell",
  "tor-config",
  "tor-hscrypto",
@@ -3259,6 +3264,7 @@ dependencies = [
  "tor-llcrypto",
  "tor-proto",
  "tor-rtcompat",
+ "webpki-roots",
 ]
 
 [[package]]
