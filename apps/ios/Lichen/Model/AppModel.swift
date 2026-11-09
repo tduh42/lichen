@@ -140,6 +140,7 @@ final class AppModel {
     @ObservationIgnored private var debugSay: String?
     @ObservationIgnored private var debugVoiceSent = false
     @ObservationIgnored private var debugFilled = false
+    @ObservationIgnored private var debugAnswered = false
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
     @ObservationIgnored let locator = Locator()
     @ObservationIgnored private var lastFed: UInt64?
@@ -569,9 +570,30 @@ final class AppModel {
                 debugSay = nil
                 _ = send(say, to: .contact(key: from))
             }
+            // -reply <text> / -react <emoji>: answer / react to their first message (§6.2).
+            let args = UserDefaults.standard
+            if !debugAnswered, args.string(forKey: "reply") != nil || args.string(forKey: "react") != nil {
+                debugAnswered = true
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          let m = (try? self.core.history(chat: .contact(key: from), beforeId: nil, limit: 20))?
+                              .last(where: { !$0.outgoing }) else { return }
+                    if let r = args.string(forKey: "reply") { _ = self.reply(r, to: m) }
+                    if let e = args.string(forKey: "react") { _ = self.react(m, e) }
+                }
+            }
             #endif
         case .progress, .delivered, .failed, .groupSent:
             break
+        case let .reacted(chat, by, emoji, target):
+            if let target { upsert(target) }
+            // A reaction to one of ours, as messaging apps do; never for a muted chat.
+            if let target, target.outgoing, !emoji.isEmpty, !isMuted(chat) {
+                let who = name(of: by)
+                let what = target.message.display
+                notifier.message(chat, title: title(of: chat),
+                                 body: String(localized: "\(who) reacted \(emoji) to “\(what)”"))
+            }
         case .groupJoined, .groupUpdated, .groupLeft:
             groups = core.groups()
             contacts = core.contacts().filter(\.person)
@@ -637,6 +659,9 @@ final class AppModel {
         guard var list = chats[m.chat] else { return }
         if let i = list.firstIndex(where: { $0.id == m.id }) {
             list[i] = m
+        } else if let i = list.firstIndex(where: { $0.id > m.id }) {
+            // In history order, even when one is sent while an earlier one is still reported.
+            list.insert(m, at: i)
         } else {
             list.append(m)
         }
@@ -847,6 +872,42 @@ final class AppModel {
         } catch {
             return String(localized: "Could not send.")
         }
+    }
+
+    // MARK: replies and reactions (protocol.md §6.2)
+
+    /// Answers `target` with `text` (a text that waits for the radio like any other).
+    func reply(_ text: String, to target: StoredMessage) -> String? {
+        do {
+            let m = try core.sendReply(chat: target.chat, toMessageId: target.id, text: text,
+                                       sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now())
+            upsert(m)
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// Reacts to `message` with `emoji` (empty: removes ours).
+    func react(_ message: StoredMessage, _ emoji: String) -> String? {
+        do {
+            upsert(try core.sendReaction(messageId: message.id, emoji: emoji, nowMs: now()))
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// What a reaction costs us in `chat`.
+    func reactionCost(_ chat: ChatID) -> Estimate? {
+        try? core.estimateReaction(chat: chat)
     }
 
     /// Cancels a text that is still waiting and none of which went out: it disappears.
@@ -1420,6 +1481,7 @@ extension LichenError {
         case .NoPosition: return String(localized: "Your position is not known yet.")
         case .Storage: return String(localized: "The phone's storage could not be read or written.")
         case .NotCancellable: return String(localized: "Part of it already went out: it can no longer be cancelled.")
+        case .NotReferable: return String(localized: "This message is from before replies existed: it cannot be answered.")
         }
     }
 }

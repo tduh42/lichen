@@ -71,6 +71,16 @@
         }
       }
     },
+    "%@ reacted %@ to “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a réagi %@ à « %@ »"
+          }
+        }
+      }
+    },
     "%@ s": {
       "localizations": {
         "fr": {
@@ -137,6 +147,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "La clé de %@ a changé"
+          }
+        }
+      }
+    },
+    "%@, %u": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, %u"
+          }
+        }
+      }
+    },
+    "%@, %u, including yours": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@, %u, dont la tienne"
           }
         }
       }
@@ -661,6 +691,16 @@
         }
       }
     },
+    "A message not on this phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un message absent de ce téléphone"
+          }
+        }
+      }
+    },
     "A password-protected file: coming later": {
       "localizations": {
         "fr": {
@@ -977,6 +1017,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annuler l'envoi"
+          }
+        }
+      }
+    },
+    "Cancel the reply": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler la réponse"
           }
         }
       }
@@ -2117,6 +2167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Je les ai notés"
+          }
+        }
+      }
+    },
+    "In reply to %@: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En réponse à %@ : %@"
           }
         }
       }
@@ -3441,6 +3501,16 @@
         }
       }
     },
+    "React": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réagir"
+          }
+        }
+      }
+    },
     "Read from the radio once connected": {
       "localizations": {
         "fr": {
@@ -3551,6 +3621,16 @@
         }
       }
     },
+    "Remove my reaction": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer ma réaction"
+          }
+        }
+      }
+    },
     "Rename": {
       "localizations": {
         "fr": {
@@ -3567,6 +3647,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Répondre"
+          }
+        }
+      }
+    },
+    "Replying to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse à %@"
+          }
+        }
+      }
+    },
+    "Replying to yourself": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réponse à toi-même"
           }
         }
       }
@@ -4611,6 +4711,16 @@
         }
       }
     },
+    "This message is from before replies existed: it cannot be answered.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce message date d'avant les réponses : on ne peut pas y répondre."
+          }
+        }
+      }
+    },
     "Thumbnail now, full resolution later": {
       "localizations": {
         "fr": {
@@ -4877,6 +4987,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Version"
+          }
+        }
+      }
+    },
+    "Voice message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message vocal"
           }
         }
       }
@@ -5667,6 +5787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "≈ %@ s d’antenne"
+          }
+        }
+      }
+    },
+    "≈ %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "≈ %@ s de temps d'antenne"
           }
         }
       }

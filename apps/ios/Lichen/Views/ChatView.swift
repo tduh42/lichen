@@ -24,6 +24,10 @@ struct ChatView: View {
     @State private var unreadAtOpen = 0
     /// A message opened from a search, highlighted for a moment.
     @State private var highlight: Int64?
+    /// The message being answered (§6.2).
+    @State private var replyTo: StoredMessage?
+    /// A quoted original to go to.
+    @State private var jumpTo: Int64?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -49,7 +53,9 @@ struct ChatView: View {
                             if m.id == dividerBefore {
                                 UnreadDivider(count: unreadAtOpen)
                             }
-                            MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id).id(m.id)
+                            MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id,
+                                        reply: { replyTo = m }, openQuote: { jumpTo = $0 })
+                                .id(m.id)
                         }
                         if let failed = lastFailure {
                             FailureBanner(message: failed) { error = model.retry(failed) }
@@ -123,8 +129,21 @@ struct ChatView: View {
                 .onChange(of: bottomVisible) {
                     if bottomVisible == messages.last?.id { unseen = 0 }
                 }
+                // A quote tapped: its original, loading earlier pages if needed.
+                .onChange(of: jumpTo) {
+                    guard let id = jumpTo else { return }
+                    jumpTo = nil
+                    model.loadUntil(chat, id)
+                    highlight = id
+                    Task {
+                        try? await Task.sleep(for: .milliseconds(100))
+                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { if highlight == id { highlight = nil } }
+                    }
+                }
             }
-            Composer(chat: chat, draft: $draft, error: $error)
+            Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo)
         }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
@@ -435,18 +454,103 @@ private struct UnreadDivider: View {
     }
 }
 
+/// What a reply answers (§6.2): its author and the start of it, or that it is not here.
+private struct QuoteBox: View {
+    let quote: Quote
+    let chat: ChatID
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 2).fill(Theme.tx2).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                if quote.messageId != nil {
+                    Text(author).font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx)
+                }
+                Text(excerpt).font(.system(.caption)).foregroundStyle(Theme.tx2).lineLimit(2)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(String(localized: "In reply to \(author): \(excerpt)"))
+    }
+
+    private var author: String {
+        if quote.outgoing { return String(localized: "You") }
+        if let a = quote.author { return model.name(of: a) }
+        return model.title(of: chat)
+    }
+
+    private var excerpt: String {
+        guard quote.messageId != nil else { return String(localized: "A message not on this phone") }
+        switch quote.kind {
+        case .text: return quote.excerpt
+        case .voice: return String(localized: "Voice message")
+        case .photo: return String(localized: "Photo")
+        case .other: return String(localized: "Message")
+        }
+    }
+}
+
+/// The reactions to a message, by emoji; tapping one adds or removes ours.
+private struct ReactionChips: View {
+    let message: StoredMessage
+    @Binding var error: String?
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(message.reactions, id: \.emoji) { r in
+                Button {
+                    error = model.react(message, r.mine ? "" : r.emoji)
+                } label: {
+                    Text(r.count > 1 ? "\(r.emoji) \(r.count)" : r.emoji)
+                        .font(.system(.footnote))
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 28)
+                        .background(Theme.s2, in: Capsule())
+                        .overlay(Capsule().stroke(r.mine ? Theme.tx : Theme.line, lineWidth: r.mine ? 1.5 : 1))
+                        .foregroundStyle(Theme.tx)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(r.mine ? String(localized: "\(r.emoji), \(r.count), including yours") :
+                    String(localized: "\(r.emoji), \(r.count)"))
+            }
+        }
+    }
+}
+
+/// The reactions offered (§6.2).
+let reactionChoices = ["👍", "❤️", "😂", "😮", "😢", "🙏"]
+
 private struct MessageView: View {
     let message: StoredMessage
     let isGroup: Bool
     @Binding var error: String?
     var highlighted = false
+    var reply: () -> Void = {}
+    var openQuote: (Int64) -> Void = { _ in }
     @Environment(AppModel.self) private var model
     @State private var selecting = false
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
+            if let q = message.quote {
+                Button { if let id = q.messageId { openQuote(id) } } label: {
+                    QuoteBox(quote: q, chat: message.chat)
+                }
+                .buttonStyle(.plain)
+                .disabled(q.messageId == nil)
+            }
             bubble
                 .contextMenu { actions }
+            if !message.reactions.isEmpty {
+                ReactionChips(message: message, error: $error)
+            }
             if message.outgoing, !isGroup, case let .sending(sent, total) = message.status, total > 1 {
                 FragmentProgress(sent: Int(sent), total: Int(total))
                     .frame(width: 220)
@@ -479,9 +583,30 @@ private struct MessageView: View {
         return false
     }
 
+    /// "≈ 2.1 s of airtime": a reaction costs about a short text (§6.2).
+    private var reactionCost: String {
+        guard let e = model.reactionCost(message.chat) else { return "" }
+        return String(localized: "≈ \(String(format: "%.1f", Double(e.airtimeMs) / 1000)) s of airtime")
+    }
+
     /// Long press: copy or select a text; cancel one that is still waiting, send a failed one
     /// again.
     @ViewBuilder private var actions: some View {
+        if message.referable {
+            Button(action: reply) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+            Menu {
+                Section(reactionCost) {
+                    ForEach(reactionChoices, id: \.self) { e in
+                        Button(e) { error = model.react(message, e) }
+                    }
+                    if message.reactions.contains(where: \.mine) {
+                        Button("Remove my reaction", role: .destructive) { error = model.react(message, "") }
+                    }
+                }
+            } label: {
+                Label("React", systemImage: "face.smiling")
+            }
+        }
         if case let .text(_, text) = message.message {
             Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") }
             Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") }
@@ -714,6 +839,7 @@ private struct Composer: View {
     let chat: ChatID
     @Binding var draft: String
     @Binding var error: String?
+    @Binding var replyTo: StoredMessage?
     @Environment(AppModel.self) private var model
     @State private var picked: PhotosPickerItem?
     @State private var picking = false
@@ -724,6 +850,22 @@ private struct Composer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let r = replyTo {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrowshape.turn.up.left").foregroundStyle(Theme.tx2)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(replyAuthor(r)).font(.system(.caption, weight: .semibold))
+                        Text(r.message.display).font(.system(.caption)).foregroundStyle(Theme.tx2).lineLimit(1)
+                    }
+                    Spacer()
+                    Button { replyTo = nil } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Cancel the reply")
+                }
+                .padding(.leading, 12)
+                .foregroundStyle(Theme.tx)
+            }
             if let share = model.share(of: chat) {
                 Button { locating = true } label: {
                     Label(sharingText(share), systemImage: "location.fill")
@@ -783,7 +925,9 @@ private struct Composer: View {
                     } else {
                         Button {
                             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if let e = model.send(text, to: chat) { error = e } else { draft = "" }
+                            if let r = replyTo {
+                                if let e = model.reply(text, to: r) { error = e } else { draft = ""; replyTo = nil }
+                            } else if let e = model.send(text, to: chat) { error = e } else { draft = "" }
                         } label: {
                             Image(systemName: "arrow.up")
                                 .font(.system(.body, weight: .bold))
@@ -848,6 +992,13 @@ private struct Composer: View {
         } message: {
             Text("Allow it in Settings to record voice messages.")
         }
+    }
+
+    /// "Replying to Camille", "Replying to yourself".
+    private func replyAuthor(_ m: StoredMessage) -> String {
+        if m.outgoing { return String(localized: "Replying to yourself") }
+        if let a = m.author { return String(localized: "Replying to \(model.name(of: a))") }
+        return String(localized: "Replying to \(model.title(of: chat))")
     }
 
     /// A drawn mountain scene for the debug photo sheet.
