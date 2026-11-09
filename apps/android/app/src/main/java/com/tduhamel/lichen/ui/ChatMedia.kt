@@ -91,6 +91,8 @@ fun MediaContent(model: AppModel, m: StoredMessage): Boolean {
         is Message.Voice -> VoiceNote(model, m, msg)
         is Message.Image -> ImageCard(model, m, msg)
         is Message.File -> FileCard(msg)
+        is Message.Sticker -> StickerView(msg.emoji)
+        is Message.Gif -> GifCard(model, m, msg)
         // Shown inside its LoRa preview's card when that preview is here.
         is Message.Announce -> if (model.preview(msg.mediaId, ChatId.of(m.chat)) == null) {
             Column(

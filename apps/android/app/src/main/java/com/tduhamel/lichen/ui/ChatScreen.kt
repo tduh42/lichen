@@ -57,6 +57,7 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LockOpen
@@ -649,6 +650,8 @@ private fun QuoteBox(model: AppModel, q: Quote, chat: ChatId, modifier: Modifier
         q.kind == QuoteKind.VOICE -> stringResource(R.string.voice_message)
         q.kind == QuoteKind.PHOTO -> stringResource(R.string.photo)
         q.kind == QuoteKind.FILE -> stringResource(R.string.file_named, q.excerpt)
+        q.kind == QuoteKind.STICKER -> stringResource(R.string.sticker_named, q.excerpt)
+        q.kind == QuoteKind.GIF -> if (q.excerpt.isEmpty()) stringResource(R.string.gif) else stringResource(R.string.gif_named, q.excerpt)
         else -> stringResource(R.string.a_message)
     }
     Row(
@@ -766,6 +769,16 @@ private fun Composer(
     var preparing by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<Pair<PreparedImage, ByteArray>?>(null) }
     var locating by remember { mutableStateOf(false) }
+    // The sticker picker; a GIPHY link in the draft goes as a GIF unless asked otherwise (§6.3).
+    var stickers by remember { mutableStateOf(false) }
+    val gifLink = remember(draft) { com.tduhamel.lichen.core.gifLink(draft) }
+    var linkAsText by remember(chat) { mutableStateOf(false) }
+    var gifData by remember { mutableStateOf<ByteArray?>(null) }
+    LaunchedEffect(gifLink?.id) {
+        if (gifLink == null) linkAsText = false
+        gifData = null
+        gifData = gifLink?.let { model.loadGif(it.id) }
+    }
     // A file picked, waiting for its route (LoRa when small, else the bridge, ADR-0022).
     var file by remember { mutableStateOf<FileDraft?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -856,6 +869,22 @@ private fun Composer(
                 IconButton(onClick = clearReply) { Icon(Icons.Filled.Close, stringResource(R.string.cancel_reply), tint = t.tx2) }
             }
         }
+        if (gifLink != null && !linkAsText) {
+            Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(64.dp, 48.dp).clip(RoundedCornerShape(8.dp)).background(t.s2), contentAlignment = Alignment.Center) {
+                    val shown = gifData
+                    if (shown != null) AnimatedImage(shown, Modifier.fillMaxSize()) else CircularProgressIndicator(Modifier.size(16.dp), color = t.tx2, strokeWidth = 2.dp)
+                }
+                Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                    Text(
+                        if (gifLink.title.isEmpty()) stringResource(R.string.gif) else stringResource(R.string.gif_named, gifLink.title),
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(stringResource(R.string.gif_link_note), fontSize = 12.sp, color = t.tx2, maxLines = 2)
+                }
+                IconButton(onClick = { linkAsText = true }) { Icon(Icons.Filled.Close, stringResource(R.string.gif_link_as_text), tint = t.tx2) }
+            }
+        }
         model.share(chat)?.let { share ->
             val until = timeOf(context, share.untilS.toLong() * 1000)
             Row(
@@ -914,6 +943,14 @@ private fun Composer(
                         },
                     )
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.sticker)) },
+                        leadingIcon = { Icon(Icons.Outlined.EmojiEmotions, null) },
+                        onClick = {
+                            menu = false
+                            stickers = true
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.share_my_location)) },
                         leadingIcon = { Icon(Icons.Outlined.LocationOn, null) },
                         onClick = {
@@ -954,7 +991,12 @@ private fun Composer(
             } else {
                 IconButton(
                     onClick = {
-                        val e = if (replyTo != null) model.reply(text, replyTo) else model.send(text, chat)
+                        val link = gifLink
+                        val e = when {
+                            link != null && !linkAsText -> model.sendGif(link, gifData?.let { imageSize(it) }, chat)
+                            replyTo != null -> model.reply(text, replyTo)
+                            else -> model.send(text, chat)
+                        }
                         if (e != null) {
                             onError(e)
                         } else {
@@ -974,6 +1016,7 @@ private fun Composer(
         }
     }
     if (locating) ChatShareSheet(model, chat) { locating = false }
+    if (stickers) StickerSheet({ emoji -> model.sendSticker(emoji, chat)?.let(onError) }) { stickers = false }
     file?.let { draft ->
         SendFileSheet(model, chat, draft) { e ->
             file = null

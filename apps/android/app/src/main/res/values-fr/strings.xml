@@ -692,4 +692,27 @@
     <string name="tor_file_detail">Anonyme, plus lent : la personne le récupère sur ton service onion</string>
     <string name="direct_acknowledged">Direct, avec accusé de réception</string>
     <string name="no_app_to_open">Aucune app n\'ouvre ce type : partage-le</string>
+    <string name="sticker">Sticker</string>
+    <string name="sticker_named">Sticker %1$s</string>
+    <string name="stickers">Stickers</string>
+    <string name="sticker_note">Un sticker tient en un paquet radio : les deux téléphones ont déjà son animation, il se joue même hors réseau.</string>
+    <string name="sticker_faces">Visages</string>
+    <string name="sticker_hands">Mains</string>
+    <string name="sticker_hearts">Cœurs</string>
+    <string name="sticker_celebrations">Fêtes</string>
+    <string name="sticker_outdoors">Dehors</string>
+    <string name="sticker_animals">Animaux</string>
+    <string name="sticker_signs">Signes</string>
+    <string name="stickers_credit">Noto Animated Emoji © Google, CC BY 4.0. Animations par Lottie (Airbnb).</string>
+    <string name="gif">GIF</string>
+    <string name="gif_named">GIF : %1$s</string>
+    <string name="gif_tap_to_load">Touche pour le charger depuis GIPHY</string>
+    <string name="gif_failed">Chargement impossible · Réessaie</string>
+    <string name="gif_unknown_source">Un GIF d’une source que cette app ne connaît pas</string>
+    <string name="gif_link_note">Envoyé comme GIF : quelques octets au lieu du lien</string>
+    <string name="gif_link_as_text">Envoyer le lien en texte</string>
+    <string name="gifs">GIF</string>
+    <string name="gif_auto">Charger les GIF automatiquement</string>
+    <string name="gif_auto_note">Sinon, touche chacun : GIPHY voit ton adresse IP</string>
+    <string name="gifs_note">Un GIF voyage sous la forme de son identifiant GIPHY, quelques octets ; le téléphone qui le reçoit le charge depuis GIPHY. Avec Tor activé, les GIF se chargent par Tor, automatiquement.</string>
 </resources>

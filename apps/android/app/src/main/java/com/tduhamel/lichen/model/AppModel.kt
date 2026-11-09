@@ -18,6 +18,7 @@ import com.tduhamel.lichen.core.Conversation
 import com.tduhamel.lichen.core.DemoNetwork
 import com.tduhamel.lichen.core.Estimate
 import com.tduhamel.lichen.core.LoraFile
+import com.tduhamel.lichen.core.GifLink
 import com.tduhamel.lichen.ui.clearOldShares
 import com.tduhamel.lichen.core.GroupInfo
 import com.tduhamel.lichen.core.LichenCore
@@ -292,6 +293,19 @@ class AppModel(val app: Application) {
     var torEnabled by mutableStateOf(prefs.getBoolean(TOR, false))
         private set
     var torStatus by mutableStateOf(TorStatus.OFF)
+
+    /** Received GIFs load by themselves, without Tor too: GIPHY then sees our IP address
+     * (ADR-0025). With Tor ready they always do, through it. */
+    var gifAutoLoad by mutableStateOf(prefs.getBoolean(GIF_AUTO, false))
+        private set
+
+    fun chooseGifAutoLoad(on: Boolean) {
+        gifAutoLoad = on
+        prefs.edit { putBoolean(GIF_AUTO, on) }
+    }
+
+    /** GIFs load by themselves: asked for, or through Tor. */
+    val gifsLoadThemselves: Boolean get() = gifAutoLoad || torStatus == TorStatus.READY
 
     /** Content fetched or offered over the bridge, by BLAKE3 hash (hex). */
     val downloads = mutableStateMapOf<String, File>()
@@ -1067,6 +1081,55 @@ class AppModel(val app: Application) {
         }
     }
 
+    // ----- stickers and GIFs (protocol.md §6.3) -----
+
+    /** Sends a sticker; returns an error message to show, or null. */
+    fun sendSticker(emoji: String, chat: ChatId): String? =
+        sendMessage(chat) { at, now -> core.sendSticker(chat.ref, emoji, at, now) }
+
+    /** Sends GIPHY GIF `link` (only its id, shape and title travel). */
+    fun sendGif(link: GifLink, size: Pair<UShort, UShort>?, chat: ChatId): String? =
+        sendMessage(chat) { at, now ->
+            core.sendGif(chat.ref, link.id, size?.first ?: 0u, size?.second ?: 0u, link.title, at, now)
+        }
+
+    private fun sendMessage(chat: ChatId, send: (UInt, ULong) -> StoredMessage): String? = try {
+        val m = send((System.currentTimeMillis() / 1000).toUInt(), now())
+        if (chats[chat] == null) load(chat) else upsert(m)
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    private val gifFolder: File get() = File(app.cacheDir, "gifs").also { it.mkdirs() }
+
+    /** A GIF loaded before (the system may clear the cache). */
+    fun cachedGif(id: String): ByteArray? {
+        if (id.isEmpty() || !id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }) return null
+        return File(gifFolder, "$id.gif").takeIf { it.isFile }?.readBytes()
+    }
+
+    /** GIPHY GIF `id`, through Tor when it is ready, directly otherwise; kept in the cache. */
+    suspend fun loadGif(id: String): ByteArray? {
+        cachedGif(id)?.let { return it }
+        val b = bridge ?: return null
+        val data = runCatching { b.gif(id, torStatus == TorStatus.READY) }.getOrNull() ?: return null
+        withContext(Dispatchers.IO) {
+            runCatching {
+                File(gifFolder, "$id.gif").writeBytes(data)
+                // Within 50 MB, the oldest dropped first.
+                var total = 0L
+                gifFolder.listFiles()?.sortedByDescending { it.lastModified() }?.forEach { f ->
+                    total += f.length()
+                    if (total > 50L shl 20) f.delete()
+                }
+            }
+        }
+        return data
+    }
+
     /** Sends a failed text or voice message again: the same message, so that someone who
      * already has it does not get it twice (§6.1). */
     fun retry(m: StoredMessage): String? = try {
@@ -1687,6 +1750,7 @@ class AppModel(val app: Application) {
         private const val IROH = "lichen.iroh"
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"
+        private const val GIF_AUTO = "lichen.gifAuto"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
         /** Drafts by identity; the older ones (`lichen.draft.<route>`) are left unread. */

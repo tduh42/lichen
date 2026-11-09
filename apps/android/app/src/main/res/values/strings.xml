@@ -685,4 +685,27 @@
     <string name="tor_file_detail">Anonymous, slower: they fetch it from your onion service</string>
     <string name="direct_acknowledged">Direct, acknowledged</string>
     <string name="no_app_to_open">No app opens this type: share it</string>
+    <string name="sticker">Sticker</string>
+    <string name="sticker_named">Sticker %1$s</string>
+    <string name="stickers">Stickers</string>
+    <string name="sticker_note">A sticker is one radio packet: both phones already have its animation, so it plays even off-grid.</string>
+    <string name="sticker_faces">Faces</string>
+    <string name="sticker_hands">Hands</string>
+    <string name="sticker_hearts">Hearts</string>
+    <string name="sticker_celebrations">Celebrations</string>
+    <string name="sticker_outdoors">Outdoors</string>
+    <string name="sticker_animals">Animals</string>
+    <string name="sticker_signs">Signs</string>
+    <string name="stickers_credit">Noto Animated Emoji © Google, CC BY 4.0. Animations by Lottie (Airbnb).</string>
+    <string name="gif">GIF</string>
+    <string name="gif_named">GIF: %1$s</string>
+    <string name="gif_tap_to_load">Tap to load from GIPHY</string>
+    <string name="gif_failed">Could not load it · Try again</string>
+    <string name="gif_unknown_source">A GIF from a source this app does not know</string>
+    <string name="gif_link_note">Sent as a GIF: a few bytes instead of the link</string>
+    <string name="gif_link_as_text">Send the link as text</string>
+    <string name="gifs">GIFs</string>
+    <string name="gif_auto">Load GIFs automatically</string>
+    <string name="gif_auto_note">Otherwise tap each one: GIPHY sees your IP address</string>
+    <string name="gifs_note">A GIF travels as its GIPHY id, a few bytes; the phone that receives it loads it from GIPHY. With Tor on, GIFs load through Tor, automatically.</string>
 </resources>

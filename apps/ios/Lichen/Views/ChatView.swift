@@ -538,6 +538,8 @@ private struct QuoteBox: View {
         case .voice: return String(localized: "Voice message")
         case .photo: return String(localized: "Photo")
         case .file: return String(localized: "File: \(quote.excerpt)")
+        case .sticker: return String(localized: "Sticker \(quote.excerpt)")
+        case .gif: return quote.excerpt.isEmpty ? String(localized: "GIF") : String(localized: "GIF: \(quote.excerpt)")
         case .other: return String(localized: "Message")
         }
     }
@@ -708,6 +710,10 @@ private struct MessageView: View {
                 ImageCard(message: message)
             case .file:
                 FileCard(message: message)
+            case let .sticker(_, _, emoji):
+                StickerView(emoji: emoji)
+            case .gif:
+                GifCard(message: message)
             case let .announce(_, mediaId, _, _, _, _, _):
                 // Shown inside its LoRa preview's card when that preview is here.
                 if model.preview(for: mediaId, in: message.chat) == nil {
@@ -945,12 +951,21 @@ private struct Composer: View {
     @State private var file: FileDraft?
     /// A recording stopped and not sent yet: listened to, its quality chosen, sent or dropped.
     @State private var review: Review?
+    /// The sticker picker (§6.3).
+    @State private var stickers = false
+    /// A GIPHY link typed or pasted is sent as a GIF (§6.3) unless this is set; its first
+    /// frame's size, once loaded, goes with it.
+    @State private var linkAsText = false
+    @State private var gifData: Data?
 
     struct Review {
         let pcm: [Int16]
         var mode: UInt8
         var voice: PreparedVoice
     }
+
+    /// The draft is a GIPHY link (§6.3).
+    private var gifLink: GifLink? { Lichen.gifLink(text: draft) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -969,6 +984,33 @@ private struct Composer: View {
                 }
                 .padding(.leading, 12)
                 .foregroundStyle(Theme.tx)
+            }
+            if let link = gifLink, !linkAsText {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Theme.s2
+                        if let gifData { AnimatedImage(data: gifData) } else { ProgressView() }
+                    }
+                    .frame(width: 64, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(link.title.isEmpty ? String(localized: "GIF") : String(localized: "GIF: \(link.title)"))
+                            .font(.system(.caption, weight: .semibold)).lineLimit(1)
+                        Text("Sent as a GIF: a few bytes instead of the link")
+                            .font(.system(.caption)).foregroundStyle(Theme.tx2).lineLimit(2)
+                    }
+                    Spacer()
+                    Button { linkAsText = true } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Send the link as text")
+                }
+                .padding(.leading, 12)
+                .foregroundStyle(Theme.tx)
+                .task(id: link.id) {
+                    gifData = nil
+                    gifData = await model.loadGif(link.id)
+                }
             }
             if let share = model.share(of: chat) {
                 Button { locating = true } label: {
@@ -1000,6 +1042,7 @@ private struct Composer: View {
                         if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
                             Button { importing = true } label: { Label("File", systemImage: "doc") }
                         }
+                        Button { stickers = true } label: { Label("Sticker", systemImage: "face.smiling") }
                         Button { locating = true } label: {
                             Label("Share my location", systemImage: "location")
                         }
@@ -1034,7 +1077,10 @@ private struct Composer: View {
                     } else {
                         Button {
                             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if let r = replyTo {
+                            if let link = gifLink, !linkAsText {
+                                let size = gifData.flatMap(AnimatedImage.size)
+                                if let e = model.sendGif(link, size: size, to: chat) { error = e } else { draft = ""; gifData = nil }
+                            } else if let r = replyTo {
                                 if let e = model.reply(text, to: r) { error = e } else { draft = ""; replyTo = nil }
                             } else if let e = model.send(text, to: chat) { error = e } else { draft = "" }
                         } label: {
@@ -1057,6 +1103,10 @@ private struct Composer: View {
         .background(Theme.s1)
         .overlay(alignment: .top) { Rectangle().fill(Theme.line).frame(height: 1) }
         .photosPicker(isPresented: $picking, selection: $picked, matching: .images)
+        .sheet(isPresented: $stickers) {
+            StickerSheet { emoji in error = model.sendSticker(emoji, to: chat) }
+        }
+        .onChange(of: draft) { if gifLink == nil { linkAsText = false } }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
             guard case let .success(url) = result else { return }
             preparing = true

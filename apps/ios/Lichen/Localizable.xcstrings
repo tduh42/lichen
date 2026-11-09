@@ -21,6 +21,16 @@
         }
       }
     },
+    "%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@"
+          }
+        }
+      }
+    },
     "%@ / %@": {
       "localizations": {
         "fr": {
@@ -821,6 +831,26 @@
         }
       }
     },
+    "A GIF from a source this app does not know": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un GIF d’une source que cette app ne connaît pas"
+          }
+        }
+      }
+    },
+    "A GIF travels as its GIPHY id, a few bytes; the phone that receives it loads it from GIPHY. With Tor on, GIFs load through Tor, automatically.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un GIF voyage sous la forme de son identifiant GIPHY, quelques octets ; le téléphone qui le reçoit le charge depuis GIPHY. Avec Tor activé, les GIF se chargent par Tor, automatiquement."
+          }
+        }
+      }
+    },
     "A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.": {
       "localizations": {
         "fr": {
@@ -897,6 +927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l'app, sans radio."
+          }
+        }
+      }
+    },
+    "A sticker is one radio packet: both phones already have its animation, so it plays even off-grid.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un sticker tient en un paquet radio : les deux téléphones ont déjà son animation, il se joue même hors réseau."
           }
         }
       }
@@ -1071,6 +1111,16 @@
         }
       }
     },
+    "Animals": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Animaux"
+          }
+        }
+      }
+    },
     "Anonymous, slower": {
       "localizations": {
         "fr": {
@@ -1237,6 +1287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annuler la réponse"
+          }
+        }
+      }
+    },
+    "Celebrations": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fêtes"
           }
         }
       }
@@ -1627,6 +1687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Impossible de rejoindre le groupe."
+          }
+        }
+      }
+    },
+    "Could not load it · Try again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chargement impossible · Réessaie"
           }
         }
       }
@@ -2121,6 +2191,16 @@
         }
       }
     },
+    "Faces": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Visages"
+          }
+        }
+      }
+    },
     "Fast; the peer sees your IP": {
       "localizations": {
         "fr": {
@@ -2291,6 +2371,36 @@
         }
       }
     },
+    "GIF": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GIF"
+          }
+        }
+      }
+    },
+    "GIF: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GIF : %@"
+          }
+        }
+      }
+    },
+    "GIFs": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GIF"
+          }
+        }
+      }
+    },
     "Group": {
       "localizations": {
         "fr": {
@@ -2381,6 +2491,16 @@
         }
       }
     },
+    "Hands": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mains"
+          }
+        }
+      }
+    },
     "Have your contact scan this code, in person.": {
       "localizations": {
         "fr": {
@@ -2407,6 +2527,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Signe de vie à l'arrêt"
+          }
+        }
+      }
+    },
+    "Hearts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cœurs"
           }
         }
       }
@@ -2837,6 +2967,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "LoRa · aperçu"
+          }
+        }
+      }
+    },
+    "Load GIFs automatically": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger les GIF automatiquement"
           }
         }
       }
@@ -3541,6 +3681,16 @@
         }
       }
     },
+    "Noto Animated Emoji © Google, CC BY 4.0. Animations by Lottie (Airbnb).": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noto Animated Emoji © Google, CC BY 4.0. Animations par Lottie (Airbnb)."
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "fr": {
@@ -3701,12 +3851,32 @@
         }
       }
     },
+    "Otherwise tap each one: GIPHY sees your IP address": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sinon, touche chacun : GIPHY voit ton adresse IP"
+          }
+        }
+      }
+    },
     "Outdoor": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Randonnée"
+          }
+        }
+      }
+    },
+    "Outdoors": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dehors"
           }
         }
       }
@@ -4551,6 +4721,16 @@
         }
       }
     },
+    "Send the link as text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer le lien en texte"
+          }
+        }
+      }
+    },
     "Send the preview": {
       "localizations": {
         "fr": {
@@ -4607,6 +4787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoi au groupe"
+          }
+        }
+      }
+    },
+    "Sent as a GIF: a few bytes instead of the link": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé comme GIF : quelques octets au lieu du lien"
           }
         }
       }
@@ -4781,6 +4971,16 @@
         }
       }
     },
+    "Signs": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signes"
+          }
+        }
+      }
+    },
     "Simulated radio connected": {
       "localizations": {
         "fr": {
@@ -4847,6 +5047,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Démarrage"
+          }
+        }
+      }
+    },
+    "Sticker": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sticker"
+          }
+        }
+      }
+    },
+    "Sticker %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sticker %@"
+          }
+        }
+      }
+    },
+    "Stickers": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stickers"
           }
         }
       }
@@ -4937,6 +5167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Système"
+          }
+        }
+      }
+    },
+    "Tap to load from GIPHY": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touche pour le charger depuis GIPHY"
           }
         }
       }

@@ -35,6 +35,11 @@ final class AppModel {
     var torEnabled = UserDefaults.standard.bool(forKey: "lichen.tor") {
         didSet { UserDefaults.standard.set(torEnabled, forKey: "lichen.tor"); applyTor() }
     }
+    /// Received GIFs load by themselves, without Tor too: GIPHY then sees our IP address
+    /// (ADR-0025). With Tor ready they always do, through it.
+    var gifAutoLoad = UserDefaults.standard.bool(forKey: "lichen.gifAuto") {
+        didSet { UserDefaults.standard.set(gifAutoLoad, forKey: "lichen.gifAuto") }
+    }
     var torStatus = TorStatus.off
     /// Our onion service identity, once published.
     var onionId: Data?
@@ -150,6 +155,7 @@ final class AppModel {
     @ObservationIgnored private let demoQueue = DispatchQueue(label: "lichen.demo", qos: .userInitiated)
     @ObservationIgnored private var demoReading = false
     @ObservationIgnored private var debugSay: String?
+    @ObservationIgnored private var debugStickerSent = false
     @ObservationIgnored private var debugVoiceSent = false
     @ObservationIgnored private var debugFilled = false
     @ObservationIgnored private var debugAnswered = false
@@ -601,6 +607,11 @@ final class AppModel {
                 debugSay = nil
                 _ = send(say, to: .contact(key: from))
             }
+            // -sticker <emoji>: a sticker to whoever writes first (Camille answers with one).
+            if let emoji = UserDefaults.standard.string(forKey: "sticker"), !debugStickerSent {
+                debugStickerSent = true
+                _ = sendSticker(emoji, to: .contact(key: from))
+            }
             // -reply <text> / -react <emoji>: answer / react to their first message (§6.2).
             let args = UserDefaults.standard
             if !debugAnswered, args.string(forKey: "reply") != nil || args.string(forKey: "react") != nil {
@@ -858,6 +869,77 @@ final class AppModel {
             return e.display
         } catch {
             return String(localized: "Could not send.")
+        }
+    }
+
+    // MARK: stickers and GIFs (protocol.md §6.3)
+
+    /// Sends a sticker; returns an error message to show, or nil.
+    func sendSticker(_ emoji: String, to chat: ChatID) -> String? {
+        sendMessage(chat) { try core.sendSticker(chat: chat, emoji: emoji, sentAt: $0, nowMs: $1) }
+    }
+
+    /// Sends GIPHY GIF `link` (only its id, shape and title travel).
+    func sendGif(_ link: GifLink, size: (UInt16, UInt16)?, to chat: ChatID) -> String? {
+        sendMessage(chat) {
+            try core.sendGif(chat: chat, id: link.id, width: size?.0 ?? 0, height: size?.1 ?? 0,
+                             title: link.title, sentAt: $0, nowMs: $1)
+        }
+    }
+
+    private func sendMessage(_ chat: ChatID, _ send: (UInt32, UInt64) throws -> StoredMessage) -> String? {
+        do {
+            let m = try send(UInt32(Date().timeIntervalSince1970), now())
+            if chats[chat] == nil { load(chat) } else { upsert(m) }
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// GIFs load by themselves: asked for, or through Tor.
+    var gifsLoadThemselves: Bool { gifAutoLoad || torStatus == .ready }
+
+    private static var gifFolder: URL? {
+        guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let dir = base.appendingPathComponent("gifs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// A GIF loaded before (the system may clear the caches folder).
+    func cachedGif(_ id: String) -> Data? {
+        guard id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }), let dir = Self.gifFolder else { return nil }
+        return try? Data(contentsOf: dir.appendingPathComponent(id + ".gif"))
+    }
+
+    /// GIPHY GIF `id`, through Tor when it is ready, directly otherwise; kept in the caches.
+    func loadGif(_ id: String) async -> Data? {
+        if let data = cachedGif(id) { return data }
+        guard let bridge, let data = try? await bridge.gif(id: id, viaTor: torStatus == .ready) else { return nil }
+        if let dir = Self.gifFolder {
+            try? data.write(to: dir.appendingPathComponent(id + ".gif"))
+            Self.trimGifs(dir)
+        }
+        return data
+    }
+
+    /// The caches' GIFs within 50 MB, the oldest dropped first.
+    private static func trimGifs(_ dir: URL) {
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+        let sized = files.compactMap { f -> (URL, Int, Date)? in
+            guard let v = try? f.resourceValues(forKeys: Set(keys)) else { return nil }
+            return (f, v.fileSize ?? 0, v.contentModificationDate ?? .distantPast)
+        }.sorted { $0.2 > $1.2 }
+        var total = 0
+        for (f, size, _) in sized {
+            total += size
+            if total > 50 << 20 { try? FileManager.default.removeItem(at: f) }
         }
     }
 
@@ -1599,6 +1681,9 @@ extension Message {
         case let .announce(_, _, kind, _, _, _, name) where kind == 3: return String(localized: "File: \(name)")
         case let .announce(_, _, _, _, _, _, name): return String(localized: "Photo: \(name)")
         case let .file(_, name, _): return String(localized: "File: \(name)")
+        case let .sticker(_, _, emoji): return String(localized: "Sticker \(emoji)")
+        case let .gif(_, _, _, _, _, title) where !title.isEmpty: return String(localized: "GIF: \(title)")
+        case .gif: return String(localized: "GIF")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
         case .notice:
             return noticeText(me: UserDefaults.standard.data(forKey: "lichen.nodeKey")) { _, name in name }
@@ -1631,7 +1716,8 @@ extension Message {
     var date: Date {
         switch self {
         case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _),
-             let .announce(sentAt, _, _, _, _, _, _), let .file(sentAt, _, _):
+             let .announce(sentAt, _, _, _, _, _, _), let .file(sentAt, _, _), let .sticker(sentAt, _, _),
+             let .gif(sentAt, _, _, _, _, _):
             if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
         case .notice, .other:
             break

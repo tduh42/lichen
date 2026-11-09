@@ -11,6 +11,10 @@ packages:
   MapLibre:
     url: https://github.com/maplibre/maplibre-gl-native-distribution
     exactVersion: 6.31.0
+  # Stickers (ADR-0025): Lottie animations, Apache 2.0.
+  Lottie:
+    url: https://github.com/airbnb/lottie-spm
+    exactVersion: 4.6.1
 settings:
   base:
     SWIFT_VERSION: "5.0"
@@ -26,10 +30,15 @@ targets:
         excludes:
           - "*.h"
           - "*.modulemap"
+      # The sticker set (ADR-0025), as a folder in the bundle: noto/manifest.json and the files.
+      - path: ../../assets/stickers/noto
+        type: folder
+        buildPhase: resources
     dependencies:
       - framework: LichenCore.xcframework
         embed: false
       - package: MapLibre
+      - package: Lottie
       # iroh reads DNS and proxy settings through SystemConfiguration (ADR-0015).
       - sdk: SystemConfiguration.framework
     info:

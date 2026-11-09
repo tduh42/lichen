@@ -9,6 +9,8 @@ val hostCore: String = rootDir.resolve("../../target/release").canonicalPath
 android {
     namespace = "com.tduhamel.lichen"
     compileSdk = 37
+    // The sticker set (ADR-0025), shared with iOS: assets `noto/manifest.json` and the files.
+    sourceSets.getByName("main").assets.srcDir("../../../assets/stickers")
     // The NDK the core is built with (CLAUDE.md); AGP strips the library's symbols with it.
     ndkVersion = "28.2.13676358"
 
@@ -67,6 +69,7 @@ dependencies {
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
     implementation(libs.maplibre)
+    implementation(libs.lottie.compose)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

@@ -1,0 +1,537 @@
+[
+ {
+  "emoji": "😀",
+  "file": "1f600.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😃",
+  "file": "1f603.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😄",
+  "file": "1f604.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😁",
+  "file": "1f601.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😆",
+  "file": "1f606.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😅",
+  "file": "1f605.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😂",
+  "file": "1f602.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤣",
+  "file": "1f923.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😊",
+  "file": "1f60a.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😇",
+  "file": "1f607.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥰",
+  "file": "1f970.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😍",
+  "file": "1f60d.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤩",
+  "file": "1f929.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😘",
+  "file": "1f618.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😋",
+  "file": "1f60b.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😜",
+  "file": "1f61c.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤪",
+  "file": "1f92a.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤗",
+  "file": "1f917.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤭",
+  "file": "1f92d.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤔",
+  "file": "1f914.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤨",
+  "file": "1f928.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😐",
+  "file": "1f610.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🙄",
+  "file": "1f644.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😏",
+  "file": "1f60f.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😬",
+  "file": "1f62c.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😌",
+  "file": "1f60c.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😴",
+  "file": "1f634.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤤",
+  "file": "1f924.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😷",
+  "file": "1f637.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤢",
+  "file": "1f922.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥵",
+  "file": "1f975.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥶",
+  "file": "1f976.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥴",
+  "file": "1f974.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😵",
+  "file": "1f635.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤯",
+  "file": "1f92f.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤠",
+  "file": "1f920.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥳",
+  "file": "1f973.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😎",
+  "file": "1f60e.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤓",
+  "file": "1f913.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😕",
+  "file": "1f615.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😟",
+  "file": "1f61f.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😮",
+  "file": "1f62e.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😲",
+  "file": "1f632.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😳",
+  "file": "1f633.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥺",
+  "file": "1f97a.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😢",
+  "file": "1f622.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😭",
+  "file": "1f62d.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😱",
+  "file": "1f631.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😩",
+  "file": "1f629.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🥱",
+  "file": "1f971.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😤",
+  "file": "1f624.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😡",
+  "file": "1f621.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤬",
+  "file": "1f92c.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "😈",
+  "file": "1f608.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "💀",
+  "file": "1f480.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "💩",
+  "file": "1f4a9.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤡",
+  "file": "1f921.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "👻",
+  "file": "1f47b.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "👽",
+  "file": "1f47d.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🤖",
+  "file": "1f916.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🙈",
+  "file": "1f648.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🙉",
+  "file": "1f649.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "🙊",
+  "file": "1f64a.json.deflate",
+  "group": "faces"
+ },
+ {
+  "emoji": "👋",
+  "file": "1f44b.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "👍",
+  "file": "1f44d.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "👎",
+  "file": "1f44e.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "👏",
+  "file": "1f44f.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "🙌",
+  "file": "1f64c.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "🙏",
+  "file": "1f64f.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "🤝",
+  "file": "1f91d.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "✌️",
+  "file": "270c_fe0f.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "👌",
+  "file": "1f44c.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "💪",
+  "file": "1f4aa.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "🤞",
+  "file": "1f91e.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "🤘",
+  "file": "1f918.json.deflate",
+  "group": "hands"
+ },
+ {
+  "emoji": "❤️",
+  "file": "2764_fe0f.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "💔",
+  "file": "1f494.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "💖",
+  "file": "1f496.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "🔥",
+  "file": "1f525.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "✨",
+  "file": "2728.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "💯",
+  "file": "1f4af.json.deflate",
+  "group": "hearts"
+ },
+ {
+  "emoji": "🎉",
+  "file": "1f389.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "🎊",
+  "file": "1f38a.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "🎁",
+  "file": "1f381.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "🎂",
+  "file": "1f382.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "🍾",
+  "file": "1f37e.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "🍻",
+  "file": "1f37b.json.deflate",
+  "group": "celebrations"
+ },
+ {
+  "emoji": "⛅",
+  "file": "26c5.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🌧️",
+  "file": "1f327_fe0f.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "❄️",
+  "file": "2744_fe0f.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🌈",
+  "file": "1f308.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🌋",
+  "file": "1f30b.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🏕️",
+  "file": "1f3d5_fe0f.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🌲",
+  "file": "1f332.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🌊",
+  "file": "1f30a.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🚨",
+  "file": "1f6a8.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "⚡",
+  "file": "26a1.json.deflate",
+  "group": "outdoors"
+ },
+ {
+  "emoji": "🦊",
+  "file": "1f98a.json.deflate",
+  "group": "animals"
+ },
+ {
+  "emoji": "🐻",
+  "file": "1f43b.json.deflate",
+  "group": "animals"
+ },
+ {
+  "emoji": "🐌",
+  "file": "1f40c.json.deflate",
+  "group": "animals"
+ },
+ {
+  "emoji": "🐝",
+  "file": "1f41d.json.deflate",
+  "group": "animals"
+ },
+ {
+  "emoji": "🦋",
+  "file": "1f98b.json.deflate",
+  "group": "animals"
+ },
+ {
+  "emoji": "✅",
+  "file": "2705.json.deflate",
+  "group": "signs"
+ },
+ {
+  "emoji": "❌",
+  "file": "274c.json.deflate",
+  "group": "signs"
+ },
+ {
+  "emoji": "❓",
+  "file": "2753.json.deflate",
+  "group": "signs"
+ },
+ {
+  "emoji": "❗",
+  "file": "2757.json.deflate",
+  "group": "signs"
+ },
+ {
+  "emoji": "👀",
+  "file": "1f440.json.deflate",
+  "group": "signs"
+ }
+]

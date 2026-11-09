@@ -60,6 +60,18 @@ struct SettingsView: View {
                         .foregroundStyle(Theme.tx2)
                         .padding(.horizontal, 4)
                         .fixedSize(horizontal: false, vertical: true)
+                    SectionLabel("GIFs").padding(.top, 10)
+                    CardList {
+                        CardRow(title: String(localized: "Load GIFs automatically"),
+                                subtitle: String(localized: "Otherwise tap each one: GIPHY sees your IP address")) {
+                            Toggle("Load GIFs automatically", isOn: $model.gifAutoLoad).labelsHidden()
+                        }
+                    }
+                    Text("A GIF travels as its GIPHY id, a few bytes; the phone that receives it loads it from GIPHY. With Tor on, GIFs load through Tor, automatically.")
+                        .font(.system(.caption))
+                        .foregroundStyle(Theme.tx2)
+                        .padding(.horizontal, 4)
+                        .fixedSize(horizontal: false, vertical: true)
                     SectionLabel("Voice messages").padding(.top, 10)
                     Picker("Voice messages", selection: $model.voiceMode) {
                         Text("Compact").tag(0)
@@ -126,6 +138,11 @@ struct SettingsView: View {
                         CardRow(title: String(localized: "Version")) {
                             Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
                                 .foregroundStyle(Theme.tx2)
+                        }
+                        CardDivider()
+                        CardRow(title: String(localized: "Stickers"),
+                                subtitle: String(localized: "Noto Animated Emoji © Google, CC BY 4.0. Animations by Lottie (Airbnb).")) {
+                            EmptyView()
                         }
                         CardDivider()
                         NavigationLink {

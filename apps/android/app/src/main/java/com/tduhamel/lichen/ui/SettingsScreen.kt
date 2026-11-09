@@ -145,6 +145,17 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 Text(stringResource(R.string.transports_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
             }
+            item { SectionLabel(stringResource(R.string.gifs), Modifier.padding(top = 10.dp)) }
+            item {
+                CardList {
+                    CardRow(stringResource(R.string.gif_auto), stringResource(R.string.gif_auto_note)) {
+                        LichenSwitch(model.gifAutoLoad, model::chooseGifAutoLoad)
+                    }
+                }
+            }
+            item {
+                Text(stringResource(R.string.gifs_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+            }
             item { SectionLabel(stringResource(R.string.voice_messages), Modifier.padding(top = 10.dp)) }
             item {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -224,6 +235,8 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 CardList {
                     CardRow(stringResource(R.string.version)) { Text(BuildConfig.VERSION_NAME, color = t.tx2) }
+                    CardDivider()
+                    CardRow(stringResource(R.string.stickers), stringResource(R.string.stickers_credit))
                     CardDivider()
                     Row(Modifier.fillMaxWidth().clickable(onClick = identity), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
