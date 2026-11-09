@@ -1369,6 +1369,7 @@ mod persistence {
             | Message::Image { .. }
             | Message::Announce { .. }
             | Message::Notice { .. }
+            | Message::File { .. }
             | Message::Other { .. } => "",
         }
     }

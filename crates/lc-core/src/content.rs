@@ -11,6 +11,11 @@ pub type MediaId = [u8; 8];
 pub const VOICE_MAX_FRAMES: u16 = 375;
 /// Largest image variant.
 pub const IMAGE_MAX: usize = 4_096;
+/// The largest small file sent over LoRa (§13.2 kind 2, ADR-0022), and its name.
+pub const FILE_MAX: usize = 8_192;
+pub const FILE_NAME_MAX: usize = 64;
+/// FILE kind of a small file (§13.2).
+const KIND_FILE: u8 = 2;
 /// FILE kind of an AVIF image.
 const KIND_AVIF: u8 = 1;
 
@@ -108,6 +113,12 @@ pub enum Content {
         sent_at: u32,
         target: MessageRef,
         emoji: String,
+    },
+    /// A small file (§13.2 kind 2, ADR-0022): a name and up to 8 KB, to a contact.
+    File {
+        sent_at: u32,
+        name: String,
+        data: Vec<u8>,
     },
     /// A membership notice this phone records in a group's conversation (§6, 0xE0, local:
     /// never on the air).
@@ -316,6 +327,20 @@ impl Content {
                 v.extend_from_slice(emoji.as_bytes());
                 v
             }
+            Content::File {
+                sent_at,
+                name,
+                data,
+            } => {
+                let mut v = Vec::with_capacity(7 + name.len() + data.len());
+                v.push(content::FILE);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.push(KIND_FILE);
+                v.push(name.len().min(255) as u8);
+                v.extend_from_slice(name.as_bytes());
+                v.extend_from_slice(data);
+                v
+            }
             Content::Notice(n) => {
                 let mut v = vec![NOTICE];
                 n.encode_body(&mut v);
@@ -347,6 +372,8 @@ impl Content {
             decode_voice(body)
         } else if content_type == content::FILE && body.get(4) == Some(&KIND_AVIF) {
             decode_image(body)
+        } else if content_type == content::FILE && body.get(4) == Some(&KIND_FILE) {
+            decode_file(body)
         } else if content_type == content::ANNOUNCE {
             decode_announce(body)
         } else if content_type == content::REPLY {
@@ -450,6 +477,25 @@ fn decode_announce(body: &[u8]) -> Option<Content> {
         providers,
         name: String::from_utf8(name.to_vec()).ok()?,
     }))
+}
+
+/// `ts ‖ 2 ‖ name_len ‖ name ‖ data` (§13.2): a name of 1..=64 bytes of UTF-8, 1..=8,192 bytes.
+fn decode_file(body: &[u8]) -> Option<Content> {
+    let (ts, rest) = body.split_first_chunk::<4>()?;
+    let (&[_kind, n], rest) = rest.split_first_chunk::<2>()?;
+    let n = usize::from(n);
+    if !(1..=FILE_NAME_MAX).contains(&n) {
+        return None;
+    }
+    let (name, data) = rest.split_at_checked(n)?;
+    if data.is_empty() || data.len() > FILE_MAX {
+        return None;
+    }
+    Some(Content::File {
+        sent_at: u32::from_le_bytes(*ts),
+        name: std::str::from_utf8(name).ok()?.to_owned(),
+        data: data.to_vec(),
+    })
 }
 
 fn decode_image(body: &[u8]) -> Option<Content> {
@@ -647,7 +693,8 @@ mod tests {
         let mut big = img[..21].to_vec();
         big.extend(std::iter::repeat_n(0, IMAGE_MAX + 1));
         assert_eq!(Content::decode(&big), None);
-        img[5] = 2;
+        // A FILE kind this version does not know (1 image, 2 small file).
+        img[5] = 9;
         assert!(matches!(Content::decode(&img), Some(Content::Other { .. })));
         // Request: exactly 9 bytes, variant 0 or 1.
         assert_eq!(

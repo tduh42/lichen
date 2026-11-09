@@ -227,6 +227,9 @@ fn describe(core: &Core, e: &Event) -> String {
                 }
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
+                Content::File { name, data, .. } => {
+                    format!("file \"{name}\", {} bytes", data.len())
+                }
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",
                     f32::from(*frames) * 0.04,
@@ -299,6 +302,9 @@ fn describe(core: &Core, e: &Event) -> String {
                 }
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
+                Content::File { name, data, .. } => {
+                    format!("file \"{name}\", {} bytes", data.len())
+                }
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",
                     f32::from(*frames) * 0.04,

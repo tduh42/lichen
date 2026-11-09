@@ -197,6 +197,9 @@ impl Bot {
             Content::Image { data, .. } => {
                 format!("got the full photo, {} bytes · {radio}", data.len())
             }
+            Content::File { name, data, .. } => {
+                format!("got your file \"{name}\" ({} bytes) · {radio}", data.len())
+            }
             Content::Location(p) => format!(
                 "got your position, ±{:.0} m · {radio}",
                 lc_core::location::radius_m(p.prec)
@@ -236,6 +239,23 @@ impl Bot {
                 Some(pcm) => (format!("{stamp}-{who}-voice.wav"), wav(&pcm, 8_000)),
                 None => (format!("{stamp}-{who}-voice.c2"), data.clone()),
             },
+            // Its own name, kept to a plain file name (no directories, no hidden file).
+            Content::File { name, data, .. } => {
+                let safe: String = name
+                    .chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || "._- ".contains(c) {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect();
+                (
+                    format!("{stamp}-{who}-{}", safe.trim_start_matches('.')),
+                    data.clone(),
+                )
+            }
             _ => return,
         };
         let path = dir.join(name);

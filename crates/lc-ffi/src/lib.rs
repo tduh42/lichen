@@ -327,6 +327,12 @@ pub enum Message {
         providers: Vec<Provider>,
         name: String,
     },
+    /// A small file over LoRa (§13.2 kind 2, ADR-0022): its name and content (up to 8 KB).
+    File {
+        sent_at: u32,
+        name: String,
+        data: Vec<u8>,
+    },
     /// A membership change in a group, recorded by this phone (ADR-0021): `kind` is one of
     /// `lc_core::content::notice` (1 created, 2 added us, 3 joined, 4 left, 5 removed, 6 no
     /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left).
@@ -432,6 +438,15 @@ impl From<Content> for Message {
                     body: v,
                 }
             }
+            Content::File {
+                sent_at,
+                name,
+                data,
+            } => Self::File {
+                sent_at,
+                name,
+                data,
+            },
             Content::Notice(n) => Self::Notice {
                 kind: n.kind,
                 actor: n.actor.to_vec(),
@@ -957,6 +972,8 @@ pub enum QuoteKind {
     Text,
     Voice,
     Photo,
+    /// A file; the excerpt is its name.
+    File,
     Other,
 }
 
@@ -1243,6 +1260,8 @@ impl Inner {
                 (QuoteKind::Text, text.chars().take(100).collect())
             }
             Content::Voice { .. } => (QuoteKind::Voice, String::new()),
+            Content::File { name, .. } => (QuoteKind::File, name.clone()),
+            Content::Announce(a) if a.kind == 3 => (QuoteKind::File, a.name.clone()),
             Content::Image { .. } | Content::Announce(_) => (QuoteKind::Photo, String::new()),
             _ => (QuoteKind::Other, String::new()),
         };
@@ -2406,6 +2425,61 @@ impl LichenCore {
         Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false, Some(&datagram)))
     }
 
+    /// What a small file costs over LoRa to `to` (§13.2 kind 2): fragments and airtime on the
+    /// current path. `name_len` and `size` in bytes.
+    pub fn estimate_file(
+        &self,
+        to: Vec<u8>,
+        name_len: u32,
+        size: u32,
+    ) -> Result<Estimate, LichenError> {
+        let k = key(&to)?;
+        let len = 7 + name_len as usize + size as usize;
+        let (fragments, airtime_ms) = self.lock().core.estimate_send(&k, len);
+        Ok(Estimate {
+            fragments,
+            airtime_ms,
+        })
+    }
+
+    /// Sends a small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact;
+    /// refused when over budget (§13.4). The name is fitted to 64 bytes, its extension kept.
+    pub fn send_file(
+        &self,
+        to: Vec<u8>,
+        name: String,
+        data: Vec<u8>,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let k = key(&to)?;
+        if data.is_empty() {
+            return Err(LichenError::Empty);
+        }
+        if data.len() > lc_core::content::FILE_MAX {
+            return Err(LichenError::TooLarge);
+        }
+        let name = fit_file_name(name, lc_core::content::FILE_NAME_MAX as u32);
+        let content = Content::File {
+            sent_at,
+            name: if name.is_empty() { "file".into() } else { name },
+            data,
+        };
+        let datagram = content.encode();
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let estimate = i.core.estimate_send(&k, datagram.len());
+        let id = i.core.send_media(&k, datagram.clone(), now_ms)?;
+        Ok(i.stored_outgoing(
+            Chat::Contact(k),
+            content,
+            id,
+            estimate,
+            false,
+            Some(&datagram),
+        ))
+    }
+
     /// Announces content offered over the bridge (§14.1) to a contact or a group. `media_id`
     /// links it to a LoRa preview sent before (empty: a new one).
     #[allow(clippy::too_many_arguments)]
@@ -3270,6 +3344,39 @@ pub fn seed_from_phrase(words: Vec<String>) -> Result<Vec<u8>, LichenError> {
         .ok_or(LichenError::BadCode)
 }
 
+/// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report
+/// title.pdf" becomes "Very long rep….pdf". Path separators are dropped.
+#[uniffi::export]
+pub fn fit_file_name(name: String, max_bytes: u32) -> String {
+    let name: String = name
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\' | '\0'))
+        .collect();
+    let max = max_bytes as usize;
+    if name.len() <= max {
+        return name;
+    }
+    let (stem, ext) = match name.rfind('.') {
+        Some(dot) if dot > 0 && name.len() - dot <= 10 => name.split_at(dot),
+        _ => (name.as_str(), ""),
+    };
+    let room = max.saturating_sub(ext.len() + '…'.len_utf8());
+    let mut end = room.min(stem.len());
+    while !stem.is_char_boundary(end) {
+        end -= 1;
+    }
+    let cut = format!("{}…{ext}", &stem[..end]);
+    if cut.len() <= max {
+        cut
+    } else {
+        let mut end = max.min(name.len());
+        while !name.is_char_boundary(end) {
+            end -= 1;
+        }
+        name[..end].to_owned()
+    }
+}
+
 /// The fingerprint of an identity key (6 groups of 4 hexadecimal digits).
 #[uniffi::export]
 pub fn fingerprint_of(identity: Vec<u8>) -> Result<Vec<String>, LichenError> {
@@ -3663,5 +3770,25 @@ mod receiver {
             .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
             .unwrap();
         assert_eq!(h.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod file_names {
+    use super::fit_file_name;
+
+    #[test]
+    fn long_names_keep_their_extension() {
+        assert_eq!(fit_file_name("topo.gpx".into(), 32), "topo.gpx");
+        let cut = fit_file_name("Compte rendu de la réunion du conseil.pdf".into(), 32);
+        assert!(cut.len() <= 32 && cut.ends_with("….pdf"), "{cut}");
+        assert_eq!(
+            fit_file_name("../../etc/passwd".into(), 64),
+            "....etcpasswd"
+        );
+        let no_ext = fit_file_name("x".repeat(80), 64);
+        assert_eq!(no_ext.len(), 64);
+        let accents = fit_file_name(format!("{}.txt", "é".repeat(40)), 32);
+        assert!(accents.len() <= 32 && accents.ends_with(".txt"));
     }
 }

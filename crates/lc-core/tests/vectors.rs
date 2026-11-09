@@ -170,3 +170,32 @@ fn sender_keys() {
         assert_eq!(Control::decode(&h(v, "datagram")), None, "{}", s(v, "name"));
     }
 }
+
+#[test]
+fn small_files() {
+    let t = load();
+    for v in entries(&t, "file") {
+        let content = Content::File {
+            sent_at: ts(v),
+            name: s(v, "file_name").to_owned(),
+            data: h(v, "data"),
+        };
+        assert_eq!(content.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(
+            Content::decode(&h(v, "datagram")),
+            Some(content),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "bad_file") {
+        assert!(
+            !matches!(
+                Content::decode(&h(v, "datagram")),
+                Some(Content::File { .. })
+            ),
+            "{}",
+            s(v, "name")
+        );
+    }
+}

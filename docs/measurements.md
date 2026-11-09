@@ -287,3 +287,15 @@ Ten seeds each, median / worst, seconds (`cargo test -p lc-core --release --test
 Admission is about 30 s slower in the median (the admin waits for answers between frames to different members) but never 191 s; what matters to the conversation, everyone reading everyone, comes sooner.
 
 The demo (`lc-ffi` test `reactions_and_a_reply_with_camille`, with Camille's 👍 back at 8 s after her answer): her answer to the app's 60 s message arrives at 90 s instead of 185 s, without a new session; the 👍 at 166 s instead of 218 s. What remains is the demo's busiest minute: the app, Camille and the crest repeater all talk through the hub, Camille's exchanges with Julien (group setup through the hub and the crest) collide at the hub with the app's frames, four retries in a row.
+
+## 2026-11-09 — Small files over LoRa (ADR-0022)
+
+`cargo run --release -p lc-cli -- sim --repeaters 1 --loss 0 --bytes N --cr 8`: one datagram the size of a FILE kind 2 with a short name, alice → one repeater → bob, French preset (SF8 / 62.5 kHz / CR 4/8), from a cold start (path, handshake).
+
+| File | Frames sent by alice | Her airtime | Delivered after |
+|---|---|---|---|
+| 1 KB | 11 | 13.9 s | 54 s |
+| 4 KB | 36 | 50 s | 3.0 min |
+| 8 KB (the most) | 62 | 93 s | 5.6 min |
+
+The repeater spends about as much airtime as the sender. An 8 KB file is a quarter of the sender's hour (360 s), and the app shows its fragments and airtime before sending, as for voice and photos; anything larger goes over the Internet bridge.

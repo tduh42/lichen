@@ -39,6 +39,9 @@ fn timeline() {
                         } => {
                             format!("notice {kind} by {actor_name}")
                         }
+                        Message::File { name, data, .. } => {
+                            format!("file {name:?} {} B", data.len())
+                        }
                         Message::Other { content_type, .. } => format!("other {content_type}"),
                     };
                     println!(
