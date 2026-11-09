@@ -8,6 +8,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use lc_core::content::{MessageRef, REACTION_MAX, message_ref};
 use lc_core::location::{self as loc, EXTRAPOLATE_MAX_S};
 use lc_core::store::{self, Chat, Status, Store, StoredPosition};
 use lc_core::{
@@ -63,6 +64,9 @@ pub enum LichenError {
     /// A frame of the message already went out, or it is not waiting: it can no longer be
     /// cancelled (§6.1).
     NotCancellable,
+    /// This message has no reference (an image from before replies existed): it cannot be
+    /// answered or reacted to (§6.2).
+    NotReferable,
 }
 
 impl std::fmt::Display for LichenError {
@@ -577,6 +581,14 @@ pub enum LichenEvent {
     GroupSent {
         id: u64,
     },
+    /// `by` (a node in a direct conversation, an identity in a group) reacted to a message
+    /// (§6.2); empty `emoji`: removed. `target`: the message, when it is on this phone.
+    Reacted {
+        chat: ChatRef,
+        by: Vec<u8>,
+        emoji: String,
+        target: Option<StoredMessage>,
+    },
     GroupJoined {
         gid: Vec<u8>,
         name: String,
@@ -855,6 +867,44 @@ pub struct StoredMessage {
     /// Seen by the user (ours always are): the unread divider goes before the first one that
     /// is not.
     pub read: bool,
+    /// It has a reference: it can be answered and reacted to (§6.2).
+    pub referable: bool,
+    /// The message it answers, for a reply.
+    pub quote: Option<Quote>,
+    /// Reactions to it, the most frequent first.
+    pub reactions: Vec<ReactionCount>,
+}
+
+/// What kind of message a reply answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum QuoteKind {
+    Text,
+    Voice,
+    Photo,
+    Other,
+}
+
+/// The message a reply answers (§6.2), as far as this phone knows it.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Quote {
+    /// The original in this conversation's history; `None`: not on this phone.
+    pub message_id: Option<i64>,
+    /// Ours.
+    pub outgoing: bool,
+    /// Its author's identity, in a group.
+    pub author: Option<Vec<u8>>,
+    pub kind: QuoteKind,
+    /// The start of its text.
+    pub excerpt: String,
+}
+
+/// One emoji's reactions to a message.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ReactionCount {
+    pub emoji: String,
+    pub count: u32,
+    /// Ours is among them.
+    pub mine: bool,
 }
 
 /// A conversation's local preferences: pinned (since when, Unix ms) and muted (until when).
@@ -891,6 +941,9 @@ impl From<store::Message> for StoredMessage {
             airtime_ms: m.airtime_ms,
             snr_db: m.snr4.map(snr),
             read: m.read,
+            referable: m.msg_ref.is_some(),
+            quote: None,
+            reactions: Vec::new(),
         }
     }
 }
@@ -923,6 +976,8 @@ struct Inner {
     outbox_expiry_ms: i64,
     /// Unix ms minus `now_ms`, from `set_clock`.
     clock_offset: Option<i64>,
+    /// Our reactions being sent: core id → conversation and target (§6.2).
+    reaction_inflight: HashMap<u64, (Chat, MessageRef)>,
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
@@ -983,7 +1038,9 @@ impl Inner {
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
+        self.backfill_refs();
         self.resume_outbox();
+        self.resume_reactions();
     }
 
     /// Texts unfinished when the app stopped are submitted again with their stored plaintext;
@@ -1069,14 +1126,208 @@ impl Inner {
         }
     }
 
-    /// A stored message as the app should see it: an unfinished text with its live status.
+    /// A stored message as the app should see it: an unfinished text with its live status, a
+    /// reply with what it answers, the reactions to it.
     fn present(&self, m: store::Message) -> StoredMessage {
         let row = m.id;
+        let quote = match &m.content {
+            Content::Reply { target, .. } => Some(self.quote(&m.chat, target)),
+            _ => None,
+        };
+        let reactions = m
+            .msg_ref
+            .map(|r| self.reaction_counts(&m.chat, &r))
+            .unwrap_or_default();
         let mut out = StoredMessage::from(m);
         if let Some(p) = self.outbox.get(&row) {
             out.status = self.live_status(p, self.core.outgoing(p.core_id, self.last_now));
         }
+        out.quote = quote;
+        out.reactions = reactions;
         out
+    }
+
+    /// What reference `target` of `chat` points at (§6.2).
+    fn quote(&self, chat: &Chat, target: &MessageRef) -> Quote {
+        let Some(m) = self
+            .store
+            .as_ref()
+            .and_then(|s| s.message_by_ref(chat, target).ok().flatten())
+        else {
+            return Quote {
+                message_id: None,
+                outgoing: false,
+                author: None,
+                kind: QuoteKind::Other,
+                excerpt: String::new(),
+            };
+        };
+        let (kind, excerpt) = match &m.content {
+            Content::Text { text, .. } | Content::Reply { text, .. } => {
+                (QuoteKind::Text, text.chars().take(100).collect())
+            }
+            Content::Voice { .. } => (QuoteKind::Voice, String::new()),
+            Content::Image { .. } | Content::Announce(_) => (QuoteKind::Photo, String::new()),
+            _ => (QuoteKind::Other, String::new()),
+        };
+        Quote {
+            message_id: Some(m.id),
+            outgoing: m.outgoing,
+            author: m.author.map(|a| a.to_vec()),
+            kind,
+            excerpt,
+        }
+    }
+
+    /// The reactions to message `target` of `chat`, by emoji, the most frequent first.
+    fn reaction_counts(&self, chat: &Chat, target: &MessageRef) -> Vec<ReactionCount> {
+        let Some(st) = &self.store else {
+            return Vec::new();
+        };
+        let me = self.core.key().copied();
+        let mut out: Vec<ReactionCount> = Vec::new();
+        for (reactor, emoji) in st.reactions_for(chat, target).unwrap_or_default() {
+            let mine = Some(reactor) == me;
+            match out.iter_mut().find(|c| c.emoji == emoji) {
+                Some(c) => {
+                    c.count += 1;
+                    c.mine |= mine;
+                }
+                None => out.push(ReactionCount {
+                    emoji,
+                    count: 1,
+                    mine,
+                }),
+            }
+        }
+        out.sort_by_key(|c| std::cmp::Reverse(c.count));
+        out
+    }
+
+    /// The identity of `chat`'s author of a message: ours, a group member's, or the contact's
+    /// (§6.2).
+    fn author_identity(
+        &self,
+        chat: &Chat,
+        outgoing: bool,
+        author: Option<PubKey>,
+    ) -> Option<PubKey> {
+        if outgoing {
+            return self.core.key().copied();
+        }
+        match chat {
+            Chat::Group(_) => author,
+            Chat::Contact(k) => self
+                .core
+                .contacts()
+                .find(|c| c.key == *k)
+                .and_then(|c| c.identity),
+        }
+    }
+
+    /// The reference of a message of `chat` with `plaintext` as sent (§6.2).
+    fn reference(
+        &self,
+        chat: &Chat,
+        outgoing: bool,
+        author: Option<PubKey>,
+        plaintext: &[u8],
+    ) -> Option<MessageRef> {
+        self.author_identity(chat, outgoing, author)
+            .map(|a| message_ref(&a, plaintext))
+    }
+
+    /// Fills in the references of messages from before version 9 (§6.2). An image's cannot
+    /// be: the sender kept the full variant, not the preview that was sent.
+    fn backfill_refs(&mut self) {
+        let Some(st) = &self.store else {
+            return;
+        };
+        loop {
+            let rows = st.messages_without_ref(500).unwrap_or_default();
+            if rows.is_empty() {
+                break;
+            }
+            for m in rows {
+                let r = match m.content {
+                    Content::Image { .. } => None,
+                    ref c => self.reference(&m.chat, m.outgoing, m.author, &c.encode()),
+                };
+                if st.set_ref(m.id, r.as_ref()).is_err() {
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Sends our reaction to `target` in `chat` (§6.2) and follows it until delivered.
+    fn submit_reaction(&mut self, chat: Chat, target: MessageRef, emoji: &str, ts: u32) {
+        let datagram = Content::Reaction {
+            sent_at: ts,
+            target,
+            emoji: emoji.to_owned(),
+        }
+        .encode();
+        let now = self.last_now;
+        let id = match chat {
+            Chat::Contact(k) => self.core.send_datagram(&k, datagram, now),
+            Chat::Group(g) => self.core.send_group_datagram(&g, &datagram, now),
+        };
+        // Not accepted now: it stays pending and goes again at the next start.
+        if let Ok(id) = id {
+            self.reaction_inflight.insert(id, (chat, target));
+        }
+    }
+
+    /// Our reactions not delivered when the app stopped go again, unless too old (§6.2).
+    fn resume_reactions(&mut self) {
+        let (Some(st), Some(me)) = (&self.store, self.core.key().copied()) else {
+            return;
+        };
+        let now = unix_ms();
+        for p in st.pending_reactions(&me).unwrap_or_default() {
+            if p.expires_ms.is_some_and(|e| e <= now) {
+                if let Some(st) = &self.store {
+                    let _ = st.reaction_done(&p.chat, &p.target, &me);
+                }
+            } else {
+                self.submit_reaction(p.chat, p.target, &p.emoji, p.ts);
+            }
+        }
+    }
+
+    /// A reaction from `by` (`by_wire`: as the app knows the sender), §6.2.
+    fn on_reaction(
+        &mut self,
+        chat: Chat,
+        target: MessageRef,
+        by: PubKey,
+        by_wire: &PubKey,
+        emoji: &str,
+        ts: u32,
+    ) {
+        let applied = self.store.as_ref().is_some_and(|s| {
+            s.upsert_reaction(&chat, &target, &by, emoji, ts, false, None)
+                .unwrap_or(false)
+        });
+        if !applied {
+            return;
+        }
+        let target_row = self
+            .store
+            .as_ref()
+            .and_then(|s| s.message_by_ref(&chat, &target).ok().flatten())
+            .map(|m| self.present(m));
+        if let Some(t) = &target_row {
+            self.extra
+                .push_back(LichenEvent::MessageChanged { message: t.clone() });
+        }
+        self.extra.push_back(LichenEvent::Reacted {
+            chat: ChatRef::from_store(&chat),
+            by: by_wire.to_vec(),
+            emoji: emoji.to_owned(),
+            target: target_row,
+        });
     }
 
     /// Expires overdue texts and tells the app when an unfinished text's status changed
@@ -1103,8 +1354,9 @@ impl Inner {
                             .ok()
                             .flatten()
                     }) {
+                        let message = self.present(m);
                         self.extra
-                            .push_back(LichenEvent::MessageChanged { message: m.into() });
+                            .push_back(LichenEvent::MessageChanged { message });
                     }
                 }
                 continue;
@@ -1114,7 +1366,7 @@ impl Inner {
                 continue;
             }
             if let Some(m) = self.store.as_ref().and_then(|s| s.get(row).ok().flatten()) {
-                let mut out = StoredMessage::from(m);
+                let mut out = self.present(m);
                 out.status = status.clone();
                 self.extra
                     .push_back(LichenEvent::MessageChanged { message: out });
@@ -1127,11 +1379,13 @@ impl Inner {
 
     /// A TEXT or VOICE already stored from the same sender in `chat`: a resend (§6.1).
     fn is_resend(&self, chat: &Chat, author: Option<&PubKey>, content: &Content) -> bool {
-        matches!(content, Content::Text { .. } | Content::Voice { .. })
-            && self
-                .store
-                .as_ref()
-                .is_some_and(|s| s.has_duplicate(chat, author, content).unwrap_or(false))
+        matches!(
+            content,
+            Content::Text { .. } | Content::Reply { .. } | Content::Voice { .. }
+        ) && self
+            .store
+            .as_ref()
+            .is_some_and(|s| s.has_duplicate(chat, author, content).unwrap_or(false))
     }
 
     /// The node of identity `id` (the app knows people by node): a group member or a contact.
@@ -1190,7 +1444,9 @@ impl Inner {
         id: u64,
         (fragments, airtime_ms): (u8, u64),
         outbox: bool,
+        wire: Option<&[u8]>,
     ) -> StoredMessage {
+        let msg_ref = self.reference(&chat, true, None, wire.unwrap_or(&content.encode()));
         let status = if outbox {
             Status::Queued
         } else {
@@ -1211,6 +1467,7 @@ impl Inner {
             airtime_ms,
             snr4: None,
             read: true,
+            msg_ref,
         };
         let stored = self
             .store
@@ -1234,7 +1491,7 @@ impl Inner {
 
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
         let row = self.store.as_ref()?.insert(&m).ok()?;
-        let out = StoredMessage::from(row);
+        let out = self.present(row);
         self.extra.push_back(LichenEvent::MessageChanged {
             message: out.clone(),
         });
@@ -1297,9 +1554,40 @@ impl Inner {
                     let row = s.find_image(&chat, media_id).ok().flatten()?;
                     s.set_content(row, content).ok().flatten()
                 }) {
+                    let message = self.present(m);
                     self.extra
-                        .push_back(LichenEvent::MessageChanged { message: m.into() });
+                        .push_back(LichenEvent::MessageChanged { message });
                 }
+            }
+            Event::Received {
+                from,
+                content:
+                    Content::Reaction {
+                        sent_at,
+                        target,
+                        emoji,
+                    },
+                ..
+            } => {
+                let chat = Chat::Contact(*from);
+                if let Some(by) = self.author_identity(&chat, false, None) {
+                    self.on_reaction(chat, *target, by, from, emoji, *sent_at);
+                }
+                return false;
+            }
+            Event::GroupMessage {
+                gid,
+                from,
+                content:
+                    Content::Reaction {
+                        sent_at,
+                        target,
+                        emoji,
+                    },
+                ..
+            } => {
+                self.on_reaction(Chat::Group(*gid), *target, *from, from, emoji, *sent_at);
+                return false;
             }
             Event::MediaRequested {
                 from,
@@ -1323,12 +1611,14 @@ impl Inner {
                 snr4,
                 ..
             } => {
-                if self.is_resend(&Chat::Contact(*from), None, content) {
+                let chat = Chat::Contact(*from);
+                if self.is_resend(&chat, None, content) {
                     return false;
                 }
+                let msg_ref = self.reference(&chat, false, None, &content.encode());
                 self.record(store::Message {
                     id: 0,
-                    chat: Chat::Contact(*from),
+                    chat,
                     outgoing: false,
                     author: None,
                     content: content.clone(),
@@ -1338,6 +1628,7 @@ impl Inner {
                     airtime_ms: 0,
                     snr4: Some(*snr4),
                     read: false,
+                    msg_ref,
                 });
             }
             Event::GroupMessage {
@@ -1347,12 +1638,14 @@ impl Inner {
                 snr4,
                 ..
             } => {
-                if self.is_resend(&Chat::Group(*gid), Some(from), content) {
+                let chat = Chat::Group(*gid);
+                if self.is_resend(&chat, Some(from), content) {
                     return false;
                 }
+                let msg_ref = self.reference(&chat, false, Some(*from), &content.encode());
                 self.record(store::Message {
                     id: 0,
-                    chat: Chat::Group(*gid),
+                    chat,
                     outgoing: false,
                     author: Some(*from),
                     content: content.clone(),
@@ -1362,6 +1655,7 @@ impl Inner {
                     airtime_ms: 0,
                     snr4: Some(*snr4),
                     read: false,
+                    msg_ref,
                 });
             }
             Event::Progress { id, sent, total } => {
@@ -1397,6 +1691,23 @@ impl Inner {
                     let v = previous.map(|p| [p as u8]);
                     let _ = st.set_setting(TX_POWER_RESTORE, v.as_ref().map(|v| v.as_slice()));
                 }
+            }
+            Event::Delivered { id } | Event::GroupSent { id }
+                if self.reaction_inflight.contains_key(id) =>
+            {
+                if let (Some((chat, target)), Some(me), Some(st)) = (
+                    self.reaction_inflight.remove(id),
+                    self.core.key().copied(),
+                    &self.store,
+                ) {
+                    let _ = st.reaction_done(&chat, &target, &me);
+                }
+                return false;
+            }
+            // A reaction that failed stays pending: it goes again at the next start (§6.2).
+            Event::Failed { id, .. } if self.reaction_inflight.contains_key(id) => {
+                self.reaction_inflight.remove(id);
+                return false;
             }
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
@@ -1463,6 +1774,7 @@ impl LichenCore {
             outbox: HashMap::new(),
             outbox_expiry_ms: OUTBOX_EXPIRY_MS,
             clock_offset: None,
+            reaction_inflight: HashMap::new(),
         };
         // The history is available before the node connects.
         if let Some(id) = inner.core.key().copied() {
@@ -1528,12 +1840,12 @@ impl LichenCore {
             return Err(LichenError::NotAllowed);
         }
         let datagram = m.content.encode();
-        let text = matches!(m.content, Content::Text { .. });
+        let text = matches!(m.content, Content::Text { .. } | Content::Reply { .. });
         let id = match (&m.chat, &m.content) {
-            (Chat::Contact(k), Content::Text { .. }) => {
+            (Chat::Contact(k), Content::Text { .. } | Content::Reply { .. }) => {
                 i.core.send_datagram(k, datagram, now_ms)?
             }
-            (Chat::Group(g), Content::Text { .. }) => {
+            (Chat::Group(g), Content::Text { .. } | Content::Reply { .. }) => {
                 i.core.send_group_datagram(g, &datagram, now_ms)?
             }
             (Chat::Contact(k), Content::Voice { .. }) => i.core.send_media(k, datagram, now_ms)?,
@@ -1930,7 +2242,7 @@ impl LichenCore {
             sent_at,
             now_ms,
         )?;
-        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, true))
+        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, true, None))
     }
 
     /// Fragments and airtime (first round) of a datagram of `len` bytes to `to`.
@@ -1963,7 +2275,7 @@ impl LichenCore {
         let datagram = content.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
         let id = i.core.send_media(&k, datagram, now_ms)?;
-        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false))
+        Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None))
     }
 
     /// Sends the preview of an image prepared by [`prepare_image`]; its full variant goes out
@@ -1992,12 +2304,12 @@ impl LichenCore {
         let preview = variant(false, image.preview.clone());
         let datagram = preview.encode();
         let estimate = i.core.estimate_send(&k, datagram.len());
-        let id = i.core.send_media(&k, datagram, now_ms)?;
+        let id = i.core.send_media(&k, datagram.clone(), now_ms)?;
         if let Some(st) = &i.store {
             let _ = st.put_media(&media_id, &Chat::Contact(k), &full.encode());
         }
-        // What we keep in our history is the full image.
-        Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false))
+        // What we keep in our history is the full image; its reference, the preview sent.
+        Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false, Some(&datagram)))
     }
 
     /// Announces content offered over the bridge (§14.1) to a contact or a group. `media_id`
@@ -2042,10 +2354,11 @@ impl LichenCore {
             Chat::Contact(k) => {
                 let estimate = i.core.estimate_send(&k, datagram.len());
                 let id = i.core.send_datagram(&k, datagram, now_ms)?;
-                Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false))
+                Ok(i.stored_outgoing(Chat::Contact(k), content, id, estimate, false, None))
             }
             Chat::Group(g) => {
                 i.core.send_group_datagram(&g, &datagram, now_ms)?;
+                let msg_ref = i.reference(&Chat::Group(g), true, None, &datagram);
                 let row = store::Message {
                     id: 0,
                     chat: Chat::Group(g),
@@ -2058,6 +2371,7 @@ impl LichenCore {
                     airtime_ms: 0,
                     snr4: None,
                     read: true,
+                    msg_ref,
                 };
                 let stored = i
                     .store
@@ -2065,9 +2379,114 @@ impl LichenCore {
                     .and_then(|s| s.insert(&row).ok())
                     .unwrap_or(row);
                 i.persist();
-                Ok(stored.into())
+                Ok(i.present(stored))
             }
         }
+    }
+
+    /// Answers message `to_message_id` of `chat` (§6.2): a text that waits in the outbox like
+    /// any other (§6.1). Refused for a message without a reference.
+    pub fn send_reply(
+        &self,
+        chat: ChatRef,
+        to_message_id: i64,
+        text: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let c = chat.to_store()?;
+        if text.is_empty() {
+            return Err(LichenError::Empty);
+        }
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let target = i
+            .store
+            .as_ref()
+            .and_then(|s| s.get(to_message_id).ok().flatten())
+            .filter(|m| m.chat == c)
+            .and_then(|m| m.msg_ref)
+            .ok_or(LichenError::NotReferable)?;
+        let content = Content::Reply {
+            sent_at,
+            target,
+            text,
+        };
+        let datagram = content.encode();
+        let (id, estimate) = match c {
+            Chat::Contact(k) => (
+                i.core.send_datagram(&k, datagram.clone(), now_ms)?,
+                i.core.estimate_send(&k, datagram.len()),
+            ),
+            Chat::Group(g) => (
+                i.core.send_group_datagram(&g, &datagram, now_ms)?,
+                i.core.estimate_group_send(datagram.len()),
+            ),
+        };
+        Ok(i.stored_outgoing(c, content, id, estimate, true, None))
+    }
+
+    /// Reacts to message `message_id` with `emoji` (empty removes our reaction), §6.2: shown
+    /// at once, sent, and sent again after a restart until delivered (24 h at most). Returns
+    /// the message with its reactions.
+    pub fn send_reaction(
+        &self,
+        message_id: i64,
+        emoji: String,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        if emoji.len() > REACTION_MAX {
+            return Err(LichenError::TooLarge);
+        }
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let me = *i.core.key().ok_or(LichenError::NoIdentity)?;
+        let m = i
+            .store
+            .as_ref()
+            .and_then(|s| s.get(message_id).ok().flatten())
+            .ok_or(LichenError::Storage)?;
+        let target = m.msg_ref.ok_or(LichenError::NotReferable)?;
+        let chat = m.chat;
+        // Each change goes after the previous one, even within the same second.
+        let previous = i
+            .store
+            .as_ref()
+            .and_then(|s| s.reaction(&chat, &target, &me).ok().flatten())
+            .map_or(0, |(_, ts)| ts);
+        let ts = u32::try_from(unix_ms() / 1000)
+            .unwrap_or(u32::MAX)
+            .max(previous.saturating_add(1));
+        let expires = unix_ms() + i.outbox_expiry_ms;
+        if let Some(st) = &i.store {
+            st.upsert_reaction(&chat, &target, &me, &emoji, ts, true, Some(expires))
+                .map_err(|_| LichenError::Storage)?;
+        }
+        i.submit_reaction(chat, target, &emoji, ts);
+        i.persist();
+        let row = i
+            .store
+            .as_ref()
+            .and_then(|s| s.get(message_id).ok().flatten())
+            .ok_or(LichenError::Storage)?;
+        Ok(i.present(row))
+    }
+
+    /// What a reaction costs us in `chat` (§6.2): fragments and the airtime of our own
+    /// transmissions (a group's two floods); relays and acknowledgements add theirs.
+    pub fn estimate_reaction(&self, chat: ChatRef) -> Result<Estimate, LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        // ts, reference and a 4-byte emoji.
+        let len = 1 + 4 + 8 + 4;
+        let (fragments, airtime_ms) = match c {
+            Chat::Contact(k) => i.core.estimate_send(&k, len),
+            Chat::Group(_) => i.core.estimate_group_send(len),
+        };
+        Ok(Estimate {
+            fragments,
+            airtime_ms,
+        })
     }
 
     /// Asks the sender of image preview `message_id` for its full variant.
@@ -2132,7 +2551,7 @@ impl LichenCore {
         let id = i.core.send_group_text(&g, &text, sent_at, now_ms)?;
         let content = Content::Text { sent_at, text };
         let estimate = i.core.estimate_group_send(content.encode().len());
-        Ok(i.stored_outgoing(Chat::Group(g), content, id, estimate, true))
+        Ok(i.stored_outgoing(Chat::Group(g), content, id, estimate, true, None))
     }
 
     /// Invites contacts (nodes whose identity is known) into a group we administer (ADR-0017).
@@ -2213,16 +2632,18 @@ impl LichenCore {
         for n in 0..count {
             let at_ms = start + i64::from(n) * 60_000;
             let outgoing = n % 2 == 0;
+            let content = Content::Text {
+                sent_at: u32::try_from(at_ms / 1000).unwrap_or(0),
+                text: format!("Earlier message {}", n + 1),
+            };
+            let msg_ref = i.reference(&c, outgoing, None, &content.encode());
             store
                 .insert(&store::Message {
                     id: 0,
                     chat: c,
                     outgoing,
                     author: None,
-                    content: Content::Text {
-                        sent_at: u32::try_from(at_ms / 1000).unwrap_or(0),
-                        text: format!("Earlier message {}", n + 1),
-                    },
+                    content,
                     at_ms,
                     status: if outgoing {
                         Status::Delivered
@@ -2234,6 +2655,7 @@ impl LichenCore {
                     snr4: None,
                     // The last five of theirs are left unread (the divider).
                     read: outgoing || n + 10 < count,
+                    msg_ref,
                 })
                 .map_err(|_| LichenError::Storage)?;
         }
@@ -2965,6 +3387,65 @@ mod essentials {
         core.set_pinned(chat.clone(), false).unwrap();
         core.set_muted(chat, None).unwrap();
         assert!(core.chat_prefs().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod reactions {
+    use super::*;
+
+    /// A reaction may arrive before the message it reacts to (§6.2): it shows once that
+    /// message is there, and it does not appear as a message itself.
+    #[test]
+    fn a_reaction_before_its_target() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![140; 32], None).unwrap();
+        let mut i = core.lock();
+        i.core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        let text = Content::Text {
+            sent_at: 5,
+            text: "hi".into(),
+        };
+        let target = message_ref(&[7; 32], &text.encode());
+        let reaction = Event::Received {
+            from: [9; 32],
+            content: Content::Reaction {
+                sent_at: 6,
+                target,
+                emoji: "👍".into(),
+            },
+            snr4: 0,
+            rssi: 0,
+        };
+        assert!(!i.on_event(&reaction), "not a message");
+        assert!(i.extra.iter().any(|e| matches!(e,
+            LichenEvent::Reacted { emoji, target: None, .. } if emoji == "👍")));
+        assert!(i.on_event(&Event::Received {
+            from: [9; 32],
+            content: text,
+            snr4: 0,
+            rssi: 0,
+        }));
+        drop(i);
+        let h = core
+            .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
+            .unwrap();
+        assert_eq!(h.len(), 1);
+        assert!(h[0].referable);
+        assert_eq!(
+            h[0].reactions,
+            vec![ReactionCount {
+                emoji: "👍".into(),
+                count: 1,
+                mine: false
+            }]
+        );
     }
 }
 

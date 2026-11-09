@@ -10,7 +10,7 @@ use std::path::Path;
 use rusqlite::{Connection, OptionalExtension, params};
 use unicode_normalization::UnicodeNormalization;
 
-use crate::content::{Content, MediaId};
+use crate::content::{Content, MediaId, MessageRef};
 
 fn media_id(c: &Content) -> Option<MediaId> {
     match c {
@@ -34,7 +34,9 @@ pub use rusqlite::Error;
 /// 7: the outbox (ADR-0018): `messages.expires_ms`, added to older databases; status 5
 /// (queued).
 /// 8: pinned and muted conversations (`chat_prefs`, table added).
-const VERSION: i32 = 8;
+/// 9: replies and reactions (ADR-0019): `messages.ref`, added to older databases and filled by
+/// the app; `reactions` (table added).
+const VERSION: i32 = 9;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -154,6 +156,8 @@ pub struct Message {
     pub airtime_ms: u64,
     pub snr4: Option<i8>,
     pub read: bool,
+    /// Its reference (§6.2), from its author and its plaintext as sent.
+    pub msg_ref: Option<MessageRef>,
 }
 
 /// The SQLite store.
@@ -195,7 +199,8 @@ CREATE TABLE IF NOT EXISTS messages (
     snr4 INTEGER,
     read INTEGER NOT NULL,
     media_id BLOB,
-    expires_ms INTEGER
+    expires_ms INTEGER,
+    ref BLOB
 );
 CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
 CREATE TABLE IF NOT EXISTS media (
@@ -214,6 +219,17 @@ CREATE TABLE IF NOT EXISTS shares (
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value BLOB NOT NULL
+);
+CREATE TABLE IF NOT EXISTS reactions (
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    target BLOB NOT NULL,
+    reactor BLOB NOT NULL,
+    emoji TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    pending INTEGER NOT NULL DEFAULT 0,
+    expires_ms INTEGER,
+    PRIMARY KEY (chat_kind, chat, target, reactor)
 );
 CREATE TABLE IF NOT EXISTS chat_prefs (
     chat_kind INTEGER NOT NULL,
@@ -246,6 +262,17 @@ pub struct StoredPosition {
     pub snr4: i8,
 }
 
+/// One of our reactions not delivered yet (§6.2).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingReaction {
+    pub chat: Chat,
+    pub target: MessageRef,
+    pub emoji: String,
+    pub ts: u32,
+    /// Given up then (Unix ms).
+    pub expires_ms: Option<i64>,
+}
+
 /// A conversation's local preferences (Unix ms): when it was pinned, until when it is muted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChatPref {
@@ -264,7 +291,7 @@ pub fn fold(s: &str) -> String {
 }
 
 const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
-                       status_b, fragments, airtime_ms, snr4, read";
+                       status_b, fragments, airtime_ms, snr4, read, ref";
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Message>> {
     let chat_bytes: Vec<u8> = r.get(2)?;
@@ -288,6 +315,9 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Message>> {
         airtime_ms: r.get::<_, i64>(11)?.try_into().unwrap_or(0),
         snr4: r.get(12)?,
         read: r.get(13)?,
+        msg_ref: r
+            .get::<_, Option<Vec<u8>>>(14)?
+            .and_then(|v| v.as_slice().try_into().ok()),
     }))
 }
 
@@ -333,6 +363,16 @@ impl Store {
         if !has_expiry {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN expires_ms INTEGER")?;
         }
+        // And from before version 9.
+        let has_ref = conn
+            .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'ref'")?
+            .exists([])?;
+        if !has_ref {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN ref BLOB")?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS messages_by_ref ON messages (chat_kind, chat, ref)",
+        )?;
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS messages_by_media ON messages (chat_kind, chat, media_id)",
         )?;
@@ -592,8 +632,8 @@ impl Store {
         let (s, a, b) = m.status.columns();
         self.conn.execute(
             "INSERT INTO messages (chat_kind, chat, outgoing, author, content, at_ms, status,
-             status_a, status_b, fragments, airtime_ms, snr4, read, media_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             status_a, status_b, fragments, airtime_ms, snr4, read, media_id, ref)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 m.chat.kind(),
                 m.chat.bytes(),
@@ -609,6 +649,7 @@ impl Store {
                 m.snr4,
                 m.read,
                 media_id(&m.content).as_ref().map(|i| i.as_slice()),
+                m.msg_ref.as_ref().map(|r| r.as_slice()),
             ],
         )?;
         let mut out = m.clone();
@@ -718,7 +759,7 @@ impl Store {
              WHERE id IN (SELECT MAX(id) FROM messages GROUP BY chat_kind, chat)
              ORDER BY id DESC"
         ))?;
-        let rows = st.query_map([], |r| Ok(row(r)?.map(|m| (m, r.get(14).unwrap_or(0)))))?;
+        let rows = st.query_map([], |r| Ok(row(r)?.map(|m| (m, r.get(15).unwrap_or(0)))))?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
@@ -730,12 +771,13 @@ impl Store {
             return Ok(Vec::new());
         }
         let mut st = self.conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM messages WHERE substr(content, 1, 1) = x'01' ORDER BY id DESC"
+            "SELECT {COLUMNS} FROM messages WHERE substr(content, 1, 1) IN (x'01', x'08')
+             ORDER BY id DESC"
         ))?;
         let rows = st.query_map([], row)?;
         let mut out = Vec::new();
         for m in rows.filter_map(|r| r.ok().flatten()) {
-            if let Content::Text { text, .. } = &m.content
+            if let Content::Text { text, .. } | Content::Reply { text, .. } = &m.content
                 && fold(text).contains(&needle)
             {
                 out.push(m);
@@ -810,7 +852,166 @@ impl Store {
             "DELETE FROM media WHERE chat_kind = ?1 AND chat = ?2",
             params![chat.kind(), chat.bytes()],
         )?;
+        self.conn.execute(
+            "DELETE FROM reactions WHERE chat_kind = ?1 AND chat = ?2",
+            params![chat.kind(), chat.bytes()],
+        )?;
         Ok(n)
+    }
+
+    // ----- replies and reactions (protocol.md §6.2) ------------------------------------
+
+    /// The message of `chat` with reference `r`.
+    pub fn message_by_ref(&self, chat: &Chat, r: &MessageRef) -> Result<Option<Message>, Error> {
+        self.conn
+            .query_row(
+                &format!(
+                    "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND ref = ?3
+                     ORDER BY id LIMIT 1"
+                ),
+                params![chat.kind(), chat.bytes(), r.as_slice()],
+                row,
+            )
+            .optional()
+            .map(Option::flatten)
+    }
+
+    /// Up to `limit` messages without a reference (from before version 9), to fill in.
+    pub fn messages_without_ref(&self, limit: u32) -> Result<Vec<Message>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM messages WHERE ref IS NULL ORDER BY id LIMIT ?1"
+        ))?;
+        let rows = st.query_map(params![limit], row)?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Sets message `id`'s reference; an empty value marks one that cannot have any (it is
+    /// not filled in again).
+    pub fn set_ref(&self, id: i64, r: Option<&MessageRef>) -> Result<(), Error> {
+        self.conn.execute(
+            "UPDATE messages SET ref = ?2 WHERE id = ?1",
+            params![id, r.map_or(&[][..], |r| r.as_slice())],
+        )?;
+        Ok(())
+    }
+
+    /// Records `reactor`'s reaction to `target` in `chat` unless a later one holds (§6.2:
+    /// greatest `ts`, then greatest bytes). `pending`: ours, not delivered yet, given up at
+    /// `expires_ms`. Returns whether it changed anything.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_reaction(
+        &self,
+        chat: &Chat,
+        target: &MessageRef,
+        reactor: &PubKey,
+        emoji: &str,
+        ts: u32,
+        pending: bool,
+        expires_ms: Option<i64>,
+    ) -> Result<bool, Error> {
+        let n = self.conn.execute(
+            "INSERT INTO reactions (chat_kind, chat, target, reactor, emoji, ts, pending, expires_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT (chat_kind, chat, target, reactor) DO UPDATE
+             SET emoji = excluded.emoji, ts = excluded.ts, pending = excluded.pending,
+                 expires_ms = excluded.expires_ms
+             WHERE excluded.ts > reactions.ts
+                OR (excluded.ts = reactions.ts AND excluded.emoji > reactions.emoji)",
+            params![
+                chat.kind(),
+                chat.bytes(),
+                target.as_slice(),
+                reactor.as_slice(),
+                emoji,
+                ts,
+                pending,
+                expires_ms
+            ],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// The reactions to `target` in `chat` (removed ones left out): reactor and emoji.
+    pub fn reactions_for(
+        &self,
+        chat: &Chat,
+        target: &MessageRef,
+    ) -> Result<Vec<(PubKey, String)>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT reactor, emoji FROM reactions
+             WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND emoji <> '' ORDER BY ts",
+        )?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes(), target.as_slice()], |r| {
+            let k: Vec<u8> = r.get(0)?;
+            Ok(<[u8; 32]>::try_from(k.as_slice())
+                .ok()
+                .map(|k| (k, r.get::<_, String>(1).unwrap_or_default())))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// `reactor`'s reaction to `target` in `chat`: emoji and `ts`.
+    pub fn reaction(
+        &self,
+        chat: &Chat,
+        target: &MessageRef,
+        reactor: &PubKey,
+    ) -> Result<Option<(String, u32)>, Error> {
+        self.conn
+            .query_row(
+                "SELECT emoji, ts FROM reactions
+                 WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND reactor = ?4",
+                params![
+                    chat.kind(),
+                    chat.bytes(),
+                    target.as_slice(),
+                    reactor.as_slice()
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+    }
+
+    /// `reactor`'s reactions not delivered yet (§6.2).
+    pub fn pending_reactions(&self, reactor: &PubKey) -> Result<Vec<PendingReaction>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT chat_kind, chat, target, emoji, ts, expires_ms FROM reactions
+             WHERE reactor = ?1 AND pending = 1",
+        )?;
+        let rows = st.query_map(params![reactor.as_slice()], |r| {
+            let chat: Vec<u8> = r.get(1)?;
+            let target: Vec<u8> = r.get(2)?;
+            Ok(Chat::from_row(r.get(0)?, &chat)
+                .zip(<[u8; 8]>::try_from(target.as_slice()).ok())
+                .map(|(chat, target)| PendingReaction {
+                    chat,
+                    target,
+                    emoji: r.get(3).unwrap_or_default(),
+                    ts: r.get(4).unwrap_or(0),
+                    expires_ms: r.get(5).ok().flatten(),
+                }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// `reactor`'s reaction to `target` was delivered (or given up): no longer pending.
+    pub fn reaction_done(
+        &self,
+        chat: &Chat,
+        target: &MessageRef,
+        reactor: &PubKey,
+    ) -> Result<(), Error> {
+        self.conn.execute(
+            "UPDATE reactions SET pending = 0
+             WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND reactor = ?4",
+            params![
+                chat.kind(),
+                chat.bytes(),
+                target.as_slice(),
+                reactor.as_slice()
+            ],
+        )?;
+        Ok(())
     }
 
     /// Messages unfinished when the app stopped (§6.1): the texts are returned with their
@@ -821,12 +1022,14 @@ impl Store {
              ORDER BY id"
         ))?;
         let rows: Vec<(Option<Message>, i64, Option<i64>)> = stmt
-            .query_map([], |r| Ok((row(r)?, r.get(0)?, r.get(14)?)))?
+            .query_map([], |r| Ok((row(r)?, r.get(0)?, r.get(15)?)))?
             .collect::<Result<_, _>>()?;
         let mut texts = Vec::new();
         for (m, id, expires) in rows {
             match m {
-                Some(m) if matches!(m.content, Content::Text { .. }) => texts.push((m, expires)),
+                Some(m) if matches!(m.content, Content::Text { .. } | Content::Reply { .. }) => {
+                    texts.push((m, expires));
+                }
                 _ => {
                     self.set_status(id, Status::Failed(FailReason::Interrupted))?;
                 }
@@ -897,6 +1100,7 @@ mod tests {
             airtime_ms: 400,
             snr4: Some(24),
             read: outgoing,
+            msg_ref: None,
         }
     }
 
@@ -912,7 +1116,8 @@ mod tests {
             c.execute_batch(
                 &SCHEMA
                     .replace(",\n    media_id BLOB", "")
-                    .replace(",\n    expires_ms INTEGER", ""),
+                    .replace(",\n    expires_ms INTEGER", "")
+                    .replace(",\n    ref BLOB", ""),
             )
             .unwrap();
             c.pragma_update(None, "user_version", 2).unwrap();
@@ -933,8 +1138,9 @@ mod tests {
         let s = Store::open(&path).unwrap();
         let a = Chat::Contact([1; 32]);
         assert_eq!(s.history(&a, None, 10).unwrap().len(), 1);
-        // The outbox column was added too (version 7).
+        // The outbox column was added too (version 7), and the reference (version 9).
         assert!(s.resume_unfinished().unwrap().is_empty());
+        assert_eq!(s.messages_without_ref(10).unwrap().len(), 1);
         let image = |full: bool, len: usize| Content::Image {
             sent_at: 2,
             media_id: [7; 8],
@@ -1170,6 +1376,80 @@ mod tests {
         assert!(s.search("refuge", 10).unwrap().is_empty());
         assert_eq!(fold("Ça VA, Noël ?"), "ca va, noel ?");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn references_and_reactions() {
+        let s = Store::in_memory().unwrap();
+        let (a, g) = (Chat::Contact([1; 32]), Chat::Group([3; 16]));
+        let mut m = text(a, false, "hi", 1);
+        m.msg_ref = Some([7; 8]);
+        let row = s.insert(&m).unwrap();
+        assert_eq!(
+            s.message_by_ref(&a, &[7; 8]).unwrap().map(|m| m.id),
+            Some(row.id)
+        );
+        assert_eq!(s.message_by_ref(&g, &[7; 8]).unwrap(), None);
+        let old = s.insert(&text(a, true, "old", 2)).unwrap();
+        assert_eq!(s.messages_without_ref(10).unwrap().len(), 1);
+        s.set_ref(old.id, None).unwrap();
+        assert!(s.messages_without_ref(10).unwrap().is_empty());
+        assert_eq!(s.get(old.id).unwrap().unwrap().msg_ref, None);
+
+        // The latest by ts holds, then the greater bytes; repeats change nothing (§6.2).
+        let (t, bob, me) = ([7; 8], [2; 32], [9; 32]);
+        assert!(
+            s.upsert_reaction(&a, &t, &bob, "👍", 10, false, None)
+                .unwrap()
+        );
+        assert!(
+            !s.upsert_reaction(&a, &t, &bob, "👍", 10, false, None)
+                .unwrap()
+        );
+        assert!(
+            !s.upsert_reaction(&a, &t, &bob, "❤️", 9, false, None)
+                .unwrap()
+        );
+        assert!(
+            s.upsert_reaction(&a, &t, &bob, "😂", 11, false, None)
+                .unwrap()
+        );
+        assert!(
+            s.upsert_reaction(&a, &t, &me, "❤️", 5, true, Some(99))
+                .unwrap()
+        );
+        assert_eq!(
+            s.reactions_for(&a, &t).unwrap(),
+            vec![(me, "❤️".to_string()), (bob, "😂".to_string())]
+        );
+        assert_eq!(
+            s.reaction(&a, &t, &me).unwrap(),
+            Some(("❤️".to_string(), 5))
+        );
+        assert_eq!(s.pending_reactions(&me).unwrap().len(), 1);
+        s.reaction_done(&a, &t, &me).unwrap();
+        assert!(s.pending_reactions(&me).unwrap().is_empty());
+        // Removed: empty, left out.
+        assert!(
+            s.upsert_reaction(&a, &t, &bob, "", 12, false, None)
+                .unwrap()
+        );
+        assert_eq!(
+            s.reactions_for(&a, &t).unwrap(),
+            vec![(me, "❤️".to_string())]
+        );
+        // A reaction may come before its target: it is there when the target is.
+        assert!(
+            s.upsert_reaction(&a, &[8; 8], &bob, "🙏", 1, false, None)
+                .unwrap()
+        );
+        let mut later = text(a, false, "later", 3);
+        later.msg_ref = Some([8; 8]);
+        s.insert(&later).unwrap();
+        assert_eq!(s.reactions_for(&a, &[8; 8]).unwrap().len(), 1);
+        // Deleting the conversation deletes its reactions.
+        s.delete_chat(&a).unwrap();
+        assert!(s.reactions_for(&a, &t).unwrap().is_empty());
     }
 
     #[test]

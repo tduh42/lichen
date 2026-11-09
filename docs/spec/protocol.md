@@ -251,7 +251,7 @@ What the user sends is a **message intent**: the conversation, the datagram's pl
 
 **REACTION (0x09)**: `ts u32 ‖ ref (8) ‖ emoji`, the emoji in UTF-8, 0 to 32 bytes; empty removes the sender's reaction. Anything else (not UTF-8, longer) is dropped. Not a message of the history:
 
-1. **State.** Per conversation, target `ref` and sender identity, the reaction with the greatest `ts` holds; equal `ts`, the greater bytes. Repeats and any order of arrival converge.
+1. **State.** Per conversation, target `ref` and sender identity, the reaction with the greatest `ts` holds; equal `ts`, the greater bytes. Repeats and any order of arrival converge. A sender gives each change to the same target a greater `ts` than its previous one, within the same second too.
 2. **Out of order.** A reaction whose target is not stored yet is kept and applies when the target arrives.
 3. **Outbox.** The sender's own reaction is applied at once, kept until delivered or sent to the group (§6.1), submitted again after a restart, and given up after 24 hours.
 

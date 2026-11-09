@@ -129,6 +129,12 @@ enum Action {
         from: usize,
         text: String,
     },
+    /// A bot reacts to one of the app's messages (§6.2).
+    React {
+        from: usize,
+        target: lc_core::content::MessageRef,
+        emoji: &'static str,
+    },
 }
 
 struct Demo {
@@ -317,6 +323,21 @@ impl Demo {
                     c.send_datagram(&app_key, request, now)
                 });
             }
+            Action::React {
+                from,
+                target,
+                emoji,
+            } => {
+                let reaction = Content::Reaction {
+                    sent_at: ts,
+                    target,
+                    emoji: emoji.into(),
+                }
+                .encode();
+                let _ = self
+                    .net
+                    .with_core(from, |c, now| c.send_datagram(&app_key, reaction, now));
+            }
             Action::GroupPost { from, text } => {
                 if let Some(gid) = self.group {
                     let _ = self
@@ -395,9 +416,32 @@ impl Demo {
                 match e {
                     Event::Received {
                         from,
-                        content: Content::Text { text, .. },
+                        content: content @ Content::Text { .. },
                         ..
                     } if from == app_key => {
+                        let Content::Text { text, .. } = &content else {
+                            continue;
+                        };
+                        // Camille also gives it a 👍 (§6.2), well after her answer: the two would
+                        // otherwise cross the app's next message on a busy link.
+                        let app_identity = self
+                            .net
+                            .with_core_ref(bot, |c| {
+                                c.contacts()
+                                    .find(|k| k.key == app_key)
+                                    .and_then(|k| k.identity)
+                            })
+                            .flatten();
+                        if let (Some(id), true) = (app_identity, name == "Camille") {
+                            self.pending.push((
+                                now + 24 * SEC,
+                                Action::React {
+                                    from: bot,
+                                    target: lc_core::content::message_ref(&id, &content.encode()),
+                                    emoji: "👍",
+                                },
+                            ));
+                        }
                         let reply = if name == "Camille" {
                             format!("Copy: \"{text}\". I'm at the refuge, one hop away.")
                         } else {
@@ -1504,5 +1548,185 @@ mod outbox {
         assert!(events.iter().any(|e| matches!(e,
             LichenEvent::MessageChanged { message }
                 if message.id == m.id && message.status == MessageStatus::Flooded)));
+    }
+}
+
+/// Replies and reactions as the app runs them (protocol.md §6.2, ADR-0019).
+#[cfg(test)]
+mod replies {
+    use super::*;
+    use crate::{ChatRef, LichenCore, LichenEvent, Message, MessageStatus, QuoteKind};
+
+    fn run(demo: &DemoNetwork, core: &LichenCore, from: u64, to: u64) -> Vec<LichenEvent> {
+        let mut events = Vec::new();
+        let mut now = from;
+        while now < to {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                events.push(e);
+            }
+            now += 100;
+        }
+        events
+    }
+
+    fn history(core: &LichenCore, chat: &ChatRef) -> Vec<crate::StoredMessage> {
+        core.history(chat.clone(), None, 100).unwrap()
+    }
+
+    fn text_of(m: &crate::StoredMessage) -> &str {
+        match &m.message {
+            Message::Text { text, .. } => text,
+            _ => "",
+        }
+    }
+
+    fn data_dir(name: &str) -> (std::path::PathBuf, Option<String>) {
+        let dir = std::env::temp_dir().join(format!("lichen-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Some(dir.to_string_lossy().into_owned());
+        (dir, data)
+    }
+
+    #[test]
+    fn reactions_and_a_reply_with_camille() {
+        let (dir, data) = data_dir("replies");
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![131; 32], data.clone()).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 60_000);
+        let camille = core
+            .contacts()
+            .into_iter()
+            .find(|k| k.name == "Camille")
+            .unwrap()
+            .key;
+        let chat = ChatRef::Contact {
+            key: camille.clone(),
+        };
+
+        // Camille gives our text a 👍.
+        let mine = core
+            .send_text(camille.clone(), "On my way".into(), 1_793_000_000, 60_000)
+            .unwrap();
+        // The link is busy in the demo's first minutes (the group being set up): delivery may
+        // take a few rounds and a new session.
+        let events = run(&demo, &core, 60_000, 420_000);
+        let ours = history(&core, &chat)
+            .into_iter()
+            .find(|m| m.id == mine.id)
+            .unwrap();
+        assert_eq!(ours.reactions.len(), 1, "{:?}", ours.reactions);
+        assert_eq!(ours.reactions[0].emoji, "👍");
+        assert!(!ours.reactions[0].mine);
+        assert!(events.iter().any(|e| matches!(e,
+            LichenEvent::Reacted { emoji, target: Some(t), .. } if emoji == "👍" && t.id == mine.id)));
+
+        // We react to her "Hi", change our mind, then take it back.
+        let hi = history(&core, &chat)
+            .into_iter()
+            .find(|m| !m.outgoing && text_of(m).starts_with("Hi!"))
+            .unwrap();
+        assert!(hi.referable);
+        let r = core.send_reaction(hi.id, "❤️".into(), 420_000).unwrap();
+        assert_eq!(r.reactions.len(), 1);
+        assert!(r.reactions[0].mine);
+        let r = core.send_reaction(hi.id, "😂".into(), 420_000).unwrap();
+        assert_eq!(
+            r.reactions
+                .iter()
+                .map(|c| c.emoji.as_str())
+                .collect::<Vec<_>>(),
+            vec!["😂"]
+        );
+        let r = core.send_reaction(hi.id, String::new(), 420_000).unwrap();
+        assert!(r.reactions.is_empty());
+
+        // A reply to it, delivered, quoting it.
+        let reply = core
+            .send_reply(
+                chat.clone(),
+                hi.id,
+                "Coming!".into(),
+                1_793_000_100,
+                420_000,
+            )
+            .unwrap();
+        run(&demo, &core, 420_000, 720_000);
+        let me = *core.lock().core.key().unwrap();
+        assert!(
+            core.lock()
+                .store
+                .as_ref()
+                .unwrap()
+                .pending_reactions(&me)
+                .unwrap()
+                .is_empty(),
+            "our reactions were delivered"
+        );
+        let check = |core: &LichenCore| {
+            let h = history(core, &chat);
+            let r = h.iter().find(|m| m.id == reply.id).unwrap();
+            assert_eq!(r.status, MessageStatus::Delivered);
+            let q = r.quote.as_ref().unwrap();
+            assert_eq!(q.message_id, Some(hi.id));
+            assert_eq!(q.kind, QuoteKind::Text);
+            assert!(q.excerpt.starts_with("Hi!"));
+            let ours = h.iter().find(|m| m.id == mine.id).unwrap();
+            assert_eq!(ours.reactions[0].emoji, "👍");
+        };
+        check(&core);
+        // Kept across a restart.
+        drop(core);
+        let core = LichenCore::new("t".into(), vec![2; 32], vec![131; 32], data.clone()).unwrap();
+        check(&core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Our reaction made while the radio is away waits, survives a restart and goes out.
+    #[test]
+    fn a_pending_reaction_goes_after_a_restart() {
+        let (dir, data) = data_dir("reaction-restart");
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![3; 32], vec![132; 32], data.clone()).unwrap();
+        core.connect(0);
+        run(&demo, &core, 0, 60_000);
+        let camille = core
+            .contacts()
+            .into_iter()
+            .find(|k| k.name == "Camille")
+            .unwrap()
+            .key;
+        let chat = ChatRef::Contact { key: camille };
+        let hi = history(&core, &chat)
+            .into_iter()
+            .find(|m| !m.outgoing)
+            .unwrap();
+        core.disconnect(60_000);
+        core.send_reaction(hi.id, "🙏".into(), 60_000).unwrap();
+        let me = *core.lock().core.key().unwrap();
+        drop(core);
+
+        let core = LichenCore::new("t".into(), vec![4; 32], vec![132; 32], data.clone()).unwrap();
+        let pending = |c: &LichenCore| {
+            c.lock()
+                .store
+                .as_ref()
+                .unwrap()
+                .pending_reactions(&me)
+                .unwrap()
+                .len()
+        };
+        assert_eq!(pending(&core), 1);
+        core.connect(70_000);
+        run(&demo, &core, 70_000, 180_000);
+        assert_eq!(pending(&core), 0, "delivered after the restart");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
