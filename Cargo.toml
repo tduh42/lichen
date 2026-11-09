@@ -43,6 +43,7 @@ getrandom = "0.4"
 uniffi = "0.32"
 # 0.40: Arti's directory cache (tor-dirmgr) needs < 0.41, and only one SQLite can be linked.
 rusqlite = { version = "0.40", features = ["bundled"] }
+unicode-normalization = "0.1"
 # Media (ADR-0012): Codec2 voice (pure Rust, LGPL-2.1), AVIF thumbnails (rav1e, no assembly).
 codec2 = "0.3"
 ravif = { version = "0.13", default-features = false }

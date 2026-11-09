@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::content::{Content, MediaId};
 
@@ -32,7 +33,8 @@ pub use rusqlite::Error;
 /// 6: settings and search consents (tables added).
 /// 7: the outbox (ADR-0018): `messages.expires_ms`, added to older databases; status 5
 /// (queued).
-const VERSION: i32 = 7;
+/// 8: pinned and muted conversations (`chat_prefs`, table added).
+const VERSION: i32 = 8;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -213,6 +215,13 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_prefs (
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    pinned_at INTEGER,
+    muted_until INTEGER,
+    PRIMARY KEY (chat_kind, chat)
+);
 CREATE TABLE IF NOT EXISTS search_consent (
     gid BLOB PRIMARY KEY
 );
@@ -235,6 +244,23 @@ pub struct StoredPosition {
     /// Unix seconds.
     pub at: u64,
     pub snr4: i8,
+}
+
+/// A conversation's local preferences (Unix ms): when it was pinned, until when it is muted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChatPref {
+    pub chat: Chat,
+    pub pinned_at: Option<i64>,
+    pub muted_until: Option<i64>,
+}
+
+/// Text as search compares it: lower case, accents removed (canonical decomposition, combining
+/// marks dropped), so that "ecole" finds "École".
+pub fn fold(s: &str) -> String {
+    s.nfd()
+        .filter(|c| !('\u{300}'..='\u{36f}').contains(c))
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
@@ -696,6 +722,75 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
+    /// Up to `limit` text messages, newest first, whose text contains `needle` regardless of
+    /// case and accents ([`fold`]): a search in every conversation, on this phone only.
+    pub fn search(&self, needle: &str, limit: usize) -> Result<Vec<Message>, Error> {
+        let needle = fold(needle.trim());
+        if needle.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM messages WHERE substr(content, 1, 1) = x'01' ORDER BY id DESC"
+        ))?;
+        let rows = st.query_map([], row)?;
+        let mut out = Vec::new();
+        for m in rows.filter_map(|r| r.ok().flatten()) {
+            if let Content::Text { text, .. } = &m.content
+                && fold(text).contains(&needle)
+            {
+                out.push(m);
+                if out.len() >= limit {
+                    break;
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Pins `chat` (at `at`, Unix ms: the latest pinned comes first) or unpins it (`None`).
+    pub fn set_pinned(&self, chat: &Chat, at: Option<i64>) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO chat_prefs (chat_kind, chat, pinned_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (chat_kind, chat) DO UPDATE SET pinned_at = ?3",
+            params![chat.kind(), chat.bytes(), at],
+        )?;
+        self.prune_prefs()
+    }
+
+    /// Mutes `chat` until `until` (Unix ms), or unmutes it (`None`).
+    pub fn set_muted(&self, chat: &Chat, until: Option<i64>) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO chat_prefs (chat_kind, chat, muted_until) VALUES (?1, ?2, ?3)
+             ON CONFLICT (chat_kind, chat) DO UPDATE SET muted_until = ?3",
+            params![chat.kind(), chat.bytes(), until],
+        )?;
+        self.prune_prefs()
+    }
+
+    fn prune_prefs(&self) -> Result<(), Error> {
+        self.conn.execute(
+            "DELETE FROM chat_prefs WHERE pinned_at IS NULL AND muted_until IS NULL",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Pinned and muted conversations.
+    pub fn chat_prefs(&self) -> Result<Vec<ChatPref>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT chat_kind, chat, pinned_at, muted_until FROM chat_prefs")?;
+        let rows = st.query_map([], |r| {
+            let bytes: Vec<u8> = r.get(1)?;
+            Ok(Chat::from_row(r.get(0)?, &bytes).map(|chat| ChatPref {
+                chat,
+                pinned_at: r.get(2).ok().flatten(),
+                muted_until: r.get(3).ok().flatten(),
+            }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
     pub fn mark_read(&self, chat: &Chat) -> Result<(), Error> {
         self.conn.execute(
             "UPDATE messages SET read = 1 WHERE chat_kind = ?1 AND chat = ?2 AND read = 0",
@@ -1011,6 +1106,70 @@ mod tests {
         assert_eq!(left.len(), 2);
         assert!(!left.contains(&a));
         assert_eq!(s.delete_chat(&a).unwrap(), 0);
+    }
+
+    #[test]
+    fn pins_mutes_and_search() {
+        let dir = std::env::temp_dir().join(format!("lichen-prefs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("p.sqlite");
+        let (a, g) = (Chat::Contact([1; 32]), Chat::Group([3; 16]));
+        {
+            let s = Store::open(&path).unwrap();
+            s.set_pinned(&a, Some(100)).unwrap();
+            s.set_muted(&g, Some(i64::MAX)).unwrap();
+            s.set_muted(&a, Some(500)).unwrap();
+            s.set_muted(&a, None).unwrap();
+            for (i, t) in ["Rendez-vous à l'École du col", "on monte", "ECOLE fermée"]
+                .iter()
+                .enumerate()
+            {
+                s.insert(&text(a, i % 2 == 0, t, 10 + i as i64)).unwrap();
+            }
+            let mut voice = text(g, false, "", 20);
+            voice.content = Content::Voice {
+                sent_at: 1,
+                mode: 2,
+                frames: 1,
+                data: b"ecole".to_vec(),
+            };
+            s.insert(&voice).unwrap();
+        }
+        // Kept across a restart; an entry with nothing left is gone.
+        let s = Store::open(&path).unwrap();
+        let mut prefs = s.chat_prefs().unwrap();
+        prefs.sort_by_key(|p| p.chat.kind());
+        let pref = |chat, pinned_at, muted_until| ChatPref {
+            chat,
+            pinned_at,
+            muted_until,
+        };
+        assert_eq!(
+            prefs,
+            vec![pref(a, Some(100), None), pref(g, None, Some(i64::MAX))]
+        );
+        s.set_pinned(&a, None).unwrap();
+        assert_eq!(s.chat_prefs().unwrap().len(), 1);
+        // Case and accents do not matter; newest first; texts only; the limit holds.
+        let texts = |v: Vec<Message>| -> Vec<String> {
+            v.into_iter()
+                .filter_map(|m| match m.content {
+                    Content::Text { text, .. } => Some(text),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(
+            texts(s.search("ecole", 10).unwrap()),
+            vec!["ECOLE fermée", "Rendez-vous à l'École du col"]
+        );
+        assert_eq!(texts(s.search(" École ", 1).unwrap()), vec!["ECOLE fermée"]);
+        assert_eq!(texts(s.search("FERMEE", 10).unwrap()), vec!["ECOLE fermée"]);
+        assert!(s.search("", 10).unwrap().is_empty());
+        assert!(s.search("refuge", 10).unwrap().is_empty());
+        assert_eq!(fold("Ça VA, Noël ?"), "ca va, noel ?");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

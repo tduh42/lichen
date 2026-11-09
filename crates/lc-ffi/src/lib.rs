@@ -843,6 +843,17 @@ pub struct StoredMessage {
     pub fragments: u8,
     pub airtime_ms: u64,
     pub snr_db: Option<f32>,
+    /// Seen by the user (ours always are): the unread divider goes before the first one that
+    /// is not.
+    pub read: bool,
+}
+
+/// A conversation's local preferences: pinned (since when, Unix ms) and muted (until when).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ChatPrefs {
+    pub chat: ChatRef,
+    pub pinned_at_ms: Option<i64>,
+    pub muted_until_ms: Option<i64>,
 }
 
 impl From<store::Message> for StoredMessage {
@@ -870,6 +881,7 @@ impl From<store::Message> for StoredMessage {
             fragments: m.fragments,
             airtime_ms: m.airtime_ms,
             snr_db: m.snr4.map(snr),
+            read: m.read,
         }
     }
 }
@@ -2179,8 +2191,8 @@ impl LichenCore {
     }
 
     /// Demo and screenshots only: `count` older text messages in `chat`, alternately ours and
-    /// theirs, a minute apart and before everything else. Refused outside the in-memory
-    /// database of the demo (no data dir).
+    /// theirs, a minute apart and before everything else, the last five of theirs unread.
+    /// Refused outside the in-memory database of the demo (no data dir).
     pub fn demo_fill_history(&self, chat: ChatRef, count: u32) -> Result<(), LichenError> {
         let c = chat.to_store()?;
         let i = self.lock();
@@ -2211,11 +2223,62 @@ impl LichenCore {
                     fragments: 1,
                     airtime_ms: 0,
                     snr4: None,
-                    read: true,
+                    // The last five of theirs are left unread (the divider).
+                    read: outgoing || n + 10 < count,
                 })
                 .map_err(|_| LichenError::Storage)?;
         }
         Ok(())
+    }
+
+    /// Text messages containing `query`, case and accents aside, newest first, in every
+    /// conversation (on this phone only). Under 2 characters: nothing.
+    pub fn search_messages(&self, query: String, limit: u32) -> Vec<StoredMessage> {
+        if query.trim().chars().count() < 2 {
+            return Vec::new();
+        }
+        let i = self.lock();
+        i.store
+            .as_ref()
+            .and_then(|s| s.search(&query, limit as usize).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|m| i.present(m))
+            .collect()
+    }
+
+    /// Pinned and muted conversations.
+    pub fn chat_prefs(&self) -> Vec<ChatPrefs> {
+        self.lock()
+            .store
+            .as_ref()
+            .and_then(|s| s.chat_prefs().ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| ChatPrefs {
+                chat: ChatRef::from_store(&p.chat),
+                pinned_at_ms: p.pinned_at,
+                muted_until_ms: p.muted_until,
+            })
+            .collect()
+    }
+
+    /// Pins a conversation at the top of the list (the latest pinned first), or unpins it.
+    pub fn set_pinned(&self, chat: ChatRef, pinned: bool) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.set_pinned(&c, pinned.then(unix_ms))
+            .map_err(|_| LichenError::Storage)
+    }
+
+    /// Mutes a conversation's notifications until `until_ms` (Unix ms, `i64::MAX`: until the
+    /// user turns them back on), or unmutes it (`None`). SOS alerts are never muted.
+    pub fn set_muted(&self, chat: ChatRef, until_ms: Option<i64>) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.set_muted(&c, until_ms).map_err(|_| LichenError::Storage)
     }
 
     /// Conversations that have messages, most recent first.
@@ -2851,6 +2914,48 @@ mod tests {
         assert_eq!(q.dark.len(), (q.width * q.width) as usize);
         // The finder pattern's corner is dark.
         assert!(q.dark[0]);
+    }
+}
+
+#[cfg(test)]
+mod essentials {
+    use super::*;
+
+    /// Search across conversations, the unread flag, pins and mutes (chat essentials).
+    #[test]
+    fn search_unread_pins_and_mutes() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![121; 32], None).unwrap();
+        let chat = ChatRef::Contact { key: vec![9; 32] };
+        core.demo_fill_history(chat.clone(), 30).unwrap();
+        let found = core.search_messages("EARLIER message 12".into(), 50);
+        assert_eq!(found.len(), 1);
+        assert!(
+            matches!(&found[0].message, Message::Text { text, .. } if text == "Earlier message 12")
+        );
+        assert_eq!(core.search_messages("earlier".into(), 50).len(), 30);
+        assert_eq!(core.search_messages("earlier".into(), 7).len(), 7);
+        assert!(core.search_messages("e".into(), 50).is_empty());
+
+        let unread = |c: &LichenCore| {
+            c.history(chat.clone(), None, 100)
+                .unwrap()
+                .iter()
+                .filter(|m| !m.read)
+                .count()
+        };
+        assert_eq!(unread(&core), 5);
+        core.mark_read(chat.clone()).unwrap();
+        assert_eq!(unread(&core), 0);
+
+        core.set_pinned(chat.clone(), true).unwrap();
+        core.set_muted(chat.clone(), Some(i64::MAX)).unwrap();
+        let prefs = core.chat_prefs();
+        assert_eq!(prefs.len(), 1);
+        assert!(prefs[0].pinned_at_ms.is_some());
+        assert_eq!(prefs[0].muted_until_ms, Some(i64::MAX));
+        core.set_pinned(chat.clone(), false).unwrap();
+        core.set_muted(chat, None).unwrap();
+        assert!(core.chat_prefs().is_empty());
     }
 }
 
