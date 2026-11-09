@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 170" width="760" height="170" role="img">
+<title>The airtime budget: 360 seconds an hour at 10 % duty in the 869.4–869.65 MHz sub-band, counted by the phone</title>
+<rect width="760" height="170" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<text x="30" y="36" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="start">360 s of airtime per sliding hour (10 % duty, 869.40–869.65 MHz)</text>
+<rect x="30" y="52" width="700" height="22" rx="11" fill="#262623" />
+<rect x="30" y="52" width="93.33333333333333" height="22" rx="4" fill="#3A2A1C" stroke="#FB923C" />
+<text x="76.66666666666666" y="96" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">3 voice notes of 15 s</text>
+<text x="76.66666666666666" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="500" fill="#FB923C" text-anchor="middle">48 s</text>
+<rect x="123.33333333333333" y="52" width="180.83333333333334" height="22" rx="4" fill="#3A2A1C" stroke="#FB923C" />
+<text x="213.75" y="96" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">one 8 KB file</text>
+<text x="213.75" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="500" fill="#FB923C" text-anchor="middle">93 s</text>
+<rect x="304.1666666666667" y="52" width="29.166666666666668" height="22" rx="4" fill="#3A2A1C" stroke="#FB923C" />
+<text x="318.75" y="96" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">40 positions</text>
+<text x="318.75" y="112" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="500" fill="#FB923C" text-anchor="middle">15 s</text>
+<text x="341.33333333333337" y="68" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="start">204 s left</text>
+<text x="30" y="148" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="start">A medium that does not fit is refused with the time it would fit; text and positions wait frame by frame.</text>
+</svg>

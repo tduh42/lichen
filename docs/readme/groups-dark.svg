@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 320" width="760" height="320" role="img">
+<title>A group around a repeater: a post is flooded twice and signed; a newcomer scans the admin's QR code, asks to join, and gets every key from the admin</title>
+<rect width="760" height="320" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<line x1="130" y1="60" x2="380" y2="150" stroke="#FB923C" stroke-width="2" stroke-dasharray="6 6" />
+<line x1="630" y1="60" x2="380" y2="150" stroke="#FB923C" stroke-width="2" stroke-dasharray="6 6" />
+<line x1="630" y1="240" x2="380" y2="150" stroke="#FB923C" stroke-width="2" stroke-dasharray="6 6" />
+<circle cx="380" cy="150" r="26" fill="#262623" stroke="#34342F"/>
+<text x="380" y="154" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">repeater</text>
+<circle cx="380" cy="150" r="26" fill="none" stroke="#FB923C" stroke-width="1.5"><animate attributeName="r" values="26;220" dur="3s" begin="0s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="3s" begin="0s" repeatCount="indefinite"/></circle>
+<circle cx="380" cy="150" r="26" fill="none" stroke="#FB923C" stroke-width="1.5"><animate attributeName="r" values="26;220" dur="3s" begin="0.6s" repeatCount="indefinite"/><animate attributeName="opacity" values="1;0" dur="3s" begin="0.6s" repeatCount="indefinite"/></circle>
+<rect x="55" y="36" width="150" height="48" rx="10" fill="#262623" stroke="#34342F" />
+<text x="130" y="65" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">Camille · admin</text>
+<rect x="555" y="36" width="150" height="48" rx="10" fill="#262623" stroke="#34342F" />
+<text x="630" y="65" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">Bob</text>
+<rect x="555" y="216" width="150" height="48" rx="10" fill="#262623" stroke="#34342F" />
+<text x="630" y="245" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">Carol</text>
+<rect x="55" y="221" width="150" height="48" rx="10" fill="#1A1A18" stroke="#FB923C" stroke-dasharray="4 4"/>
+<text x="130" y="243" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">Léa · scans the QR</text>
+<text x="130" y="260" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">next to Camille</text>
+<line x1="95" y1="221" x2="95" y2="86" stroke="#ABABA3" stroke-width="1.6" />
+<path d="M95 86 L99.3 96.1 L90.7 96.1 Z" fill="#ABABA3"/>
+<text x="88" y="160" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="end">GROUP_JOIN</text>
+<text x="88" y="175" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="end">token, 16 B</text>
+<line x1="165" y1="86" x2="165" y2="221" stroke="#4ADE80" stroke-width="1.8" />
+<path d="M165 221 L160.7 210.9 L169.3 210.9 Z" fill="#4ADE80"/>
+<text x="173" y="160" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#4ADE80" text-anchor="start">SENDER_KEYS</text>
+<text x="173" y="175" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#4ADE80" text-anchor="start">every key, one bundle</text>
+<text x="380" y="305" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="middle">posts: encrypted once, signed, flooded twice · keys: through the admin, no session between strangers</text>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 260" width="760" height="260" role="img">
+<title>The Internet bridge: one LoRa datagram announces the content's hash; the content comes over iroh, or Tor, and is kept only if its BLAKE3 hash matches</title>
+<rect width="760" height="260" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<rect x="30" y="110" width="130" height="56" rx="10" fill="#262623" stroke="#34342F" />
+<text x="95" y="134" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">Camille</text>
+<text x="95" y="152" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">offers the file</text>
+<rect x="600" y="110" width="130" height="56" rx="10" fill="#262623" stroke="#34342F" />
+<text x="665" y="134" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">You</text>
+<text x="665" y="152" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">fetch, check</text>
+<path d="M160 118 C 280 30, 480 30, 600 118" fill="none" stroke="#FB923C" stroke-width="2" stroke-dasharray="6 6"/>
+<text x="380" y="40" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="500" fill="#FB923C" text-anchor="middle">LoRa · ANNOUNCE · hash, size, name, providers · one fragment</text>
+<line x1="160" y1="140" x2="600" y2="140" stroke="#60A5FA" stroke-width="2.5" />
+<text x="380" y="132" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="500" fill="#60A5FA" text-anchor="middle">iroh · QUIC, peer to peer · 300 kB in 135 ms</text>
+<path d="M160 160 L270 215 L380 195 L490 225 L600 160" fill="none" stroke="#A78BFA" stroke-width="2" stroke-dasharray="6 5"/>
+<circle cx="270" cy="215" r="9" fill="#262623" stroke="#34342F"/>
+<circle cx="380" cy="195" r="9" fill="#262623" stroke="#34342F"/>
+<circle cx="490" cy="225" r="9" fill="#262623" stroke="#34342F"/>
+<text x="380" y="248" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="500" fill="#A78BFA" text-anchor="middle">Tor · to an onion service · 300 kB in 3.9 s</text>
+<rect x="610" y="180" width="110" height="26" rx="8" fill="#1B3324" />
+<text x="665" y="198" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#4ADE80" text-anchor="middle">BLAKE3 ✓</text>
+</svg>

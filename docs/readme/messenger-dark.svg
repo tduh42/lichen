@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 230" width="760" height="230" role="img">
+<title>A message's life: queued while the radio is away, sending once a frame left, then delivered; a reply or a reaction names its message by an 8-byte reference</title>
+<rect width="760" height="230" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<rect x="35" y="40" width="150" height="58" rx="12" fill="#262623" />
+<text x="110" y="64" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F4F4F0" text-anchor="middle">Queued</text>
+<text x="110" y="84" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">radio away · cancel</text>
+<line x1="186" y1="69" x2="220" y2="69" stroke="#ABABA3" stroke-width="1.6" />
+<path d="M220 69 L209.9 73.3 L209.9 64.7 Z" fill="#ABABA3"/>
+<rect x="225" y="40" width="150" height="58" rx="12" fill="#3A2A1C" />
+<text x="300" y="64" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F4F4F0" text-anchor="middle">Sending</text>
+<text x="300" y="84" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">frame 1 of 2 left</text>
+<line x1="376" y1="69" x2="410" y2="69" stroke="#ABABA3" stroke-width="1.6" />
+<path d="M410 69 L399.9 73.3 L399.9 64.7 Z" fill="#ABABA3"/>
+<rect x="415" y="40" width="150" height="58" rx="12" fill="#1B3324" />
+<text x="490" y="64" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F4F4F0" text-anchor="middle">Delivered</text>
+<text x="490" y="84" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">every fragment acknowledged</text>
+<rect x="595" y="40" width="150" height="58" rx="12" fill="#262623" />
+<text x="670" y="64" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F4F4F0" text-anchor="middle">Expired</text>
+<text x="670" y="84" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">after 24 h</text>
+<line x1="110" y1="98" x2="110" y2="125" stroke="#ABABA3" stroke-width="1.2" stroke-dasharray="3 4" />
+<line x1="110" y1="125" x2="670" y2="125" stroke="#ABABA3" stroke-width="1.2" stroke-dasharray="3 4" />
+<line x1="670" y1="125" x2="670" y2="104" stroke="#ABABA3" stroke-width="1.2" />
+<path d="M670 104 L674.3 114.1 L665.7 114.1 Z" fill="#ABABA3"/>
+<text x="390" y="120" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="middle">or, never sent</text>
+<rect x="60" y="150" width="330" height="60" rx="14" fill="#262623" />
+<text x="76" y="172" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="start">↩ Camille · “Hi! I'm at the refuge…”</text>
+<text x="76" y="195" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" fill="#F4F4F0" text-anchor="start">On my way, see you at the hut</text>
+<rect x="400" y="172" width="58" height="28" rx="14" fill="#262623" stroke="#34342F" />
+<text x="429" y="191" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#F4F4F0" text-anchor="middle">👍 1</text>
+<text x="480" y="175" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="start">REPLY: ts ‖ ref (8 B) ‖ text</text>
+<text x="480" y="195" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11.5" font-weight="400" fill="#ABABA3" text-anchor="start">REACTION: ts ‖ ref (8 B) ‖ emoji</text>
+</svg>

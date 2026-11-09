@@ -1,0 +1,1242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>How lichen works</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: one reading column, each section a short text block over a full-width live diagram,
+   like pages of a field notebook laid over a spectrogram. Dark first, the brand's own tokens. */
+:root {
+  --bg: #0E0E0D; --s1: #1A1A18; --s2: #262623; --line: #34342F;
+  --tx: #F4F4F0; --tx2: #ABABA3;
+  --act-bg: #F4F4F0; --act-fg: #141413;
+  --lora: #FB923C; --lora-bg: rgba(251,146,60,.14);
+  --iroh: #60A5FA; --iroh-bg: rgba(96,165,250,.14);
+  --tor: #A78BFA; --tor-bg: rgba(167,139,250,.15);
+  --ok: #4ADE80; --ok-bg: rgba(74,222,128,.13);
+  --sos: #EF4444; --sos-bg: rgba(239,68,68,.14);
+  --warn: #FACC15;
+  --display: "Space Grotesk", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --body: "IBM Plex Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #F7F7F5; --s1: #FFFFFF; --s2: #EFEFEB; --line: #E2E2DC;
+  --tx: #141413; --tx2: #55554F; --act-bg: #141413; --act-fg: #FFFFFF;
+  --lora: #C2410C; --lora-bg: rgba(194,65,12,.10);
+  --iroh: #1D4ED8; --iroh-bg: rgba(29,78,216,.09);
+  --tor: #6D28D9; --tor-bg: rgba(109,40,217,.09);
+  --ok: #15803D; --ok-bg: rgba(21,128,61,.10);
+  --sos: #B91C1C; --sos-bg: rgba(185,28,28,.09);
+  --warn: #A16207; color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #F7F7F5; --s1: #FFFFFF; --s2: #EFEFEB; --line: #E2E2DC;
+  --tx: #141413; --tx2: #55554F; --act-bg: #141413; --act-fg: #FFFFFF;
+  --lora: #C2410C; --lora-bg: rgba(194,65,12,.10);
+  --iroh: #1D4ED8; --iroh-bg: rgba(29,78,216,.09);
+  --tor: #6D28D9; --tor-bg: rgba(109,40,217,.09);
+  --ok: #15803D; --ok-bg: rgba(21,128,61,.10);
+  --sos: #B91C1C; --sos-bg: rgba(185,28,28,.09);
+  --warn: #A16207; color-scheme: light;
+}
+
+body { background: var(--bg); color: var(--tx); font: 400 16px/1.6 var(--body); }
+main { max-width: 1000px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 8px 64px; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h2 { font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.2rem); font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+h3 { font-size: 1.05rem; font-weight: 500; }
+p { margin: 0; max-width: 65ch; }
+code, .mono { font-family: var(--mono); font-size: .88em; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--tx); outline-offset: 2px; border-radius: 4px; }
+
+/* hero */
+.hero { display: grid; gap: 20px; padding-block: 40px 28px; border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 14px; }
+.brand svg { width: 56px; height: 56px; flex: none; }
+.wordmark { font-family: var(--display); font-weight: 700; font-size: clamp(2.6rem, 2rem + 3vw, 4rem); letter-spacing: -0.04em; line-height: 1; }
+.thesis { font-size: clamp(1.15rem, 1rem + .6vw, 1.45rem); line-height: 1.45; max-width: 40ch; }
+.thesis b { font-weight: 600; }
+.preset { font-family: var(--mono); font-size: .82rem; color: var(--tx2); display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.preset span::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--lora); margin-right: 7px; vertical-align: 1px; }
+.waterfall { width: 100%; height: 120px; display: block; border-radius: 12px; background: var(--s1); }
+nav.toc { display: flex; flex-wrap: wrap; gap: 8px; }
+nav.toc a { text-decoration: none; font-size: .86rem; padding: 6px 12px; border-radius: 999px; background: var(--s1); border: 1px solid var(--line); color: var(--tx2); }
+nav.toc a:hover { color: var(--tx); border-color: var(--tx2); }
+
+/* sections */
+.sec { display: grid; gap: 18px; padding-block: 52px 8px; scroll-margin-top: 16px; }
+.eyebrow { font-family: var(--mono); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; color: var(--tx2); }
+.lede { color: var(--tx); }
+.prose { display: grid; gap: 12px; }
+.prose p { color: var(--tx2); }
+.prose p b { color: var(--tx); font-weight: 600; }
+.fig { background: var(--s1); border-radius: 16px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.fig svg { width: 100%; height: auto; display: block; }
+.scroll { overflow-x: auto; }
+.caption { font-size: .92rem; color: var(--tx); min-height: 3.2em; }
+.caption small { display: block; color: var(--tx2); font-size: .82rem; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: 500 .88rem var(--body); border-radius: 10px; padding: 8px 14px; min-height: 40px; cursor: pointer; border: 1px solid var(--line); background: var(--s2); color: var(--tx); }
+button.primary { background: var(--act-bg); color: var(--act-fg); border-color: var(--act-bg); }
+button[aria-pressed="true"] { background: var(--act-bg); color: var(--act-fg); border-color: var(--act-bg); }
+button:disabled { opacity: .45; cursor: default; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 11px; padding: 2px; gap: 2px; background: var(--s2); }
+.seg button { border: 0; min-height: 36px; background: transparent; }
+.seg button[aria-pressed="true"] { background: var(--act-bg); color: var(--act-fg); }
+label.check { display: inline-flex; gap: 8px; align-items: center; font-size: .88rem; color: var(--tx2); min-height: 40px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.fact { border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 2px; }
+.fact .v { font-family: var(--display); font-weight: 700; font-size: 1.45rem; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.fact .k { font-size: .82rem; color: var(--tx2); }
+.v.lora { color: var(--lora); } .v.iroh { color: var(--iroh); } .v.tor { color: var(--tor); } .v.ok { color: var(--ok); }
+
+/* byte maps */
+.bytes { display: flex; gap: 3px; min-width: 560px; }
+.byte { border-radius: 6px; padding: 8px 6px; font: 500 .74rem var(--mono); text-align: center; background: var(--s2); color: var(--tx); border: 1px solid transparent; cursor: pointer; display: grid; gap: 2px; align-content: center; min-width: 0; }
+.byte span { color: var(--tx2); font-weight: 400; font-size: .68rem; }
+.byte.clear { background: var(--s2); }
+.byte.sealed { background: var(--lora-bg); }
+.byte.tagb { background: var(--ok-bg); }
+.byte.sel, .byte:hover { border-color: var(--tx2); }
+.bytenote { font-size: .9rem; color: var(--tx); min-height: 2.8em; }
+.bytenote b { font-family: var(--mono); font-weight: 500; }
+
+/* svg text */
+.t { fill: var(--tx); font: 500 13px var(--body); }
+.t2 { fill: var(--tx2); font: 400 11.5px var(--body); }
+.tm { fill: var(--tx2); font: 400 11px var(--mono); }
+.node { fill: var(--s2); stroke: var(--line); stroke-width: 1.5; }
+.node.on { stroke: var(--tx); }
+.wire { stroke: var(--line); stroke-width: 2; fill: none; }
+.wire.ble { stroke-dasharray: 3 5; }
+.wire.lora { stroke: var(--lora); stroke-opacity: .55; stroke-dasharray: 6 6; }
+.pk { fill: var(--lora); }
+.pk.ack { fill: var(--ok); }
+.pk.iroh { fill: var(--iroh); } .pk.tor { fill: var(--tor); }
+.dim { opacity: .28; transition: opacity .3s; }
+.ripple { fill: none; stroke: var(--lora); stroke-width: 1.5; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .8rem; color: var(--tx2); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+.badge { display: inline-block; font: 500 .72rem var(--body); padding: 2px 8px; border-radius: 8px; }
+.badge.lora { background: var(--lora-bg); color: var(--lora); }
+.badge.iroh { background: var(--iroh-bg); color: var(--iroh); }
+.badge.tor { background: var(--tor-bg); color: var(--tor); }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+
+/* budget meter */
+.meter { height: 14px; border-radius: 999px; background: var(--s2); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; background: var(--lora); transition: width .35s ease; }
+.meterrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.big { font-family: var(--display); font-weight: 700; font-size: 2.4rem; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+.log { font: .84rem var(--mono); color: var(--tx2); min-height: 1.5em; }
+.log.bad { color: var(--sos); }
+
+/* messenger mock-up */
+.chat { display: grid; gap: 8px; max-width: 520px; width: 100%; margin: 0 auto; }
+.bubble { justify-self: end; background: var(--act-bg); color: var(--act-fg); padding: 9px 14px; border-radius: 18px; font-size: .95rem; max-width: 80%; }
+.bubble.in { justify-self: start; background: var(--s2); color: var(--tx); }
+.status { justify-self: end; font-size: .8rem; color: var(--tx2); display: flex; gap: 8px; align-items: center; }
+.status .bar { width: 120px; height: 4px; border-radius: 4px; background: var(--s2); overflow: hidden; }
+.status .bar i { display: block; height: 100%; width: 0; background: var(--lora); transition: width .3s; }
+.chip { justify-self: end; font-size: .85rem; padding: 2px 9px; border-radius: 999px; background: var(--s2); border: 1px solid var(--line); opacity: 0; transition: opacity .3s; }
+.quote { justify-self: start; font-size: .8rem; color: var(--tx2); border-left: 3px solid var(--lora); padding-left: 8px; opacity: 0; transition: opacity .3s; }
+
+/* footer */
+footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--line); display: grid; gap: 8px; color: var(--tx2); font-size: .85rem; }
+footer p { max-width: 75ch; }
+
+@media (max-width: 560px) {
+  .fig { padding: 12px; border-radius: 14px; }
+  .big { font-size: 2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<main>
+  <header class="hero">
+    <div class="brand">
+      <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 50 L24 14 V50 L38 14 V50 L48 28.3" fill="none" stroke="var(--lora)" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="53.5" cy="16.4" r="4" fill="var(--lora)"/></svg>
+      <h1 class="wordmark">lichen</h1>
+    </div>
+    <p class="thesis"><b>A modern messenger that works off-grid, over stock MeshCore:</b> encrypted chats and groups, voice, photos and files, location and an SOS search. No firmware is touched: lichen lives in the phone, and rides MeshCore packets that repeaters already forward.</p>
+    <div class="preset" aria-label="French MeshCore preset">
+      <span>869.618 MHz</span><span>62.5 kHz</span><span>SF8</span><span>CR 4/8</span><span>360 s of airtime per hour</span>
+    </div>
+    <canvas class="waterfall" id="waterfall" aria-label="LoRa chirps on a spectrogram" role="img"></canvas>
+    <nav class="toc" aria-label="Sections">
+      <a href="#stack">The journey</a><a href="#frame">A frame</a><a href="#fragments">Long messages</a><a href="#messenger">A messenger first</a><a href="#identity">Identity</a><a href="#groups">Groups</a><a href="#location">Location</a><a href="#search">Finding someone</a><a href="#media">Media and files</a><a href="#bridge">Internet bridge</a><a href="#budget">Airtime</a>
+    </nav>
+  </header>
+
+  <!-- 1. Stack -->
+  <section class="sec" id="stack">
+    <div class="eyebrow">§1 · What we use from MeshCore</div>
+    <h2>A message's journey</h2>
+    <div class="prose">
+      <p class="lede">Everything lichen adds lives in a Rust core on the phone. The companion radio and the repeaters keep their stock firmware; lichen only speaks the companion's documented protocol over Bluetooth or USB.</p>
+      <p>Direct messages travel as <b>RAW_CUSTOM</b> packets along a known path: repeaters forward them in direct mode without understanding them. Groups travel as <b>GRP_DATA</b> floods, which every repeater relays. The core is IO-free: time and randomness are injected, and the iOS and Android apps and the <code>lichen</code> command line only run it.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Kind of message">
+          <button id="jDirect" aria-pressed="true">Direct message</button>
+          <button id="jGroup" aria-pressed="false">Group message</button>
+        </div>
+        <button class="primary" id="jStep">Next step</button>
+        <button id="jPlay">Play all</button>
+      </div>
+      <div class="scroll">
+        <svg id="journey" viewBox="0 0 720 230" role="img" aria-label="Phone, companion, repeater, companion, phone">
+          <line class="wire ble" x1="70" y1="115" x2="160" y2="115"/>
+          <line class="wire lora" x1="210" y1="115" x2="335" y2="115"/>
+          <line class="wire lora" x1="385" y1="115" x2="510" y2="115"/>
+          <line class="wire ble" x1="560" y1="115" x2="650" y2="115"/>
+          <g class="grpOnly dim">
+            <line class="wire lora" x1="370" y1="98" x2="520" y2="42"/>
+            <line class="wire lora" x1="370" y1="132" x2="520" y2="190"/>
+          </g>
+          <g id="jNodes"></g>
+          <g id="jRipples"></g>
+          <circle id="jPk" class="pk" r="7" cx="40" cy="115" opacity="0"/>
+        </svg>
+      </div>
+      <div class="caption" id="jCap" aria-live="polite"></div>
+      <div class="legend"><span><i style="background:var(--lora)"></i>LoRa, on air</span><span><i style="background:var(--line)"></i>Bluetooth (dashed) to the companion</span><span><i style="background:var(--ok)"></i>acknowledgement</span></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">176 B</span><span class="k">largest companion frame, either way</span></div>
+      <div class="fact"><span class="v">184 B</span><span class="k">largest on-air payload; the path holds up to 64 bytes</span></div>
+      <div class="fact"><span class="v">160</span><span class="k">hashes in each node's duplicate filter: every resend changes a byte</span></div>
+    </div>
+  </section>
+
+  <!-- 2. Frame -->
+  <section class="sec" id="frame">
+    <div class="eyebrow">§3 and §5 · lichen frame, nonces</div>
+    <h2>A frame, byte by byte</h2>
+    <div class="prose">
+      <p class="lede">Every lichen frame starts with a 7-byte header in clear. The header is authenticated with the body, and five of its bytes become the nonce.</p>
+      <p>The body is <b>ChaCha20-Poly1305</b> with the tag cut to its first <b>8 bytes</b>: a variant of RFC 8439, kept for airtime with its bounds written down in ADR-0014 (forgery about 2<sup>-64</sup> per attempt, and every attempt costs the attacker a transmission). The <code>tag</code> is a counter per session and direction, and <code>attempt</code> numbers the round, so a nonce never repeats under a key. Sessions are never stored: after a restart, a new handshake.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="scroll"><div class="bytes" id="frameBytes"></div></div>
+      <div class="bytenote" id="frameNote" aria-live="polite"></div>
+      <div class="scroll">
+        <svg id="nonce" viewBox="0 0 720 120" role="img" aria-label="Header bytes 2 to 6 form the nonce">
+          <text class="t2" x="0" y="16">header</text>
+          <g id="nHead"></g>
+          <text class="t2" x="0" y="96">nonce (12 bytes)</text>
+          <g id="nNonce"></g>
+        </svg>
+      </div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">157 B</span><span class="k">data per fragment, up to 2 path bytes</span></div>
+      <div class="fact"><span class="v">64</span><span class="k">fragments at most in a datagram</span></div>
+      <div class="fact"><span class="v">10,048 B</span><span class="k">largest datagram (64 × 157)</span></div>
+    </div>
+  </section>
+
+  <!-- 3. Fragments -->
+  <section class="sec" id="fragments">
+    <div class="eyebrow">§7 · ACK-on-Error, after RFC 8724</div>
+    <h2>Long messages, one round at a time</h2>
+    <div class="prose">
+      <p class="lede">A datagram is cut into fragments sent in rounds. The receiver answers a round with a 64-bit bitmap of what it holds, and the next round carries only what is missing.</p>
+      <p>The fragment that closes a round asks for the ACK, so a lost fragment costs one more small round, not a restart. Hand-offs to the companion are spaced by <code>t_frame × k + 100 ms</code> (<code>k</code> = 1, 3 or 7 with the number of repeaters), because repeaters are half duplex. The animation shows 8 fragments; a datagram can have up to 64.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <button class="primary" id="fPlay">Send the datagram</button>
+        <label class="check"><input type="checkbox" id="fLoss" checked> Lose fragment 3 on the way</label>
+      </div>
+      <div class="scroll">
+        <svg id="frags" viewBox="0 0 720 250" role="img" aria-label="Fragments, a loss, the bitmap ACK and the resend">
+          <rect class="node" x="10" y="90" width="110" height="64" rx="12"/>
+          <text class="t" x="65" y="118" text-anchor="middle">Sender</text>
+          <text class="t2" x="65" y="138" text-anchor="middle" id="fRound">round 0</text>
+          <rect class="node" x="600" y="90" width="110" height="64" rx="12"/>
+          <text class="t" x="655" y="118" text-anchor="middle">Receiver</text>
+          <text class="t2" x="655" y="138" text-anchor="middle">64 slots</text>
+          <line class="wire lora" x1="120" y1="122" x2="600" y2="122"/>
+          <g id="fSlots"></g>
+          <g id="fFly"></g>
+          <text class="tm" x="360" y="236" text-anchor="middle" id="fBitmap">bitmap ········</text>
+        </svg>
+      </div>
+      <div class="caption" id="fCap" aria-live="polite"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">1000/1000</span><span class="k">10,048-byte datagrams delivered at 10 % loss on the link</span></div>
+      <div class="fact"><span class="v">74.2</span><span class="k">frames on average at 10 % loss, against 65 with none</span></div>
+      <div class="fact"><span class="v">49/50</span><span class="k">10 KB transfers over 3 repeaters at 10 % loss per link (fake network)</span></div>
+    </div>
+  </section>
+
+  <!-- 3b. Messenger -->
+  <section class="sec" id="messenger">
+    <div class="eyebrow">§6.1 and §6.2 · Outbox, replies, reactions</div>
+    <h2>A messenger first</h2>
+    <div class="prose">
+      <p class="lede">Chatting off-grid comes first. A message is accepted even while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves.</p>
+      <p>What the phone keeps is the <b>intent</b> (the chat, the text, its expiry), never a session, a key, a nonce or a ciphertext: after a restart it is encrypted again under a fresh session, and the receiver drops a copy it already has. It expires after 24 hours. <b>Replies and reactions</b> name the message they answer by an 8-byte reference both phones compute from its author and its bytes, so nothing else travels; a reaction costs about what a short text does. Each phone also records group changes as lines in the conversation: who joined, who left, who removed whom, the new name.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <button class="primary" id="oPlay">Radio away, then back</button>
+      </div>
+      <div class="chat" aria-live="polite">
+        <div class="bubble in">Hi! I'm at the refuge, the mobile network doesn't reach up here.</div>
+        <div class="quote" id="oQuote">Replying to Camille · "Hi! I'm at the refuge…"</div>
+        <div class="bubble" id="oMsg">On my way, see you at the hut</div>
+        <div class="status" id="oStatus"><span id="oText">Delivered</span><span class="bar"><i id="oBar"></i></span></div>
+        <div class="chip" id="oChip">👍 1</div>
+      </div>
+      <div class="caption" id="oCap"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">24 h</span><span class="k">a waiting message's life; cancel until its first frame leaves</span></div>
+      <div class="fact"><span class="v">8 B</span><span class="k">reference of the message a reply or a reaction answers</span></div>
+      <div class="fact"><span class="v lora">2.1 s</span><span class="k">a 👍 to a contact one hop away, all frames counted (2.9 s in a group of 5, fake network)</span></div>
+    </div>
+  </section>
+
+  <!-- 4. Identity -->
+  <section class="sec" id="identity">
+    <div class="eyebrow">§2 and §4.6 · Phone identity, introduction</div>
+    <h2>Who you are, and how strangers meet</h2>
+    <div class="prose">
+      <p class="lede">Your lichen identity is a key made on your phone, from a 32-byte seed kept in the Keychain. Its backup is 24 words. The radio's own key only routes: it never encrypts anything of yours.</p>
+      <p>Two people who have never talked meet with an <b>introduction</b> in three frames, on the Noise XX pattern: identities travel encrypted under ephemeral keys, and each side proves it holds its identity key. Later sessions start with HELLO / HELLO_ACK, with fresh ephemeral keys every time (forward secrecy). Comparing the <b>safety number</b>, 30 digits that are the same on both phones, or scanning a <code>lichen:1:</code> card in person, marks a contact verified. A verified contact who suddenly shows another identity is not adopted: nothing goes to the new key until you accept it. The key's state sits in every conversation's header, one tap from the safety number.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <button class="primary" id="iPlay">Play the introduction</button>
+      </div>
+      <div class="scroll">
+        <svg id="intro" viewBox="0 0 720 332" role="img" aria-label="INTRO, INTRO_ACK and INTRO_FIN between two phones">
+          <rect class="node" x="40" y="10" width="140" height="44" rx="10"/><text class="t" x="110" y="37" text-anchor="middle">Alice's phone</text>
+          <rect class="node" x="540" y="10" width="140" height="44" rx="10"/><text class="t" x="610" y="37" text-anchor="middle">Bob's phone</text>
+          <line x1="110" y1="54" x2="110" y2="320" stroke="var(--line)" stroke-width="2"/>
+          <line x1="610" y1="54" x2="610" y2="320" stroke="var(--line)" stroke-width="2"/>
+          <g id="iMsgs"></g>
+        </svg>
+      </div>
+      <div class="caption" id="iCap" aria-live="polite"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">1.8 s</span><span class="k">airtime of a first meeting (57 + 104 + 56 bytes, one hop)</span></div>
+      <div class="fact"><span class="v">1.1 s</span><span class="k">a later session: HELLO 66 B, HELLO_ACK 64 B</span></div>
+      <div class="fact"><span class="v">6 × 5</span><span class="k">safety number digits, the same on both phones</span></div>
+      <div class="fact"><span class="v">24</span><span class="k">words in the recovery phrase (BIP-39)</span></div>
+    </div>
+  </section>
+
+  <!-- 5. Groups -->
+  <section class="sec" id="groups">
+    <div class="eyebrow">§10 · Groups</div>
+    <h2>Groups: one flood, everyone reads, nobody impersonates</h2>
+    <div class="prose">
+      <p class="lede">Each member draws a sender key for the group. Keys travel over pairwise sessions, which are authenticated and forward-secret; when people join, <b>the admin relays every key</b>, so newcomers and members never need a session with each other.</p>
+      <p>A post is encrypted once with the sender's key, <b>signed</b> with the sender's identity, and flooded as GRP_DATA. Holding someone's sender key is not enough to speak for them: the signature is checked before anything moves, which is also why relaying keys through the admin gives it nothing new. When someone leaves, every remaining member draws a new key and sends it only to the others. Every post is flooded twice, because a flood lost at its first hop is lost for everyone.</p>
+      <p>People next to you join <b>by scanning a QR code</b>: it carries the admin's public contact card and a random 16-byte token, valid 10 minutes and revoked when the screen closes, never a key or a group id. A group can start with the admin alone, be renamed, and shows who joined, left or was removed.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <button class="primary" id="gPost">Alice posts</button>
+        <button id="gRemove">Remove Dana</button>
+        <button id="gReset">Reset</button>
+      </div>
+      <div class="scroll">
+        <svg id="group" viewBox="0 0 720 280" role="img" aria-label="Four members around a repeater, holding each other's sender keys"></svg>
+      </div>
+      <div class="caption" id="gCap" aria-live="polite"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">97.6 %</span><span class="k">posts delivered with two floods, against 81.6 % with one (10 % loss per link)</span></div>
+      <div class="fact"><span class="v">70 / 209</span><span class="k">characters of text in one or two flooded fragments</span></div>
+      <div class="fact"><span class="v">1–32</span><span class="k">members in a group: it may start with the admin alone</span></div>
+      <div class="fact"><span class="v">130 s</span><span class="k">two people join by QR: every member holds every key (median of 10, fake network; 489 s before the relay)</span></div>
+      <div class="fact"><span class="v">237 s</span><span class="k">a group of 5 created from contacts around one repeater, every key everywhere (median of 10; 412 s before)</span></div>
+    </div>
+  </section>
+
+  <!-- 6. Location -->
+  <section class="sec" id="location">
+    <div class="eyebrow">§12 · Location</div>
+    <h2>Location: send only when the guess goes wrong</h2>
+    <div class="prose">
+      <p class="lede">A position is 14 bytes. Sender and receiver both extrapolate the last position along its heading and speed; a new one goes out only when reality drifts more than 50 m from that guess.</p>
+      <p>Precision is chosen per share: exact, 100 m, 1 km or 10 km. A coarse position is the <b>centre of a fixed grid cell</b>, the same for everyone and every time, never random noise that averaging would remove. Standing still, only a heartbeat goes out: every 15 minutes to a contact, every 30 to a group. An SOS sends the exact position to every share and group every 2 minutes.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="scroll"><div class="bytes" id="posBytes"></div></div>
+      <div class="bytenote" id="posNote" aria-live="polite"></div>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Precision">
+          <button id="lExact" aria-pressed="true">Exact</button>
+          <button id="lCoarse" aria-pressed="false">1 km grid</button>
+        </div>
+        <button id="lReplay">Walk again</button>
+        <span class="badge lora" id="lCount">0 positions sent</span>
+      </div>
+      <div class="scroll">
+        <svg id="walk" viewBox="0 0 720 300" role="img" aria-label="A walker, the receiver's extrapolation, and the positions sent">
+          <g id="lGrid"></g>
+          <path id="lRoute" d="M 50 250 L 430 250 L 430 50 L 690 50" fill="none" stroke="var(--line)" stroke-width="2"/>
+          <g id="lSent"></g>
+          <circle id="lRing" r="26" fill="none" stroke="var(--tx2)" stroke-dasharray="3 4"/>
+          <circle id="lGuess" r="5" fill="none" stroke="var(--tx2)" stroke-width="2"/>
+          <circle id="lMe" r="7" fill="var(--tx)"/>
+        </svg>
+      </div>
+      <div class="legend"><span><i style="background:var(--tx)"></i>where she is</span><span><i style="background:var(--s2);border:1px dashed var(--tx2)"></i>where the receiver guesses, 50 m around it</span><span><i style="background:var(--lora)"></i>a position sent over LoRa</span></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">4</span><span class="k">positions for a 20-minute walk with a turn (exact share)</span></div>
+      <div class="fact"><span class="v">33 B</span><span class="k">one direct position on air, 365 ms at SF8 / CR 4/5</span></div>
+      <div class="fact"><span class="v">≈ 1.19 m</span><span class="k">latitude step of the 24-bit encoding</span></div>
+    </div>
+  </section>
+
+  <!-- 6b. Search -->
+  <section class="sec" id="search">
+    <div class="eyebrow">§11 · Search</div>
+    <h2>Finding someone who cannot say where they are</h2>
+    <div class="prose">
+      <p class="lede">An SOS without GPS still sends a short beacon every 2 minutes. Members searching for them measure each one, ping when allowed, share what they measure, and the phone keeps an estimate of where the beacon comes from.</p>
+      <p>The estimate is a <b>particle filter</b>: thousands of guesses weighed by each reading's signal against a path-loss model the phones fit as they go. It draws a heat map and a 95 % ellipse, and a body bearing (pointing the phone and turning) narrows it. It is secondary to messaging, and it only runs for an SOS or with the group's consent.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls"><button class="primary" id="sPlay">Search for 15 minutes</button><span class="badge lora" id="sBadge">minute 3 · 607 m off</span></div>
+      <div class="scroll">
+        <svg id="searchSvg" viewBox="0 0 720 300" role="img" aria-label="Three searchers closing in, the 95 % ellipse shrinking around the person in SOS">
+          <g id="sEll"></g>
+          <line x1="406" y1="145" x2="540" y2="70" stroke="var(--tx2)" stroke-width="1"/>
+          <text class="t2" x="546" y="66">Julien, SOS, no GPS</text>
+          <circle cx="400" cy="150" r="7" fill="var(--sos)"/>
+          <g id="sWalkers"></g>
+        </svg>
+      </div>
+      <div class="caption" id="sCap"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">2.5 → 0.75 km</span><span class="k">the 95 % ellipse's semi-axis from minute 3 to minute 15 (median of 10, fake network)</span></div>
+      <div class="fact"><span class="v">300 m</span><span class="k">estimate error at minute 15, three searchers walking in from 2–3 km</span></div>
+      <div class="fact"><span class="v lora">1.3 s</span><span class="k">of airtime a minute per searcher, against 6 s allowed</span></div>
+    </div>
+  </section>
+
+  <!-- 7. Media -->
+  <section class="sec" id="media">
+    <div class="eyebrow">§13 · Media and files over LoRa</div>
+    <h2>Voice, photos and files that fit the radio</h2>
+    <div class="prose">
+      <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 450 bytes goes first, and the full thumbnail only when the recipient asks.</p>
+      <p>Media go to contacts only, never flooded. Before sending, the core estimates the airtime of the first round; when it would not fit in what is left of the hour, the send is refused with the time it would fit, and nothing is queued. A voice note is listened to before it goes, at the quality chosen for it; a photo opens full screen at the best version on the phone.</p>
+      <p><b>Files</b> of any type go too: up to 8 KB in one LoRa datagram (a note, a GPX track), with its fragments and airtime shown first; anything larger, a PDF, goes over the Internet bridge below. The receiver opens it with the app for its type; lichen never runs it.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <h3>Ten seconds of voice</h3>
+      <div class="scroll">
+        <svg id="voice" viewBox="0 0 720 120" role="img" aria-label="Codec2 1200 needs 10 fragments, 700C needs 6"></svg>
+      </div>
+      <h3>A photo, preview then full</h3>
+      <div class="controls">
+        <button class="primary" id="mAsk">Ask for the full thumbnail</button>
+        <span class="badge lora" id="mBadge">LoRa · preview · 409 bytes · 3 fragments</span>
+      </div>
+      <div class="scroll">
+        <svg id="photo" viewBox="0 0 720 270" role="img" aria-label="The demo's mountain refuge, preview then full">
+          <defs>
+            <filter id="mBlur" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur id="mBlurAmt" stdDeviation="7"/></filter>
+            <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E3A8C"/><stop offset="1" stop-color="#8E7AB5"/></linearGradient>
+            <clipPath id="mClip"><rect x="200" y="10" width="320" height="240" rx="14"/></clipPath>
+          </defs>
+          <g clip-path="url(#mClip)">
+            <g id="mImg" filter="url(#mBlur)">
+              <rect x="190" y="0" width="340" height="260" fill="url(#sky)"/>
+              <path d="M190 180 L250 150 L290 170 L360 90 L410 135 L450 120 L530 165 L530 260 L190 260 Z" fill="#4A5260"/>
+              <path d="M345 106 L360 90 L377 108 L368 104 L360 112 L352 103 Z" fill="#EDEFF5"/>
+              <path d="M190 205 Q 260 180 320 200 T 450 190 T 530 200 L530 260 L190 260 Z" fill="#2C4A31"/>
+              <rect x="345" y="196" width="24" height="18" fill="#7A4A2C"/><rect x="353" y="201" width="7" height="7" fill="#F6C453"/>
+            </g>
+          </g>
+          <rect x="200" y="10" width="320" height="240" rx="14" fill="none" stroke="var(--line)"/>
+          <text class="tm" x="530" y="245" id="mLabel">variant 0 · preview</text>
+        </svg>
+      </div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v lora">875 B</span><span class="k">10 s of voice in Codec2 700C, 6 fragments on one hop</span></div>
+      <div class="fact"><span class="v">1,500 B</span><span class="k">the same 10 s in Codec2 1200, 10 fragments</span></div>
+      <div class="fact"><span class="v">409 / 975 B</span><span class="k">measured preview and full thumbnail (3 and 7 fragments)</span></div>
+      <div class="fact"><span class="v lora">93 s</span><span class="k">airtime of an 8 KB file on one hop at CR 4/8, delivered in 5.6 min (fake network)</span></div>
+    </div>
+  </section>
+
+  <!-- 8. Bridge -->
+  <section class="sec" id="bridge">
+    <div class="eyebrow">§14 · Internet bridge</div>
+    <h2>When there is Internet, LoRa only carries the receipt</h2>
+    <div class="prose">
+      <p class="lede">For a full-resolution photo or any file up to 64 MiB, one encrypted LoRa datagram announces it: its BLAKE3 hash, its size, a name, and the keys of whoever offers it. The phone then fetches it over the Internet and drops it unless the hash matches.</p>
+      <p>The fetch goes over <b>iroh</b> first: QUIC between the phones, through a relay when they cannot see each other, or through relays only when you hide your IP. When iroh cannot reach the sender, it goes over <b>Tor</b>, to an onion service whose key, like the iroh key, is derived from your seed. Sending "via Tor" lists only the onion service, so the recipient never learns your address.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Transport">
+          <button id="bIroh" aria-pressed="true">iroh, direct</button>
+          <button id="bRelay" aria-pressed="false">iroh, relay only</button>
+          <button id="bTor" aria-pressed="false">Tor</button>
+        </div>
+        <button class="primary" id="bPlay">Send the photo</button>
+      </div>
+      <div class="scroll">
+        <svg id="bridgeSvg" viewBox="0 0 720 300" role="img" aria-label="An announcement over LoRa, then the content over the Internet">
+          <rect class="node" x="20" y="120" width="120" height="56" rx="12"/><text class="t" x="80" y="144" text-anchor="middle">Camille</text><text class="t2" x="80" y="162" text-anchor="middle">offers the photo</text>
+          <rect class="node" x="580" y="120" width="120" height="56" rx="12"/><text class="t" x="640" y="144" text-anchor="middle">You</text><text class="t2" x="640" y="162" text-anchor="middle">fetch, check</text>
+          <path class="wire lora" d="M140 130 C 260 40, 460 40, 580 130"/>
+          <text class="tm" x="360" y="44" text-anchor="middle" fill="var(--lora)">LoRa · ANNOUNCE · one datagram</text>
+          <g id="bPaths"></g>
+          <circle id="bPk" r="7" class="pk" opacity="0"/>
+          <circle id="bPk2" r="9" class="pk iroh" opacity="0"/>
+          <g id="bCheck" opacity="0"><rect x="585" y="190" width="110" height="26" rx="8" fill="var(--ok-bg)"/><text x="640" y="208" text-anchor="middle" class="t" style="fill:var(--ok);font-size:12px">BLAKE3 ✓</text></g>
+        </svg>
+      </div>
+      <div class="caption" id="bCap" aria-live="polite"></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v iroh">135 ms</span><span class="k">300 kB over iroh by endpoint id, BLAKE3 checked</span></div>
+      <div class="fact"><span class="v iroh">343 ms</span><span class="k">the same through relays only</span></div>
+      <div class="fact"><span class="v tor">3.9 s</span><span class="k">300 kB over Tor, once the onion service was reachable (6.0 s)</span></div>
+      <div class="fact"><span class="v lora">101 B</span><span class="k">the demo's announcement with one provider; 138 B with iroh and Tor</span></div>
+    </div>
+  </section>
+
+  <!-- 9. Budget -->
+  <section class="sec" id="budget">
+    <div class="eyebrow">§9 and §13.4 · Airtime and budget</div>
+    <h2>360 seconds an hour, counted by the phone</h2>
+    <div class="prose">
+      <p class="lede">869.618 MHz sits in the 869.40–869.65 MHz sub-band, where a transmitter may be on air 10 % of the time: 360 seconds per sliding hour. The phone counts its own transmissions and shows what is left before every costly send.</p>
+      <p>A medium that does not fit is <b>refused</b>, with the time at which it would fit, never quietly queued. Text and positions are never refused: they wait frame by frame for the hour to free up. The preset is read from the radio, never assumed: a 255-byte frame takes 1.51 s at CR 4/5 and 2.31 s at CR 4/8, the French preset.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="meterrow">
+        <div><span class="big" id="uLeft">360 s</span> <span style="color:var(--tx2)">left of 360 s this hour</span></div>
+        <span class="badge lora" id="uUsed">0 s used</span>
+      </div>
+      <div class="meter" role="progressbar" aria-label="Airtime used" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0" id="uMeter"><i id="uBar"></i></div>
+      <div class="controls">
+        <button class="primary" id="uVoice">Send a 15 s voice message (16 s on air)</button>
+        <button id="uPos">Send a position (0.365 s)</button>
+        <button id="uFile">Send an 8 KB file (93 s)</button>
+        <button id="uReset">New hour</button>
+      </div>
+      <div class="log" id="uLog" aria-live="polite">Measured on one hop: voice and position at SF8 / 62.5 kHz / CR 4/5, the file at CR 4/8.</div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">22</span><span class="k">15-second voice messages fit in an hour (352 s); the 23rd is refused</span></div>
+      <div class="fact"><span class="v">500 mW</span><span class="k">ERP allowed in the sub-band</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Every figure on this page comes from lichen's own documents: the normative spec (<code>docs/spec/protocol.md</code>), the decisions (ADR-0002 to ADR-0022) and the measurement log (<code>docs/measurements.md</code>), dated 2026-11-09. Fake-network and simulator figures are labelled as such; on-air tests between real radios (an iPhone on a ThinkNode M5 against a stock Heltec V4) are under way.</p>
+    <p>Milestones L0 to L9 are done: protocol, direct messages, groups, the iOS app, location, media, the Internet bridge over iroh and Tor, the search mode, the Android app. Then the messaging work: a dependable outbox, chat essentials, replies and reactions, voice review and the photo viewer, invitations by QR code, groups the admin keeps in sync, files.</p>
+  </footer>
+</main>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const NS = 'http://www.w3.org/2000/svg';
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, attrs = {}, parent) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  const txt = (parent, x, y, s, cls = 't', anchor = 'middle') => {
+    const t = el('text', { x, y, class: cls, 'text-anchor': anchor }, parent);
+    t.textContent = s;
+    return t;
+  };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, reduce ? 0 : ms));
+  const tween = (ms, fn) => new Promise((res) => {
+    if (reduce) { fn(1); return res(); }
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / ms);
+      fn(k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
+      if (k < 1) requestAnimationFrame(step); else res();
+    };
+    requestAnimationFrame(step);
+  });
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  /* ---------- waterfall: LoRa chirps drifting down a spectrogram ---------- */
+  (() => {
+    const c = $('waterfall');
+    const ctx = c.getContext('2d');
+    let w = 0, h = 0, offset = 0, last = 0;
+    const size = () => {
+      const r = c.getBoundingClientRect();
+      const dpr = Math.min(2, devicePixelRatio || 1);
+      w = r.width; h = r.height;
+      c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    const draw = () => {
+      ctx.clearRect(0, 0, w, h);
+      const lora = css('--lora'), line = css('--line');
+      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 40) { ctx.beginPath(); ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, h); ctx.stroke(); }
+      // A packet: preamble up-chirps, then data chirps starting at symbol-dependent offsets.
+      const sym = 22, y0 = 14, y1 = h - 14;
+      const symbols = [0, 0, 0, 0, 0, 0, 0, 0, .55, .2, .8, .35, .1, .65, .9, .45, .3, .75, .15, .6, .05, .85, .4, .7];
+      ctx.strokeStyle = lora; ctx.lineWidth = 1.6;
+      let x = ((offset % (sym * 34)) + sym * 34) % (sym * 34) - sym * 30;
+      for (let rep = 0; rep < 4; rep++) {
+        let px = x + rep * sym * 34;
+        symbols.forEach((s, i) => {
+          const a = i < 8 ? .9 : .65;
+          ctx.globalAlpha = a;
+          const ys = y1 - s * (y1 - y0);
+          ctx.beginPath();
+          ctx.moveTo(px, ys);
+          ctx.lineTo(px + (1 - s) * sym, y0);
+          if (s > 0) { ctx.moveTo(px + (1 - s) * sym, y1); ctx.lineTo(px + sym, ys); }
+          ctx.stroke();
+          px += sym;
+        });
+      }
+      ctx.globalAlpha = 1;
+    };
+    const loop = (t) => {
+      if (!last) last = t;
+      offset += (t - last) * 0.03; last = t;
+      draw();
+      requestAnimationFrame(loop);
+    };
+    size(); draw();
+    addEventListener('resize', () => { size(); draw(); });
+    if (!reduce) requestAnimationFrame(loop);
+  })();
+
+  /* ---------- 1. journey ---------- */
+  (() => {
+    const svg = $('journey'), nodes = $('jNodes'), ripples = $('jRipples'), pk = $('jPk'), cap = $('jCap');
+    const N = {
+      a: { x: 40, label: "Alice's phone", sub: 'app + Rust core' },
+      ca: { x: 185, label: 'Companion', sub: 'stock MeshCore' },
+      r: { x: 360, label: 'Repeater', sub: 'stock MeshCore' },
+      cb: { x: 535, label: 'Companion', sub: 'stock MeshCore' },
+      b: { x: 680, label: "Bob's phone", sub: 'app + Rust core' },
+    };
+    const boxes = {};
+    for (const [k, n] of Object.entries(N)) {
+      const g = el('g', {}, nodes);
+      boxes[k] = el('rect', { class: 'node', x: n.x - 32, y: 90, width: 64, height: 50, rx: 10 }, g);
+      txt(g, n.x, 163, n.label, 't');
+      txt(g, n.x, 180, n.sub, 't2');
+      if (k === 'a' || k === 'b') {
+        el('rect', { x: n.x - 9, y: 100, width: 18, height: 30, rx: 4, fill: 'none', stroke: 'var(--tx2)', 'stroke-width': 1.6 }, g);
+      } else {
+        el('path', { d: `M${n.x - 10} 126 L${n.x - 4} 104 V126 L${n.x + 2} 104 V126 L${n.x + 7} 115`, fill: 'none', stroke: 'var(--lora)', 'stroke-width': 2.2, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, g);
+      }
+    }
+    const extra = [];
+    for (const [y, label] of [[42, 'Carol'], [190, 'Dan']]) {
+      const g = el('g', { class: 'grpOnly dim' }, nodes);
+      el('rect', { class: 'node', x: 520, y: y - 18, width: 120, height: 36, rx: 10 }, g);
+      txt(g, 580, y + 5, `${label}'s companion`, 't2');
+      extra.push(g);
+    }
+    const stepsDirect = [
+      ['a', null, 'Alice writes. Her core seals the datagram into lichen frames: a 7-byte header in clear, the body encrypted with ChaCha20-Poly1305 and an 8-byte tag.', 'Nothing leaves the phone in clear but the header, which only names node hashes and counters.'],
+      ['a', 'ca', 'Over Bluetooth, SEND_RAW_DATA (command 25) hands the companion the path and the frame.', 'The companion answers OK as soon as it is queued, so the core paces fragments itself.'],
+      ['ca', 'r', 'The stock companion transmits a RAW_CUSTOM packet. In direct mode only the node whose hash heads the path forwards it.', 'RAW_CUSTOM has no MeshCore crypto: everything lichen needs is in its own header.'],
+      ['r', 'cb', 'The repeater forwards it without understanding it, removing its own hash from the path.', 'When the path is empty, every node in range receives it: lichen checks the destination hash itself.'],
+      ['cb', 'b', "Bob's companion pushes RAW_DATA (0x84) to his app while it is connected.", 'Pushes are lost while the app is away; the sender keeps resending until it is acknowledged.'],
+      ['b', 'a', "Bob's core verifies the tag before reading anything, reassembles, and sends back an ACK with the bitmap of fragments it holds.", 'Delivered.'],
+    ];
+    const stepsGroup = [
+      ['a', null, "Alice posts to a group. Her core signs the message with her identity and encrypts it once with her sender key.", 'One encryption for all members.'],
+      ['a', 'ca', 'SEND_RAW_PACKET (command 65) hands the companion a raw GRP_DATA frame.', 'lichen builds the on-air frame itself.'],
+      ['ca', 'r', 'GRP_DATA is flooded: every repeater relays it, adding its hash to the path.', 'Floods are sent twice, copy 0 then copy 1, because a flood lost at its first hop is lost for everyone.'],
+      ['r', '*', "Every member's companion hears it and pushes LOG_RX_DATA (0x88) with the raw frame.", 'Stock nodes drop it: after the 2-byte MAC they would read, the length is never a multiple of 16.'],
+      ['b', null, "Each member finds the group by its hash, tries the sender's keys, checks the replay window, reassembles, and verifies the signature.", 'No acknowledgement in groups.'],
+    ];
+    let mode = 'direct', i = -1, busy = false;
+    const steps = () => (mode === 'direct' ? stepsDirect : stepsGroup);
+    const highlight = (keys) => { for (const [k, b] of Object.entries(boxes)) b.classList.toggle('on', keys.includes(k)); };
+    const show = (s) => { cap.innerHTML = `${s[2]}<small>${s[3]}</small>`; };
+    const move = async (from, to, ack) => {
+      pk.setAttribute('class', ack ? 'pk ack' : 'pk');
+      pk.setAttribute('opacity', 1);
+      const x0 = N[from].x, x1 = N[to].x;
+      await tween(ack ? 1400 : 900, (k) => pk.setAttribute('cx', x0 + (x1 - x0) * k));
+      pk.setAttribute('cy', 115);
+    };
+    const flood = async () => {
+      pk.setAttribute('opacity', 0);
+      for (let r = 0; r < 2; r++) {
+        const c = el('circle', { class: 'ripple', cx: N.r.x, cy: 115, r: 10 }, ripples);
+        tween(1100, (k) => { c.setAttribute('r', 10 + k * 190); c.setAttribute('opacity', 1 - k); }).then(() => c.remove());
+        await sleep(350);
+      }
+      await sleep(700);
+    };
+    const run = async (s) => {
+      show(s);
+      const [from, to] = s;
+      highlight(to && to !== '*' ? [from, to] : [from]);
+      if (!to) { pk.setAttribute('cx', N[from].x); pk.setAttribute('opacity', 1); pk.setAttribute('class', 'pk'); return; }
+      if (to === '*') { highlight(['r', 'cb']); await flood(); return; }
+      await move(from, to, mode === 'direct' && from === 'b' && to === 'a');
+    };
+    const setMode = (m) => {
+      mode = m; i = -1;
+      $('jDirect').setAttribute('aria-pressed', m === 'direct');
+      $('jGroup').setAttribute('aria-pressed', m === 'group');
+      svg.querySelectorAll('.grpOnly').forEach((g) => g.classList.toggle('dim', m !== 'group'));
+      pk.setAttribute('opacity', 0); pk.setAttribute('cx', N.a.x); highlight([]);
+      cap.innerHTML = m === 'direct' ? 'A direct message, step by step. Press <b>Next step</b>.<small>RAW_CUSTOM along a path the companion or lichen\'s own probe found.</small>' : 'A group post, step by step. Press <b>Next step</b>.<small>GRP_DATA, flooded, read through LOG_RX_DATA.</small>';
+    };
+    const next = async () => {
+      if (busy) return; busy = true;
+      i = (i + 1) % steps().length;
+      if (i === 0) { pk.setAttribute('cx', N.a.x); }
+      await run(steps()[i]);
+      busy = false;
+    };
+    $('jDirect').onclick = () => setMode('direct');
+    $('jGroup').onclick = () => setMode('group');
+    $('jStep').onclick = next;
+    $('jPlay').onclick = async () => {
+      if (busy) return;
+      i = -1;
+      for (let k = 0; k < steps().length; k++) { await next(); await sleep(1500); }
+    };
+    setMode('direct');
+  })();
+
+  /* ---------- byte maps ---------- */
+  const byteMap = (box, note, fields, intro) => {
+    note.innerHTML = intro;
+    const total = fields.reduce((s, f) => s + f.w, 0);
+    fields.forEach((f, idx) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `byte ${f.cls || ''}`;
+      b.style.flex = `${f.w} 1 0`;
+      b.innerHTML = `${f.name}<span>${f.size}</span>`;
+      b.setAttribute('aria-label', `${f.name}, ${f.size}`);
+      b.onclick = () => {
+        box.querySelectorAll('.byte').forEach((x) => x.classList.remove('sel'));
+        b.classList.add('sel');
+        note.innerHTML = `<b>${f.name}</b> · ${f.size}. ${f.desc}`;
+      };
+      box.appendChild(b);
+    });
+    return total;
+  };
+  byteMap($('frameBytes'), $('frameNote'), [
+    { name: 'dst', size: '1 B', w: 1, cls: 'clear', desc: "The first byte of the recipient node's key. Frames for another node are dropped before any crypto." },
+    { name: 'src', size: '1 B', w: 1, cls: 'clear', desc: "The first byte of the sender node's key." },
+    { name: 'tag', size: '2 B', w: 2, cls: 'clear', desc: 'Datagram counter per session and direction, strictly increasing; the session is renewed before 0xFF00. In a handshake, its identifier.' },
+    { name: 'kind‖index', size: '1 B', w: 1.4, cls: 'clear', desc: 'kind in bits 7-6: DATA, ACK, ABORT or CONTROL. index in bits 5-0: the fragment number, 0 to 63.' },
+    { name: 'total', size: '1 B', w: 1, cls: 'clear', desc: 'Fragments in the datagram, 1 to 64.' },
+    { name: 'attempt', size: '1 B', w: 1.2, cls: 'clear', desc: 'The round number for data, so a resent fragment gets a fresh nonce and fresh bytes for the duplicate filter.' },
+    { name: 'ciphertext', size: '1–157 B', w: 7, cls: 'sealed', desc: 'ChaCha20 under the session key for this direction. Nothing in it is read before the tag checks.' },
+    { name: 'tag', size: '8 B', w: 2.6, cls: 'tagb', desc: 'Poly1305 cut to 8 bytes, compared in constant time. The AAD is the whole header.' },
+  ], 'Tap a field. The first seven bytes are the header, in clear and authenticated.');
+
+  /* nonce diagram */
+  (() => {
+    const head = $('nHead'), non = $('nNonce');
+    const names = ['dst', 'src', 'tag', 'tag', 'k‖i', 'total', 'att'];
+    const cw = 52, x0 = 110;
+    names.forEach((n, i) => {
+      el('rect', { x: x0 + i * cw, y: 0, width: cw - 4, height: 30, rx: 6, fill: i >= 2 ? 'var(--s2)' : 'var(--bg)', stroke: 'var(--line)' }, head);
+      txt(head, x0 + i * cw + (cw - 4) / 2, 20, n, 'tm');
+    });
+    const movers = [];
+    for (let i = 0; i < 12; i++) {
+      el('rect', { x: x0 + i * cw, y: 78, width: cw - 4, height: 30, rx: 6, fill: i < 5 ? 'var(--s2)' : 'var(--bg)', stroke: 'var(--line)' }, non);
+      if (i >= 5) txt(non, x0 + i * cw + (cw - 4) / 2, 98, '00', 'tm');
+    }
+    for (let i = 2; i < 7; i++) {
+      const g = el('g', {}, non);
+      el('rect', { x: 0, y: 0, width: cw - 4, height: 30, rx: 6, fill: 'var(--lora-bg)', stroke: 'var(--lora)' }, g);
+      txt(g, (cw - 4) / 2, 20, names[i], 'tm');
+      movers.push({ g, from: x0 + i * cw, to: x0 + (i - 2) * cw });
+    }
+    const place = (k) => movers.forEach((m) => m.g.setAttribute('transform', `translate(${m.from + (m.to - m.from) * k},${78 * k})`));
+    place(1);
+    if (!reduce) {
+      const io = new IntersectionObserver(async (es) => {
+        if (!es[0].isIntersecting) return;
+        io.disconnect();
+        place(0); await sleep(400); await tween(1400, place);
+      }, { threshold: .6 });
+      io.observe($('nonce'));
+    }
+  })();
+
+  /* ---------- 3. fragments ---------- */
+  (() => {
+    const slots = $('fSlots'), fly = $('fFly'), cap = $('fCap'), bm = $('fBitmap'), round = $('fRound');
+    const n = 8, sx = 236, sw = 31;
+    const cells = [];
+    for (let i = 0; i < n; i++) {
+      const r = el('rect', { x: sx + i * sw, y: 176, width: sw - 5, height: 26, rx: 5, fill: 'var(--s2)', stroke: 'var(--line)' }, slots);
+      txt(slots, sx + i * sw + (sw - 5) / 2, 194, String(i), 'tm');
+      cells.push(r);
+    }
+    txt(slots, 360, 220, "receiver's slots", 't2');
+    let have = new Array(n).fill(false), busy = false;
+    const paint = () => {
+      cells.forEach((c, i) => c.setAttribute('fill', have[i] ? 'var(--ok-bg)' : 'var(--s2)'));
+      bm.textContent = 'bitmap ' + have.map((h) => (h ? '1' : '0')).join('') + (have.every(Boolean) ? '  COMPLETE' : '');
+    };
+    const send = async (i, lose, rnd) => {
+      const g = el('g', {}, fly);
+      el('rect', { x: -14, y: -11, width: 28, height: 22, rx: 5, fill: 'var(--lora)' }, g);
+      const t = txt(g, 0, 4, String(i), 'tm'); t.setAttribute('style', 'fill:var(--act-fg)');
+      const x0 = 130, x1 = 590;
+      await tween(650, (k) => {
+        const kk = lose ? Math.min(k, .55) : k;
+        g.setAttribute('transform', `translate(${x0 + (x1 - x0) * kk},${122 - Math.sin(kk * Math.PI) * 26})`);
+        if (lose && k > .55) g.setAttribute('opacity', 1 - (k - .55) / .45);
+      });
+      if (lose) {
+        const x = el('text', { x: x0 + (x1 - x0) * .55, y: 100, class: 't', 'text-anchor': 'middle' }, fly);
+        x.textContent = '✕'; x.setAttribute('style', 'fill:var(--sos)');
+        g.remove();
+      } else { g.remove(); have[i] = true; paint(); }
+    };
+    const ack = async (complete) => {
+      const g = el('g', {}, fly);
+      el('rect', { x: -40, y: -11, width: 80, height: 22, rx: 5, fill: 'var(--ok)' }, g);
+      const t = txt(g, 0, 4, complete ? 'ACK ✓' : 'ACK', 'tm'); t.setAttribute('style', 'fill:var(--act-fg)');
+      await tween(800, (k) => g.setAttribute('transform', `translate(${590 - 460 * k},${74 + Math.sin(k * Math.PI) * -20})`));
+      g.remove();
+    };
+    const play = async () => {
+      if (busy) return; busy = true;
+      fly.innerHTML = ''; have = new Array(n).fill(false); paint();
+      const lose = $('fLoss').checked;
+      round.textContent = 'round 0';
+      cap.innerHTML = 'Round 0: every fragment once, in order, paced for the repeaters.<small>attempt = 0 in every header.</small>';
+      for (let i = 0; i < n; i++) { await send(i, lose && i === 3, 0); await sleep(120); }
+      await sleep(300);
+      if (!lose) {
+        cap.innerHTML = 'Fragment 7 closes the round. Everything arrived: the receiver delivers the datagram and answers COMPLETE.<small>One ACK, sent twice in case the first is lost.</small>';
+        await ack(true);
+        busy = false; return;
+      }
+      cap.innerHTML = 'Fragment 7 closes the round with a gap: the receiver answers with its bitmap, 11101111.<small>Bit i set = fragment i held.</small>';
+      await ack(false);
+      round.textContent = 'round 1';
+      cap.innerHTML = 'Round 1 carries only fragment 3. It is also the highest missing index, so it closes this round.<small>attempt = 1: a new nonce, new bytes for the duplicate filter.</small>';
+      fly.querySelectorAll('text').forEach((t) => t.remove());
+      await send(3, false, 1);
+      await sleep(250);
+      cap.innerHTML = 'All 8 held: COMPLETE. One lost fragment cost one small round, not a restart.<small>The sender gives up only after 8 silent rounds, 4 ACKs without progress, or 32 rounds.</small>';
+      await ack(true);
+      busy = false;
+    };
+    $('fPlay').onclick = play;
+    have = have.map(() => true); paint();
+    cap.innerHTML = 'Press <b>Send the datagram</b>. With the box ticked, fragment 3 is lost on the way.<small>The slots show the state after a complete transfer.</small>';
+  })();
+
+  /* ---------- 4. introduction ---------- */
+  (() => {
+    const g = $('iMsgs'), cap = $('iCap');
+    const msgs = [
+      { y: 90, dir: 1, name: 'INTRO', bytes: '57 B · 508 ms', what: 'salt, ephemeral key, return path: all in clear, nothing secret', text: "Alice doesn't know Bob's identity yet. INTRO carries only a salt, a fresh ephemeral key and the way back to her." },
+      { y: 165, dir: -1, name: 'INTRO_ACK', bytes: '104 B · 754 ms', what: "Bob's identity, sealed under ee; a second tag only his identity key can make", text: "Bob answers with his own ephemeral key and his identity, encrypted. A second tag proves he holds that identity's key." },
+      { y: 240, dir: 1, name: 'INTRO_FIN', bytes: '56 B · 508 ms', what: "Alice's identity, sealed; her proof under ee ‖ es ‖ se", text: 'Alice checks the proof, then sends her identity and her own proof. Both now hold session keys from ee ‖ es ‖ se.' },
+    ];
+    const draw = (k) => {
+      g.innerHTML = '';
+      msgs.slice(0, k).forEach((m) => {
+        const x0 = m.dir > 0 ? 110 : 610, x1 = m.dir > 0 ? 610 : 110;
+        el('line', { x1: x0, y1: m.y, x2: x1 + (m.dir > 0 ? -8 : 8), y2: m.y + 22, stroke: 'var(--lora)', 'stroke-width': 2 }, g);
+        el('path', { d: m.dir > 0 ? `M${x1} ${m.y + 22} l-12 -8 l1 13 z` : `M${x1} ${m.y + 22} l12 -8 l-1 13 z`, fill: 'var(--lora)' }, g);
+        txt(g, 360, m.y - 20, m.name, 't');
+        txt(g, 360, m.y - 5, m.bytes, 'tm');
+        txt(g, 360, m.y + 42, m.what, 't2');
+      });
+      if (k >= 3) {
+        el('rect', { x: 210, y: 292, width: 300, height: 30, rx: 8, fill: 'var(--ok-bg)' }, g);
+        const t = txt(g, 360, 312, 'session: one key per direction', 't'); t.setAttribute('style', 'fill:var(--ok);font-size:12px');
+      }
+    };
+    draw(3);
+    cap.innerHTML = 'Three frames, once per pair of identities.<small>Press Play to watch them one by one.</small>';
+    let busy = false;
+    $('iPlay').onclick = async () => {
+      if (busy) return; busy = true;
+      for (let k = 1; k <= 3; k++) {
+        draw(k);
+        cap.innerHTML = `${msgs[k - 1].text}<small>${msgs[k - 1].name} · ${msgs[k - 1].bytes} on one hop.</small>`;
+        await sleep(2400);
+      }
+      cap.innerHTML = "Introduced. The identities are new to each other, so both are marked <b>to verify</b> until the safety numbers are compared.<small>Next time: HELLO / HELLO_ACK, about 1.1 s of airtime.</small>";
+      busy = false;
+    };
+  })();
+
+  /* ---------- 5. groups ---------- */
+  (() => {
+    const svg = $('group'), cap = $('gCap');
+    const M = [
+      { n: 'Alice', x: 120, y: 56 }, { n: 'Bob', x: 600, y: 56 },
+      { n: 'Carol', x: 600, y: 214 }, { n: 'Dana', x: 120, y: 214 },
+    ];
+    const R = { x: 360, y: 135 };
+    let epoch = 0, removed = false, busy = false;
+    const layer = el('g', {}, svg), fx = el('g', {}, svg);
+    const draw = () => {
+      layer.innerHTML = '';
+      M.forEach((m, i) => {
+        const out = removed && i === 3;
+        el('line', { class: 'wire lora', x1: m.x, y1: m.y, x2: R.x, y2: R.y, opacity: out ? .2 : 1 }, layer);
+      });
+      el('circle', { cx: R.x, cy: R.y, r: 26, class: 'node' }, layer);
+      txt(layer, R.x, R.y + 4, 'repeater', 't2');
+      M.forEach((m, i) => {
+        const out = removed && i === 3;
+        const g = el('g', { opacity: out ? .35 : 1 }, layer);
+        el('rect', { class: 'node', x: m.x - 70, y: m.y - 30, width: 140, height: 60, rx: 12 }, g);
+        txt(g, m.x, m.y - 9, m.n + (out ? ' (removed)' : ''), 't');
+        const held = M.map((o, j) => j).filter((j) => j !== i && !(removed && (j === 3 || i === 3)));
+        const ep = removed && i !== 3 ? epoch : 0;
+        const keys = held.map((j) => `k${M[j].n[0]}${removed && j !== 3 && i !== 3 ? '′' : ''}`).join(' ');
+        txt(g, m.x, m.y + 12, out ? 'keeps old keys only' : `holds ${keys}`, 'tm');
+      });
+      txt(layer, 360, 270, removed ? `key_epoch ${epoch}: everyone drew a new key after Dana left` : 'key_epoch 0: every member holds the others\' sender keys', 't2');
+    };
+    const post = async () => {
+      if (busy) return; busy = true;
+      fx.innerHTML = '';
+      cap.innerHTML = 'Alice signs her post with her identity, encrypts it once with her sender key, and floods it.<small>Copy 0 and copy 1, spaced so they do not collide.</small>';
+      const a = M[0];
+      const pk = el('circle', { r: 7, class: 'pk', cx: a.x, cy: a.y }, fx);
+      await tween(700, (k) => { pk.setAttribute('cx', a.x + (R.x - a.x) * k); pk.setAttribute('cy', a.y + (R.y - a.y) * k); });
+      pk.remove();
+      for (let r = 0; r < 2; r++) {
+        const c = el('circle', { class: 'ripple', cx: R.x, cy: R.y, r: 26 }, fx);
+        tween(1000, (k) => { c.setAttribute('r', 26 + k * 260); c.setAttribute('opacity', 1 - k); }).then(() => c.remove());
+        await sleep(300);
+      }
+      await sleep(500);
+      M.slice(1).forEach((m, i) => {
+        const out = removed && i === 2;
+        const t = txt(fx, m.x + 82, m.y + 4, out ? '✕' : '✓', 't', 'start');
+        t.setAttribute('style', `fill:var(${out ? '--sos' : '--ok'});font-size:18px`);
+      });
+      cap.innerHTML = removed
+        ? 'Bob and Carol read it and check Alice\'s signature. Dana hears the flood but holds none of the new keys: she cannot read it.<small>Removal rotates every remaining member\'s key.</small>'
+        : 'Bob, Carol and Dana try Alice\'s key, check the replay window, then her signature, before showing it.<small>A member holding Alice\'s key still cannot post as Alice.</small>';
+      busy = false;
+    };
+    $('gPost').onclick = post;
+    $('gRemove').onclick = () => {
+      if (removed) return;
+      removed = true; epoch = 1; fx.innerHTML = ''; draw();
+      cap.innerHTML = 'The admin sends a new group state without Dana. Alice, Bob and Carol each draw a new sender key (′) and send it to the two others only.<small>Adding a member, by contrast, keeps the keys: the admin hands the newcomer every current key in one bundle.</small>';
+      $('gRemove').disabled = true;
+    };
+    $('gReset').onclick = () => { removed = false; epoch = 0; fx.innerHTML = ''; draw(); $('gRemove').disabled = false; cap.innerHTML = 'Four members around one repeater. Press <b>Alice posts</b>.<small>kA is Alice\'s sender key, kB Bob\'s, and so on.</small>'; };
+    draw();
+    cap.innerHTML = 'Four members around one repeater. Press <b>Alice posts</b>.<small>kA is Alice\'s sender key, kB Bob\'s, and so on.</small>';
+  })();
+
+  /* ---------- 6. location ---------- */
+  byteMap($('posBytes'), $('posNote'), [
+    { name: 'lat', size: '3 B', w: 3, desc: 'i24, round(lat° × 2^23 / 90): about 1.19 m per step.' },
+    { name: 'lon', size: '3 B', w: 3, desc: 'i24, round(lon° × 2^23 / 180): about 2.39 m per step at the equator.' },
+    { name: 'alt', size: '2 B', w: 2, desc: 'i16 metres; −32768 = unknown.' },
+    { name: 't16', size: '2 B', w: 2, desc: "The sender's Unix seconds mod 65,536; rebuilt as the unique instant within the last 18 h to the next 10 min." },
+    { name: 'heading‖speed', size: '2 B', w: 2.6, desc: 'Heading in degrees (9 bits), speed in 0.5 m/s steps (7 bits). What the receiver extrapolates with.' },
+    { name: 'prec', size: '1 B', w: 1.2, desc: 'Radius of uncertainty, 2^(prec/16) m: 0 = 1 m, 160 = 1 km.' },
+    { name: 'flags', size: '1 B', w: 1.2, desc: 'Bit 0 SOS, bit 1 end of sharing.' },
+  ], 'Tap a field. 14 bytes, inside an encrypted datagram; never in a MeshCore advert.');
+  (() => {
+    const me = $('lMe'), guess = $('lGuess'), ring = $('lRing'), sent = $('lSent'), grid = $('lGrid'), count = $('lCount');
+    const pts = [[50, 250], [430, 250], [430, 50], [690, 50]];
+    const segs = []; let L = 0;
+    for (let i = 1; i < pts.length; i++) { const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); segs.push(d); L += d; }
+    const at = (s) => {
+      for (let i = 0; i < segs.length; i++) {
+        if (s <= segs[i] || i === segs.length - 1) {
+          const k = Math.min(1, s / segs[i]);
+          const [x0, y0] = pts[i], [x1, y1] = pts[i + 1];
+          return { x: x0 + (x1 - x0) * k, y: y0 + (y1 - y0) * k, dx: (x1 - x0) / segs[i], dy: (y1 - y0) / segs[i] };
+        }
+        s -= segs[i];
+      }
+    };
+    const CELL = 120, THR = 26;
+    let coarse = false, raf = 0;
+    const drawGrid = () => {
+      grid.innerHTML = '';
+      if (!coarse) return;
+      for (let x = 0; x <= 720; x += CELL) el('line', { x1: x, y1: 0, x2: x, y2: 300, stroke: 'var(--line)', 'stroke-dasharray': '2 4' }, grid);
+      for (let y = 0; y <= 300; y += CELL) el('line', { x1: 0, y1: y, x2: 720, y2: y, stroke: 'var(--line)', 'stroke-dasharray': '2 4' }, grid);
+    };
+    const mark = (x, y) => {
+      el('circle', { cx: x, cy: y, r: 6, fill: 'var(--lora)' }, sent);
+      const c = el('circle', { cx: x, cy: y, r: 6, fill: 'none', stroke: 'var(--lora)' }, sent);
+      tween(700, (k) => { c.setAttribute('r', 6 + k * 18); c.setAttribute('opacity', 1 - k); }).then(() => c.remove());
+    };
+    const walk = () => {
+      cancelAnimationFrame(raf);
+      sent.innerHTML = ''; drawGrid();
+      let s = 0, n = 0, last = null, cell = null, t0 = null;
+      const speed = 1.4, sentSpeed = 1.5; // m/s, sent in 0.5 m/s steps: the guess runs a little ahead
+      const pxPerS = 1.35; // walking speed on screen
+      ring.style.display = coarse ? 'none' : '';
+      guess.style.display = coarse ? 'none' : '';
+      const send = (p, t) => {
+        n++;
+        if (coarse) {
+          const cx = Math.floor(p.x / CELL) * CELL + CELL / 2, cy = Math.floor(p.y / CELL) * CELL + CELL / 2;
+          mark(cx, cy);
+        } else mark(p.x, p.y);
+        last = { x: p.x, y: p.y, dx: p.dx, dy: p.dy, t };
+        count.textContent = `${n} position${n > 1 ? 's' : ''} sent`;
+      };
+      const frame = (now) => {
+        if (t0 === null) t0 = now;
+        const t = (now - t0) / 1000;
+        s = Math.min(L, t * pxPerS * 40);
+        const p = at(s);
+        me.setAttribute('cx', p.x); me.setAttribute('cy', p.y);
+        if (!last) send(p, t);
+        if (coarse) {
+          const c = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`;
+          if (cell !== null && c !== cell) send(p, t);
+          cell = c;
+        } else {
+          const dt = t - last.t;
+          const gx = last.x + last.dx * dt * pxPerS * 40 * (sentSpeed / speed), gy = last.y + last.dy * dt * pxPerS * 40 * (sentSpeed / speed);
+          guess.setAttribute('cx', gx); guess.setAttribute('cy', gy);
+          ring.setAttribute('cx', gx); ring.setAttribute('cy', gy);
+          if (Math.hypot(p.x - gx, p.y - gy) > THR) send(p, t);
+        }
+        if (s < L) raf = requestAnimationFrame(frame);
+      };
+      if (reduce) {
+        // Static: the positions an exact share sent on this walk, from the same rule run instantly.
+        let tt = 0; const dt = 1 / 30;
+        while (s < L) { tt += dt; s = Math.min(L, tt * pxPerS * 40); const p = at(s); if (!last) send(p, tt); else if (coarse) { const c = `${Math.floor(p.x / CELL)},${Math.floor(p.y / CELL)}`; if (cell !== null && c !== cell) send(p, tt); cell = c; } else { const d = tt - last.t; const gx = last.x + last.dx * d * pxPerS * 40 * (sentSpeed / speed), gy = last.y + last.dy * d * pxPerS * 40 * (sentSpeed / speed); if (Math.hypot(p.x - gx, p.y - gy) > THR) send(p, tt); } }
+        const p = at(L); me.setAttribute('cx', p.x); me.setAttribute('cy', p.y);
+        return;
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    const setMode = (c) => { coarse = c; $('lExact').setAttribute('aria-pressed', !c); $('lCoarse').setAttribute('aria-pressed', c); walk(); };
+    $('lExact').onclick = () => setMode(false);
+    $('lCoarse').onclick = () => setMode(true);
+    $('lReplay').onclick = walk;
+    const io = new IntersectionObserver((es) => { if (es[0].isIntersecting) { io.disconnect(); walk(); } }, { threshold: .4 });
+    const p0 = at(0); me.setAttribute('cx', p0.x); me.setAttribute('cy', p0.y); guess.setAttribute('cx', p0.x); guess.setAttribute('cy', p0.y); ring.setAttribute('cx', p0.x); ring.setAttribute('cy', p0.y);
+    io.observe($('walk'));
+  })();
+
+  /* ---------- 7. media ---------- */
+  (() => {
+    const v = $('voice');
+    const rows = [
+      { y: 18, label: 'Codec2 1200', sub: '48 bits / 40 ms', frags: 10, bytes: '1,500 B', hl: false },
+      { y: 70, label: 'Codec2 700C', sub: '28 bits / 40 ms · sent', frags: 6, bytes: '875 B', hl: true },
+    ];
+    rows.forEach((r) => {
+      txt(v, 0, r.y + 16, r.label, 't', 'start');
+      txt(v, 0, r.y + 32, r.sub, 't2', 'start');
+      for (let i = 0; i < r.frags; i++) el('rect', { x: 170 + i * 44, y: r.y, width: 38, height: 34, rx: 6, fill: r.hl ? 'var(--lora-bg)' : 'var(--s2)', stroke: r.hl ? 'var(--lora)' : 'var(--line)' }, v);
+      txt(v, 170 + r.frags * 44 + 8, r.y + 22, `${r.frags} fragments · ${r.bytes}`, 'tm', 'start');
+    });
+    let full = false;
+    const blur = $('mBlurAmt'), badge = $('mBadge'), label = $('mLabel');
+    $('mAsk').onclick = async () => {
+      if (full) { full = false; blur.setAttribute('stdDeviation', 7); badge.textContent = 'LoRa · preview · 409 bytes · 3 fragments'; label.textContent = 'variant 0 · preview'; $('mAsk').textContent = 'Ask for the full thumbnail'; return; }
+      $('mAsk').disabled = true;
+      badge.textContent = 'MEDIA_REQUEST sent: "send me variant 1"';
+      await sleep(900);
+      await tween(1200, (k) => blur.setAttribute('stdDeviation', 7 * (1 - k)));
+      full = true;
+      badge.textContent = 'LoRa · full thumbnail · 975 bytes · 7 fragments';
+      label.textContent = 'variant 1 · full';
+      $('mAsk').textContent = 'Back to the preview';
+      $('mAsk').disabled = false;
+    };
+  })();
+
+  /* ---------- 8. bridge ---------- */
+  (() => {
+    const paths = $('bPaths'), pk = $('bPk'), pk2 = $('bPk2'), check = $('bCheck'), cap = $('bCap');
+    const routes = {
+      iroh: { d: 'M140 160 L580 160', via: [], color: '--iroh', cls: 'pk iroh', label: 'QUIC, peer to peer', time: '300 kB in 135 ms', note: 'The relay helps the phones find each other; the data then goes direct. Your contact sees your IP.' },
+      relay: { d: 'M140 165 L360 245 L580 165', via: [[360, 245, 'n0 relay']], color: '--iroh', cls: 'pk iroh', label: 'QUIC through a relay', time: '300 kB in 343 ms', note: 'No direct address is published: your contact never sees your IP; the relay does, and sees only encrypted traffic.' },
+      tor: { d: 'M140 170 L250 240 L360 210 L470 250 L580 170', via: [[250, 240, 'guard'], [360, 210, 'middle'], [470, 250, 'rendezvous']], color: '--tor', cls: 'pk tor', label: 'Tor, to an onion service on port 1', time: '300 kB in 3.9 s', note: 'Nobody on the path sees both ends. The onion service key derives from your seed, like the iroh key.' },
+    };
+    let mode = 'iroh', busy = false;
+    const draw = () => {
+      paths.innerHTML = '';
+      const r = routes[mode];
+      const p = el('path', { d: r.d, fill: 'none', stroke: `var(${r.color})`, 'stroke-width': 2.5, 'stroke-dasharray': mode === 'iroh' ? '' : '6 5', id: 'bRoute' }, paths);
+      r.via.forEach(([x, y, n]) => { el('circle', { cx: x, cy: y, r: 13, class: 'node' }, paths); txt(paths, x, y + 30, n, 't2'); });
+      txt(paths, 360, mode === 'iroh' ? 150 : 290, r.label, 'tm').setAttribute('style', `fill:var(${r.color})`);
+      pk2.setAttribute('class', r.cls);
+      return p;
+    };
+    const set = (m) => {
+      mode = m;
+      ['bIroh', 'bRelay', 'bTor'].forEach((id, i) => $(id).setAttribute('aria-pressed', ['iroh', 'relay', 'tor'][i] === m));
+      draw(); check.setAttribute('opacity', 0); pk.setAttribute('opacity', 0); pk2.setAttribute('opacity', 0);
+      cap.innerHTML = `${routes[m].note}<small>Measured: ${routes[m].time}.</small>`;
+    };
+    const along = async (path, ms, dot, reverse) => {
+      const L = path.getTotalLength();
+      dot.setAttribute('opacity', 1);
+      await tween(ms, (k) => { const pt = path.getPointAtLength((reverse ? 1 - k : k) * L); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); });
+    };
+    $('bIroh').onclick = () => set('iroh');
+    $('bRelay').onclick = () => set('relay');
+    $('bTor').onclick = () => set('tor');
+    $('bPlay').onclick = async () => {
+      if (busy) return; busy = true;
+      const route = draw(); check.setAttribute('opacity', 0);
+      const lora = document.querySelector('#bridgeSvg .wire.lora');
+      cap.innerHTML = 'One encrypted LoRa datagram: the photo\'s BLAKE3 hash, its size, its name, and how to reach Camille.<small>The hash is the capability: it only travels inside encrypted announcements.</small>';
+      await along(lora, 1600, pk);
+      pk.setAttribute('opacity', 0);
+      cap.innerHTML = 'Your phone asks Camille\'s for the hash: <code>0x01 ‖ hash</code>.<small>lichen/blob/1, the same bytes over iroh and over Tor.</small>';
+      pk2.setAttribute('r', 5);
+      await along(route, mode === 'tor' ? 1500 : 700, pk2, true);
+      cap.innerHTML = 'Camille\'s phone answers <code>0x00 ‖ size ‖ content</code>.<small>Read at most the announced size, never more than 64 MiB.</small>';
+      pk2.setAttribute('r', 10);
+      await along(route, mode === 'tor' ? 1800 : 900, pk2);
+      pk2.setAttribute('opacity', 0);
+      check.setAttribute('opacity', 1);
+      cap.innerHTML = `The content hashes to what the announcement pinned: kept. Anything else is dropped.<small>Measured: ${routes[mode].time}.</small>`;
+      busy = false;
+    };
+    set('iroh');
+  })();
+
+  /* ---------- 3b. messenger ---------- */
+  (() => {
+    const text = $('oText'), bar = $('oBar'), chip = $('oChip'), quote = $('oQuote'), cap = $('oCap');
+    let busy = false;
+    const done = () => { text.textContent = 'Delivered · 2 fragments · 1.3 s of airtime'; bar.style.width = '100%'; chip.style.opacity = 1; quote.style.opacity = 1; };
+    done();
+    cap.innerHTML = 'A reply, delivered, with Camille\'s reaction.<small>Press the button to see it wait for the radio first.</small>';
+    $('oPlay').onclick = async () => {
+      if (busy) return; busy = true;
+      chip.style.opacity = 0; bar.style.width = '0';
+      text.textContent = 'Waiting for the radio · expires in 24 h · Cancel';
+      cap.innerHTML = 'The radio is away. The reply is kept as an intent: the chat, the text, the expiry.<small>Still cancellable: none of its frames has left.</small>';
+      await sleep(2600);
+      text.textContent = 'Sending 1 / 2 fragments'; bar.style.width = '50%';
+      cap.innerHTML = 'The radio is back: a fresh session, the reply encrypted under it, its first frame out.<small>From here it can no longer be cancelled: it may already have arrived.</small>';
+      await sleep(1600);
+      text.textContent = 'Delivered · 2 fragments · 1.3 s of airtime'; bar.style.width = '100%';
+      cap.innerHTML = 'Delivered: Camille\'s phone acknowledged every fragment.<small>Its quote names the original by an 8-byte reference both phones compute.</small>';
+      await sleep(1400);
+      chip.style.opacity = 1;
+      cap.innerHTML = 'Camille reacts 👍: 8 bytes of reference and the emoji, about the cost of a short text.<small>The last reaction wins, by its timestamp.</small>';
+      busy = false;
+    };
+  })();
+
+  /* ---------- 6b. search ---------- */
+  (() => {
+    const ells = $('sEll'), walkers = $('sWalkers'), badge = $('sBadge'), cap = $('sCap');
+    const steps = [
+      { m: 3, err: 607, semi: 2472 }, { m: 6, err: 692, semi: 1969 }, { m: 9, err: 401, semi: 1143 },
+      { m: 12, err: 339, semi: 978 }, { m: 15, err: 298, semi: 752 },
+    ];
+    const start = [[60, 40], [70, 270], [700, 260]];
+    const target = [400, 150];
+    const scale = 0.11; // px per metre
+    const ell = el('ellipse', { cx: 0, cy: 0, rx: 0, ry: 0, fill: 'var(--lora-bg)', stroke: 'var(--lora)', 'stroke-dasharray': '5 5' }, ells);
+    const guess = el('circle', { r: 5, fill: 'var(--lora)' }, ells);
+    const dots = start.map(([x, y]) => el('circle', { cx: x, cy: y, r: 6, fill: 'var(--tx)' }, walkers));
+    const show = (i, k) => {
+      const s = steps[i];
+      const rx = s.semi * scale, ry = rx * 0.62;
+      const off = s.err * scale;
+      const gx = target[0] - off * 0.8, gy = target[1] + off * 0.6;
+      ell.setAttribute('cx', gx); ell.setAttribute('cy', gy); ell.setAttribute('rx', rx); ell.setAttribute('ry', ry);
+      guess.setAttribute('cx', gx); guess.setAttribute('cy', gy);
+      dots.forEach((d, j) => {
+        const f = (i + k) / steps.length * 0.7;
+        d.setAttribute('cx', start[j][0] + (target[0] - start[j][0]) * f);
+        d.setAttribute('cy', start[j][1] + (target[1] - start[j][1]) * f);
+      });
+      badge.textContent = `minute ${s.m} · ${s.err} m off`;
+      cap.innerHTML = `Minute ${s.m}: the estimate is ${s.err} m from Julien, the 95 % ellipse ${s.semi.toLocaleString('en')} m across its long half.<small>Three searchers walking in at 1 m/s, sharing their measures (median of 10 runs, fake network).</small>`;
+    };
+    show(4, 0);
+    let busy = false;
+    $('sPlay').onclick = async () => {
+      if (busy) return; busy = true;
+      for (let i = 0; i < steps.length; i++) { show(i, 0); await sleep(1500); }
+      busy = false;
+    };
+  })();
+
+  /* ---------- 9. budget ---------- */
+  (() => {
+    let used = 0, voices = 0;
+    const LIMIT = 360;
+    const paint = () => {
+      $('uLeft').textContent = `${Math.max(0, LIMIT - used).toFixed(used % 1 ? 1 : 0)} s`;
+      $('uUsed').textContent = `${used.toFixed(used % 1 ? 1 : 0)} s used`;
+      $('uBar').style.width = `${Math.min(100, used / LIMIT * 100)}%`;
+      $('uMeter').setAttribute('aria-valuenow', Math.round(used));
+    };
+    const log = (s, bad) => { const l = $('uLog'); l.textContent = s; l.classList.toggle('bad', !!bad); };
+    $('uVoice').onclick = () => {
+      if (used + 16 > LIMIT) { log(`Refused: 16 s would not fit in the ${(LIMIT - used).toFixed(1)} s left. Nothing is queued; the app says when it would fit.`, true); return; }
+      used += 16; voices++; paint(); log(`Voice message ${voices} sent: 16 s of airtime.`);
+    };
+    $('uPos').onclick = () => {
+      if (used + .365 > LIMIT) { log('Deferred: positions and text wait frame by frame for the hour to free up. They are never refused.', true); return; }
+      used = Math.round((used + .365) * 1000) / 1000; paint(); log('Position sent: 33 bytes, 0.365 s.');
+    };
+    $('uFile').onclick = () => {
+      if (used + 93 > LIMIT) { log(`Refused: 93 s would not fit in the ${(LIMIT - used).toFixed(1)} s left. Larger files go over the Internet bridge anyway.`, true); return; }
+      used += 93; paint(); log('8 KB file sent over LoRa: 93 s of airtime at CR 4/8, a quarter of the hour.');
+    };
+    $('uReset').onclick = () => { used = 0; voices = 0; paint(); log('A new hour: the window slides, 360 s again.'); };
+    paint();
+  })();
+})();
+</script>
+</body>
+</html>

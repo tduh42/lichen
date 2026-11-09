@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img">
+<title>What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 157 bytes</title>
+<rect width="760" height="250" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<text x="30" y="47" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">10 s of voice · Codec2 700C</text>
+<rect x="260" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="305" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="320" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="335" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="358" y="48" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">6 fragments · 875 B</text>
+<text x="30" y="89" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">the same in Codec2 1200</text>
+<rect x="260" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="305" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="320" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="335" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="350" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="365" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="380" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="395" y="75" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="418" y="90" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">10 fragments · 1,500 B</text>
+<text x="30" y="131" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">photo preview · AVIF 160×120</text>
+<rect x="260" y="117" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="117" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="117" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="313" y="132" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">3 fragments · 409 B</text>
+<text x="30" y="173" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">full thumbnail, when asked</text>
+<rect x="260" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="305" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="320" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="335" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="350" y="159" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="373" y="174" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">7 fragments · 975 B</text>
+<text x="30" y="215" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">a file · up to 8 KB</text>
+<rect x="260" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="305" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="320" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="335" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="350" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="365" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="380" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="395" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="410" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="425" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="440" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="455" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="470" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="485" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="500" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="515" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="538" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">… 53 fragments · 93 s at CR 4/8</text>
+</svg>

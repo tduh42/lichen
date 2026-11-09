@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" role="img">
+<title>The introduction: INTRO, INTRO_ACK and INTRO_FIN between two phones that never met, then a session</title>
+<rect width="760" height="300" rx="16" fill="#FFFFFF" stroke="#E2E2DC"/>
+<rect x="40" y="18" width="150" height="44" rx="10" fill="#EFEFEB" stroke="#E2E2DC" />
+<text x="115" y="45" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#141413" text-anchor="middle">Alice's phone</text>
+<rect x="570" y="18" width="150" height="44" rx="10" fill="#EFEFEB" stroke="#E2E2DC" />
+<text x="645" y="45" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="500" fill="#141413" text-anchor="middle">Bob's phone</text>
+<line x1="115" y1="62" x2="115" y2="285" stroke="#E2E2DC" stroke-width="2" />
+<line x1="645" y1="62" x2="645" y2="285" stroke="#E2E2DC" stroke-width="2" />
+<line x1="115" y1="88" x2="639" y2="106" stroke="#C2410C" stroke-width="2" />
+<path d="M639 106 L628.7 109.9 L629.0 101.4 Z" fill="#C2410C"/>
+<text x="380" y="84" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="500" fill="#141413" text-anchor="middle">INTRO · 57 B</text>
+<text x="380" y="124" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#55554F" text-anchor="middle">salt, ephemeral key, return path: nothing secret</text>
+<line x1="645" y1="148" x2="121" y2="166" stroke="#C2410C" stroke-width="2" />
+<path d="M121 166 L131.0 161.4 L131.3 169.9 Z" fill="#C2410C"/>
+<text x="380" y="144" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="500" fill="#141413" text-anchor="middle">INTRO_ACK · 104 B</text>
+<text x="380" y="184" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#55554F" text-anchor="middle">Bob's identity, sealed; a tag only his key can make</text>
+<line x1="115" y1="208" x2="639" y2="226" stroke="#C2410C" stroke-width="2" />
+<path d="M639 226 L628.7 229.9 L629.0 221.4 Z" fill="#C2410C"/>
+<text x="380" y="204" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="500" fill="#141413" text-anchor="middle">INTRO_FIN · 56 B</text>
+<text x="380" y="244" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#55554F" text-anchor="middle">Alice's identity, sealed; her proof</text>
+<rect x="230" y="262" width="300" height="28" rx="8" fill="#E2F2E7" />
+<text x="380" y="281" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="500" fill="#15803D" text-anchor="middle">a session: one key per direction · 1.8 s of airtime</text>
+</svg>

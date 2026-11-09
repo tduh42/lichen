@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 280" width="760" height="280" role="img">
+<title>Search: the 95 % ellipse around a person in SOS without GPS shrinks from minute 3 to minute 15 as three searchers close in</title>
+<rect width="760" height="280" rx="16" fill="#FFFFFF" stroke="#E2E2DC"/>
+<ellipse cx="362" cy="160" rx="247" ry="136" fill="none" stroke="#C2410C" stroke-dasharray="5 5" opacity="0.35"/>
+<text x="362" y="19.039999999999992" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#C2410C" text-anchor="middle">minute 3</text>
+<ellipse cx="362" cy="160" rx="114" ry="63" fill="none" stroke="#C2410C" stroke-dasharray="5 5" opacity="0.6"/>
+<text x="362" y="92.13499999999999" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#C2410C" text-anchor="middle">minute 9</text>
+<ellipse cx="362" cy="160" rx="75" ry="41" fill="none" stroke="#C2410C" stroke-dasharray="5 5" opacity="1"/>
+<text x="362" y="113.63999999999999" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11" font-weight="400" fill="#C2410C" text-anchor="middle">minute 15</text>
+<circle cx="380" cy="150" r="7" fill="#B91C1C"/>
+<line x1="386" y1="144" x2="520" y2="40" stroke="#55554F" stroke-width="1" />
+<text x="526" y="38" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#55554F" text-anchor="start">Julien, SOS, no GPS</text>
+<circle cx="80" cy="40" r="6" fill="#141413"/>
+<circle cx="90" cy="250" r="6" fill="#141413"/>
+<circle cx="690" cy="240" r="6" fill="#141413"/>
+<text x="30" y="268" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#55554F" text-anchor="start">3 searchers, 2–3 km away, walking in, sharing their measures · error 607 m at minute 3, 298 m at minute 15</text>
+</svg>
