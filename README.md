@@ -73,7 +73,7 @@ A datagram is cut into fragments sent in rounds (ACK-on-Error, after RFC 8724). 
   <img alt="Queued, Sending, Delivered or Expired; a reply quotes Camille's message and carries a reaction" src="docs/readme/messenger-light.svg" width="760">
 </picture>
 
-Chatting off-grid comes first. A message is accepted while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves; the phone keeps the intent (chat, text, expiry), never a session, key, nonce or ciphertext. Replies and reactions name their message by an 8-byte reference both phones compute. Group changes appear as lines in the conversation ("Léa joined", "Camille removed Bob").
+Chatting off-grid comes first. A message is accepted while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves; the phone keeps the intent (chat, text, expiry), never a session, key, nonce or ciphertext. Replies and reactions name their message by an 8-byte reference both phones compute. Stickers are animated emoji every phone already has, and a GIF travels as its GIPHY id only: one packet each, no API key. Group changes appear as lines in the conversation ("Léa joined", "Camille removed Bob").
 
 | 24 h | 8 B | 2.1 s |
 |---|---|---|
@@ -99,11 +99,11 @@ Your identity is a key made on your phone from a seed in the Keychain or Keystor
   <img alt="Three members around a repeater; a post flooded twice; Léa scans the admin's QR code, sends GROUP_JOIN, gets every key in one bundle" src="docs/readme/groups-light.svg" width="760">
 </picture>
 
-A post is encrypted once with the sender's key, signed with the sender's identity, and flooded twice. Keys travel over pairwise sessions; when people join, the admin relays every key, so strangers never need a session with each other. People next to you join by scanning a QR code that holds the admin's public card and a 10-minute token, never a key. When someone leaves or is removed, everyone draws a new key.
+A post is encrypted once with the sender's key, signed with the sender's identity, and flooded twice. Keys travel over pairwise sessions; when people join, the admin relays every key, so strangers never need a session with each other. People next to you join by scanning a QR code that holds the admin's public card and a 10-minute token, never a key. When someone leaves or is removed, everyone draws a new key. Members keep the last hour of posts: one who misses a post asks the author or the admin for it, and gets the original signed envelope back, shown as "arrived late".
 
-| 97.6 % | 130 s | 237 s | 1–32 |
+| 99.0 % | 130 s | 237 s | 1–32 |
 |---|---|---|---|
-| posts delivered with two floods (81.6 % with one), 10 % loss per link | two people join by QR: every key everywhere (median of 10; 489 s before the relay) | a group of 5 from contacts (median of 10; 412 s before) | members; a group may start with the admin alone |
+| posts delivered at 10 % loss per link with recovery (95.4 % without) | two people join by QR: every key everywhere (median of 10; 489 s before the relay) | a group of 5 from contacts (median of 10; 412 s before) | members; a group may start with the admin alone |
 
 ### Location
 
@@ -138,11 +138,11 @@ An SOS without GPS still sends a short beacon every 2 minutes. Searchers measure
   <img alt="Fragments for 10 s of voice in two codecs, a photo preview and its full thumbnail, and an 8 KB file" src="docs/readme/media-light.svg" width="760">
 </picture>
 
-Voice is Codec2 (700C by default), listened to before sending. Photos are AVIF thumbnails: a preview of at most 450 bytes, the full thumbnail when asked. Files of any type go too: up to 8 KB in one LoRa datagram, anything larger over the Internet bridge. Media go to contacts only, never flooded, and their airtime is shown before sending.
+Voice is Codec2 (700C by default), listened to before sending. Photos are AVIF thumbnails: a preview of at most 450 bytes, the full thumbnail when asked. Files of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps, anything larger over the Internet bridge. Media go to contacts only, never flooded, and their airtime is shown before sending.
 
-| 875 B | 409 / 975 B | 93 s |
+| 875 B | 409 / 975 B | 2.3 KB |
 |---|---|---|
-| 10 s of voice, 6 fragments | photo preview / full thumbnail | an 8 KB file on one hop at CR 4/8, delivered in 5.6 min |
+| 10 s of voice, 6 fragments | photo preview / full thumbnail | a 25 KB hiking track (GPX) on the air, compressed: 29 s at CR 4/8 |
 
 ### The Internet bridge
 
