@@ -724,6 +724,11 @@ private fun Composer(
     val scope = rememberCoroutineScope()
     // Kept per conversation, across screens and restarts.
     var draft by remember(chat) { mutableStateOf(model.draft(chat)) }
+    // A recording stopped and not sent yet; it belongs to this conversation.
+    var review by remember(chat) { mutableStateOf<VoiceReview?>(null) }
+    DisposableEffect(chat) {
+        onDispose { if (model.player.playing == com.tduhamel.lichen.model.VoicePlayer.REVIEW) model.player.stop() }
+    }
     LaunchedEffect(draft) { model.setDraft(chat, draft) }
     var menu by remember { mutableStateOf(false) }
     var preparing by remember { mutableStateOf(false) }
@@ -769,7 +774,13 @@ private fun Composer(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         if (model.recorder.recording && model.recorder.chat == chat) {
-            RecordingBar(model, chat, onError)
+            RecordingBar(model, chat, onReview = { pcm ->
+                review = VoiceReview(pcm, model.voiceMode, com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()))
+            }, onError = onError)
+            return@Column
+        }
+        review?.let { r ->
+            ReviewBar(model, chat, r, change = { review = it }, onError = onError)
             return@Column
         }
         replyTo?.let { r ->

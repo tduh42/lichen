@@ -596,4 +596,10 @@
     <string name="photo_original">Original · %1$s · %2$s, hash verified</string>
     <string name="photo_full_thumbnail">Full thumbnail · LoRa · %1$s</string>
     <string name="photo_preview">Preview · LoRa · %1$s</string>
+    <string name="original_unavailable">Unavailable: turn on iroh or Tor in Settings to fetch the original.</string>
+    <!-- Voice review -->
+    <string name="stop_and_listen">Stop and listen</string>
+    <string name="discard_recording">Discard the recording</string>
+    <string name="listen_before_sending">Listen to what will be sent</string>
+    <string name="voice_quality_cost">Voice quality vs time on air: %1$s · ≈ %2$s s</string>
 </resources>

@@ -13,6 +13,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.core.Message
@@ -111,20 +113,48 @@ class VoiceRecorder {
 
 /** Plays voice messages: Codec2 frames decoded by the core. */
 class VoicePlayer {
-    /** The message playing, if any. */
+    /** What is playing: a message id, or [REVIEW] (a recording not sent yet). */
     var playing by mutableStateOf<Long?>(null)
         private set
 
-    private var track: AudioTrack? = null
+    /** Where it is, 0..1, and in seconds. */
+    var progress by mutableFloatStateOf(0f)
+        private set
+    var position by mutableDoubleStateOf(0.0)
+        private set
 
+    private var track: AudioTrack? = null
+    private var frames = 0
+    private val handler = Handler(Looper.getMainLooper())
+    private val tick = object : Runnable {
+        override fun run() {
+            val t = track ?: return
+            val head = t.playbackHeadPosition
+            position = head.toDouble() / VoiceRecorder.RATE
+            progress = if (frames > 0) head.toFloat() / frames else 0f
+            handler.postDelayed(this, 50)
+        }
+    }
+
+    /** Plays message `m` from the start, or stops it when it is playing. */
     fun toggle(m: StoredMessage) {
         if (playing == m.id) {
             stop()
             return
         }
-        stop()
+        play(m, 0f)
+    }
+
+    /** Plays message `m` from `fraction` of it. */
+    fun play(m: StoredMessage, fraction: Float) {
         val v = m.message as? Message.Voice ?: return
         val pcm = decodeVoice(v.mode, v.frames, v.data)?.toShortArray() ?: return
+        play(pcm, m.id, fraction)
+    }
+
+    /** Plays 8 kHz samples under `id`, from `fraction` of them. */
+    fun play(pcm: ShortArray, id: Long, fraction: Float = 0f) {
+        stop()
         if (pcm.isEmpty()) return
         val t = AudioTrack.Builder()
             .setAudioAttributes(
@@ -147,23 +177,44 @@ class VoicePlayer {
         t.notificationMarkerPosition = pcm.size
         t.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
             override fun onMarkerReached(track: AudioTrack) {
-                if (playing == m.id) stop()
+                if (playing == id) stop()
             }
 
             override fun onPeriodicNotification(track: AudioTrack) = Unit
         })
+        frames = pcm.size
+        if (fraction > 0f) t.playbackHeadPosition = (fraction.coerceIn(0f, 1f) * frames).toInt().coerceIn(0, frames - 1)
         t.play()
         track = t
-        playing = m.id
+        playing = id
+        handler.post(tick)
+    }
+
+    /** Moves to `fraction` of what is playing. */
+    fun seek(fraction: Float) {
+        val t = track ?: return
+        runCatching {
+            t.pause()
+            t.playbackHeadPosition = (fraction.coerceIn(0f, 1f) * frames).toInt().coerceIn(0, frames - 1)
+            t.play()
+        }
     }
 
     fun stop() {
+        handler.removeCallbacks(tick)
         track?.let {
             runCatching { it.stop() }
             it.release()
         }
         track = null
         playing = null
+        progress = 0f
+        position = 0.0
+    }
+
+    companion object {
+        /** The id of a recording being reviewed before it is sent. */
+        const val REVIEW = -1L
     }
 }
 

@@ -603,4 +603,10 @@
     <string name="photo_original">Original · %1$s · %2$s, empreinte vérifiée</string>
     <string name="photo_full_thumbnail">Vignette complète · LoRa · %1$s</string>
     <string name="photo_preview">Aperçu · LoRa · %1$s</string>
+    <string name="original_unavailable">Indisponible : active iroh ou Tor dans les Réglages pour récupérer l\'original.</string>
+    <!-- Voice review -->
+    <string name="stop_and_listen">Arrêter et écouter</string>
+    <string name="discard_recording">Jeter l\'enregistrement</string>
+    <string name="listen_before_sending">Écouter ce qui sera envoyé</string>
+    <string name="voice_quality_cost">Qualité de la voix contre temps d\'antenne : %1$s · ≈ %2$s s</string>
 </resources>

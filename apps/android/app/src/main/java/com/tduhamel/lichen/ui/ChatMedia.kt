@@ -1,5 +1,18 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SegmentedButton
+import com.tduhamel.lichen.model.VoicePlayer
+import com.tduhamel.lichen.core.PreparedVoice
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.mutableIntStateOf
 import android.text.format.Formatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -33,6 +46,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -117,9 +131,38 @@ private fun VoiceNote(model: AppModel, m: StoredMessage, v: Message.Voice) {
                 stringResource(if (playing) R.string.stop else R.string.play_voice),
             )
         }
-        Waveform(v.data.copyOf(minOf(32, v.data.size)), if (m.outgoing) fg.copy(alpha = 0.55f) else t.tx2)
+        // The waveform fills as it plays; a tap or a drag on it goes there.
+        val seed = v.data.copyOf(minOf(32, v.data.size))
+        var width by remember { mutableIntStateOf(1) }
+        val seekTo = { x: Float ->
+            val f = x / width.coerceAtLeast(1)
+            if (playing) model.player.seek(f) else model.player.play(m, f)
+        }
+        Box(
+            Modifier
+                .onSizeChanged { width = it.width }
+                .then(
+                    if (playable) {
+                        Modifier
+                            .pointerInput(m.id) { detectTapGestures { seekTo(it.x) } }
+                            .pointerInput(m.id) { detectHorizontalDragGestures { change, _ -> seekTo(change.position.x) } }
+                    } else {
+                        Modifier
+                    },
+                ),
+        ) {
+            Waveform(seed, if (m.outgoing) fg.copy(alpha = 0.45f) else t.tx2.copy(alpha = 0.55f))
+            val progress = if (playing) model.player.progress else 0f
+            Box(Modifier.drawWithContent { clipRect(right = size.width * progress) { this@drawWithContent.drawContent() } }) {
+                Waveform(seed, fg)
+            }
+        }
         Column {
-            Text(clock(v.durationMs.toDouble() / 1000), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = fg)
+            val total = v.durationMs.toDouble() / 1000
+            Text(
+                if (playing) "${clock(model.player.position)} / ${clock(total)}" else clock(total),
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = fg,
+            )
             Text(codecName(v.mode.toInt()), fontSize = 11.sp, color = fg.copy(alpha = 0.7f))
         }
     }
@@ -265,17 +308,27 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
             if (via != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator(Modifier.size(16.dp), color = t.tx2, strokeWidth = 2.dp)
-                    Text(stringResource(if (via == 2) R.string.downloading_tor else R.string.downloading_iroh), fontSize = 13.sp, color = t.tx2)
+                    Text(
+                        stringResource(if (via == 2) R.string.downloading_tor else R.string.downloading_iroh),
+                        fontSize = 13.sp, color = t.tx2, modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { model.cancelFetch(announce) }) {
+                        Text(stringResource(R.string.cancel), color = t.tx, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             } else {
                 val route = model.fetchRoute(a.providers)
-                val torOnly = route.firstOrNull()?.transport?.toInt() == 2
-                SecondaryButton(
-                    stringResource(R.string.download_full),
-                    background = if (torOnly) t.torBg else t.irohBg,
-                    foreground = if (torOnly) t.torFg else t.irohFg,
-                    enabled = route.isNotEmpty(),
-                ) { model.fetch(announce) }
+                if (route.isEmpty()) {
+                    // Offered, but nothing here reaches the sender.
+                    Text(stringResource(R.string.original_unavailable), fontSize = 13.sp, color = t.tx2)
+                } else {
+                    val torOnly = route.first().transport.toInt() == 2
+                    SecondaryButton(
+                        stringResource(if (model.fetchErrors[h] != null) R.string.try_again else R.string.download_full),
+                        background = if (torOnly) t.torBg else t.irohBg,
+                        foreground = if (torOnly) t.torFg else t.irohFg,
+                    ) { model.fetch(announce) }
+                }
             }
         }
     }
@@ -283,7 +336,7 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
 
 /** While recording: cancel, time, cost so far, send. */
 @Composable
-fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
+fun RecordingBar(model: AppModel, chat: ChatId, onReview: (ShortArray) -> Unit, onError: (String) -> Unit) {
     val t = lichen
     val res = LocalResources.current
     val seconds = model.recorder.elapsed
@@ -307,6 +360,14 @@ fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
         }
         IconButton(
             onClick = {
+                // Stop and listen before sending.
+                model.recorder.stop(keep = true)?.let(onReview)
+            },
+            colors = IconButtonDefaults.iconButtonColors(containerColor = t.s2, contentColor = t.tx),
+            modifier = Modifier.size(48.dp),
+        ) { Icon(Icons.Filled.Stop, stringResource(R.string.stop_and_listen)) }
+        IconButton(
+            onClick = {
                 // To the conversation the recording was made in.
                 val to = model.recorder.chat ?: return@IconButton
                 val pcm = model.recorder.stop(keep = true) ?: return@IconButton
@@ -315,6 +376,84 @@ fun RecordingBar(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             colors = IconButtonDefaults.iconButtonColors(containerColor = t.actBg, contentColor = t.actFg),
             modifier = Modifier.size(48.dp),
         ) { Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send)) }
+    }
+}
+
+/** A recording stopped and not sent yet. */
+class VoiceReview(val pcm: ShortArray, val mode: Int, val voice: PreparedVoice)
+
+/** A stopped recording: play what will be sent (encoded, then decoded: Codec2's real sound),
+ * choose its quality against its airtime, drop it or send it. */
+@Composable
+fun ReviewBar(model: AppModel, chat: ChatId, r: VoiceReview, change: (VoiceReview?) -> Unit, onError: (String) -> Unit) {
+    val t = lichen
+    val res = LocalResources.current
+    val reviewing = model.player.playing == VoicePlayer.REVIEW
+    val total = r.voice.durationMs.toDouble() / 1000
+    val cost = model.estimate(chat, voiceDatagramLenFor(r.mode.toUByte(), r.voice.durationMs))
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            IconButton(
+                onClick = {
+                    model.player.stop()
+                    change(null)
+                },
+                colors = IconButtonDefaults.iconButtonColors(containerColor = t.s2, contentColor = t.sos),
+                modifier = Modifier.size(48.dp),
+            ) { Icon(Icons.Outlined.Delete, stringResource(R.string.discard_recording)) }
+            IconButton(
+                onClick = {
+                    if (reviewing) {
+                        model.player.stop()
+                    } else {
+                        decodeVoice(r.voice.mode, r.voice.frames, r.voice.data)?.let {
+                            model.player.play(it.toShortArray(), VoicePlayer.REVIEW)
+                        }
+                    }
+                },
+                colors = IconButtonDefaults.iconButtonColors(containerColor = t.lora, contentColor = Color(0xFF141413)),
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    if (reviewing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    stringResource(if (reviewing) R.string.stop else R.string.listen_before_sending),
+                )
+            }
+            Text(
+                if (reviewing) "${clock(model.player.position)} / ${clock(total)}" else clock(total),
+                style = figure(15.sp), color = t.tx, modifier = Modifier.weight(1f),
+            )
+            IconButton(
+                onClick = {
+                    model.player.stop()
+                    val e = model.sendVoice(r.voice, chat)
+                    if (e != null) onError(e) else change(null)
+                },
+                colors = IconButtonDefaults.iconButtonColors(containerColor = t.actBg, contentColor = t.actFg),
+                modifier = Modifier.size(48.dp),
+            ) { Icon(Icons.Filled.ArrowUpward, stringResource(R.string.send)) }
+        }
+        // Voice quality against time on air, for this message.
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            val options = listOf(0 to R.string.voice_compact, 2 to R.string.voice_standard, 3 to R.string.voice_clear)
+            options.forEachIndexed { i, (mode, label) ->
+                SegmentedButton(
+                    selected = r.mode == mode,
+                    onClick = {
+                        model.player.stop()
+                        change(VoiceReview(r.pcm, mode, com.tduhamel.lichen.core.prepareVoice(r.pcm.toList(), mode.toUByte())))
+                    },
+                    shape = SegmentedButtonDefaults.itemShape(i, options.size),
+                    colors = segmentedColors(),
+                ) { Text(stringResource(label)) }
+            }
+        }
+        cost?.let {
+            Text(
+                stringResource(R.string.voice_quality_cost, fragmentsText(res, it.fragments.toInt()), "%.0f".format(it.airtimeMs.toDouble() / 1000)),
+                fontSize = 11.sp, color = t.tx2,
+            )
+        }
     }
 }
 

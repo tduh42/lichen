@@ -275,6 +275,9 @@ class AppModel(val app: Application) {
     /** Downloads in progress: the transport each one uses (1 iroh, 2 Tor). */
     val fetching = mutableStateMapOf<String, Int>()
     val fetchErrors = mutableStateMapOf<String, String>()
+
+    /** Downloads in progress, to cancel them. */
+    private val fetchJobs = mutableMapOf<String, Job>()
     private var bridge: LichenBridge? = null
     private var onionId: ByteArray? = null
 
@@ -1361,7 +1364,7 @@ class AppModel(val app: Application) {
         }
         fetching[h] = first.transport.toInt()
         fetchErrors.remove(h)
-        scope.launch {
+        fetchJobs[h] = scope.launch {
             var failure = res.getString(R.string.download_failed)
             try {
                 for (p in route) {
@@ -1383,8 +1386,18 @@ class AppModel(val app: Application) {
                 fetchErrors[h] = failure
             } finally {
                 fetching.remove(h)
+                fetchJobs.remove(h)
             }
         }
+    }
+
+    /** Stops a download: the original is offered again, without an error. */
+    fun cancelFetch(m: StoredMessage) {
+        val a = m.message as? Message.Announce ?: return
+        val h = a.hash.hex()
+        fetchJobs.remove(h)?.cancel()
+        fetching.remove(h)
+        fetchErrors.remove(h)
     }
 
     /** Airtime left this hour, milliseconds. */
