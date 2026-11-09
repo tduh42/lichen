@@ -270,6 +270,11 @@ fn describe(core: &Core, e: &Event) -> String {
         ),
         Event::GroupUpdated { gid } => format!("group {} updated", hex::encode(&gid[..4])),
         Event::GroupLeft { gid } => format!("removed from group {}", hex::encode(&gid[..4])),
+        Event::MemberJoined { gid, node } => format!(
+            "{} joined group {} with an invitation",
+            name_of(core, node),
+            hex::encode(&gid[..4])
+        ),
         Event::GroupMessage {
             gid, from, content, ..
         } => {

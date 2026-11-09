@@ -1,7 +1,9 @@
 //! lichen content vectors (`testdata/lichen/content.toml`, an independent Python oracle):
-//! message references, REPLY and REACTION (protocol.md §6.2).
+//! message references, REPLY and REACTION (protocol.md §6.2); group invitations and GROUP_JOIN
+//! (§10.5).
 
 use lc_core::content::{Content, message_ref};
+use lc_core::identity::Invite;
 use toml::{Table, Value};
 
 fn load() -> Table {
@@ -75,5 +77,40 @@ fn malformed() {
     let t = load();
     for v in entries(&t, "malformed") {
         assert_eq!(Content::decode(&h(v, "datagram")), None, "{}", s(v, "name"));
+    }
+}
+
+#[test]
+fn invites() {
+    let t = load();
+    for v in entries(&t, "invite") {
+        let invite = Invite {
+            admin: h(v, "admin").try_into().unwrap(),
+            node: h(v, "node").try_into().unwrap(),
+            token: h(v, "token").try_into().unwrap(),
+            expires: u32::try_from(v["expires"].as_integer().unwrap()).unwrap(),
+            admin_name: s(v, "admin_name").to_owned(),
+            group_name: s(v, "group_name").to_owned(),
+        };
+        assert_eq!(invite.encode(), s(v, "text"), "{}", s(v, "name"));
+        assert_eq!(
+            Invite::decode(s(v, "text")),
+            Some(invite),
+            "{}",
+            s(v, "name")
+        );
+    }
+    for v in entries(&t, "bad_invite") {
+        assert_eq!(Invite::decode(s(v, "text")), None, "{}", s(v, "name"));
+    }
+}
+
+#[test]
+fn group_join() {
+    let t = load();
+    for v in entries(&t, "group_join") {
+        let mut datagram = vec![lc_proto::content::GROUP_JOIN];
+        datagram.extend_from_slice(&h(v, "token"));
+        assert_eq!(datagram, h(v, "datagram"), "{}", s(v, "name"));
     }
 }

@@ -67,6 +67,10 @@ pub enum LichenError {
     /// This message has no reference (an image from before replies existed): it cannot be
     /// answered or reacted to (§6.2).
     NotReferable,
+    /// The phone's clock is not known yet.
+    NoClock,
+    /// The invitation has expired (§10.5).
+    Expired,
 }
 
 impl std::fmt::Display for LichenError {
@@ -96,6 +100,8 @@ impl From<lc_core::Error> for LichenError {
             },
             lc_core::Error::NoPosition => Self::NoPosition,
             lc_core::Error::Started | lc_core::Error::NotQueued => Self::NotCancellable,
+            lc_core::Error::NoClock => Self::NoClock,
+            lc_core::Error::Expired => Self::Expired,
         }
     }
 }
@@ -600,6 +606,11 @@ pub enum LichenEvent {
     GroupLeft {
         gid: Vec<u8>,
     },
+    /// Node `node` joined group `gid`, which we administer, with an invitation (§10.5).
+    MemberJoined {
+        gid: Vec<u8>,
+        node: Vec<u8>,
+    },
     GroupMessage {
         gid: Vec<u8>,
         from: Vec<u8>,
@@ -716,6 +727,10 @@ impl LichenEvent {
             },
             Event::GroupUpdated { gid } => Self::GroupUpdated { gid: gid.to_vec() },
             Event::GroupLeft { gid } => Self::GroupLeft { gid: gid.to_vec() },
+            Event::MemberJoined { gid, node } => Self::MemberJoined {
+                gid: gid.to_vec(),
+                node: node.to_vec(),
+            },
             Event::GroupMessage {
                 gid,
                 from,

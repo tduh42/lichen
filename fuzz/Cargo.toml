@@ -102,3 +102,10 @@ path = "fuzz_targets/search_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "invite_decode"
+path = "fuzz_targets/invite_decode.rs"
+test = false
+doc = false
+bench = false

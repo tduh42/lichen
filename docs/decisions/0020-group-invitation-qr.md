@@ -18,5 +18,6 @@ An admin could only invite people already in their contacts (ADR-0017): at a tra
 
 - Someone who photographs the screen within 10 minutes can join; the admin sees who joined and removes anyone unexpected (new epoch, keys rotate). A shorter expiry or a manual approval would trade this for friction at the trailhead.
 - The admin must be reachable when the joiner asks (the request is retried with backoff, like GROUP_LEAVE).
+- The admin's node may never have heard the joiner's: the joiner sends a zero-hop advert first, and its path probes are anonymous (the admin cannot check a probe keyed with an identity it does not know yet). This showed a wider gap, now closed in §4.5: a contact card scanned one way, with no known path, never found one, because every probe was keyed. Only the first probe is keyed now; the next ones are anonymous.
 - Newcomers read what was recorded under the current keys (the existing "only adds" rule, ADR-0017); rotating on additions remains an open question.
 - Rejected: putting the group key or id in the code (anyone with a photo of it would read the group); single-use codes (one screen per person at a trailhead); asking the admin to approve each request on screen (slower, and the admin already chose to show the code).

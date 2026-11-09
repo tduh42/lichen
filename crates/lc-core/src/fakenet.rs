@@ -777,6 +777,34 @@ impl Net {
                 }
                 vec![vec![resp::OK]]
             }
+            cmd::SEND_SELF_ADVERT => {
+                // Simplified: no airtime. A zero-hop advert reaches the neighbouring
+                // companions, a flood every companion with a route back; each adds the node
+                // (the stock companion's automatic adding) and tells its app.
+                let flood = frame.get(1) == Some(&1);
+                let hearers: Vec<usize> = (0..self.nodes.len())
+                    .filter(|&j| {
+                        j != i
+                            && self.nodes.get(j).is_some_and(|n| n.role == Role::Companion)
+                            && (flood || self.neighbors.get(i).is_some_and(|v| v.contains(&j)))
+                    })
+                    .collect();
+                for j in hearers {
+                    let Some(path) = self.route(j, i) else {
+                        continue;
+                    };
+                    if let Some(n) = self.nodes.get_mut(j)
+                        && n.contacts.iter().all(|(k, ..)| *k != key)
+                    {
+                        n.contacts
+                            .push((key, name.clone(), Some(path), contact_kind::CHAT));
+                    }
+                    let mut push = vec![resp::ADVERT];
+                    push.extend_from_slice(&key);
+                    self.push_to_app(j, &push);
+                }
+                vec![vec![resp::OK]]
+            }
             cmd::GET_DEFAULT_FLOOD_SCOPE => vec![vec![resp::DEFAULT_FLOOD_SCOPE]],
             cmd::GET_STATS if frame.get(1) == Some(&1) => {
                 let mut v = vec![resp::STATS, 1];

@@ -64,52 +64,71 @@ pub struct Card {
 }
 
 const CARD_PREFIX: &str = "lichen:1:";
+const INVITE_PREFIX: &str = "lichen:1:g:";
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+/// The longest name a card or an invitation carries, in bytes.
+pub const NAME_MAX: usize = 32;
+
+/// Unpadded base64url.
+fn b64_encode(raw: &[u8], out: &mut String) {
+    for chunk in raw.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |acc, (i, &b)| acc | u32::from(b) << (16 - 8 * i));
+        for i in 0..=chunk.len() {
+            let c = B64
+                .get(((n >> (18 - 6 * i)) & 63) as usize)
+                .copied()
+                .unwrap_or(b'A');
+            out.push(char::from(c));
+        }
+    }
+}
+
+/// Unpadded base64url; `None` on a character outside the alphabet or a dangling one.
+fn b64_decode(body: &str) -> Option<Vec<u8>> {
+    let mut raw = Vec::with_capacity(body.len() * 3 / 4);
+    let mut acc = 0u32;
+    let mut bits = 0;
+    for c in body.bytes() {
+        let v = B64.iter().position(|&x| x == c)? as u32;
+        acc = acc << 6 | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            raw.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    (bits < 6).then_some(raw)
+}
+
+/// `name` cut to [`NAME_MAX`] bytes on a character boundary.
+fn cut(name: &str) -> &[u8] {
+    let mut end = name.len().min(NAME_MAX);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    name.as_bytes().get(..end).unwrap_or(&[])
+}
 
 impl Card {
     /// `lichen:1:` and the unpadded base64url of `identity ‖ node ‖ name` (name cut to 32 bytes).
     pub fn encode(&self) -> String {
-        let mut end = self.name.len().min(32);
-        while !self.name.is_char_boundary(end) {
-            end -= 1;
-        }
-        let mut raw = Vec::with_capacity(64 + end);
+        let name = cut(&self.name);
+        let mut raw = Vec::with_capacity(64 + name.len());
         raw.extend_from_slice(&self.identity);
         raw.extend_from_slice(&self.node);
-        raw.extend_from_slice(self.name.as_bytes().get(..end).unwrap_or(&[]));
+        raw.extend_from_slice(name);
         let mut out = String::from(CARD_PREFIX);
-        for chunk in raw.chunks(3) {
-            let n = chunk
-                .iter()
-                .enumerate()
-                .fold(0u32, |acc, (i, &b)| acc | u32::from(b) << (16 - 8 * i));
-            for i in 0..=chunk.len() {
-                let c = B64
-                    .get(((n >> (18 - 6 * i)) & 63) as usize)
-                    .copied()
-                    .unwrap_or(b'A');
-                out.push(char::from(c));
-            }
-        }
+        b64_encode(&raw, &mut out);
         out
     }
 
     pub fn decode(text: &str) -> Option<Self> {
-        let body = text.trim().strip_prefix(CARD_PREFIX)?;
-        let mut raw = Vec::with_capacity(body.len() * 3 / 4);
-        let mut acc = 0u32;
-        let mut bits = 0;
-        for c in body.bytes() {
-            let v = B64.iter().position(|&x| x == c)? as u32;
-            acc = acc << 6 | v;
-            bits += 6;
-            if bits >= 8 {
-                bits -= 8;
-                raw.push((acc >> bits) as u8);
-                acc &= (1 << bits) - 1;
-            }
-        }
-        if bits >= 6 || raw.len() < 64 || raw.len() > 96 {
+        let raw = b64_decode(text.trim().strip_prefix(CARD_PREFIX)?)?;
+        if raw.len() < 64 || raw.len() > 64 + NAME_MAX {
             return None;
         }
         let (identity, rest) = raw.split_first_chunk::<32>()?;
@@ -120,6 +139,72 @@ impl Card {
             name: String::from_utf8(name.to_vec()).ok()?,
         })
     }
+}
+
+/// A group invitation: what its QR code carries (§10.5). No key and no group id: the token
+/// only means something to the admin's app.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Invite {
+    /// The admin's identity and node, as on their contact card.
+    pub admin: PubKey,
+    pub node: PubKey,
+    pub token: [u8; 16],
+    /// Unix seconds.
+    pub expires: u32,
+    pub admin_name: String,
+    pub group_name: String,
+}
+
+impl Invite {
+    /// `lichen:1:g:` and the unpadded base64url of `admin ‖ node ‖ token ‖ expires u32 ‖
+    /// n ‖ admin name ‖ m ‖ group name` (names cut to 32 bytes).
+    pub fn encode(&self) -> String {
+        let (a, g) = (cut(&self.admin_name), cut(&self.group_name));
+        let mut raw = Vec::with_capacity(86 + a.len() + g.len());
+        raw.extend_from_slice(&self.admin);
+        raw.extend_from_slice(&self.node);
+        raw.extend_from_slice(&self.token);
+        raw.extend_from_slice(&self.expires.to_le_bytes());
+        raw.push(a.len() as u8);
+        raw.extend_from_slice(a);
+        raw.push(g.len() as u8);
+        raw.extend_from_slice(g);
+        let mut out = String::from(INVITE_PREFIX);
+        b64_encode(&raw, &mut out);
+        out
+    }
+
+    pub fn decode(text: &str) -> Option<Self> {
+        let raw = b64_decode(text.trim().strip_prefix(INVITE_PREFIX)?)?;
+        let (admin, rest) = raw.split_first_chunk::<32>()?;
+        let (node, rest) = rest.split_first_chunk::<32>()?;
+        let (token, rest) = rest.split_first_chunk::<16>()?;
+        let (expires, rest) = rest.split_first_chunk::<4>()?;
+        let (admin_name, rest) = name_field(rest)?;
+        let (group_name, rest) = name_field(rest)?;
+        if !rest.is_empty() {
+            return None;
+        }
+        Some(Self {
+            admin: *admin,
+            node: *node,
+            token: *token,
+            expires: u32::from_le_bytes(*expires),
+            admin_name,
+            group_name,
+        })
+    }
+}
+
+/// A length byte and that many bytes of UTF-8 (at most [`NAME_MAX`]); the rest.
+fn name_field(raw: &[u8]) -> Option<(String, &[u8])> {
+    let (&n, rest) = raw.split_first()?;
+    let n = usize::from(n);
+    if n > NAME_MAX {
+        return None;
+    }
+    let name = rest.get(..n)?;
+    Some((String::from_utf8(name.to_vec()).ok()?, rest.get(n..)?))
 }
 
 #[cfg(test)]
@@ -190,5 +275,41 @@ mod tests {
         assert_eq!(Card::decode("lichen:2:AAAA"), None);
         assert_eq!(Card::decode("lichen:1:!!"), None);
         assert_eq!(Card::decode(&text[..40]), None);
+    }
+
+    #[test]
+    fn invite_round_trip() {
+        let invite = Invite {
+            admin: [7; 32],
+            node: [9; 32],
+            token: [3; 16],
+            expires: 1_793_000_600,
+            admin_name: "Camille".into(),
+            group_name: "é".repeat(40),
+        };
+        let text = invite.encode();
+        assert!(text.starts_with("lichen:1:g:"));
+        let back = Invite::decode(&text).unwrap();
+        assert_eq!(
+            back.group_name,
+            "é".repeat(16),
+            "cut on a character boundary"
+        );
+        assert_eq!(
+            back,
+            Invite {
+                group_name: "é".repeat(16),
+                ..invite.clone()
+            }
+        );
+        // A card is not an invitation, nor the other way round.
+        let card = Card {
+            identity: [7; 32],
+            node: [9; 32],
+            name: "Camille".into(),
+        };
+        assert_eq!(Invite::decode(&card.encode()), None);
+        assert_eq!(Card::decode(&text), None);
+        assert_eq!(Invite::decode(&text[..text.len() - 1]), None);
     }
 }

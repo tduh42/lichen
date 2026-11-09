@@ -14,11 +14,16 @@ use sha2::{Digest, Sha256};
 
 use crate::content::Content;
 use crate::core::{Core, Error, Event, MsgId, PubKey};
+use crate::identity::Invite;
 
 pub type GroupId = [u8; 16];
 
 /// Members per group, admin included.
 pub const MAX_MEMBERS: usize = 32;
+/// How long an invitation admits people (§10.5).
+pub const INVITE_TTL_MS: Millis = 10 * 60_000;
+/// How late by our clock a scanned invitation may be and still be tried: phone clocks differ.
+const INVITE_SKEW_S: u64 = 120;
 /// Every group message is flooded this many times by default (§10.3): a flood lost at its
 /// first hop, to a collision with other traffic, is lost for everyone.
 pub const COPIES: u8 = 2;
@@ -632,6 +637,114 @@ impl Core {
         self.tick(now);
     }
 
+    /// An invitation to group `gid` (admin only, §10.5), shown as a QR code: it admits anyone
+    /// who scans it for 10 minutes, until [`Core::revoke_invite`] or a restart.
+    pub fn create_invite(&mut self, gid: &GroupId, now: Millis) -> Result<Invite, Error> {
+        let (me, node) = (
+            self.key.ok_or(Error::NoIdentity)?,
+            self.node.ok_or(Error::NoIdentity)?,
+        );
+        let g = self.groups.get(gid).ok_or(Error::UnknownGroup)?;
+        if g.admin != me {
+            return Err(Error::NotAllowed);
+        }
+        let group_name = g.name.clone();
+        let unix = self.unix_s(now).ok_or(Error::NoClock)?;
+        let mut token = [0u8; 16];
+        self.rng.fill_bytes(&mut token);
+        self.invites.retain(|_, (_, until)| *until > now);
+        self.invites.insert(token, (*gid, now + INVITE_TTL_MS));
+        Ok(Invite {
+            admin: me,
+            node,
+            token,
+            expires: u32::try_from(unix + INVITE_TTL_MS / 1000).unwrap_or(u32::MAX),
+            admin_name: self.name.clone(),
+            group_name,
+        })
+    }
+
+    /// Closes an invitation: its token admits no one any more.
+    pub fn revoke_invite(&mut self, token: &[u8; 16]) {
+        self.invites.remove(token);
+    }
+
+    /// Asks to join a group with a scanned invitation (§10.5). The admin becomes a contact,
+    /// verified (scanned in person), and gets GROUP_JOIN over a pairwise session, sent again
+    /// until it arrives. A zero-hop advert goes first: the admin's node, nearby, learns ours
+    /// and can answer the handshake (§4.6). [`Event::GroupJoined`] follows once admitted.
+    pub fn join(&mut self, invite: &Invite, now: Millis) -> Result<(), Error> {
+        let me = self.key.ok_or(Error::NoIdentity)?;
+        if invite.admin == me || self.node == Some(invite.node) {
+            return Err(Error::NotAllowed);
+        }
+        if self
+            .unix_s(now)
+            .is_some_and(|t| t > u64::from(invite.expires) + INVITE_SKEW_S)
+        {
+            return Err(Error::Expired);
+        }
+        let (name, path) = self.contacts.get(&invite.node).map_or_else(
+            || (invite.admin_name.clone(), None),
+            |c| (c.name.clone(), c.out_path.clone()),
+        );
+        self.add_contact(invite.node, &name, path);
+        self.set_identity(&invite.node, invite.admin, true);
+        let mut join = vec![content::GROUP_JOIN];
+        join.extend_from_slice(&invite.token);
+        self.unknown_to(&invite.node);
+        self.enqueue_internal(&invite.node, join);
+        self.send_advert(false, now);
+        Ok(())
+    }
+
+    /// A GROUP_JOIN from node `node`, whose identity the session proved (§10.5): a valid token
+    /// admits it as an invitation does. Anything else is dropped without an answer.
+    fn on_group_join(&mut self, node: &PubKey, datagram: &[u8], now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        let Some(token) = datagram
+            .get(1..17)
+            .and_then(|t| <[u8; 16]>::try_from(t).ok())
+        else {
+            return;
+        };
+        let Some(&(gid, until)) = self.invites.get(&token) else {
+            return;
+        };
+        if now >= until {
+            self.invites.remove(&token);
+            return;
+        }
+        let (Some(id), Some(g)) = (self.identity_of(node), self.groups.get(&gid)) else {
+            return;
+        };
+        if g.admin != me || id == me {
+            return;
+        }
+        if g.is_member(&id) {
+            // Asked again: it lost the group (a phone restored from its phrase). The state and
+            // our key again, to it alone.
+            let state = State {
+                gid,
+                epoch: g.epoch,
+                admin: g.admin,
+                name: g.name.clone(),
+                members: g.members.clone(),
+            }
+            .encode();
+            self.enqueue_internal(node, state);
+            self.send_my_key(&gid, Some(&[id]));
+            self.tick(now);
+            return;
+        }
+        if self.add_members(&gid, &[*node], now).is_ok() {
+            self.events
+                .push_back(Event::MemberJoined { gid, node: *node });
+        }
+    }
+
     /// Removes `member` (admin only): new epoch, and every remaining member rotates its key.
     pub fn remove_member(
         &mut self,
@@ -712,9 +825,10 @@ impl Core {
         self.send_my_key(gid, None);
     }
 
-    /// A GROUP_STATE or SENDER_KEY datagram from node `from` (§10.1, §10.2): whose identity
-    /// the session proved.
+    /// A group control datagram (GROUP_STATE, SENDER_KEY, GROUP_LEAVE, GROUP_JOIN; §10) from
+    /// node `from`, whose identity the session proved.
     pub(crate) fn on_group_control(&mut self, from: &PubKey, datagram: &[u8], now: Millis) {
+        let node = *from;
         let Some(from) = self.identity_of(from) else {
             return;
         };
@@ -733,6 +847,9 @@ impl Core {
             Some(&content::GROUP_LEAVE) if datagram.len() == 21 => {
                 let from = *from;
                 self.on_group_leave(&from, datagram, now);
+            }
+            Some(&content::GROUP_JOIN) if datagram.len() == 17 => {
+                self.on_group_join(&node, datagram, now);
             }
             _ => {}
         }
@@ -1186,6 +1303,42 @@ mod tests {
     use super::*;
     use crate::core::Config;
     use lc_meshcore::ecdh::{expand_seed, public_key};
+
+    /// A full group admits no one, even with a valid invitation; once a place is free, the
+    /// same invitation admits (§10.5).
+    #[test]
+    fn a_full_group_refuses_a_join() {
+        let mut core = Core::new(Config::new("t", [200; 32], [1; 32]));
+        core.node = Some([0xEE; 32]);
+        core.set_clock(1_793_000_000_000, 0);
+        let nodes: Vec<PubKey> = (1..=MAX_MEMBERS as u8).map(|i| [i; 32]).collect();
+        for (i, n) in nodes.iter().enumerate() {
+            core.add_contact(*n, &format!("m{i}"), None);
+            core.set_identity(n, [100 + n[0]; 32], false);
+        }
+        let (members, joiner) = nodes.split_at(MAX_MEMBERS - 1);
+        let gid = core.create_group("Full", members, 0).unwrap();
+        let invite = core.create_invite(&gid, 0).unwrap();
+        let mut join = vec![content::GROUP_JOIN];
+        join.extend_from_slice(&invite.token);
+        while core.poll_event().is_some() {}
+
+        core.on_group_control(&joiner[0], &join, 1_000);
+        assert_eq!(core.groups[&gid].members.len(), MAX_MEMBERS);
+        assert!(
+            std::iter::from_fn(|| core.poll_event())
+                .all(|e| !matches!(e, Event::MemberJoined { .. }))
+        );
+
+        core.remove_member(&gid, &members[0], 2_000).unwrap();
+        core.on_group_control(&joiner[0], &join, 3_000);
+        assert!(core.groups[&gid].is_member(&[100 + joiner[0][0]; 32]));
+        assert!(std::iter::from_fn(|| core.poll_event()).any(|e| e
+            == Event::MemberJoined {
+                gid,
+                node: joiner[0]
+            }));
+    }
 
     /// Two identities whose public keys share their first byte (the sender byte of envelopes):
     /// seeds counted up until two collide, about 20 tries.

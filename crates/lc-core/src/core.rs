@@ -237,6 +237,11 @@ pub enum Event {
     GroupLeft {
         gid: GroupId,
     },
+    /// Node `node` joined group `gid`, which we administer, with an invitation (§10.5).
+    MemberJoined {
+        gid: GroupId,
+        node: PubKey,
+    },
     GroupMessage {
         gid: GroupId,
         from: PubKey,
@@ -317,6 +322,10 @@ pub enum Error {
     Started,
     /// No unfinished message has this id.
     NotQueued,
+    /// The wall clock is not known yet ([`Core::set_clock`]).
+    NoClock,
+    /// The invitation has expired (§10.5).
+    Expired,
 }
 
 /// Core configuration.
@@ -459,6 +468,9 @@ struct Peer {
     answered_intro: Option<AnsweredIntro>,
     /// The peer answered no HELLO: it may have a new identity, introduce again (§4.6).
     intro_needed: bool,
+    /// The peer may not know our identity (we scanned its invitation): probes go anonymous
+    /// from the first (§4.5).
+    unknown_to_peer: bool,
     /// When the current session was made, and the datagram bytes sent under it: renewed
     /// after 24 h or 4 MB (§4.4).
     session_since: Millis,
@@ -557,6 +569,9 @@ pub struct Core {
     pub(crate) group_copies: u8,
     /// Groups changed since the app last persisted them.
     pub(crate) dirty_groups: HashSet<GroupId>,
+    /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
+    /// them.
+    pub(crate) invites: HashMap<[u8; 16], (GroupId, Millis)>,
     /// Group frames waiting for their time (the second fragment is spaced out).
     pub(crate) group_tx: VecDeque<crate::group::GroupFrame>,
     /// The radio is shared by every session: the next data frame may go at this time.
@@ -631,6 +646,7 @@ impl Core {
             held: VecDeque::new(),
             group_copies: crate::group::COPIES,
             dirty_groups: HashSet::new(),
+            invites: HashMap::new(),
             group_tx: VecDeque::new(),
             next_slot: 0,
             session_max_age: SESSION_MAX_AGE_MS,
@@ -1079,6 +1095,11 @@ impl Core {
         let mut id = [0u8; 8];
         self.rng.fill_bytes(&mut id);
         id
+    }
+
+    /// Peer `k` may not know our identity yet (§4.5): its probes go anonymous.
+    pub(crate) fn unknown_to(&mut self, k: &PubKey) {
+        self.peers.entry(*k).or_default().unknown_to_peer = true;
     }
 
     /// Queues a datagram sent by the core itself (not reported to the app).
@@ -1821,8 +1842,11 @@ impl Core {
         };
         let mut id: ProbeId = [0; 8];
         self.rng.fill_bytes(&mut id);
-        let secret = self.secret(k);
-        let peer_id = self.identity_of(k);
+        // The peer may not know our identity even when we know theirs (a card or an
+        // invitation scanned one way, a reinstalled app): only a first probe is keyed (§4.5).
+        let keyed = tries == 1 && !peer.unknown_to_peer;
+        let secret = self.secret(k).filter(|_| keyed);
+        let peer_id = self.identity_of(k).filter(|_| keyed);
         let payload = match (secret, peer_id) {
             (Some(s), Some(pid)) => discovery::build_probe(
                 &Keying {
@@ -2196,6 +2220,7 @@ impl Core {
                 p.path = Some(intro.path);
                 p.introducing = None;
                 p.intro_needed = false;
+                p.unknown_to_peer = false;
                 p.fin = Some(fin);
             }
             self.events.push_back(Event::SessionEstablished { peer: c });
@@ -2431,6 +2456,7 @@ impl Core {
                 p.path = Some(init.path);
                 p.initiating = None;
                 p.introducing = None;
+                p.unknown_to_peer = false;
             }
             self.events.push_back(Event::SessionEstablished { peer: c });
             self.tick(now);
@@ -2463,6 +2489,7 @@ impl Core {
             if let Some((_, true)) = outcome {
                 // The initiator confirmed the pending session (§4.4).
                 peer.promote_pending();
+                peer.unknown_to_peer = false;
                 self.events.push_back(Event::SessionEstablished { peer: c });
             }
             if outcome.is_some() {
@@ -2478,6 +2505,7 @@ impl Core {
                             &lc_proto::content::GROUP_STATE
                                 | &lc_proto::content::SENDER_KEY
                                 | &lc_proto::content::GROUP_LEAVE
+                                | &lc_proto::content::GROUP_JOIN
                         )
                     )
                 {

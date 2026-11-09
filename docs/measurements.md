@@ -246,3 +246,14 @@ The Android emulator cannot use the Mac's USB devices: `lichen bridge` relays th
 
 A reaction costs about what a short text does: in a direct conversation the relayed data frame and the two relayed acknowledgements dominate (the 8 bytes saved are 4 % of the airtime); in a group, the 64-byte signature and the two copies do. The apps show this cost before a reaction is sent, as before any send. The 8-byte reference adds 3 to 5 % to a reply.
 
+
+## 2026-11-09 — Joining a group by invitation (ADR-0020)
+
+`cargo test -p lc-core --release --test invite -- --nocapture two_people`: alice, bob and carol form a group, each linked to one repeater; dave and eve stand next to alice (linked to her and to the repeater), known to no one, and scan one invitation at the same moment. SF8 / 62.5 kHz, no loss.
+
+| Step | Time after the scan |
+|---|---|
+| Both admitted (group state received) | 72 s |
+| Group of 5, every member holding every sender key | 489 s |
+
+The joiner's zero-hop advert, an anonymous probe and an introduction come before GROUP_JOIN; admission then sends the new state to the four others. The joiners read alice's messages once admitted (her key travels with the state); bob's and carol's keys need a session between them and each newcomer, through the repeater, which is most of the 489 s. A message posted before a key arrives is held and read when it does (§10.3). Before the anonymous probe (§4.5), the joiners never found a path: their keyed probes could not be checked by alice.
