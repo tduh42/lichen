@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
-GROUP_STATE and SENDER_KEYS (§10.1–10.2), group invitations and GROUP_JOIN (§10.5), small
+GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), group invitations and GROUP_JOIN (§10.5), small
 files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
@@ -12,6 +12,7 @@ import struct
 import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
+GROUP_MISSING, GROUP_RESEND = 0x15, 0x16
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -33,7 +34,7 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5, §13.2), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -203,7 +204,54 @@ for nm, entries in keys:
     print(f'datagram = "{sender_keys(gid, entries).hex()}"')
     print()
 
+def group_missing(gid: bytes, author: bytes, epoch: int, counters) -> bytes:
+    return bytes([GROUP_MISSING]) + gid + author + bytes([epoch, len(counters)]) + b"".join(struct.pack("<I", c) for c in counters)
+
+
+def group_resend(gid: bytes, payloads) -> bytes:
+    return bytes([GROUP_RESEND]) + gid + bytes([len(payloads)]) + b"".join(bytes([len(p)]) + p for p in payloads)
+
+
+missing = [
+    ("one counter", julien, 1, [41]),
+    ("eight counters, the most", lea, 255, list(range(100, 108))),
+]
+for nm, author, epoch, counters in missing:
+    print("[[group_missing]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f'author = "{author.hex()}"')
+    print(f"epoch = {epoch}")
+    print(f"counters = {counters}")
+    print(f'datagram = "{group_missing(gid, author, epoch, counters).hex()}"')
+    print()
+
+# Envelope payloads are opaque here: their own vectors are in testdata/meshcore and §10.3.
+env1 = bytes([0x7C, 0x02]) + hashlib.sha256(b"envelope 1").digest() * 3
+env2 = bytes([0x7C, 0x02]) + hashlib.sha256(b"envelope 2").digest()[:20]
+resend = [
+    ("one envelope", [env1]),
+    ("a two-fragment message", [env1, env2]),
+    ("the longest payload", [bytes([0x7C]) + bytes(158)]),
+]
+for nm, payloads in resend:
+    print("[[group_resend]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"lengths = {[len(p) for p in payloads]}")
+    print(f'datagram = "{group_resend(gid, payloads).hex()}"')
+    print()
+
 bad = [
+    ("missing, no counter", group_missing(gid, julien, 1, [])),
+    ("missing, nine counters", group_missing(gid, julien, 1, list(range(9)))),
+    ("missing, cut in a counter", group_missing(gid, julien, 1, [41])[:-1]),
+    ("resend, no payload", group_resend(gid, [])),
+    ("resend, a payload of 160 bytes", group_resend(gid, [bytes(160)])),
+    ("resend, an empty payload", group_resend(gid, [b""])),
+    ("resend, cut in a payload", group_resend(gid, [env1])[:-1]),
+    ("resend, bytes after the payloads", group_resend(gid, [env1]) + b"\x00"),
+    ("resend, seventeen payloads", group_resend(gid, [env2] * 17)),
     ("sender keys, none", bytes([SENDER_KEYS]) + gid + bytes([0])),
     ("sender keys, cut in an entry", sender_keys(gid, keys[0][1])[:-3]),
     ("sender keys, bytes after the entries", sender_keys(gid, keys[0][1]) + b"\x00"),

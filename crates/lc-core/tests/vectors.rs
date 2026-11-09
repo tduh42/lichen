@@ -172,6 +172,60 @@ fn sender_keys() {
 }
 
 #[test]
+fn group_recovery() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "group_missing") {
+        let d = h(v, "datagram");
+        let Some(Control::Missing {
+            gid,
+            author,
+            epoch,
+            counters,
+        }) = Control::decode(&d)
+        else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(author.to_vec(), h(v, "author"));
+        assert_eq!(i64::from(epoch), v["epoch"].as_integer().unwrap());
+        let want: Vec<i64> = v["counters"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_integer().unwrap())
+            .collect();
+        assert_eq!(
+            counters.iter().map(|c| i64::from(*c)).collect::<Vec<_>>(),
+            want
+        );
+        let back = Control::Missing {
+            gid,
+            author,
+            epoch,
+            counters,
+        };
+        assert_eq!(back.encode(), d);
+    }
+    for v in entries(&t, "group_resend") {
+        let d = h(v, "datagram");
+        let Some(Control::Resend { gid, payloads }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        let lengths: Vec<i64> = payloads.iter().map(|p| p.len() as i64).collect();
+        let want: Vec<i64> = v["lengths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| c.as_integer().unwrap())
+            .collect();
+        assert_eq!(lengths, want, "{}", s(v, "name"));
+        assert_eq!(Control::Resend { gid, payloads }.encode(), d);
+    }
+}
+
+#[test]
 fn small_files() {
     let t = load();
     for v in entries(&t, "file") {

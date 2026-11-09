@@ -73,6 +73,9 @@ impl Chat {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status {
     Received,
+    /// Received from a member after it was lost on the air (§10.6): shown as late. Older
+    /// versions read it as received.
+    Late,
     /// Accepted, nothing transmitted yet: it can still be cancelled (§6.1).
     Queued,
     /// At least one frame went out.
@@ -116,6 +119,7 @@ impl Status {
     fn columns(&self) -> (i64, i64, i64) {
         match *self {
             Status::Received => (0, 0, 0),
+            Status::Late => (6, 0, 0),
             Status::Sending { sent, total } => (1, i64::from(sent), i64::from(total)),
             Status::Delivered => (2, 0, 0),
             Status::Failed(r) => (3, fail_code(r), 0),
@@ -134,6 +138,7 @@ impl Status {
             3 => Status::Failed(fail_reason(a)),
             4 => Status::Flooded,
             5 => Status::Queued,
+            6 => Status::Late,
             _ => Status::Received,
         }
     }

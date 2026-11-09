@@ -637,7 +637,7 @@ final class AppModel {
                 notifier.message(chat, title: title(of: chat),
                                  body: String(localized: "\(name(of: node)) joined with your invitation"))
             }
-        case let .groupMessage(gid, from, message, snr, _):
+        case let .groupMessage(gid, from, message, snr, _, _):
             lastSnr[from] = snr
             let chat = ChatID.group(gid: gid)
             if !isMuted(chat) {

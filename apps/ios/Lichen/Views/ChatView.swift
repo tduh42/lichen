@@ -680,6 +680,11 @@ private struct MessageView: View {
         if message.outgoing {
             return ([time] + [caption].compactMap { $0 }).joined(separator: " · ")
         }
+        // Lost on the air and handed on by a member (§10.6): shown where it arrived.
+        if message.late {
+            let written = (message.writtenEarlier ?? message.message.date).formatted(date: .omitted, time: .shortened)
+            return String(localized: "\(time) · arrived late, written at \(written)")
+        }
         // Written well before it arrived: it waited (§6.1).
         if let written = message.writtenEarlier {
             if Calendar.current.isDate(written, inSameDayAs: message.date) {

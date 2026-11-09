@@ -45,8 +45,11 @@ fn timeline() {
                         Message::Other { content_type, .. } => format!("other {content_type}"),
                     };
                     println!(
-                        "{t:>6.1} s  #{} out={} {:?} {what}",
-                        message.id, message.outgoing, message.status
+                        "{t:>6.1} s  #{} out={} {:?} {what}{}",
+                        message.id,
+                        message.outgoing,
+                        message.status,
+                        if message.late { " (arrived late)" } else { "" }
                     );
                     if matches!(message.message, Message::Image { full: false, .. })
                         && !message.outgoing

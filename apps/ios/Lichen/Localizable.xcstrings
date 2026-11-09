@@ -221,6 +221,16 @@
         }
       }
     },
+    "%@ · arrived late, written at %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · arrivé en retard, écrit à %@"
+          }
+        }
+      }
+    },
     "%@ · written at %@": {
       "localizations": {
         "fr": {

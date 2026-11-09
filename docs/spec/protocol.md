@@ -229,6 +229,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
 | 0x13 | GROUP_JOIN | §10.5 | ADR-0020 |
 | 0x14 | SENDER_KEYS | §10.2 (from the admin) | ADR-0021 |
+| 0x15 | GROUP_MISSING | §10.6 | ADR-0024 |
+| 0x16 | GROUP_RESEND | §10.6 | ADR-0024 |
 | 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed) | ADR-0021 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
@@ -389,9 +391,9 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 - **Length rule** (§1 fact 9): a stock node reads a 2-byte MAC after the channel hash, so the rest of the payload must not be a non-empty multiple of 16. When `len(payload) − 3` would be one, the sender appends the pad byte and uses type 0x03 (the type byte is in the AAD).
 - **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 139 bytes of plaintext.
 - **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 70 bytes in one fragment, 209 in two.
-- **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces.
+- **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces. Messages (what the user sends: texts, replies, reactions, announcements) take counters from 0 to 2^31 − 1; what the core sends by itself (positions, search packets) takes counters from 2^31, each range increasing on its own (ADR-0024). A receiver keeps one replay window per range, so a gap among message counters is a lost message (§10.6), never a stale position. The `next_counter` of SENDER_KEY counts messages.
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
-- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key); reassemble; verify the signature with the member's identity key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
+- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key and counter range); reassemble; verify the signature with the member's identity key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
 - **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept, 16 at most, for 10 minutes, and tried again when a new sender key arrives. Sender keys travel pairwise over several hops and often arrive after a member's first post.
 - **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006). For the sender, a message is "sent to the group" once the first copy of every fragment has left (§6.1); until then it waits like any queued message.
 
@@ -416,6 +418,27 @@ An admin can let people join in person, without knowing them first: their app sh
 - **Keys**: as for any addition, newcomers receive the members' current sender keys (ADR-0017): what was recorded under them before is readable to them.
 
 Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[group_state]]` and `[[sender_keys]]` for §10.1–10.2).
+
+### 10.6 Recovering lost group messages (pairwise datagrams 0x15 GROUP_MISSING, 0x16 GROUP_RESEND, ADR-0024)
+
+Group messages are flooded twice and never acknowledged (§10.3): when both copies collide at a busy repeater, the message is lost for every member behind it. A member that notices a gap asks for it over a pairwise session. An envelope is encrypted under its author's sender key and **signed** by the author, so any member who holds it can hand it on: the receiver authenticates it exactly as if heard on the air.
+
+**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION and ANNOUNCE are kept (and the later message types that say so); positions and search packets go stale, are not worth resending, and do not use message counters anyway.
+
+**Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. Nothing is missing before the first message received under a key: what came before may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed only when that member sends another message.
+
+```
+GROUP_MISSING (0x15) = gid (16) ‖ author id (32) ‖ key_epoch (1) ‖ n (1, 1..8) ‖ n × counter u32
+GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..159) ‖ envelope payload)
+```
+
+**Asking.** 20 seconds after a gap is seen, plus `U[0, 20 s)` (the second copy and slower flood paths arrive meanwhile, and members who lost the same message do not ask at once), the receiver sends GROUP_MISSING for the counters still missing under one author and key: to the author when a session with it is open, otherwise to the group's admin, which has a session with every member (§10.2); to the author when the receiver is the admin. If no GROUP_RESEND arrives within 2 minutes, or one from another member than the author lacks some of the counters, it asks the other one once; then it gives up. GROUP_MISSING is an internal datagram, deferred by the airtime budget like text (§9).
+
+**Answering.** A member accepts GROUP_MISSING only from a listed member of that group (the session's identity, §4.6), for a group it belongs to, and answers with GROUP_RESEND holding the kept payloads of those counters (both fragments of a two-fragment message), 16 at most, and only those it kept after the asker joined (since the state that added it, as far as it saw): nobody gets back what was sent before it was a member. It sends nothing when it holds none. Counters left out are not available from it.
+
+**Receiving.** GROUP_RESEND is accepted only from a listed member of a group the receiver belongs to. Each payload goes through §10.3's receiver unchanged (key, replay window, reassembly, signature), so a relayed payload can be neither forged nor replayed; only, it was not heard on the air, so it is not a search measurement (§11). A message recovered this way is reported as **late**: the phones show it where it arrives, with "arrived late" and its sending time.
+
+**Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 70 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
 
 ## 11. Search (ADR-0016)
 

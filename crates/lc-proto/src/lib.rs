@@ -82,4 +82,6 @@ pub mod content {
     pub const GROUP_LEAVE: u8 = 0x12;
     pub const GROUP_JOIN: u8 = 0x13;
     pub const SENDER_KEYS: u8 = 0x14;
+    pub const GROUP_MISSING: u8 = 0x15;
+    pub const GROUP_RESEND: u8 = 0x16;
 }

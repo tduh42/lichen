@@ -721,6 +721,8 @@ pub enum LichenEvent {
         message: Message,
         snr_db: f32,
         rssi: i8,
+        /// Recovered from a member after it was lost on the air (§10.6).
+        late: bool,
     },
     /// A message was added to the history, or its status changed.
     MessageChanged {
@@ -843,12 +845,14 @@ impl LichenEvent {
                 content,
                 snr4,
                 rssi,
+                late,
             } => Self::GroupMessage {
                 gid: gid.to_vec(),
                 from: from.to_vec(),
                 message: content.into(),
                 snr_db: snr(snr4),
                 rssi,
+                late,
             },
             Event::Location {
                 from,
@@ -994,6 +998,9 @@ pub struct StoredMessage {
     pub quote: Option<Quote>,
     /// Reactions to it, the most frequent first.
     pub reactions: Vec<ReactionCount>,
+    /// A group message recovered from a member after it was lost on the air (§10.6): shown
+    /// where it arrived, with "arrived late" and its sending time.
+    pub late: bool,
 }
 
 /// What kind of message a reply answers.
@@ -1047,8 +1054,9 @@ impl From<store::Message> for StoredMessage {
             author: m.author.map(|a| a.to_vec()),
             message: m.content.into(),
             at_ms: m.at_ms,
+            late: m.status == Status::Late,
             status: match m.status {
-                Status::Received => MessageStatus::Received,
+                Status::Received | Status::Late => MessageStatus::Received,
                 // Without the outbox's view (it is filled in by `Inner::present`).
                 Status::Queued => MessageStatus::Waiting {
                     reason: WaitReason::Radio,
@@ -1769,6 +1777,7 @@ impl Inner {
                 from,
                 content,
                 snr4,
+                late,
                 ..
             } => {
                 let chat = Chat::Group(*gid);
@@ -1783,7 +1792,11 @@ impl Inner {
                     author: Some(*from),
                     content: content.clone(),
                     at_ms: unix_ms(),
-                    status: Status::Received,
+                    status: if *late {
+                        Status::Late
+                    } else {
+                        Status::Received
+                    },
                     fragments: 0,
                     airtime_ms: 0,
                     snr4: Some(*snr4),
@@ -3859,6 +3872,7 @@ mod receiver {
         assert!(i.on_event(&direct));
         assert!(!i.on_event(&direct));
         let group = |from: u8| Event::GroupMessage {
+            late: false,
             gid: [3; 16],
             from: [from; 32],
             content: text("hi"),

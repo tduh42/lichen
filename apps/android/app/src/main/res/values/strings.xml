@@ -553,6 +553,7 @@
     <string name="expired_note">Not delivered within 24 hours, so it will not go out later. If part of it went out, it may have arrived.</string>
     <string name="cancel_sending">Cancel sending</string>
     <string name="send_again">Send again</string>
+    <string name="arrived_late">%1$s · arrived late, written at %2$s</string>
     <string name="written_at">%1$s · written at %2$s</string>
     <string name="written_on">%1$s · written on %2$s</string>
     <string name="paused_radio">Paused: radio disconnected</string>

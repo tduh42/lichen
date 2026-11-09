@@ -254,6 +254,8 @@ pub enum Event {
         content: Content,
         snr4: i8,
         rssi: i8,
+        /// Recovered from a member after it was lost on the air (§10.6): shown as late.
+        late: bool,
     },
     /// A position from `from`, direct or in `group` (§12); `at` is its full Unix time.
     Location {
@@ -584,6 +586,8 @@ pub struct Core {
     pub(crate) held: VecDeque<Held>,
     /// Floods per group message (§10.3).
     pub(crate) group_copies: u8,
+    /// Members ask for the group messages they missed (§10.6); off only to measure without.
+    pub(crate) group_recovery: bool,
     /// Groups changed since the app last persisted them.
     pub(crate) dirty_groups: HashSet<GroupId>,
     /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
@@ -665,6 +669,7 @@ impl Core {
             pending_keys: Vec::new(),
             held: VecDeque::new(),
             group_copies: crate::group::COPIES,
+            group_recovery: true,
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
             admitted: Vec::new(),
@@ -1140,6 +1145,11 @@ impl Core {
             .get(k)
             .map(|p| p.queue.iter().map(|m| m.datagram.clone()).collect())
             .unwrap_or_default()
+    }
+
+    /// A session with node `k` is open: a datagram to it needs no handshake.
+    pub(crate) fn has_session(&self, k: &PubKey) -> bool {
+        self.peers.get(k).is_some_and(|p| p.session.is_some())
     }
 
     /// Peer `k` may not know our identity yet (§4.5): its probes go anonymous.
@@ -2590,6 +2600,8 @@ impl Core {
                                 | &lc_proto::content::GROUP_LEAVE
                                 | &lc_proto::content::GROUP_JOIN
                                 | &lc_proto::content::SENDER_KEYS
+                                | &lc_proto::content::GROUP_MISSING
+                                | &lc_proto::content::GROUP_RESEND
                         )
                     )
                 {

@@ -120,6 +120,7 @@ import com.tduhamel.lichen.model.fragmentsText
 import com.tduhamel.lichen.model.hopsBadge
 import com.tduhamel.lichen.model.isWaiting
 import com.tduhamel.lichen.model.secondsText
+import com.tduhamel.lichen.model.writtenAtMs
 import com.tduhamel.lichen.model.writtenEarlierMs
 
 /** One conversation (mockup `chat`). */
@@ -615,6 +616,8 @@ private fun MessageBubble(
         val written = m.writtenEarlierMs
         val footer = when {
             m.outgoing -> listOfNotNull(time, caption(m, isGroup)).joinToString(" · ")
+            // Lost on the air and handed on by a member (§10.6): shown where it arrived.
+            m.late -> stringResource(R.string.arrived_late, time, timeOf(context, m.writtenAtMs ?: m.atMs))
             // Written well before it arrived: it waited (§6.1).
             written != null && dayOf(written) == dayOf(m.atMs) -> stringResource(R.string.written_at, time, timeOf(context, written))
             written != null -> stringResource(R.string.written_on, time, dateTimeOf(context, written))

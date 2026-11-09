@@ -307,6 +307,71 @@ fn measure_group_delivery_one_or_two_copies() {
     }
 }
 
+/// Posts in a lossy group (20 % per link, both copies of a post can be lost), without and with
+/// recovery from the members (§10.6). Every member posts 8 times, a post a minute overall, then
+/// once more (a message that reveals the last gaps).
+/// `cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`
+#[test]
+#[ignore = "measurement, prints numbers for docs/measurements.md"]
+fn measure_group_recovery() {
+    for (loss, recovery) in [(10, false), (10, true), (20, false), (20, true)] {
+        let (mut ok, mut total, mut late, mut frames) = (0usize, 0usize, 0usize, 0u64);
+        for seed in 0..10u64 {
+            let (mut net, m) = star_with_loss(300 + seed, loss);
+            for &i in &m {
+                net.with_core(i, |c, _| c.set_group_recovery(recovery));
+            }
+            let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+            let gid = net
+                .with_core(m[0], |c, now| c.create_group("g", &keys[1..], now))
+                .unwrap()
+                .unwrap();
+            if !net.run_until(net.now + 90 * MIN, |n| keys_complete(n, &m, &gid)) {
+                continue;
+            }
+            settle(&mut net);
+            for &i in &m {
+                net.take_events(i);
+            }
+            let before = net.stats.transmissions;
+            for round in 0..9 {
+                for (j, &i) in m.iter().enumerate() {
+                    let text = format!("{round}-{j}");
+                    net.with_core(i, |c, now| c.send_group_text(&gid, &text, 1, now));
+                    net.run_until(net.now + MIN, |_| false);
+                }
+            }
+            settle(&mut net);
+            frames += net.stats.transmissions - before;
+            for &i in &m {
+                let mut seen = std::collections::HashSet::new();
+                for e in net.take_events(i) {
+                    if let Event::GroupMessage {
+                        content: Content::Text { text, .. },
+                        late: l,
+                        ..
+                    } = e
+                        && !text.starts_with("8-")
+                        && seen.insert(text.clone())
+                    {
+                        ok += 1;
+                        if l {
+                            late += 1;
+                        }
+                    }
+                }
+                total += 8 * (m.len() - 1);
+            }
+        }
+        println!(
+            "| {loss} % | {} | {ok}/{total} ({:.1} %) | {late} | {:.0} |",
+            if recovery { "with recovery" } else { "without" },
+            100.0 * ok as f64 / total.max(1) as f64,
+            frames as f64 / 10.0
+        );
+    }
+}
+
 /// A member's app restarts: the group comes back from its snapshot, the member draws a new
 /// sender key (next epoch) and sends it, and still reads the others with their stored keys.
 #[test]

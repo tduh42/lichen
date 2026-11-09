@@ -311,3 +311,16 @@ Sizes from `cargo test -p lc-ffi --release --lib -- --ignored file_sizes --nocap
 | A PDF (already compressed: random bytes) | 6.0 KB | 6.0 KB, as is | 48 | 70 s | 4.2 min |
 
 The track that could not leave the phone in the first field test (25 KB, over the 8 KB limit) now costs 29 s of the hour: 8 % of it, less than an uncompressed 2 KB file. Text halves; a PDF, a photo or an archive is sent as it is.
+
+## 2026-11-09 — Recovering lost group messages (ADR-0024)
+
+`cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`: five members around one repeater (none hears another), random loss on every link, 10 seeds. Every member posts 8 times, a post a minute overall, then once more (a later message that reveals the last gaps; not counted). Delivered = distinct posts each member received, out of 8 × 4 per member; frames = every transmission on the network during the posts, repeater included, per run.
+
+| Loss per link | | Delivered | Recovered (late) | Frames per run |
+|---|---|---|---|---|
+| 10 % | without | 1527/1600 (95.4 %) | — | 170 |
+| 10 % | with recovery | 1584/1600 (99.0 %) | 83 | 327 |
+| 20 % | without | 1402/1600 (87.6 %) | — | 163 |
+| 20 % | with recovery | 1527/1600 (95.4 %) | 250 | 1151 |
+
+At 10 % per link, recovery brings back four losses in five for about twice the frames (a request and an answer through the repeater, unicast and acknowledged). At 20 %, each exchange itself needs retries, often a new handshake with the admin, and every member that lost the same post asks on its own: seven times the frames for half the losses. Recovered posts come 20–40 s late at least (the wait for the second copy) and are marked "arrived late". What is still lost: requests that fail twice, and losses not followed by another message from the same author.

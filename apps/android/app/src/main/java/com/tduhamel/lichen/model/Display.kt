@@ -145,6 +145,17 @@ fun initials(name: String): String {
 /** Accepted and waiting (for the radio, a path, a session…), §6.1. */
 val StoredMessage.isWaiting: Boolean get() = status is MessageStatus.Waiting
 
+/** When the sender wrote it (Unix ms), when the message carries it. */
+val StoredMessage.writtenAtMs: Long?
+    get() {
+        val sent = when (val m = message) {
+            is Message.Text -> m.sentAt
+            is Message.Voice -> m.sentAt
+            else -> return null
+        }.toLong() * 1000
+        return sent.takeIf { it > 0 }
+    }
+
 /** When the sender wrote it (Unix ms), if well before it arrived: a message that waited (§6.1). */
 val StoredMessage.writtenEarlierMs: Long?
     get() {

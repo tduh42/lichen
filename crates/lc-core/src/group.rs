@@ -1,7 +1,7 @@
 //! Private groups (`docs/spec/protocol.md` §10, ADR-0009): group state from the admin, a sender
 //! key per member, signed messages flooded on channel hash `0x7C`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::ecdh::{sign, verify};
@@ -34,11 +34,26 @@ const PENDING_KEY_MS: Millis = 600_000;
 /// The admin forwards a member's new key to the members it admitted this recently (§10.2).
 const ADMITTED_MS: Millis = 600_000;
 /// Version byte of [`Group::snapshot`]: 2 since members are identities with a node (ADR-0013).
-const SNAPSHOT_VERSION: u8 = 2;
+const SNAPSHOT_VERSION: u8 = 3;
+/// Counters from here on carry what the core sends by itself (positions, search packets), with
+/// a replay window of their own: a gap below is a lost message (§10.3, §10.6).
+const AUX: u32 = 1 << 31;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
 /// And at most this many.
 const HELD_MAX: usize = 16;
+/// Group messages each member keeps to resend (§10.6), and for how long.
+const KEPT_MAX: usize = 64;
+const KEPT_MS: Millis = 3_600_000;
+/// Missing counters remembered per group (§10.6).
+const GAPS_MAX: usize = 16;
+/// A gap is asked for this long after it is seen, plus up to as much again (§10.6).
+const ASK_AFTER_MS: Millis = 20_000;
+/// How long an answer is awaited before asking the other one, then giving up.
+const ANSWER_MS: Millis = 120_000;
+/// Counters per GROUP_MISSING, payloads per GROUP_RESEND (§10.6).
+pub const MISSING_MAX: usize = 8;
+pub const RESEND_MAX: usize = 16;
 
 /// A group frame waiting for its time (§10.3).
 #[derive(Clone, Debug)]
@@ -76,16 +91,50 @@ pub struct Member {
     pub name: String,
 }
 
-/// One sender key of a member, with its replay window.
+/// One sender key of a member, with its replay windows: messages, and the core's own traffic
+/// from [`AUX`] (§10.3).
 #[derive(Clone, Debug)]
 struct KeyState {
     epoch: u8,
     key: [u8; 32],
-    /// Counters below this were never used under this key.
+    /// Message counters below this were never used under this key.
     floor: u32,
     highest: Option<u32>,
     /// Bit `d` set: counter `highest − d` already delivered.
     seen: u64,
+    aux_highest: Option<u32>,
+    aux_seen: u64,
+}
+
+/// A counter fits the window (`highest`, `seen`): newer, or within 64 and not seen.
+fn window_accepts(highest: Option<u32>, seen: u64, counter: u32) -> bool {
+    match highest {
+        None => true,
+        Some(h) if counter > h => true,
+        Some(h) => {
+            let d = h - counter;
+            d < 64 && (seen >> d) & 1 == 0
+        }
+    }
+}
+
+fn window_mark(highest: &mut Option<u32>, seen: &mut u64, counter: u32) {
+    match *highest {
+        None => {
+            *highest = Some(counter);
+            *seen = 1;
+        }
+        Some(h) if counter > h => {
+            *seen = seen.checked_shl(counter - h).unwrap_or(0) | 1;
+            *highest = Some(counter);
+        }
+        Some(h) => {
+            let d = h - counter;
+            if d < 64 {
+                *seen |= 1 << d;
+            }
+        }
+    }
 }
 
 impl KeyState {
@@ -96,39 +145,35 @@ impl KeyState {
             floor,
             highest: None,
             seen: 0,
+            aux_highest: None,
+            aux_seen: 0,
         }
     }
 
     fn accepts(&self, counter: u32) -> bool {
-        if counter < self.floor {
-            return false;
+        if counter >= AUX {
+            return window_accepts(self.aux_highest, self.aux_seen, counter);
         }
+        counter >= self.floor && window_accepts(self.highest, self.seen, counter)
+    }
+
+    /// The counters before `counter` that never came under this key and still could (inside
+    /// the window once `counter` is marked), between two messages received (§10.6). None for
+    /// a key's first message: what came before may predate our membership.
+    fn skipped_before(&self, counter: u32) -> Vec<u32> {
         match self.highest {
-            None => true,
-            Some(h) if counter > h => true,
-            Some(h) => {
-                let d = h - counter;
-                d < 64 && (self.seen >> d) & 1 == 0
+            Some(h) if counter > h && counter < AUX => {
+                (h.saturating_add(1).max(counter.saturating_sub(63))..counter).collect()
             }
+            _ => Vec::new(),
         }
     }
 
     fn mark(&mut self, counter: u32) {
-        match self.highest {
-            None => {
-                self.highest = Some(counter);
-                self.seen = 1;
-            }
-            Some(h) if counter > h => {
-                self.seen = self.seen.checked_shl(counter - h).unwrap_or(0) | 1;
-                self.highest = Some(counter);
-            }
-            Some(h) => {
-                let d = h - counter;
-                if d < 64 {
-                    self.seen |= 1 << d;
-                }
-            }
+        if counter >= AUX {
+            window_mark(&mut self.aux_highest, &mut self.aux_seen, counter);
+        } else {
+            window_mark(&mut self.highest, &mut self.seen, counter);
         }
     }
 }
@@ -147,7 +192,70 @@ struct Partial {
     counter: u32,
     index: u8,
     data: Vec<u8>,
+    /// The fragment as it was on the air (kept for §10.6).
+    payload: Vec<u8>,
     at: Millis,
+}
+
+/// A group message as it was on the air, kept for members who missed it (§10.6).
+#[derive(Clone, Debug)]
+struct Kept {
+    author: PubKey,
+    epoch: u8,
+    counter: u32,
+    /// One payload per fragment, in order.
+    payloads: Vec<Vec<u8>>,
+    at: Millis,
+}
+
+/// A counter missing from a member's messages (§10.6).
+#[derive(Clone, Debug)]
+struct Gap {
+    author: PubKey,
+    epoch: u8,
+    counter: u32,
+    /// When to ask, or to stop waiting for the member asked.
+    due: Millis,
+    /// Requests sent so far (0, 1 or 2), and the identity asked last.
+    tries: u8,
+    asked: Option<PubKey>,
+}
+
+/// What a member keeps and misses, to recover lost messages (§10.6, ADR-0024). Memory only.
+#[derive(Clone, Debug, Default)]
+struct Recovery {
+    kept: VecDeque<Kept>,
+    gaps: Vec<Gap>,
+    /// When we saw each member added: nobody gets back what was sent before it joined.
+    since: HashMap<PubKey, Millis>,
+}
+
+impl Recovery {
+    fn keep(&mut self, k: Kept) {
+        if self
+            .kept
+            .iter()
+            .any(|x| x.author == k.author && x.epoch == k.epoch && x.counter == k.counter)
+        {
+            return;
+        }
+        if self.kept.len() >= KEPT_MAX {
+            self.kept.pop_front();
+        }
+        self.kept.push_back(k);
+    }
+}
+
+/// What to do about one author's gaps (§10.6): (author, key epoch), whom to ask (None: give
+/// up), the counters asked, the counters no longer wanted.
+type GapPlan = ((PubKey, u8), Option<PubKey>, Vec<u32>, Vec<u32>);
+
+/// Message types worth recovering (§10.6): not positions or search packets.
+fn recoverable(body: &[u8]) -> bool {
+    matches!(
+        body.first(),
+        Some(&(content::TEXT | content::REPLY | content::REACTION | content::ANNOUNCE))
+    )
 }
 
 /// A group this node belongs to.
@@ -161,11 +269,14 @@ pub struct Group {
     my_key: [u8; 32],
     my_epoch: u8,
     my_counter: u32,
+    /// The next counter for what the core sends by itself (from [`AUX`]).
+    my_aux: u32,
     keys: HashMap<PubKey, MemberKeys>,
     partials: Vec<Partial>,
     /// Our (new) sender key still has to go to the members: restored before the node's
     /// identity was known.
     announce_key: bool,
+    recovery: Recovery,
 }
 
 impl Group {
@@ -203,6 +314,10 @@ impl Group {
                         v.extend_from_slice(&ks.floor.to_le_bytes());
                         v.extend_from_slice(&ks.highest.map_or(u64::MAX, u64::from).to_le_bytes());
                         v.extend_from_slice(&ks.seen.to_le_bytes());
+                        v.extend_from_slice(
+                            &ks.aux_highest.map_or(u64::MAX, u64::from).to_le_bytes(),
+                        );
+                        v.extend_from_slice(&ks.aux_seen.to_le_bytes());
                     }
                 }
             }
@@ -214,7 +329,8 @@ impl Group {
     /// epoch.
     fn from_snapshot(b: &[u8], my_key: [u8; 32]) -> Option<Self> {
         let (&version, mut b) = b.split_first()?;
-        if version != SNAPSHOT_VERSION {
+        // Version 2 had no window for the core's own traffic (§10.3).
+        if version != SNAPSHOT_VERSION && version != 2 {
             return None;
         }
         let b = &mut b;
@@ -246,12 +362,22 @@ impl Group {
                     let floor = u32::from_le_bytes(take(b, 4)?.try_into().ok()?);
                     let highest = u64::from_le_bytes(take(b, 8)?.try_into().ok()?);
                     let seen = u64::from_le_bytes(take(b, 8)?.try_into().ok()?);
+                    let (aux_highest, aux_seen) = if version >= 3 {
+                        (
+                            u64::from_le_bytes(take(b, 8)?.try_into().ok()?),
+                            u64::from_le_bytes(take(b, 8)?.try_into().ok()?),
+                        )
+                    } else {
+                        (u64::MAX, 0)
+                    };
                     *slot = Some(KeyState {
                         epoch,
                         key,
                         floor,
                         highest: u32::try_from(highest).ok(),
                         seen,
+                        aux_highest: u32::try_from(aux_highest).ok(),
+                        aux_seen,
                     });
                 }
             }
@@ -267,9 +393,11 @@ impl Group {
             my_key,
             my_epoch,
             my_counter: 0,
+            my_aux: AUX,
             keys,
             partials: Vec::new(),
             announce_key: true,
+            recovery: Recovery::default(),
         })
     }
 
@@ -279,6 +407,17 @@ impl Group {
             .iter()
             .filter(|m| self.keys.get(&m.key).is_some_and(|k| k.current.is_some()))
             .count()
+    }
+
+    /// Counter `counter` of `author` under key `epoch` can still be accepted (§10.6): not
+    /// received yet, and inside the replay window.
+    fn still_wanted(&self, author: &PubKey, epoch: u8, counter: u32) -> bool {
+        self.keys.get(author).is_some_and(|mk| {
+            [&mk.current, &mk.previous]
+                .into_iter()
+                .flatten()
+                .any(|k| k.epoch == epoch && k.accepts(counter))
+        })
     }
 
     fn is_member(&self, k: &PubKey) -> bool {
@@ -509,6 +648,18 @@ pub enum Control {
         gid: GroupId,
         entries: Vec<(PubKey, u8, [u8; 32], u32)>,
     },
+    /// Counters of `author`'s messages under `epoch` that never arrived (§10.6).
+    Missing {
+        gid: GroupId,
+        author: PubKey,
+        epoch: u8,
+        counters: Vec<u32>,
+    },
+    /// Envelope payloads as they were on the air, handed on (§10.6).
+    Resend {
+        gid: GroupId,
+        payloads: Vec<Vec<u8>>,
+    },
 }
 
 impl Control {
@@ -532,6 +683,17 @@ impl Control {
             }
             content::SENDER_KEYS => {
                 decode_sender_keys(datagram).map(|(gid, entries)| Self::SenderKeys { gid, entries })
+            }
+            content::GROUP_MISSING => {
+                decode_missing(datagram).map(|(gid, author, epoch, counters)| Self::Missing {
+                    gid,
+                    author,
+                    epoch,
+                    counters,
+                })
+            }
+            content::GROUP_RESEND => {
+                decode_resend(datagram).map(|(gid, payloads)| Self::Resend { gid, payloads })
             }
             _ => None,
         }
@@ -562,8 +724,77 @@ impl Control {
                 next_counter,
             } => encode_sender_key(gid, *epoch, key, *next_counter),
             Self::SenderKeys { gid, entries } => encode_sender_keys(gid, entries),
+            Self::Missing {
+                gid,
+                author,
+                epoch,
+                counters,
+            } => encode_missing(gid, author, *epoch, counters),
+            Self::Resend { gid, payloads } => encode_resend(gid, payloads),
         }
     }
+}
+
+/// GROUP_MISSING (§10.6): `gid ‖ author ‖ key_epoch ‖ n (1..8) ‖ n × counter u32`.
+fn encode_missing(gid: &GroupId, author: &PubKey, epoch: u8, counters: &[u32]) -> Vec<u8> {
+    let mut v = Vec::with_capacity(51 + 4 * counters.len());
+    v.push(content::GROUP_MISSING);
+    v.extend_from_slice(gid);
+    v.extend_from_slice(author);
+    v.push(epoch);
+    v.push(counters.len().min(255) as u8);
+    for c in counters {
+        v.extend_from_slice(&c.to_le_bytes());
+    }
+    v
+}
+
+fn decode_missing(datagram: &[u8]) -> Option<(GroupId, PubKey, u8, Vec<u32>)> {
+    let mut b = datagram.strip_prefix(&[content::GROUP_MISSING])?;
+    let gid: GroupId = take(&mut b, 16)?.try_into().ok()?;
+    let author: PubKey = take(&mut b, 32)?.try_into().ok()?;
+    let epoch = *take(&mut b, 1)?.first()?;
+    let n = usize::from(*take(&mut b, 1)?.first()?);
+    if !(1..=MISSING_MAX).contains(&n) || b.len() != 4 * n {
+        return None;
+    }
+    let counters = b
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    Some((gid, author, epoch, counters))
+}
+
+/// GROUP_RESEND (§10.6): `gid ‖ n (1..16) ‖ n × (len (1..159) ‖ payload)`.
+fn encode_resend(gid: &GroupId, payloads: &[Vec<u8>]) -> Vec<u8> {
+    let mut v = vec![content::GROUP_RESEND];
+    v.extend_from_slice(gid);
+    v.push(payloads.len().min(255) as u8);
+    for p in payloads {
+        v.push(p.len().min(255) as u8);
+        v.extend_from_slice(p);
+    }
+    v
+}
+
+fn decode_resend(datagram: &[u8]) -> Option<(GroupId, Vec<Vec<u8>>)> {
+    let mut b = datagram.strip_prefix(&[content::GROUP_RESEND])?;
+    let gid: GroupId = take(&mut b, 16)?.try_into().ok()?;
+    let n = usize::from(*take(&mut b, 1)?.first()?);
+    if !(1..=RESEND_MAX).contains(&n) {
+        return None;
+    }
+    let mut payloads = Vec::with_capacity(n);
+    for _ in 0..n {
+        let len = usize::from(*take(&mut b, 1)?.first()?);
+        if !(1..=group::PAYLOAD_MAX).contains(&len) {
+            return None;
+        }
+        payloads.push(take(&mut b, len)?.to_vec());
+    }
+    b.is_empty().then_some((gid, payloads))
 }
 
 /// `new` merged into `queued`, both waiting for the same peer (§10.2): a newer state of the
@@ -668,6 +899,12 @@ impl Core {
     }
 
     /// How many times each group message is flooded (1 or 2).
+    /// Whether this member asks for the group messages it missed (§10.6): on by default, off
+    /// only to measure what recovery brings.
+    pub fn set_group_recovery(&mut self, on: bool) {
+        self.group_recovery = on;
+    }
+
     pub fn set_group_copies(&mut self, copies: u8) {
         self.group_copies = copies.clamp(1, 2);
     }
@@ -727,9 +964,11 @@ impl Core {
             my_key,
             my_epoch: 0,
             my_counter: 0,
+            my_aux: AUX,
             keys: HashMap::new(),
             partials: Vec::new(),
             announce_key: false,
+            recovery: Recovery::default(),
         };
         self.groups.insert(gid, group);
         self.dirty_groups.insert(gid);
@@ -776,6 +1015,9 @@ impl Core {
         let ids: Vec<PubKey> = added.iter().map(|m| m.key).collect();
         let subjects = added.iter().map(|m| (m.node, m.name.clone())).collect();
         g.members.extend(added);
+        for id in &ids {
+            g.recovery.since.insert(*id, now);
+        }
         g.epoch += 1;
         self.dirty_groups.insert(*gid);
         self.broadcast_state(gid, &[], None);
@@ -1097,6 +1339,7 @@ impl Core {
             g.my_key = key;
             g.my_epoch = g.my_epoch.wrapping_add(1);
             g.my_counter = 0;
+            g.my_aux = AUX;
         }
         self.dirty_groups.insert(*gid);
         self.send_my_key(gid, None);
@@ -1134,7 +1377,179 @@ impl Core {
                     self.on_sender_keys(&from, gid, entries, now);
                 }
             }
+            Some(&content::GROUP_MISSING) => {
+                if let Some((gid, author, epoch, counters)) = decode_missing(datagram) {
+                    let from = *from;
+                    self.on_group_missing(&node, &from, &gid, &author, epoch, &counters);
+                }
+            }
+            Some(&content::GROUP_RESEND) => {
+                if let Some((gid, payloads)) = decode_resend(datagram) {
+                    let from = *from;
+                    self.on_group_resend(&from, &gid, &payloads, now);
+                }
+            }
             _ => {}
+        }
+    }
+
+    /// A member asks for messages it missed (§10.6): what we kept of them since it joined.
+    fn on_group_missing(
+        &mut self,
+        node: &PubKey,
+        from: &PubKey,
+        gid: &GroupId,
+        author: &PubKey,
+        epoch: u8,
+        counters: &[u32],
+    ) {
+        let Some(g) = self.groups.get(gid) else {
+            return;
+        };
+        if !g.is_member(from) {
+            return;
+        }
+        let since = g.recovery.since.get(from).copied().unwrap_or(0);
+        let mut payloads: Vec<Vec<u8>> = Vec::new();
+        for k in g.recovery.kept.iter().filter(|k| {
+            k.author == *author
+                && k.epoch == epoch
+                && counters.contains(&k.counter)
+                && k.at >= since
+        }) {
+            if payloads.len() + k.payloads.len() > RESEND_MAX {
+                break;
+            }
+            payloads.extend(k.payloads.iter().cloned());
+        }
+        if !payloads.is_empty() {
+            let d = encode_resend(gid, &payloads);
+            self.enqueue_internal(node, d);
+        }
+    }
+
+    /// Payloads a member handed on (§10.6): through the envelope receiver like any other.
+    fn on_group_resend(&mut self, from: &PubKey, gid: &GroupId, payloads: &[Vec<u8>], now: Millis) {
+        let Some(g) = self.groups.get(gid) else {
+            return;
+        };
+        if !g.is_member(from) {
+            return;
+        }
+        let gh = g.gid_hash();
+        for p in payloads {
+            if group::parse(p).is_some_and(|(h, _)| h.gid_hash == gh) {
+                self.receive_envelope(p, 0, 0, true, now);
+            }
+        }
+        // Still missing from what that member had: the author next, if it was not the author.
+        if let Some(g) = self.groups.get_mut(gid) {
+            g.recovery.gaps.retain_mut(|x| {
+                if x.asked != Some(*from) {
+                    return true;
+                }
+                x.due = now;
+                x.author != *from && x.tries < 2
+            });
+        }
+    }
+
+    /// Asks for the gaps that are due, and gives up on those asked twice (§10.6).
+    fn ask_missing(&mut self, now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        if !self.group_recovery {
+            for g in self.groups.values_mut() {
+                g.recovery.gaps.clear();
+            }
+            return;
+        }
+        let mut requests: Vec<(PubKey, Vec<u8>)> = Vec::new();
+        let gids: Vec<GroupId> = self.groups.keys().copied().collect();
+        for gid in gids {
+            let Some(g) = self.groups.get(&gid) else {
+                continue;
+            };
+            let mut due: Vec<(PubKey, u8)> = Vec::new();
+            for x in g.recovery.gaps.iter().filter(|x| x.due <= now) {
+                if !due.contains(&(x.author, x.epoch)) {
+                    due.push((x.author, x.epoch));
+                }
+            }
+            if due.is_empty() {
+                continue;
+            }
+            let node_of = |id: &PubKey| g.members.iter().find(|m| m.key == *id).map(|m| m.node);
+            // (author, epoch) → whom to ask (None: give up), the counters asked, and those that
+            // arrived or left the window meanwhile.
+            let mut plan: Vec<GapPlan> = Vec::new();
+            for (author, epoch) in due {
+                let (wanted, stale): (Vec<&Gap>, Vec<&Gap>) = g
+                    .recovery
+                    .gaps
+                    .iter()
+                    .filter(|x| x.author == author && x.epoch == epoch && x.due <= now)
+                    .partition(|x| g.still_wanted(&author, epoch, x.counter));
+                let stale: Vec<u32> = stale.iter().map(|x| x.counter).collect();
+                let open: Vec<u32> = wanted.iter().map(|x| x.counter).take(MISSING_MAX).collect();
+                let first = g
+                    .recovery
+                    .gaps
+                    .iter()
+                    .find(|x| x.author == author && x.epoch == epoch && x.due <= now);
+                let (tries, previous) = first.map_or((2, None), |x| (x.tries, x.asked));
+                let target = match tries {
+                    _ if open.is_empty() => None,
+                    0 if me == g.admin || author == g.admin => Some(author),
+                    0 if node_of(&author).is_some_and(|n| self.has_session(&n)) => Some(author),
+                    0 => Some(g.admin),
+                    1 => {
+                        let other = if previous == Some(author) {
+                            g.admin
+                        } else {
+                            author
+                        };
+                        (Some(other) != previous && other != me).then_some(other)
+                    }
+                    _ => None,
+                };
+                plan.push(((author, epoch), target, open, stale));
+            }
+            let mut asked: Vec<GapPlan> = Vec::new();
+            for ((author, epoch), target, open, stale) in plan {
+                match target.and_then(|t| node_of(&t).map(|n| (t, n))) {
+                    Some((t, n)) => {
+                        requests.push((n, encode_missing(&gid, &author, epoch, &open)));
+                        asked.push(((author, epoch), Some(t), open, stale));
+                    }
+                    None => asked.push(((author, epoch), None, Vec::new(), stale)),
+                }
+            }
+            if let Some(g) = self.groups.get_mut(&gid) {
+                for ((author, epoch), target, open, stale) in asked {
+                    g.recovery.gaps.retain_mut(|x| {
+                        if x.author != author || x.epoch != epoch || x.due > now {
+                            return true;
+                        }
+                        match target {
+                            _ if stale.contains(&x.counter) => false,
+                            Some(t) if open.contains(&x.counter) => {
+                                x.tries += 1;
+                                x.asked = Some(t);
+                                x.due = now + ANSWER_MS;
+                                true
+                            }
+                            // More than one request holds: in the next one.
+                            Some(_) => true,
+                            None => false,
+                        }
+                    });
+                }
+            }
+        }
+        for (node, d) in requests {
+            self.enqueue_internal(&node, d);
         }
     }
 
@@ -1169,9 +1584,11 @@ impl Core {
                         my_key,
                         my_epoch: 0,
                         my_counter: 0,
+                        my_aux: AUX,
                         keys: HashMap::new(),
                         partials: Vec::new(),
                         announce_key: false,
+                        recovery: Recovery::default(),
                     },
                 );
                 // Our first key goes to the admin, who forwards it (§10.2).
@@ -1218,6 +1635,11 @@ impl Core {
                 g.name = state.name;
                 g.epoch = state.epoch;
                 g.members = state.members;
+                for m in &g.members {
+                    if !old.contains(&m.key) {
+                        g.recovery.since.insert(m.key, now);
+                    }
+                }
                 for k in &removed {
                     g.keys.remove(k);
                 }
@@ -1471,14 +1893,24 @@ impl Core {
             self.prv.ok_or(Error::NoIdentity)?,
         );
         let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
-        let counter = g.my_counter;
+        // Messages from 0, what the core sends by itself from AUX: a gap among messages is
+        // then a lost message (§10.3, §10.6).
+        let counter = if user { g.my_counter } else { g.my_aux };
         let (epoch_b, counter_b) = ([g.my_epoch], counter.to_le_bytes());
         let sig =
             sign(&prv, &signed_parts(gid, &epoch_b, &counter_b, body)).ok_or(Error::NoIdentity)?;
         let mut plain = body.to_vec();
         plain.extend_from_slice(&sig);
         let total = group::fragments_for(plain.len()).ok_or(Error::TooLarge)?;
-        g.my_counter = g.my_counter.checked_add(1).ok_or(Error::TooLarge)?;
+        if user {
+            g.my_counter = g
+                .my_counter
+                .checked_add(1)
+                .filter(|c| *c < AUX)
+                .ok_or(Error::TooLarge)?;
+        } else {
+            g.my_aux = g.my_aux.checked_add(1).ok_or(Error::TooLarge)?;
+        }
         let (key, epoch, gh) = (g.my_key, g.my_epoch, g.gid_hash());
         // Each frame waits until the repeaters have re-flooded the previous one, with jitter.
         let spacing = 10 * self.radio.airtime_us(group::PAYLOAD_MAX + 6) / 1000;
@@ -1486,6 +1918,8 @@ impl Core {
         let id = self.next_id;
         self.next_id += 1;
         let mut seq = 0u8;
+        // Our own message as it goes on the air, kept for members who miss it (§10.6).
+        let mut own: Vec<Vec<u8>> = Vec::new();
         for copy in 0..self.group_copies {
             for (index, chunk) in plain.chunks(group::FRAGMENT_PLAIN_MAX).enumerate() {
                 let header = GroupHeader {
@@ -1501,6 +1935,9 @@ impl Core {
                 let Ok(n) = group::seal(&key, &header, chunk, &mut out) else {
                     return Err(Error::TooLarge);
                 };
+                if copy == 0 {
+                    own.push(out.get(..n).unwrap_or(&[]).to_vec());
+                }
                 let raw = self.flood_frame(out.get(..n).unwrap_or(&[]));
                 self.group_tx.push_back(GroupFrame {
                     due,
@@ -1514,6 +1951,17 @@ impl Core {
                 seq = seq.saturating_add(1);
                 due += spacing + Millis::from(self.rng.next_u32()) % spacing.max(1);
             }
+        }
+        if recoverable(body)
+            && let Some(g) = self.groups.get_mut(gid)
+        {
+            g.recovery.keep(Kept {
+                author: me,
+                epoch,
+                counter,
+                payloads: own,
+                at: now,
+            });
         }
         self.tick(now);
         Ok(id)
@@ -1568,16 +2016,33 @@ impl Core {
         }
         for g in self.groups.values_mut() {
             g.partials.retain(|p| p.at + PARTIAL_MS > now);
+            g.recovery.kept.retain(|k| k.at + KEPT_MS > now);
         }
         self.held.retain(|h| h.at + HELD_MS > now);
+        self.ask_missing(now);
     }
 
     pub(crate) fn next_group_wakeup(&self) -> Option<Millis> {
-        self.group_tx.front().map(|f| f.due.max(self.next_slot))
+        let frames = self.group_tx.front().map(|f| f.due.max(self.next_slot));
+        let gaps = self
+            .groups
+            .values()
+            .flat_map(|g| g.recovery.gaps.iter().map(|x| x.due))
+            .min();
+        match (frames, gaps) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     /// A group envelope heard on the air (§10.3).
     pub(crate) fn on_group_envelope(&mut self, payload: &[u8], snr4: i8, rssi: i8, now: Millis) {
+        self.receive_envelope(payload, snr4, rssi, false, now);
+    }
+
+    /// A group envelope, heard on the air or handed on by a member (`late`, §10.6): the same
+    /// checks either way.
+    fn receive_envelope(&mut self, payload: &[u8], snr4: i8, rssi: i8, late: bool, now: Millis) {
         let Some(me) = self.key else {
             return;
         };
@@ -1640,7 +2105,7 @@ impl Core {
                         continue;
                     };
                     let message = if hdr.total == 1 {
-                        Some(plain.to_vec())
+                        Some((plain.to_vec(), vec![payload.to_vec()]))
                     } else {
                         let pos = g.partials.iter().position(|p| {
                             p.member == member
@@ -1655,6 +2120,7 @@ impl Core {
                                     counter: hdr.counter,
                                     index: hdr.index,
                                     data: plain.to_vec(),
+                                    payload: payload.to_vec(),
                                     at: now,
                                 });
                                 None
@@ -1666,13 +2132,18 @@ impl Core {
                                 } else {
                                     (plain, p.data.as_slice())
                                 };
-                                Some([first, second].concat())
+                                let payloads = if p.index == 0 {
+                                    vec![p.payload.clone(), payload.to_vec()]
+                                } else {
+                                    vec![payload.to_vec(), p.payload.clone()]
+                                };
+                                Some(([first, second].concat(), payloads))
                             }
                             // Another copy of a fragment we already hold.
                             Some(_) => None,
                         }
                     };
-                    let Some(message) = message else {
+                    let Some((message, payloads)) = message else {
                         return;
                     };
                     // The signature first: every member holds this sender key, only the sender
@@ -1688,22 +2159,72 @@ impl Core {
                     ) {
                         return;
                     }
+                    let skipped = ks.skipped_before(hdr.counter);
                     ks.mark(hdr.counter);
-                    delivered = Some((gid, member, member_node, body.to_vec()));
+                    delivered = Some((
+                        gid,
+                        member,
+                        member_node,
+                        body.to_vec(),
+                        (payloads, hdr.key_epoch, hdr.counter, skipped),
+                    ));
                     break 'gids;
                 }
             }
         }
-        let Some((gid, member, member_node, body)) = delivered else {
+        let Some((gid, member, member_node, body, (payloads, epoch, counter, skipped))) = delivered
+        else {
             return;
         };
         self.dirty_groups.insert(gid);
+        // Gaps it fills or opens, and the message kept for members who miss it (§10.6).
+        let jitter = if skipped.is_empty() {
+            0
+        } else {
+            Millis::from(self.rng.next_u32()) % ASK_AFTER_MS
+        };
+        if let Some(g) = self.groups.get_mut(&gid) {
+            let r = &mut g.recovery;
+            r.gaps
+                .retain(|x| !(x.author == member && x.epoch == epoch && x.counter == counter));
+            for c in skipped {
+                if r.gaps.len() >= GAPS_MAX {
+                    break;
+                }
+                if !r
+                    .gaps
+                    .iter()
+                    .any(|x| x.author == member && x.epoch == epoch && x.counter == c)
+                {
+                    r.gaps.push(Gap {
+                        author: member,
+                        epoch,
+                        counter: c,
+                        due: now + ASK_AFTER_MS + jitter,
+                        tries: 0,
+                        asked: None,
+                    });
+                }
+            }
+            if recoverable(&body) {
+                r.keep(Kept {
+                    author: member,
+                    epoch,
+                    counter,
+                    payloads,
+                    at: now,
+                });
+            }
+        }
         // Local notices never come from the air (§6).
         if Content::is_local(&body) {
             return;
         }
-        // Its direct copies were receptions of that member (search, §11.2).
-        self.search_attribute(&h, member, member_node, now);
+        // Its direct copies were receptions of that member (search, §11.2); a payload handed
+        // on by a member was not heard.
+        if !late {
+            self.search_attribute(&h, member, member_node, now);
+        }
         if body.first() == Some(&content::SEARCH) {
             if let Some(s) = body.get(1..).and_then(Search::decode) {
                 self.on_search(gid, member, member_node, s, now);
@@ -1732,6 +2253,7 @@ impl Core {
                 content,
                 snr4,
                 rssi,
+                late,
             }),
             None => {}
         }
@@ -1833,9 +2355,11 @@ mod tests {
                 my_key: [0; 32],
                 my_epoch: 0,
                 my_counter: 0,
+                my_aux: AUX,
                 keys,
                 partials: Vec::new(),
                 announce_key: false,
+                recovery: Recovery::default(),
             },
         );
         core
@@ -2003,6 +2527,153 @@ mod tests {
         // From its owner, any other epoch is adopted.
         core.on_sender_key(&owner, GID, 0, [4; 32], 0, 0);
         assert_eq!(epoch_of(&core), Some((0, [4; 32])));
+    }
+
+    /// Group events: (text, late).
+    fn texts_late(core: &mut Core) -> Vec<(String, bool)> {
+        let mut v = Vec::new();
+        while let Some(e) = core.poll_event() {
+            if let Event::GroupMessage {
+                content: Content::Text { text, .. },
+                late,
+                ..
+            } = e
+            {
+                v.push((text, late));
+            }
+        }
+        v
+    }
+
+    /// A member with a real identity, its node a contact of `core` that the session knows.
+    fn member(core: &mut Core, seed: u8, node: PubKey) -> ([u8; 64], PubKey) {
+        let prv = expand_seed(&[seed; 32]);
+        let id = public_key(&prv);
+        core.add_contact(node, &format!("n{seed}"), None);
+        core.set_identity(&node, id, false);
+        (prv, id)
+    }
+
+    /// A gap in a member's counters is asked for, and the envelope handed back fills it, marked
+    /// late (§10.6); the admin asks the author itself.
+    #[test]
+    fn a_lost_message_comes_back() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 0)]);
+        member(&mut core, 7, [1; 32]);
+        let e0 = envelope(&bob, &[10; 32], 0, &bob_prv, "leaving the col");
+        let e1 = envelope(&bob, &[10; 32], 1, &bob_prv, "lost at the hub");
+        let e2 = envelope(&bob, &[10; 32], 2, &bob_prv, "at the refuge");
+        core.on_group_envelope(&e0, 0, 0, 0);
+        core.on_group_envelope(&e2, 0, 0, 1_000);
+        assert_eq!(texts(&mut core), vec!["leaving the col", "at the refuge"]);
+        // Not before 20 s: the second copy may still come.
+        core.ask_missing(15_000);
+        assert!(core.queued(&[1; 32]).is_empty());
+        core.ask_missing(41_000);
+        let asked: Vec<_> = core
+            .queued(&[1; 32])
+            .iter()
+            .filter_map(|d| decode_missing(d))
+            .collect();
+        assert_eq!(asked, vec![(GID, bob, 0, vec![1])]);
+        core.on_group_control(
+            &[1; 32],
+            &encode_resend(&GID, std::slice::from_ref(&e1)),
+            50_000,
+        );
+        assert_eq!(
+            texts_late(&mut core),
+            vec![("lost at the hub".into(), true)]
+        );
+        assert!(core.groups[&GID].recovery.gaps.is_empty());
+        // Handed again: already there.
+        core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
+        assert!(texts(&mut core).is_empty());
+    }
+
+    /// A relayed envelope is checked like one heard (§10.6): a forgery or a non-member's
+    /// answer delivers nothing.
+    #[test]
+    fn relayed_envelopes_are_checked() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let (carol_prv, carol) = member(&mut probe, 8, [2; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 0), (carol, [20; 32], 0)]);
+        member(&mut core, 7, [1; 32]);
+        member(&mut core, 8, [2; 32]);
+        let (_, stranger) = member(&mut core, 9, [3; 32]);
+        assert!(!core.groups[&GID].is_member(&stranger));
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 0, &bob_prv, "a"), 0, 0, 0);
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 2, &bob_prv, "c"), 0, 0, 0);
+        texts(&mut core);
+        // Carol holds Bob's key but cannot sign as Bob.
+        let forged = envelope(&bob, &[10; 32], 1, &carol_prv, "forged");
+        core.on_group_control(&[2; 32], &encode_resend(&GID, &[forged]), 1_000);
+        assert!(texts(&mut core).is_empty());
+        // The real one, from someone outside the group: ignored.
+        let real = envelope(&bob, &[10; 32], 1, &bob_prv, "b");
+        core.on_group_control(
+            &[3; 32],
+            &encode_resend(&GID, std::slice::from_ref(&real)),
+            2_000,
+        );
+        assert!(texts(&mut core).is_empty());
+        // From Carol, a member: accepted.
+        core.on_group_control(&[2; 32], &encode_resend(&GID, &[real]), 3_000);
+        assert_eq!(texts(&mut core), vec!["b"]);
+    }
+
+    /// A member answers from what it kept, never with what was sent before the asker joined
+    /// (§10.6).
+    #[test]
+    fn answers_skip_what_came_before_joining() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let (_, carol) = member(&mut probe, 8, [2; 32]);
+        let (_, dave) = member(&mut probe, 10, [4; 32]);
+        let mut core = core_with_group(&[
+            (bob, [10; 32], 0),
+            (carol, [20; 32], 0),
+            (dave, [30; 32], 0),
+        ]);
+        member(&mut core, 7, [1; 32]);
+        member(&mut core, 8, [2; 32]);
+        member(&mut core, 10, [4; 32]);
+        let e0 = envelope(&bob, &[10; 32], 0, &bob_prv, "before Dave");
+        core.on_group_envelope(&e0, 0, 0, 1_000);
+        // Dave was added after it was heard; Carol was there.
+        core.groups
+            .get_mut(&GID)
+            .unwrap()
+            .recovery
+            .since
+            .insert(dave, 5_000);
+        let ask = encode_missing(&GID, &bob, 0, &[0]);
+        core.on_group_control(&[4; 32], &ask, 6_000);
+        assert!(core.queued(&[4; 32]).is_empty());
+        core.on_group_control(&[2; 32], &ask, 6_000);
+        let answer: Vec<_> = core
+            .queued(&[2; 32])
+            .iter()
+            .filter_map(|d| decode_resend(d))
+            .collect();
+        assert_eq!(answer, vec![(GID, vec![e0])]);
+    }
+
+    /// Positions are not kept: a gap that was a position gets no answer.
+    #[test]
+    fn only_messages_are_kept() {
+        assert!(recoverable(
+            &Content::Text {
+                sent_at: 1,
+                text: "x".into()
+            }
+            .encode()
+        ));
+        assert!(!recoverable(&[content::LOCATION, 0, 0]));
+        assert!(!recoverable(&[content::SEARCH, 1]));
     }
 
     /// A member who holds Bob's sender key (every member does) forges a message in Bob's name
