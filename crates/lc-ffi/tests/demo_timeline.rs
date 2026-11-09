@@ -34,6 +34,11 @@ fn timeline() {
                         Message::Announce { name, size, .. } => {
                             format!("announce {name:?} {size} B")
                         }
+                        Message::Notice {
+                            kind, actor_name, ..
+                        } => {
+                            format!("notice {kind} by {actor_name}")
+                        }
                         Message::Other { content_type, .. } => format!("other {content_type}"),
                     };
                     println!(

@@ -569,3 +569,196 @@ fn reply_and_reaction_costs() {
         );
     }
 }
+
+/// Notices drained from `node`'s events: (kind, actor name, subject names, text). The network
+/// runs a moment first: a node's events are collected when it next wakes.
+fn notices(net: &mut Net, node: usize) -> Vec<(u8, String, Vec<String>, String)> {
+    net.run_until(net.now + 1_000, |_| false);
+    net.take_events(node)
+        .into_iter()
+        .filter_map(|e| match e {
+            Event::GroupChanged { notice: n, .. } => Some((
+                n.kind,
+                n.actor_name,
+                n.subjects.into_iter().map(|(_, name)| name).collect(),
+                n.text,
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn group_name(net: &Net, node: usize, gid: &GroupId) -> Option<String> {
+    net.nodes[node]
+        .core
+        .as_ref()?
+        .groups()
+        .find(|g| g.gid == *gid)
+        .map(|g| g.name.clone())
+}
+
+/// Every membership change becomes a notice on each phone concerned, with who did it
+/// (ADR-0021, §10.1 cause).
+#[test]
+fn membership_notices() {
+    use lc_core::content::notice::*;
+    let (mut net, m) = star(41);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol, dave) = (m[0], m[1], m[2], m[3]);
+    let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)));
+    assert_eq!(
+        notices(&mut net, alice),
+        vec![(CREATED, "alice".into(), vec![], String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, bob),
+        vec![(ADDED_US, "alice".into(), vec![], String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, carol),
+        vec![(ADDED_US, "alice".into(), vec![], String::new())]
+    );
+
+    net.with_core(alice, |c, now| c.add_members(&gid, &[keys[3]], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    assert_eq!(
+        notices(&mut net, alice),
+        vec![(JOINED, "alice".into(), s(&["dave"]), String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, bob),
+        vec![(JOINED, "alice".into(), s(&["dave"]), String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, carol),
+        vec![(JOINED, "alice".into(), s(&["dave"]), String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, dave),
+        vec![(ADDED_US, "alice".into(), vec![], String::new())]
+    );
+
+    // Only the admin renames.
+    assert_eq!(
+        net.with_core(bob, |c, now| c.rename_group(&gid, "Mine", now)),
+        Some(Err(Error::NotAllowed))
+    );
+    net.with_core(alice, |c, now| {
+        c.rename_group(&gid, "Vercors, dimanche", now)
+    })
+    .unwrap()
+    .unwrap();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        [bob, carol]
+            .iter()
+            .all(|&x| group_name(n, x, &gid).as_deref() == Some("Vercors, dimanche"))
+    }));
+    let renamed = (
+        RENAMED,
+        "alice".to_owned(),
+        vec![],
+        "Vercors, dimanche".to_owned(),
+    );
+    assert_eq!(notices(&mut net, alice), vec![renamed.clone()]);
+    assert_eq!(notices(&mut net, bob), vec![renamed.clone()]);
+    assert_eq!(notices(&mut net, carol), vec![renamed]);
+
+    // Carol leaves: "carol left" for the others.
+    net.with_core(carol, |c, now| c.leave_group(&gid, now))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        notices(&mut net, carol),
+        vec![(WE_LEFT, "carol".into(), vec![], String::new())]
+    );
+    let count = |n: &Net, i: usize| {
+        n.nodes[i]
+            .core
+            .as_ref()
+            .and_then(|c| c.groups().find(|g| g.gid == gid).map(|g| g.members.len()))
+    };
+    assert!(net.run_until(net.now + 60 * MIN, |n| count(n, bob) == Some(3)));
+    let left = (LEFT, "carol".to_owned(), s(&["carol"]), String::new());
+    assert_eq!(notices(&mut net, alice), vec![left.clone()]);
+    assert_eq!(notices(&mut net, bob), vec![left]);
+
+    // Alice removes Dave: "alice removed dave"; Dave is told he was removed.
+    net.with_core(alice, |c, now| c.remove_member(&gid, &keys[3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| {
+        count(n, bob) == Some(2) && count(n, dave).is_none()
+    }));
+    let removed = (REMOVED, "alice".to_owned(), s(&["dave"]), String::new());
+    assert_eq!(notices(&mut net, alice), vec![removed.clone()]);
+    assert_eq!(notices(&mut net, bob), vec![removed]);
+    // Dave saw the rename and Carol leave before he was removed.
+    assert_eq!(
+        notices(&mut net, dave),
+        vec![
+            (RENAMED, "alice".into(), vec![], "Vercors, dimanche".into()),
+            (LEFT, "carol".into(), s(&["carol"]), String::new()),
+            (REMOVED_US, "alice".into(), vec![], String::new()),
+        ]
+    );
+
+    // Alice closes the group.
+    net.with_core(alice, |c, now| c.leave_group(&gid, now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| count(n, bob).is_none()));
+    assert_eq!(
+        notices(&mut net, alice),
+        vec![(CLOSED, "alice".into(), vec![], String::new())]
+    );
+    assert_eq!(
+        notices(&mut net, bob),
+        vec![(CLOSED, "alice".into(), vec![], String::new())]
+    );
+}
+
+/// Local notices (0xE0–0xEF, §6) never come from the air: a peer that sends one, pairwise or
+/// in the group, has it dropped.
+#[test]
+fn notices_are_never_received() {
+    let (mut net, m) = star(42);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("g", &keys[1..2], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..2], &gid)));
+    net.take_events(m[1]);
+    let fake = Content::Notice(lc_core::content::Notice {
+        kind: lc_core::content::notice::REMOVED_US,
+        actor: [0; 32],
+        actor_name: "the admin".into(),
+        subjects: vec![],
+        text: String::new(),
+    })
+    .encode();
+    let id = net
+        .with_core(m[0], |c, now| c.send_datagram(&keys[1], fake.clone(), now))
+        .unwrap()
+        .unwrap();
+    net.with_core(m[0], |c, now| c.send_group_datagram(&gid, &fake, now))
+        .unwrap()
+        .unwrap();
+    let mut delivered = false;
+    net.run_until(net.now + 10 * MIN, |n| {
+        delivered |= n.take_events(m[0]).contains(&Event::Delivered { id });
+        false
+    });
+    assert!(delivered, "the datagram did arrive");
+    assert!(!net.take_events(m[1]).iter().any(|e| matches!(
+        e,
+        Event::Received { .. } | Event::GroupMessage { .. } | Event::GroupChanged { .. }
+    )));
+}

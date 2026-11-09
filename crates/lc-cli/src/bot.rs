@@ -146,8 +146,9 @@ impl Bot {
             Content::Text { text, .. } | Content::Reply { text, .. } => {
                 format!("echo: {text} · {radio}")
             }
-            // A reaction is not answered (it would be an endless exchange).
-            Content::Reaction { .. } => return None,
+            // A reaction is not answered (it would be an endless exchange); a notice never
+            // comes from the air.
+            Content::Reaction { .. } | Content::Notice(_) => return None,
             Content::Voice { frames, data, .. } => format!(
                 "got your voice message: {:.1} s in {} bytes · {radio}",
                 f32::from(*frames) * 0.04,

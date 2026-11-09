@@ -226,6 +226,7 @@ fn describe(core: &Core, e: &Event) -> String {
                     format!("reacts {emoji} to {}", hex::encode(target))
                 }
                 Content::Location(p) => describe_position(p),
+                Content::Notice(n) => format!("notice {}", n.kind),
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",
                     f32::from(*frames) * 0.04,
@@ -270,6 +271,13 @@ fn describe(core: &Core, e: &Event) -> String {
         ),
         Event::GroupUpdated { gid } => format!("group {} updated", hex::encode(&gid[..4])),
         Event::GroupLeft { gid } => format!("removed from group {}", hex::encode(&gid[..4])),
+        Event::GroupChanged { gid, notice } => format!(
+            "group {}: change {} by {} ({} people)",
+            hex::encode(&gid[..4]),
+            notice.kind,
+            notice.actor_name,
+            notice.subjects.len()
+        ),
         Event::MemberJoined { gid, node } => format!(
             "{} joined group {} with an invitation",
             name_of(core, node),
@@ -290,6 +298,7 @@ fn describe(core: &Core, e: &Event) -> String {
                     format!("reacts {emoji} to {}", hex::encode(target))
                 }
                 Content::Location(p) => describe_position(p),
+                Content::Notice(n) => format!("notice {}", n.kind),
                 Content::Voice { frames, data, .. } => format!(
                     "voice message, {:.1} s, {} bytes",
                     f32::from(*frames) * 0.04,

@@ -327,10 +327,29 @@ pub enum Message {
         providers: Vec<Provider>,
         name: String,
     },
+    /// A membership change in a group, recorded by this phone (ADR-0021): `kind` is one of
+    /// `lc_core::content::notice` (1 created, 2 added us, 3 joined, 4 left, 5 removed, 6 no
+    /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left).
+    Notice {
+        kind: u8,
+        /// Who did it (a node, ours when we did), and their name then.
+        actor: Vec<u8>,
+        actor_name: String,
+        /// Whom it concerns.
+        subjects: Vec<NoticeSubject>,
+        text: String,
+    },
     Other {
         content_type: u8,
         body: Vec<u8>,
     },
+}
+
+/// Someone a notice is about: their node and their name then.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct NoticeSubject {
+    pub node: Vec<u8>,
+    pub name: String,
 }
 
 /// Where announced content can be fetched: transport 1 iroh, 2 Tor.
@@ -413,6 +432,20 @@ impl From<Content> for Message {
                     body: v,
                 }
             }
+            Content::Notice(n) => Self::Notice {
+                kind: n.kind,
+                actor: n.actor.to_vec(),
+                actor_name: n.actor_name,
+                subjects: n
+                    .subjects
+                    .into_iter()
+                    .map(|(node, name)| NoticeSubject {
+                        node: node.to_vec(),
+                        name,
+                    })
+                    .collect(),
+                text: n.text,
+            },
             Content::Other { content_type, body } => Self::Other { content_type, body },
         }
     }
@@ -753,6 +786,8 @@ impl LichenEvent {
             },
             Event::GroupUpdated { gid } => Self::GroupUpdated { gid: gid.to_vec() },
             Event::GroupLeft { gid } => Self::GroupLeft { gid: gid.to_vec() },
+            // Recorded as a message instead (`on_event`).
+            Event::GroupChanged { gid, .. } => Self::GroupUpdated { gid: gid.to_vec() },
             Event::MemberJoined { gid, node } => Self::MemberJoined {
                 gid: gid.to_vec(),
                 node: node.to_vec(),
@@ -1699,6 +1734,24 @@ impl Inner {
                     msg_ref,
                 });
             }
+            Event::GroupChanged { gid, notice } => {
+                // A line in the group's conversation: read already, never notified.
+                self.record(store::Message {
+                    id: 0,
+                    chat: Chat::Group(*gid),
+                    outgoing: false,
+                    author: None,
+                    content: Content::Notice(notice.clone()),
+                    at_ms: unix_ms(),
+                    status: Status::Received,
+                    fragments: 0,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                    msg_ref: None,
+                });
+                return false;
+            }
             Event::Progress { id, sent, total } => {
                 self.update(
                     *id,
@@ -2609,6 +2662,15 @@ impl LichenCore {
             .collect::<Result<Vec<_>, _>>()?;
         let mut i = self.lock();
         i.core.add_members(&g, &ms, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Renames a group we administer (§10.1); its members see a notice.
+    pub fn rename_group(&self, gid: Vec<u8>, name: String, now_ms: u64) -> Result<(), LichenError> {
+        let g = self::gid(&gid)?;
+        let mut i = self.lock();
+        i.core.rename_group(&g, &name, now_ms)?;
         i.persist();
         Ok(())
     }

@@ -911,6 +911,38 @@ mod tests {
             .find(|g| Some(&g.gid) == gid.as_ref())
             .unwrap();
         assert!(g.members.iter().any(|m| m.name == "Léa"));
+        // The conversation shows what happened (ADR-0021), read already.
+        let history = core
+            .history(crate::ChatRef::Group { gid: g.gid.clone() }, None, 50)
+            .unwrap();
+        let notices: Vec<(u8, Vec<String>)> = history
+            .iter()
+            .filter_map(|m| match &m.message {
+                Message::Notice { kind, subjects, .. } => {
+                    Some((*kind, subjects.iter().map(|s| s.name.clone()).collect()))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(notices, vec![(1, vec![]), (3, vec!["Léa".to_owned()])]);
+        assert!(
+            history
+                .iter()
+                .filter(|m| matches!(m.message, Message::Notice { .. }))
+                .all(|m| m.read)
+        );
+        // The admin renames it: a line too.
+        core.rename_group(g.gid.clone(), "Dimanche au Vercors".into(), 600_000)
+            .unwrap();
+        // Recorded as the app reads its events.
+        while core.poll_event().is_some() {}
+        let last = core
+            .history(crate::ChatRef::Group { gid: g.gid.clone() }, None, 1)
+            .unwrap();
+        assert!(
+            matches!(&last[0].message, Message::Notice { kind: 9, text, .. } if text == "Dimanche au Vercors")
+        );
+        assert_eq!(core.groups()[0].name, "Dimanche au Vercors");
     }
 
     /// The demo as the app runs it: frames back and forth, events out.
@@ -1336,6 +1368,7 @@ mod persistence {
             Message::Voice { .. }
             | Message::Image { .. }
             | Message::Announce { .. }
+            | Message::Notice { .. }
             | Message::Other { .. } => "",
         }
     }

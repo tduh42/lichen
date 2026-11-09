@@ -109,8 +109,108 @@ pub enum Content {
         target: MessageRef,
         emoji: String,
     },
+    /// A membership notice this phone records in a group's conversation (§6, 0xE0, local:
+    /// never on the air).
+    Notice(Notice),
     /// A type this version does not interpret.
     Other { content_type: u8, body: Vec<u8> },
+}
+
+/// The local content types, 0xE0–0xEF (§6): never sent, dropped when received.
+pub const LOCAL_TYPES: std::ops::RangeInclusive<u8> = 0xE0..=0xEF;
+/// A membership notice (ADR-0021).
+pub const NOTICE: u8 = 0xE0;
+
+/// What changed in a group, as the conversation shows it (ADR-0021).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Notice {
+    /// One of [`notice`].
+    pub kind: u8,
+    /// Who did it (a node; ours when we did), and their name then.
+    pub actor: [u8; 32],
+    pub actor_name: String,
+    /// Whom it concerns (nodes and names): who joined, left or was removed.
+    pub subjects: Vec<([u8; 32], String)>,
+    /// The new name, for a rename.
+    pub text: String,
+}
+
+/// [`Notice::kind`] values.
+pub mod notice {
+    /// The actor (us) created the group.
+    pub const CREATED: u8 = 1;
+    /// The actor (the admin) added us.
+    pub const ADDED_US: u8 = 2;
+    /// The subjects joined.
+    pub const JOINED: u8 = 3;
+    /// The subjects left.
+    pub const LEFT: u8 = 4;
+    /// The actor (the admin) removed the subjects.
+    pub const REMOVED: u8 = 5;
+    /// The subjects are no longer in the group (no cause given).
+    pub const GONE: u8 = 6;
+    /// The actor (the admin) removed us.
+    pub const REMOVED_US: u8 = 7;
+    /// The actor (the admin) closed the group.
+    pub const CLOSED: u8 = 8;
+    /// The actor (the admin) renamed the group to `text`.
+    pub const RENAMED: u8 = 9;
+    /// We left the group.
+    pub const WE_LEFT: u8 = 10;
+}
+
+fn put_short(v: &mut Vec<u8>, s: &str) {
+    let mut end = s.len().min(255);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    v.push(end as u8);
+    v.extend_from_slice(s.as_bytes().get(..end).unwrap_or(&[]));
+}
+
+fn take_short(b: &mut &[u8]) -> Option<String> {
+    let (&n, rest) = b.split_first()?;
+    let (s, rest) = rest.split_at_checked(usize::from(n))?;
+    *b = rest;
+    String::from_utf8(s.to_vec()).ok()
+}
+
+impl Notice {
+    fn encode_body(&self, v: &mut Vec<u8>) {
+        v.push(self.kind);
+        v.extend_from_slice(&self.actor);
+        put_short(v, &self.actor_name);
+        v.push(self.subjects.len().min(255) as u8);
+        for (node, name) in self.subjects.iter().take(255) {
+            v.extend_from_slice(node);
+            put_short(v, name);
+        }
+        put_short(v, &self.text);
+    }
+
+    fn decode_body(mut b: &[u8]) -> Option<Self> {
+        let (&kind, rest) = b.split_first()?;
+        b = rest;
+        let (actor, rest) = b.split_first_chunk::<32>()?;
+        b = rest;
+        let actor_name = take_short(&mut b)?;
+        let (&m, rest) = b.split_first()?;
+        b = rest;
+        let mut subjects = Vec::with_capacity(usize::from(m));
+        for _ in 0..m {
+            let (node, rest) = b.split_first_chunk::<32>()?;
+            b = rest;
+            subjects.push((*node, take_short(&mut b)?));
+        }
+        let text = take_short(&mut b)?;
+        b.is_empty().then_some(Self {
+            kind,
+            actor: *actor,
+            actor_name,
+            subjects,
+            text,
+        })
+    }
 }
 
 impl Content {
@@ -216,6 +316,11 @@ impl Content {
                 v.extend_from_slice(emoji.as_bytes());
                 v
             }
+            Content::Notice(n) => {
+                let mut v = vec![NOTICE];
+                n.encode_body(&mut v);
+                v
+            }
             Content::Other { content_type, body } => {
                 let mut v = Vec::with_capacity(1 + body.len());
                 v.push(*content_type);
@@ -277,12 +382,19 @@ impl Content {
                 media_id: *id,
                 full,
             })
+        } else if content_type == NOTICE {
+            Notice::decode_body(body).map(Content::Notice)
         } else {
             Some(Content::Other {
                 content_type,
                 body: body.to_vec(),
             })
         }
+    }
+
+    /// A local type (0xE0–0xEF, §6): never accepted from the air.
+    pub fn is_local(datagram: &[u8]) -> bool {
+        datagram.first().is_some_and(|t| LOCAL_TYPES.contains(t))
     }
 }
 
@@ -386,6 +498,23 @@ fn decode_image(body: &[u8]) -> Option<Content> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notice_round_trip() {
+        let n = Content::Notice(Notice {
+            kind: notice::REMOVED,
+            actor: [1; 32],
+            actor_name: "Camille".into(),
+            subjects: vec![([2; 32], "Léa".into()), ([3; 32], String::new())],
+            text: String::new(),
+        });
+        let d = n.encode();
+        assert_eq!(d[0], 0xE0);
+        assert!(Content::is_local(&d));
+        assert_eq!(Content::decode(&d), Some(n));
+        assert_eq!(Content::decode(&d[..d.len() - 1]), None);
+        assert!(!Content::is_local(&[content::TEXT, 0, 0, 0, 0, b'a']));
+    }
 
     #[test]
     fn media_round_trips() {

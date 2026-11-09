@@ -242,6 +242,12 @@ pub enum Event {
         gid: GroupId,
         node: PubKey,
     },
+    /// A membership change to show in the group's conversation (ADR-0021): recorded by the
+    /// app as a local notice, never sent.
+    GroupChanged {
+        gid: GroupId,
+        notice: crate::content::Notice,
+    },
     GroupMessage {
         gid: GroupId,
         from: PubKey,
@@ -2589,6 +2595,8 @@ impl Core {
                 {
                     self.on_group_control(&c, datagram, now);
                 } else if let Ok(Some(datagram)) = result
+                    // Local notices never come from the air (§6).
+                    && !Content::is_local(&datagram)
                     && self.first_time(&c, &datagram, now)
                     && let Some(content) = Content::decode(&datagram)
                 {

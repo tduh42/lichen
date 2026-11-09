@@ -12,7 +12,7 @@ use lc_proto::{Millis, content};
 use rand_core::Rng;
 use sha2::{Digest, Sha256};
 
-use crate::content::Content;
+use crate::content::{Content, Notice, notice};
 use crate::core::{Core, Error, Event, MsgId, PubKey};
 use crate::identity::Invite;
 
@@ -321,6 +321,24 @@ fn newer(e: u8, current: u8) -> bool {
 
 // ----- control datagrams (§10.1, §10.2) ----------------------------------------------------
 
+/// The admin of a state as the actor of a notice: its node and name.
+fn admin_actor(state: &State) -> (PubKey, String) {
+    state
+        .members
+        .iter()
+        .find(|m| m.key == state.admin)
+        .map_or(([0; 32], String::new()), |m| (m.node, m.name.clone()))
+}
+
+/// `name` cut to 32 bytes on a character boundary, as a state carries it.
+fn cut_name(name: &str) -> String {
+    let mut end = name.len().min(32);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    name.get(..end).unwrap_or_default().to_owned()
+}
+
 fn put_name(v: &mut Vec<u8>, name: &str) {
     let mut end = name.len().min(32);
     while !name.is_char_boundary(end) {
@@ -553,8 +571,15 @@ impl Control {
 pub(crate) fn merge_control(queued: &[u8], new: &[u8]) -> Option<Vec<u8>> {
     match (queued.first(), new.first()) {
         (Some(&content::GROUP_STATE), Some(&content::GROUP_STATE)) => {
-            let (q, n) = (State::decode(queued)?, State::decode(new)?);
-            (q.gid == n.gid && n.epoch > q.epoch).then(|| new.to_vec())
+            let (q, mut n) = (State::decode(queued)?, State::decode(new)?);
+            if q.gid != n.gid || n.epoch <= q.epoch {
+                return None;
+            }
+            // Why members went is kept for the peer that never got the older state.
+            if n.cause.is_none() {
+                n.cause = q.cause;
+            }
+            Some(n.encode())
         }
         (Some(&content::SENDER_KEYS), Some(&content::SENDER_KEYS)) => {
             let (qg, mut entries) = decode_sender_keys(queued)?;
@@ -708,9 +733,11 @@ impl Core {
         };
         self.groups.insert(gid, group);
         self.dirty_groups.insert(gid);
-        self.broadcast_state(&gid, &[]);
+        self.broadcast_state(&gid, &[], None);
         self.send_my_key(&gid, None);
         self.events.push_back(Event::GroupUpdated { gid });
+        let actor = self.me_as_actor();
+        self.changed(gid, notice::CREATED, actor, Vec::new(), String::new());
         self.tick(now);
         Ok(gid)
     }
@@ -747,10 +774,13 @@ impl Core {
             return Err(Error::TooLarge);
         }
         let ids: Vec<PubKey> = added.iter().map(|m| m.key).collect();
+        let subjects = added.iter().map(|m| (m.node, m.name.clone())).collect();
         g.members.extend(added);
         g.epoch += 1;
         self.dirty_groups.insert(*gid);
-        self.broadcast_state(gid, &[]);
+        self.broadcast_state(gid, &[], None);
+        let actor = self.me_as_actor();
+        self.changed(*gid, notice::JOINED, actor, subjects, String::new());
         // The newcomers get every key from us, after the state (§10.2).
         self.send_bundle(gid, &ids);
         self.admitted.retain(|(_, _, at)| at + ADMITTED_MS > now);
@@ -774,12 +804,16 @@ impl Core {
                 .collect();
             g.members.retain(|m| m.key == me);
             g.epoch += 1;
-            self.broadcast_state(gid, &others);
+            self.broadcast_state(gid, &others, None);
+            let actor = self.me_as_actor();
+            self.changed(*gid, notice::CLOSED, actor, Vec::new(), String::new());
         } else if let Some(admin) = g.members.iter().find(|m| m.key == g.admin).map(|m| m.node) {
             let mut leave = vec![content::GROUP_LEAVE];
             leave.extend_from_slice(gid);
             leave.extend_from_slice(&g.epoch.to_le_bytes());
             self.enqueue_internal(&admin, leave);
+            let actor = self.me_as_actor();
+            self.changed(*gid, notice::WE_LEFT, actor, Vec::new(), String::new());
         }
         self.groups.remove(gid);
         self.dirty_groups.insert(*gid);
@@ -802,14 +836,19 @@ impl Core {
         if g.admin != me || *from == me || !g.is_member(from) {
             return;
         }
-        let node = g.members.iter().find(|m| m.key == *from).map(|m| m.node);
+        let leaver = g.members.iter().find(|m| m.key == *from).cloned();
         g.members.retain(|m| m.key != *from);
         g.epoch += 1;
         g.keys.remove(from);
         self.dirty_groups.insert(gid);
-        self.broadcast_state(&gid, &node.into_iter().collect::<Vec<_>>());
+        let also: Vec<PubKey> = leaver.iter().map(|m| m.node).collect();
+        self.broadcast_state(&gid, &also, Some(cause::LEFT));
         self.rotate_my_key(&gid);
         self.events.push_back(Event::GroupUpdated { gid });
+        if let Some(m) = leaver {
+            let who = (m.node, m.name);
+            self.changed(gid, notice::LEFT, who.clone(), vec![who], String::new());
+        }
         self.tick(now);
     }
 
@@ -922,6 +961,58 @@ impl Core {
         }
     }
 
+    /// Renames a group we administer (§10.1): a new epoch with the new name, to every member;
+    /// nobody is gone, so no key changes. The name is cut to 32 bytes.
+    pub fn rename_group(&mut self, gid: &GroupId, name: &str, now: Millis) -> Result<(), Error> {
+        let me = self.key.ok_or(Error::NoIdentity)?;
+        let name = cut_name(name.trim());
+        if name.is_empty() {
+            return Err(Error::Empty);
+        }
+        let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
+        if g.admin != me {
+            return Err(Error::NotAllowed);
+        }
+        if g.name == name {
+            return Ok(());
+        }
+        g.name.clone_from(&name);
+        g.epoch += 1;
+        self.dirty_groups.insert(*gid);
+        self.broadcast_state(gid, &[], None);
+        self.events.push_back(Event::GroupUpdated { gid: *gid });
+        let actor = self.me_as_actor();
+        self.changed(*gid, notice::RENAMED, actor, Vec::new(), name);
+        self.tick(now);
+        Ok(())
+    }
+
+    /// Ourselves as the actor of a notice: our node and name.
+    fn me_as_actor(&self) -> (PubKey, String) {
+        (self.node.unwrap_or([0; 32]), self.name.clone())
+    }
+
+    /// A notice for the group's conversation (ADR-0021).
+    fn changed(
+        &mut self,
+        gid: GroupId,
+        kind: u8,
+        actor: (PubKey, String),
+        subjects: Vec<(PubKey, String)>,
+        text: String,
+    ) {
+        self.events.push_back(Event::GroupChanged {
+            gid,
+            notice: Notice {
+                kind,
+                actor: actor.0,
+                actor_name: actor.1,
+                subjects,
+                text,
+            },
+        });
+    }
+
     /// Removes `member` (admin only): new epoch, and every remaining member rotates its key.
     pub fn remove_member(
         &mut self,
@@ -932,7 +1023,7 @@ impl Core {
         let me = self.key.ok_or(Error::NoIdentity)?;
         let g = self.groups.get_mut(gid).ok_or(Error::UnknownGroup)?;
         // `member` is the node of the member (as the app knows its contacts).
-        let Some(id) = g.member_by_node(member).map(|m| m.key) else {
+        let Some((id, name)) = g.member_by_node(member).map(|m| (m.key, m.name.clone())) else {
             return Err(Error::NotAllowed);
         };
         if g.admin != me || id == me {
@@ -942,15 +1033,23 @@ impl Core {
         g.epoch += 1;
         g.keys.remove(&id);
         self.dirty_groups.insert(*gid);
-        self.broadcast_state(gid, &[*member]);
+        self.broadcast_state(gid, &[*member], Some(cause::REMOVED));
         self.rotate_my_key(gid);
         self.events.push_back(Event::GroupUpdated { gid: *gid });
+        let actor = self.me_as_actor();
+        self.changed(
+            *gid,
+            notice::REMOVED,
+            actor,
+            vec![(*member, name)],
+            String::new(),
+        );
         self.tick(now);
         Ok(())
     }
 
     /// Sends the group state to every other member, and to `also` (nodes of removed members).
-    fn broadcast_state(&mut self, gid: &GroupId, also: &[PubKey]) {
+    fn broadcast_state(&mut self, gid: &GroupId, also: &[PubKey], cause: Option<u8>) {
         let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
             return;
         };
@@ -960,7 +1059,7 @@ impl Core {
             admin: g.admin,
             name: g.name.clone(),
             members: g.members.clone(),
-            cause: None,
+            cause,
         }
         .encode();
         let targets: Vec<PubKey> = g
@@ -1048,6 +1147,7 @@ impl Core {
         }
         let listed = state.members.iter().any(|m| m.key == me);
         let gid = state.gid;
+        let admin = admin_actor(&state);
         self.dirty_groups.insert(gid);
         if listed {
             self.learn_members(&state.members);
@@ -1081,6 +1181,7 @@ impl Core {
                     name: state.name,
                     admin: state.admin,
                 });
+                self.changed(gid, notice::ADDED_US, admin, Vec::new(), String::new());
             }
             Some(g) => {
                 if g.admin != *from || state.epoch <= g.epoch {
@@ -1089,12 +1190,31 @@ impl Core {
                 if !listed {
                     self.groups.remove(&gid);
                     self.events.push_back(Event::GroupLeft { gid });
+                    // Closed (the admin alone, no cause), or we were removed.
+                    let kind = if state.members.len() == 1 && state.cause.is_none() {
+                        notice::CLOSED
+                    } else {
+                        notice::REMOVED_US
+                    };
+                    self.changed(gid, kind, admin, Vec::new(), String::new());
                     return;
                 }
                 let old: HashSet<PubKey> = g.members.iter().map(|m| m.key).collect();
                 let new: HashSet<PubKey> = state.members.iter().map(|m| m.key).collect();
+                let gone: Vec<(PubKey, String)> = g
+                    .members
+                    .iter()
+                    .filter(|m| !new.contains(&m.key))
+                    .map(|m| (m.node, m.name.clone()))
+                    .collect();
+                let joined: Vec<(PubKey, String)> = state
+                    .members
+                    .iter()
+                    .filter(|m| !old.contains(&m.key))
+                    .map(|m| (m.node, m.name.clone()))
+                    .collect();
                 let removed: Vec<PubKey> = old.difference(&new).copied().collect();
-                let added: Vec<PubKey> = new.difference(&old).copied().collect();
+                let renamed = (g.name != state.name).then(|| state.name.clone());
                 g.name = state.name;
                 g.epoch = state.epoch;
                 g.members = state.members;
@@ -1102,11 +1222,24 @@ impl Core {
                     g.keys.remove(k);
                 }
                 // Only adds: the admin carries our key to the newcomers (§10.2).
-                let _ = added;
                 if !removed.is_empty() {
                     self.rotate_my_key(&gid);
                 }
                 self.events.push_back(Event::GroupUpdated { gid });
+                if !gone.is_empty() {
+                    let (kind, actor) = match state.cause {
+                        Some(cause::LEFT) => (notice::LEFT, gone[0].clone()),
+                        Some(cause::REMOVED) => (notice::REMOVED, admin.clone()),
+                        _ => (notice::GONE, admin.clone()),
+                    };
+                    self.changed(gid, kind, actor, gone, String::new());
+                }
+                if !joined.is_empty() {
+                    self.changed(gid, notice::JOINED, admin.clone(), joined, String::new());
+                }
+                if let Some(name) = renamed {
+                    self.changed(gid, notice::RENAMED, admin, Vec::new(), name);
+                }
             }
         }
         // Keys that came before this state.
@@ -1565,6 +1698,10 @@ impl Core {
             return;
         };
         self.dirty_groups.insert(gid);
+        // Local notices never come from the air (§6).
+        if Content::is_local(&body) {
+            return;
+        }
         // Its direct copies were receptions of that member (search, §11.2).
         self.search_attribute(&h, member, member_node, now);
         if body.first() == Some(&content::SEARCH) {
@@ -1793,6 +1930,44 @@ mod tests {
         core.on_sender_key(&n_id, GID, 0, [7; 32], 0, 3_000);
         assert!(relayed_to(&core, &a_node).contains(&(n_id, 0)));
         assert!(relayed_to(&core, &[2; 32]).contains(&(n_id, 0)));
+    }
+
+    /// Waiting states merge: the newer replaces the older and keeps why members went
+    /// (§10.1); relayed keys of one group join, the newer per owner (§10.2).
+    #[test]
+    fn waiting_control_merges() {
+        let m = |k: u8| Member {
+            key: [k; 32],
+            node: [k; 32],
+            name: format!("m{k}"),
+        };
+        let state = |epoch, members: Vec<Member>, cause| {
+            State {
+                gid: GID,
+                epoch,
+                admin: [1; 32],
+                name: "g".into(),
+                members,
+                cause,
+            }
+            .encode()
+        };
+        let older = state(2, vec![m(1), m(2)], Some(cause::LEFT));
+        let newer = state(3, vec![m(1), m(2), m(4)], None);
+        let merged = State::decode(&merge_control(&older, &newer).unwrap()).unwrap();
+        assert_eq!(
+            (merged.epoch, merged.cause, merged.members.len()),
+            (3, Some(cause::LEFT), 3)
+        );
+        assert_eq!(merge_control(&newer, &older), None, "never an older state");
+        let a = encode_sender_keys(&GID, &[([7; 32], 0, [1; 32], 0)]);
+        let b = encode_sender_keys(&GID, &[([7; 32], 1, [2; 32], 0), ([8; 32], 0, [3; 32], 0)]);
+        let (_, keys) = decode_sender_keys(&merge_control(&a, &b).unwrap()).unwrap();
+        assert_eq!(
+            keys.iter().map(|k| (k.0[0], k.1)).collect::<Vec<_>>(),
+            vec![(7, 1), (8, 0)]
+        );
+        assert_eq!(merge_control(&a, &older), None);
     }
 
     /// A relayed key comes only from the admin and never replaces a newer one (§10.2).
