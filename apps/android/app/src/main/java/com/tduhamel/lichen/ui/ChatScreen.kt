@@ -7,6 +7,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Photo
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -87,13 +89,16 @@ import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.Message
 import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.StoredMessage
+import com.tduhamel.lichen.core.WaitReason
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.Notifications
 import com.tduhamel.lichen.model.display
 import com.tduhamel.lichen.model.fragmentsText
 import com.tduhamel.lichen.model.hopsBadge
+import com.tduhamel.lichen.model.isWaiting
 import com.tduhamel.lichen.model.secondsText
+import com.tduhamel.lichen.model.writtenEarlierMs
 
 /** One conversation (mockup `chat`). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -220,11 +225,11 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) {
                     item(key = "day" + dayOf(m.atMs)) { DaySeparator(context, m.atMs) }
                 }
-                item(key = m.id) { MessageBubble(model, m, chat.group) }
+                item(key = m.id) { MessageBubble(model, m, chat.group) { error = it } }
             }
             val failed = messages.lastOrNull { it.outgoing }?.takeIf { it.status is MessageStatus.Failed }
             if (failed != null) {
-                item { FailureBanner(model, failed) { error = model.resend(failed) } }
+                item { FailureBanner(model, failed) { error = model.retry(failed) } }
             }
         }
             if (unseen > 0) {
@@ -360,19 +365,46 @@ private fun FailureBanner(model: AppModel, m: StoredMessage, resend: () -> Unit)
         FailReason.IDENTITY_CHANGED -> Banner(
             BannerKind.SOS, stringResource(R.string.not_sent_identity_changed), stringResource(R.string.compare_before_accepting, title),
         )
+        FailReason.EXPIRED -> Banner(BannerKind.WARN, stringResource(R.string.expired), stringResource(R.string.expired_note), action)
     }
 }
 
 @Composable
-private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean) {
+private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean, onError: (String) -> Unit) {
     val t = lichen
     val res = LocalResources.current
     val author = m.author
+    val status = m.status
+    // Long press: cancel a text that is still waiting, send a failed one again (§6.1).
+    val cancellable = status is MessageStatus.Waiting && !status.started
+    val retriable = m.outgoing && status is MessageStatus.Failed && (m.message is Message.Text || m.message is Message.Voice)
+    var menu by remember { mutableStateOf(false) }
+    val press = if (cancellable || retriable) Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true }) else Modifier
     Column(
-        Modifier.fillMaxWidth().padding(start = if (m.outgoing) 64.dp else 0.dp, end = if (m.outgoing) 0.dp else 64.dp),
+        Modifier.fillMaxWidth().padding(start = if (m.outgoing) 64.dp else 0.dp, end = if (m.outgoing) 0.dp else 64.dp).then(press),
         horizontalAlignment = if (m.outgoing) Alignment.End else Alignment.Start,
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
+        DropdownMenu(menu, { menu = false }, containerColor = t.s1) {
+            if (cancellable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.cancel_sending)) },
+                    onClick = {
+                        menu = false
+                        model.cancel(m)?.let(onError)
+                    },
+                )
+            }
+            if (retriable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.send_again)) },
+                    onClick = {
+                        menu = false
+                        model.retry(m)?.let(onError)
+                    },
+                )
+            }
+        }
         if (isGroup && !m.outgoing && author != null) {
             Text(
                 model.name(author), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2,
@@ -389,23 +421,49 @@ private fun MessageBubble(model: AppModel, m: StoredMessage, isGroup: Boolean) {
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
-        val status = m.status
-        if (m.outgoing && status is MessageStatus.Sending && status.total.toInt() > 1) {
+        if (m.outgoing && !isGroup && status is MessageStatus.Sending && status.total.toInt() > 1) {
             FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
         }
         // When it was sent (ours) or received, then how it went.
-        val time = timeOf(LocalContext.current, m.atMs)
-        Text(if (m.outgoing) listOfNotNull(time, caption(m)).joinToString(" · ") else time, fontSize = 11.sp, color = t.tx2)
+        val context = LocalContext.current
+        val time = timeOf(context, m.atMs)
+        val written = m.writtenEarlierMs
+        val footer = when {
+            m.outgoing -> listOfNotNull(time, caption(m, isGroup)).joinToString(" · ")
+            // Written well before it arrived: it waited (§6.1).
+            written != null && dayOf(written) == dayOf(m.atMs) -> stringResource(R.string.written_at, time, timeOf(context, written))
+            written != null -> stringResource(R.string.written_on, time, dateTimeOf(context, written))
+            else -> time
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (m.isWaiting) Icon(Icons.Outlined.Schedule, null, tint = t.tx2, modifier = Modifier.size(12.dp))
+            Text(footer, fontSize = 11.sp, color = t.tx2)
+        }
     }
 }
 
 @Composable
-private fun caption(m: StoredMessage): String? {
+private fun caption(m: StoredMessage, isGroup: Boolean): String? {
     val res = LocalResources.current
+    val context = LocalContext.current
     return when (val s = m.status) {
         MessageStatus.Received -> null
+        is MessageStatus.Waiting -> when (val r = s.reason) {
+            WaitReason.Radio ->
+                if (s.started) {
+                    stringResource(R.string.paused_radio)
+                } else {
+                    stringResource(R.string.waiting_for_radio, timeLeft(s.expiresAtMs))
+                }
+            WaitReason.Earlier -> stringResource(R.string.after_earlier)
+            WaitReason.Path -> stringResource(R.string.looking_for_path)
+            WaitReason.Handshake -> stringResource(R.string.opening_session)
+            is WaitReason.Budget -> stringResource(R.string.waiting_for_airtime, timeOf(context, r.atMs))
+        }
         is MessageStatus.Sending ->
-            if (s.total.toInt() > 1) {
+            if (isGroup) {
+                stringResource(R.string.sending_to_group)
+            } else if (s.total.toInt() > 1) {
                 stringResource(R.string.waiting_for_ack)
             } else {
                 stringResource(R.string.sending_fragments, minOf(s.sent.toInt(), s.total.toInt()), s.total.toInt())
@@ -485,7 +543,19 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                 Text(stringResource(R.string.sharing_until, precisionName(share.precision), until), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2)
             }
         }
-        if (cost != null) Text(cost, fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
+        if (!model.isConnected) {
+            // Texts wait for the radio (§6.1).
+            Row(
+                Modifier.padding(start = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(Icons.Outlined.Schedule, null, tint = t.tx2, modifier = Modifier.size(12.dp))
+                Text(stringResource(R.string.radio_offline_waits), fontSize = 11.sp, color = t.tx2)
+            }
+        } else if (cost != null) {
+            Text(cost, fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
+        }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box {
                 IconButton(
@@ -554,7 +624,8 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
                         val e = model.send(text, chat)
                         if (e != null) onError(e) else draft = ""
                     },
-                    enabled = text.isNotEmpty() && model.isConnected,
+                    // Texts wait for the radio (§6.1); not with a throwaway identity.
+                    enabled = text.isNotEmpty() && model.identityProblem == null,
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = t.actBg, contentColor = t.actFg,
@@ -571,4 +642,10 @@ private fun Composer(model: AppModel, chat: ChatId, onError: (String) -> Unit) {
             e?.let(onError)
         }
     }
+}
+
+/** "24 h", "35 min": how long a waiting text still has before it expires (§6.1). */
+private fun timeLeft(expiresAtMs: Long): String {
+    val s = maxOf(0L, expiresAtMs - System.currentTimeMillis()) / 1000.0
+    return if (s >= 3600) "${kotlin.math.ceil(s / 3600).toInt()} h" else "${maxOf(1, kotlin.math.ceil(s / 60).toInt())} min"
 }

@@ -544,4 +544,26 @@
     <string name="close_group_note">Plus aucun membre ne le reçoit. Les messages déjà reçus restent sur chaque téléphone.</string>
     <string name="invite_none">Les contacts apparaissent ici une fois leur identité connue : scanne leur code ou échange un message.</string>
     <string name="invite_note">Les nouveaux membres reçoivent les clés actuelles : ils peuvent lire les messages enregistrés avant leur arrivée.</string>
+    <!-- Outbox (protocol.md §6.1) -->
+    <string name="debug_offline_text">Écrit pendant que ma radio est éteinte</string>
+    <string name="debug_offline_group">J\'arrive, radio éteinte pour l\'instant</string>
+    <string name="err_not_cancellable">Une partie est déjà partie : il ne peut plus être annulé.</string>
+    <string name="fail_expired">expiré</string>
+    <string name="expired">Expiré</string>
+    <string name="expired_note">Non remis en 24 heures : il ne partira plus. Si une partie est partie, il a pu arriver.</string>
+    <string name="cancel_sending">Annuler l\'envoi</string>
+    <string name="send_again">Renvoyer</string>
+    <string name="written_at">%1$s · écrit à %2$s</string>
+    <string name="written_on">%1$s · écrit le %2$s</string>
+    <string name="paused_radio">En pause : radio déconnectée</string>
+    <string name="waiting_for_radio">En attente de la radio · expire dans %1$s</string>
+    <string name="after_earlier">Après les messages précédents</string>
+    <string name="looking_for_path">Recherche d\'un chemin</string>
+    <string name="opening_session">Ouverture d\'une session chiffrée</string>
+    <string name="waiting_for_airtime">En attente de temps d\'antenne · vers %1$s</string>
+    <string name="sending_to_group">Envoi au groupe</string>
+    <string name="radio_offline_waits">Radio non connectée : les messages l\'attendent, jusqu\'à 24 h</string>
+    <string name="demo_radio">Radio simulée connectée</string>
+    <string name="demo_radio_note">Éteins-la pour voir les messages attendre la radio.</string>
+    <string name="waiting_to_be_sent">En attente d\'envoi</string>
 </resources>

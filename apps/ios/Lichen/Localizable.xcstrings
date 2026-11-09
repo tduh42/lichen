@@ -101,6 +101,26 @@
         }
       }
     },
+    "%@ · written at %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · écrit à %@"
+          }
+        }
+      }
+    },
+    "%@ · written on %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · écrit le %@"
+          }
+        }
+      }
+    },
     "%@ · ≈ %@ s of airtime": {
       "localizations": {
         "fr": {
@@ -711,6 +731,16 @@
         }
       }
     },
+    "After earlier messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Après les messages précédents"
+          }
+        }
+      }
+    },
     "Again every 2 minutes. Nobody confirms reception: watch for answers.": {
       "localizations": {
         "fr": {
@@ -897,6 +927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annuler"
+          }
+        }
+      }
+    },
+    "Cancel sending": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler l'envoi"
           }
         }
       }
@@ -1207,6 +1247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Continuer"
+          }
+        }
+      }
+    },
+    "Could not cancel.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible d'annuler."
           }
         }
       }
@@ -1657,6 +1707,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Déplier"
+          }
+        }
+      }
+    },
+    "Expired": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expiré"
           }
         }
       }
@@ -2291,6 +2351,16 @@
         }
       }
     },
+    "Looking for a path": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche d'un chemin"
+          }
+        }
+      }
+    },
     "Looking for nodes…": {
       "localizations": {
         "fr": {
@@ -2791,6 +2861,16 @@
         }
       }
     },
+    "Not delivered within 24 hours, so it will not go out later. If part of it went out, it may have arrived.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non remis en 24 heures : il ne partira plus. Si une partie est partie, il a pu arriver."
+          }
+        }
+      }
+    },
     "Not delivered: %@": {
       "localizations": {
         "fr": {
@@ -2891,6 +2971,16 @@
         }
       }
     },
+    "On my way, radio off for now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "J'arrive, radio éteinte pour l'instant"
+          }
+        }
+      }
+    },
     "Online, through relays": {
       "localizations": {
         "fr": {
@@ -2937,6 +3027,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir"
+          }
+        }
+      }
+    },
+    "Opening a secure session": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouverture d'une session chiffrée"
           }
         }
       }
@@ -2991,12 +3091,32 @@
         }
       }
     },
+    "Part of it already went out: it can no longer be cancelled.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une partie est déjà partie : il ne peut plus être annulé."
+          }
+        }
+      }
+    },
     "Pause": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Pause"
+          }
+        }
+      }
+    },
+    "Paused: radio disconnected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pause : radio déconnectée"
           }
         }
       }
@@ -3167,6 +3287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radio déconnectée"
+          }
+        }
+      }
+    },
+    "Radio not connected: messages wait for it, up to 24 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radio non connectée : les messages l'attendent, jusqu'à 24 h"
           }
         }
       }
@@ -3581,6 +3711,16 @@
         }
       }
     },
+    "Send again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renvoyer"
+          }
+        }
+      }
+    },
     "Send an SOS": {
       "localizations": {
         "fr": {
@@ -3657,6 +3797,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "L'envoi différé arrive dans une prochaine version."
+          }
+        }
+      }
+    },
+    "Sending to the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi au groupe"
           }
         }
       }
@@ -3837,6 +3987,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Messages de groupe signés, en flood"
+          }
+        }
+      }
+    },
+    "Simulated radio connected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radio simulée connectée"
           }
         }
       }
@@ -4431,6 +4591,16 @@
         }
       }
     },
+    "Turn it off to see messages wait for the radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Éteins-la pour voir les messages attendre la radio."
+          }
+        }
+      }
+    },
     "Turn your radio on and keep it close to the phone. Stock MeshCore companion firmware: nothing to flash.": {
       "localizations": {
         "fr": {
@@ -4561,6 +4731,16 @@
         }
       }
     },
+    "Waiting for airtime · around %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de temps d'antenne · vers %@"
+          }
+        }
+      }
+    },
     "Waiting for sender keys": {
       "localizations": {
         "fr": {
@@ -4581,12 +4761,32 @@
         }
       }
     },
+    "Waiting for the radio · expires in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la radio · expire dans %@"
+          }
+        }
+      }
+    },
     "Waiting for your position": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "En attente de ta position"
+          }
+        }
+      }
+    },
+    "Waiting to be sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente d'envoi"
           }
         }
       }
@@ -4657,6 +4857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Écris ces 24 mots sur papier, dans l'ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi."
+          }
+        }
+      }
+    },
+    "Written while my radio is off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrit pendant que ma radio est éteinte"
           }
         }
       }
@@ -4977,6 +5187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "estimé, saturé"
+          }
+        }
+      }
+    },
+    "expired": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "expiré"
           }
         }
       }

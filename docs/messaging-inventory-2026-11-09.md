@@ -4,7 +4,7 @@ The product brief (`docs/messaging-product-brief-2026-11-08.md`) makes off-grid 
 
 | # | Proposal | Exists | Missing |
 |---|---|---|---|
-| 1 | Dependable outbox | Drafts per chat, across restarts (M07). Statuses sending / delivered / failed with a reason; failed texts and voice notes can be sent again. | Messages queued in the core are **lost at a restart**: the store marks them failed ("the app stopped"). No "waiting for the radio" state: a message typed offline is refused or fails. No cancel, no expiry. |
+| 1 | Dependable outbox | **Done** (§6.1, ADR-0018): texts are accepted without the radio and survive a restart; the core pauses while the radio is away; waiting reasons (radio, earlier messages, path, session, airtime), cancel before the first frame, 24 h expiry, retry as the same message, receiver deduplication; group texts count as sent once they left. Drafts per chat (M07). | Voice notes and photos still need the radio (by design, §13.4). |
 | 2 | Replies and reactions | — | Everything, and it is protocol: a stable message reference (sender + per-sender id), reply and reaction content types, their cost on air, deduplication. |
 | 3 | Chat essentials | History in pages (M06), new-message pill and reading position (M07), day separators, message times, swipe to delete, contact nicknames. | Copy / select text; an unread divider; search in messages; pin and mute per chat. |
 | 4 | Complete groups | Create, invite, leave, close, remove with key rotation (M08, ADR-0017); verification badges; group cost before sending (M15). | An invitation by QR in person; group pictures (later, never flooded). |
@@ -14,7 +14,7 @@ The product brief (`docs/messaging-product-brief-2026-11-08.md`) makes off-grid 
 
 ## Proposed order
 
-1. **A dependable outbox** (protocol-free in the main): messages accepted while the radio is away, persisted as intents (never sessions, keys or nonces), sent when it comes back, with a visible waiting reason, cancel before transmission and an expiry. Needs a spec section for the restart rules (what is resent, duplicates on the receiving side).
+1. ~~**A dependable outbox**~~ (done: §6.1, ADR-0018) (protocol-free in the main): messages accepted while the radio is away, persisted as intents (never sessions, keys or nonces), sent when it comes back, with a visible waiting reason, cancel before transmission and an expiry. Needs a spec section for the restart rules (what is resent, duplicates on the receiving side).
 2. **Chat essentials** (app-only): copy / select, the unread divider, pin and mute, search in the local history.
 3. **Replies and reactions** (protocol): spec and vectors first (message references, content types, airtime), then both apps.
 4. Voice and photo polish, a group invitation by QR.

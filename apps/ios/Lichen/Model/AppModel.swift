@@ -60,6 +60,8 @@ final class AppModel {
     var lastSnr: [Data: Float] = [:]
     /// Running on the simulated network instead of a real node.
     var isDemo = false
+    /// The demo's simulated radio is switched off (Settings), to see messages wait (§6.1).
+    var demoRadioOff = false
     /// A chat to open (debug launch argument `-open <name>`, for screenshots).
     var debugOpen: ChatID?
     var tab = Tab.messages
@@ -303,6 +305,48 @@ final class AppModel {
         }
         updateLocator()
         pump()
+        #if DEBUG
+        // -offline S: the demo radio drops after S seconds, with a text waiting for Camille and
+        // one for the group; -online S: it comes back after S seconds; -expiry S: texts expire
+        // after S seconds instead of 24 h.
+        let expiry = args.integer(forKey: "expiry")
+        if expiry > 0 { core.setOutboxExpiry(ms: UInt64(expiry) * 1000) }
+        let off = args.integer(forKey: "offline")
+        if off > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(off)) { [weak self] in
+                guard let self, self.isDemo else { return }
+                self.setDemoRadio(on: false)
+                if let c = self.contacts.first(where: { $0.name == "Camille" }) {
+                    _ = self.send(String(localized: "Written while my radio is off"), to: .contact(key: c.key))
+                }
+                if let g = self.groups.first {
+                    _ = self.send(String(localized: "On my way, radio off for now"), to: .group(gid: g.gid))
+                }
+            }
+        }
+        let on = args.integer(forKey: "online")
+        if on > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(on)) { [weak self] in
+                guard let self, self.isDemo else { return }
+                self.setDemoRadio(on: true)
+            }
+        }
+        #endif
+    }
+
+    /// Switches the demo's simulated radio off or on: off, nothing reaches it and the core
+    /// pauses, as when Bluetooth drops (§6.1).
+    func setDemoRadio(on: Bool) {
+        guard isDemo, on == demoRadioOff else { return }
+        demoRadioOff = !on
+        if on {
+            companionState = .connected("ThinkNode M5")
+            core.connect(nowMs: now())
+        } else {
+            companionState = .idle
+            core.disconnect(nowMs: now())
+        }
+        pump()
     }
 
     func stopDemo() {
@@ -322,6 +366,7 @@ final class AppModel {
     }
 
     private func leaveDemo() {
+        demoRadioOff = false
         demoTimer?.invalidate()
         demoFixTimer?.invalidate()
         demoFixTimer = nil
@@ -332,7 +377,8 @@ final class AppModel {
     private func demoStep() {
         guard let demo else { return }
         let t = now()
-        for f in demo.read(nowMs: t) {
+        // Radio off: the network goes on, and what it pushes is lost.
+        for f in demo.read(nowMs: t) where !demoRadioOff {
             core.onCompanionFrame(frame: f, nowMs: t)
         }
         pump()
@@ -376,10 +422,15 @@ final class AppModel {
 
     private func companionChanged(_ s: Companion.State) {
         if isDemo { return }
+        let was = isConnected
         companionState = s
         // No radio session with a throwaway identity (`identityProblem`).
         if case .connected = s, identityProblem == nil {
             core.connect(nowMs: now())
+            pump()
+        } else if was, !isConnected {
+            // Lost: texts wait and a transfer pauses until it is back (§6.1).
+            core.disconnect(nowMs: now())
             pump()
         }
     }
@@ -395,7 +446,11 @@ final class AppModel {
         core.setClock(unixMs: UInt64(Date().timeIntervalSince1970 * 1000), nowMs: t)
         core.tick(nowMs: t)
         while let f = core.pollCompanion(nowMs: t) {
-            if let demo { demo.write(frame: f, nowMs: t) } else { companion.write(f) }
+            if let demo {
+                if !demoRadioOff { demo.write(frame: f, nowMs: t) }
+            } else {
+                companion.write(f)
+            }
         }
         while let e = core.pollEvent() {
             handle(e)
@@ -470,7 +525,7 @@ final class AppModel {
                 _ = send(say, to: .contact(key: from))
             }
             #endif
-        case .progress, .delivered, .failed:
+        case .progress, .delivered, .failed, .groupSent:
             break
         case .groupJoined, .groupUpdated, .groupLeft:
             groups = core.groups()
@@ -686,15 +741,32 @@ final class AppModel {
         }
     }
 
-    /// Sends a failed text or voice message again (a new message).
-    func resend(_ m: StoredMessage) -> String? {
-        switch m.message {
-        case let .text(_, text):
-            return send(text, to: m.chat)
-        case let .voice(_, mode, frames, durationMs, data):
-            return sendVoice(PreparedVoice(mode: mode, frames: frames, durationMs: durationMs, data: data), to: m.chat)
-        default:
+    /// Sends a failed text or voice message again: the same message, so that someone who
+    /// already has it does not get it twice (§6.1).
+    func retry(_ m: StoredMessage) -> String? {
+        do {
+            upsert(try core.retryMessage(messageId: m.id, nowMs: now()))
+            conversations = core.conversations()
+            pump()
             return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// Cancels a text that is still waiting and none of which went out: it disappears.
+    func cancel(_ m: StoredMessage) -> String? {
+        do {
+            try core.cancelMessage(messageId: m.id)
+            chats[m.chat]?.removeAll { $0.id == m.id }
+            conversations = core.conversations()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not cancel.")
         }
     }
 
@@ -1171,6 +1243,18 @@ extension BridgeError {
 extension StoredMessage {
     var date: Date { Date(timeIntervalSince1970: TimeInterval(atMs) / 1000) }
 
+    /// Accepted and waiting (for the radio, a path, a session…), §6.1.
+    var isWaiting: Bool {
+        if case .waiting = status { return true }
+        return false
+    }
+
+    /// When the sender wrote it, if well before it arrived (a message that waited, §6.1).
+    var writtenEarlier: Date? {
+        let written = message.date
+        return !outgoing && date.timeIntervalSince(written) > 600 ? written : nil
+    }
+
     /// One line for the conversation list ("Camille: …" in groups).
     @MainActor func preview(_ model: AppModel) -> String {
         let text = message.display
@@ -1214,6 +1298,7 @@ extension FailReason {
         case .tooLarge: return String(localized: "too large")
         case .interrupted: return String(localized: "the app stopped before delivery")
         case .identityChanged: return String(localized: "their identity changed: verify it first")
+        case .expired: return String(localized: "expired")
         }
     }
 }
@@ -1241,6 +1326,7 @@ extension LichenError {
         case let .TooSoon(waitS): return String(localized: "Possible again in \(waitS) s.")
         case .NoPosition: return String(localized: "Your position is not known yet.")
         case .Storage: return String(localized: "The phone's storage could not be read or written.")
+        case .NotCancellable: return String(localized: "Part of it already went out: it can no longer be cancelled.")
         }
     }
 }

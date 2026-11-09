@@ -208,6 +208,13 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                         LichenSwitch(model.isDemo, { if (it) model.startDemo() else model.stopDemo() })
                     }
                     CardDivider()
+                    if (model.isDemo) {
+                        // Off: messages wait for the radio, as when Bluetooth drops (§6.1).
+                        CardRow(stringResource(R.string.demo_radio), stringResource(R.string.demo_radio_note)) {
+                            LichenSwitch(!model.demoRadioOff, { model.setDemoRadio(it) })
+                        }
+                        CardDivider()
+                    }
                     Box(Modifier.clickable { model.markOnboarded(false) }) {
                         CardRow(stringResource(R.string.show_welcome_again))
                     }

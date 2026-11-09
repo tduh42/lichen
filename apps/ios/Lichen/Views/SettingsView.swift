@@ -92,6 +92,14 @@ struct SettingsView: View {
                     SectionLabel("Demo").padding(.top, 10)
                     CardList {
                         if model.isDemo {
+                            // Off: messages wait for the radio, as when Bluetooth drops (§6.1).
+                            CardRow(title: String(localized: "Simulated radio connected"),
+                                    subtitle: String(localized: "Turn it off to see messages wait for the radio.")) {
+                                Toggle("Simulated radio connected",
+                                       isOn: Binding(get: { !model.demoRadioOff }, set: { model.setDemoRadio(on: $0) }))
+                                    .labelsHidden()
+                            }
+                            CardDivider()
                             Button { model.stopDemo() } label: {
                                 CardRow(title: String(localized: "Leave the demo"))
                             }

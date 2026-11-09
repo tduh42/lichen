@@ -111,6 +111,10 @@ fun dayOf(atMs: Long): Long = Instant.ofEpochMilli(atMs).atZone(ZoneId.systemDef
 /** "11:20", in the phone's format. */
 fun timeOf(context: Context, atMs: Long): String = DateFormat.getTimeFormat(context).format(Date(atMs))
 
+/** Its short date and time, in the user's formats. */
+fun dateTimeOf(context: Context, atMs: Long): String =
+    DateFormat.getMediumDateFormat(context).format(Date(atMs)) + " " + timeOf(context, atMs)
+
 /** "Today", "Yesterday", or the date. */
 @Composable
 fun DaySeparator(context: Context, atMs: Long) {

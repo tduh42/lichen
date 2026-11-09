@@ -95,6 +95,12 @@ class AppModel(val app: Application) {
         val fill: Int = 0,
         /** The identity failure screen: `unavailable`, `corrupt` or `notsaved`. */
         val identityProblem: String? = null,
+        /** The demo radio drops after that many seconds, with texts waiting (§6.1). */
+        val offline: Int = 0,
+        /** And comes back after that many seconds. */
+        val online: Int = 0,
+        /** Texts expire after that many seconds instead of 24 h. */
+        val expiry: Int = 0,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -140,6 +146,10 @@ class AppModel(val app: Application) {
 
     /** Running on the simulated network instead of a real radio. */
     var isDemo by mutableStateOf(false)
+
+    /** The demo's simulated radio is switched off (Settings), to see messages wait (§6.1). */
+    var demoRadioOff by mutableStateOf(false)
+        private set
     var tab by mutableStateOf(Tab.MESSAGES)
 
     /** A chat to open (debug extra `open`, notifications later). */
@@ -454,6 +464,41 @@ class AppModel(val app: Application) {
             }
         }
         pump()
+        // Debug `offline`: the demo radio drops after that many seconds, with a text waiting for
+        // Camille and one for the group; `online`: it comes back; `expiry`: texts expire sooner.
+        if (debug.expiry > 0) core.setOutboxExpiry(debug.expiry.toULong() * 1000uL)
+        if (debug.offline > 0) {
+            scope.launch {
+                delay(debug.offline * 1000L)
+                if (!isDemo) return@launch
+                setDemoRadio(false)
+                contacts.firstOrNull { it.name == "Camille" }?.let {
+                    send(res.getString(R.string.debug_offline_text), ChatId.contact(it.key))
+                }
+                groups.firstOrNull()?.let { send(res.getString(R.string.debug_offline_group), ChatId.group(it.gid)) }
+            }
+        }
+        if (debug.online > 0) {
+            scope.launch {
+                delay(debug.online * 1000L)
+                if (isDemo) setDemoRadio(true)
+            }
+        }
+    }
+
+    /** Switches the demo's simulated radio off or on: off, nothing reaches it and the core
+     * pauses, as when Bluetooth drops (§6.1). */
+    fun setDemoRadio(on: Boolean) {
+        if (!isDemo || on != demoRadioOff) return
+        demoRadioOff = !on
+        if (on) {
+            radioState = RadioState.Connected("ThinkNode M5")
+            core.connect(now())
+        } else {
+            radioState = RadioState.Idle
+            core.disconnect(now())
+        }
+        pump()
     }
 
     fun stopDemo() {
@@ -465,6 +510,7 @@ class AppModel(val app: Application) {
         demo?.close()
         demo = null
         isDemo = false
+        demoRadioOff = false
         resetState()
         replaceCore(identityCore())
         radioState = RadioState.Idle
@@ -477,7 +523,8 @@ class AppModel(val app: Application) {
     private fun demoStep() {
         val d = demo ?: return
         val t = now()
-        for (f in d.read(t)) core.onCompanionFrame(f, t)
+        // Radio off: the network goes on, and what it pushes is lost.
+        for (f in d.read(t)) if (!demoRadioOff) core.onCompanionFrame(f, t)
         pump()
     }
 
@@ -515,12 +562,17 @@ class AppModel(val app: Application) {
     /** The radio link changed state (BLE or USB). */
     private fun radioChanged(state: RadioState) {
         if (isDemo) return
+        val was = isConnected
         radioState = state
         // No radio session with a throwaway identity (identityProblem).
         if (state is RadioState.Connected && identityProblem == null) {
             // Receive with the screen off (ADR-0006); stops when the user disconnects.
             RadioService.start(app, state.name, sharing = shares.isNotEmpty() || sos)
             core.connect(now())
+            pump()
+        } else if (was && !isConnected) {
+            // Lost: texts wait and a transfer pauses until it is back (§6.1).
+            core.disconnect(now())
             pump()
         }
     }
@@ -600,7 +652,11 @@ class AppModel(val app: Application) {
         while (true) {
             val f = core.pollCompanion(t) ?: break
             val d = demo
-            if (d != null) d.write(f, t) else link?.write(f)
+            if (d != null) {
+                if (!demoRadioOff) d.write(f, t)
+            } else {
+                link?.write(f)
+            }
         }
         while (true) {
             handle(core.pollEvent() ?: break)
@@ -652,7 +708,7 @@ class AppModel(val app: Application) {
                     send(say, ChatId.contact(e.from))
                 }
             }
-            is LichenEvent.Progress, is LichenEvent.Delivered, is LichenEvent.Failed -> Unit
+            is LichenEvent.Progress, is LichenEvent.Delivered, is LichenEvent.Failed, is LichenEvent.GroupSent -> Unit
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
                 groups = core.groups()
                 contacts = people()
@@ -857,11 +913,26 @@ class AppModel(val app: Application) {
         }
     }
 
-    /** Sends a failed text or voice message again (a new message). */
-    fun resend(m: StoredMessage): String? = when (val msg = m.message) {
-        is Message.Text -> send(msg.text, ChatId.of(m.chat))
-        is Message.Voice -> sendVoice(PreparedVoice(msg.mode, msg.frames, msg.durationMs, msg.data), ChatId.of(m.chat))
-        else -> null
+    /** Sends a failed text or voice message again: the same message, so that someone who
+     * already has it does not get it twice (§6.1). */
+    fun retry(m: StoredMessage): String? = try {
+        upsert(core.retryMessage(m.id, now()))
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** Cancels a text that is still waiting and none of which went out: it disappears. */
+    fun cancel(m: StoredMessage): String? = try {
+        core.cancelMessage(m.id)
+        val chat = ChatId.of(m.chat)
+        chats[chat]?.let { list -> chats[chat] = list.filter { it.id != m.id } }
+        conversations = core.conversations()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
     }
 
     // ----- location (protocol.md §12) -----

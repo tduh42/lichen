@@ -6,6 +6,8 @@ import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Message
+import com.tduhamel.lichen.core.MessageStatus
+import com.tduhamel.lichen.core.StoredMessage
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
@@ -31,6 +33,7 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.TooSoon -> res.getString(R.string.err_too_soon, waitS.toLong())
     is LichenException.NoPosition -> res.getString(R.string.err_no_position)
     is LichenException.Storage -> res.getString(R.string.err_storage)
+    is LichenException.NotCancellable -> res.getString(R.string.err_not_cancellable)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {
@@ -51,6 +54,7 @@ fun FailReason.display(res: Resources): String = res.getString(
         FailReason.TOO_LARGE -> R.string.fail_too_large
         FailReason.INTERRUPTED -> R.string.fail_interrupted
         FailReason.IDENTITY_CHANGED -> R.string.fail_identity_changed
+        FailReason.EXPIRED -> R.string.fail_expired
     },
 )
 
@@ -103,3 +107,18 @@ fun initials(name: String): String {
     }
     return letters.ifEmpty { "?" }.uppercase()
 }
+
+/** Accepted and waiting (for the radio, a path, a session…), §6.1. */
+val StoredMessage.isWaiting: Boolean get() = status is MessageStatus.Waiting
+
+/** When the sender wrote it (Unix ms), if well before it arrived: a message that waited (§6.1). */
+val StoredMessage.writtenEarlierMs: Long?
+    get() {
+        if (outgoing) return null
+        val sent = when (val m = message) {
+            is Message.Text -> m.sentAt
+            is Message.Voice -> m.sentAt
+            else -> return null
+        }.toLong() * 1000
+        return if (sent > 0 && atMs - sent > 600_000) sent else null
+    }

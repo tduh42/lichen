@@ -538,4 +538,26 @@
     <string name="close_group_note">Every member stops receiving it. The messages already received stay on each phone.</string>
     <string name="invite_none">Contacts appear here once their identity is known: scan their code or exchange a message.</string>
     <string name="invite_note">New members get the current keys: they can read messages recorded before they joined.</string>
+    <!-- Outbox (protocol.md §6.1) -->
+    <string name="debug_offline_text">Written while my radio is off</string>
+    <string name="debug_offline_group">On my way, radio off for now</string>
+    <string name="err_not_cancellable">Part of it already went out: it can no longer be cancelled.</string>
+    <string name="fail_expired">expired</string>
+    <string name="expired">Expired</string>
+    <string name="expired_note">Not delivered within 24 hours, so it will not go out later. If part of it went out, it may have arrived.</string>
+    <string name="cancel_sending">Cancel sending</string>
+    <string name="send_again">Send again</string>
+    <string name="written_at">%1$s · written at %2$s</string>
+    <string name="written_on">%1$s · written on %2$s</string>
+    <string name="paused_radio">Paused: radio disconnected</string>
+    <string name="waiting_for_radio">Waiting for the radio · expires in %1$s</string>
+    <string name="after_earlier">After earlier messages</string>
+    <string name="looking_for_path">Looking for a path</string>
+    <string name="opening_session">Opening a secure session</string>
+    <string name="waiting_for_airtime">Waiting for airtime · around %1$s</string>
+    <string name="sending_to_group">Sending to the group</string>
+    <string name="radio_offline_waits">Radio not connected: messages wait for it, up to 24 h</string>
+    <string name="demo_radio">Simulated radio connected</string>
+    <string name="demo_radio_note">Turn it off to see messages wait for the radio.</string>
+    <string name="waiting_to_be_sent">Waiting to be sent</string>
 </resources>

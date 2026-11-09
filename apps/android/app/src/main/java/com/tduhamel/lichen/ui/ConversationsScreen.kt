@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
@@ -64,6 +65,7 @@ import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.bandwidth
 import com.tduhamel.lichen.model.display
 import com.tduhamel.lichen.model.hopsBadge
+import com.tduhamel.lichen.model.isWaiting
 import java.util.Date
 
 private data class Row(
@@ -74,6 +76,8 @@ private data class Row(
     val atMs: Long?,
     val badge: String,
     val unread: Int,
+    /** Our last message is still waiting (§6.1). */
+    val waiting: Boolean = false,
 ) {
     /** A contact (can be renamed), not a group. */
     val contact: Boolean get() = !id.group
@@ -97,7 +101,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
                 Row(
                     chat, g.name, g.gid,
                     last?.let { preview(model, it, res) } ?: res.getQuantityString(R.plurals.members_count, g.members.size, g.members.size),
-                    last?.atMs, res.getString(R.string.group_flood), model.unread(chat),
+                    last?.atMs, res.getString(R.string.group_flood), model.unread(chat), last?.isWaiting == true,
                 ),
             )
         }
@@ -106,7 +110,7 @@ fun ConversationsScreen(model: AppModel, open: (ChatId) -> Unit, pair: () -> Uni
         for (c in model.contacts) {
             val chat = ChatId.contact(c.key)
             val last = model.last(chat) ?: continue
-            add(Row(chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat)))
+            add(Row(chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat), last.isWaiting))
         }
     }.sortedWith(compareByDescending<Row> { it.atMs ?: 0L }.thenBy { it.title })
 
@@ -234,7 +238,12 @@ private fun ChatRow(row: Row, open: () -> Unit, delete: () -> Unit, rename: () -
                 row.atMs?.let { Text(shortTime(context, it), fontSize = 13.sp, color = t.tx2) }
             }
             if (row.preview.isNotEmpty()) {
-                Text(row.preview, fontSize = 14.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (row.waiting) {
+                        Icon(Icons.Outlined.Schedule, stringResource(R.string.waiting_to_be_sent), tint = t.tx2, modifier = Modifier.size(14.dp))
+                    }
+                    Text(row.preview, fontSize = 14.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TransportBadge(Transport.LORA, row.badge)

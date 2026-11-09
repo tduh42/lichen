@@ -115,6 +115,8 @@ struct ConversationsView: View {
         let date: Date?
         let badge: String
         let unread: Int
+        /// Our last message is still waiting (§6.1).
+        var waiting = false
     }
 
     private var rows: [Row] {
@@ -125,7 +127,8 @@ struct ConversationsView: View {
             out.append(Row(
                 id: chat, title: g.name, key: g.gid,
                 preview: last?.preview(model) ?? String(localized: "\(g.members.count) members"),
-                date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat)
+                date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat),
+                waiting: last?.isWaiting ?? false
             ))
         }
         // A contact appears once there is something to show: radios the node heard but nobody
@@ -135,7 +138,8 @@ struct ConversationsView: View {
             guard let last = model.last(chat) else { continue }
             out.append(Row(
                 id: chat, title: c.name, key: c.key, preview: last.preview(model),
-                date: last.date, badge: hopsBadge(c.hops), unread: model.unread(chat)
+                date: last.date, badge: hopsBadge(c.hops), unread: model.unread(chat),
+                waiting: last.isWaiting
             ))
         }
         return out.sorted { ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title) }
@@ -165,7 +169,14 @@ private struct ChatRow: View {
                     }
                 }
                 if !row.preview.isEmpty {
-                    Text(row.preview).font(.system(.subheadline)).foregroundStyle(Theme.tx2).lineLimit(1)
+                    HStack(spacing: 4) {
+                        if row.waiting {
+                            Image(systemName: "clock").accessibilityLabel("Waiting to be sent")
+                        }
+                        Text(row.preview).lineLimit(1)
+                    }
+                    .font(.system(.subheadline))
+                    .foregroundStyle(Theme.tx2)
                 }
                 HStack {
                     TransportBadge(kind: .lora, label: row.badge)

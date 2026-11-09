@@ -103,6 +103,9 @@ class MainActivity : ComponentActivity() {
             sosDemo2 = e.getBoolean("sosdemo2"),
             fill = e.getInt("fill"),
             identityProblem = e.getString("identityProblem"),
+            offline = e.getInt("offline"),
+            online = e.getInt("online"),
+            expiry = e.getInt("expiry"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")

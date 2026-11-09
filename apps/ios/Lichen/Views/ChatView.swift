@@ -40,10 +40,10 @@ struct ChatView: View {
                             if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
                                 DaySeparator(date: m.date)
                             }
-                            MessageView(message: m, isGroup: isGroup).id(m.id)
+                            MessageView(message: m, isGroup: isGroup, error: $error).id(m.id)
                         }
                         if let failed = lastFailure {
-                            FailureBanner(message: failed) { error = model.resend(failed) }
+                            FailureBanner(message: failed) { error = model.retry(failed) }
                                 .padding(.top, 4)
                         }
                         Color.clear.frame(height: 1).id(Self.bottom)
@@ -366,6 +366,10 @@ private struct FailureBanner: View {
             case .interrupted:
                 Banner(kind: .warn, title: String(localized: "Not sent"),
                        message: String(localized: "The app stopped before delivery."), action: action)
+            case .expired:
+                Banner(kind: .warn, title: String(localized: "Expired"),
+                       message: String(localized: "Not delivered within 24 hours, so it will not go out later. If part of it went out, it may have arrived."),
+                       action: action)
             case .identityChanged:
                 Banner(kind: .sos, title: String(localized: "Not sent: identity changed"),
                        message: String(localized: "Compare safety numbers with \(model.title(of: message.chat)) before accepting their new key."),
@@ -378,9 +382,67 @@ private struct FailureBanner: View {
 private struct MessageView: View {
     let message: StoredMessage
     let isGroup: Bool
+    @Binding var error: String?
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
+            bubble
+                .contextMenu { actions }
+            if message.outgoing, !isGroup, case let .sending(sent, total) = message.status, total > 1 {
+                FragmentProgress(sent: Int(sent), total: Int(total))
+                    .frame(width: 220)
+                    .padding(.top, 2)
+            }
+            // When it was sent (ours) or received, then how it went.
+            HStack(spacing: 4) {
+                if message.isWaiting {
+                    Image(systemName: "clock").accessibilityHidden(true)
+                }
+                Text(footer)
+            }
+            .font(.system(.caption2))
+            .foregroundStyle(Theme.tx2)
+        }
+        .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
+        .padding(message.outgoing ? .leading : .trailing, 64)
+    }
+
+    /// Long press: cancel a text that is still waiting, send a failed one again.
+    @ViewBuilder private var actions: some View {
+        if case let .waiting(_, started, _) = message.status, !started {
+            Button(role: .destructive) { error = model.cancel(message) } label: {
+                Label("Cancel sending", systemImage: "xmark.circle")
+            }
+        }
+        if message.outgoing, case .failed = message.status {
+            switch message.message {
+            case .text, .voice:
+                Button { error = model.retry(message) } label: {
+                    Label("Send again", systemImage: "arrow.clockwise")
+                }
+            default:
+                EmptyView()
+            }
+        }
+    }
+
+    private var footer: String {
+        let time = message.date.formatted(date: .omitted, time: .shortened)
+        if message.outgoing {
+            return ([time] + [caption].compactMap { $0 }).joined(separator: " · ")
+        }
+        // Written well before it arrived: it waited (§6.1).
+        if let written = message.writtenEarlier {
+            if Calendar.current.isDate(written, inSameDayAs: message.date) {
+                return String(localized: "\(time) · written at \(written.formatted(date: .omitted, time: .shortened))")
+            }
+            return String(localized: "\(time) · written on \(written.formatted(date: .abbreviated, time: .shortened))")
+        }
+        return time
+    }
+
+    @ViewBuilder private var bubble: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
             if isGroup, !message.outgoing, let a = message.author {
                 Text(model.name(of: a)).font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx2)
@@ -404,25 +466,27 @@ private struct MessageView: View {
                     .background(message.outgoing ? Theme.actBg : Theme.s2, in: RoundedRectangle(cornerRadius: 18))
                     .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
             }
-            if message.outgoing, case let .sending(sent, total) = message.status, total > 1 {
-                FragmentProgress(sent: Int(sent), total: Int(total))
-                    .frame(width: 220)
-                    .padding(.top, 2)
-            }
-            // When it was sent (ours) or received, then how it went.
-            let time = message.date.formatted(date: .omitted, time: .shortened)
-            Text(message.outgoing ? ([time] + [caption].compactMap { $0 }).joined(separator: " · ") : time)
-                .font(.system(.caption2))
-                .foregroundStyle(Theme.tx2)
         }
-        .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
-        .padding(message.outgoing ? .leading : .trailing, 64)
     }
 
     private var caption: String? {
         switch message.status {
         case .received: return nil
+        case let .waiting(reason, started, expiresAtMs):
+            switch reason {
+            case .radio:
+                if started { return String(localized: "Paused: radio disconnected") }
+                return String(localized: "Waiting for the radio · expires in \(timeLeft(expiresAtMs))")
+            case .earlier: return String(localized: "After earlier messages")
+            case .path: return String(localized: "Looking for a path")
+            case .handshake: return String(localized: "Opening a secure session")
+            case let .budget(atMs):
+                let at = Date(timeIntervalSince1970: TimeInterval(atMs) / 1000)
+                    .formatted(date: .omitted, time: .shortened)
+                return String(localized: "Waiting for airtime · around \(at)")
+            }
         case let .sending(sent, total):
+            if isGroup { return String(localized: "Sending to the group") }
             return total > 1 ? String(localized: "Waiting for the acknowledgement") :
                 String(localized: "Sending \(min(Int(sent), Int(total))) / \(Int(total)) fragments")
         case .delivered:
@@ -435,6 +499,12 @@ private struct MessageView: View {
     }
 
     private var airtime: String { String(format: "%.1f", Double(message.airtimeMs) / 1000) }
+
+    /// "24 h", "35 min": how long a waiting text still has before it expires (§6.1).
+    private func timeLeft(_ expiresAtMs: Int64) -> String {
+        let s = max(0, Double(expiresAtMs) / 1000 - Date().timeIntervalSince1970)
+        return s >= 3600 ? "\(Int((s / 3600).rounded(.up))) h" : "\(max(1, Int((s / 60).rounded(.up)))) min"
+    }
 }
 
 /// Play button (LoRa orange), waveform, length, codec (mockup `chat`).
@@ -586,7 +656,12 @@ private struct Composer: View {
                 }
                 .padding(.leading, 52)
             }
-            if let line = costLine {
+            if !model.isConnected {
+                Label("Radio not connected: messages wait for it, up to 24 h", systemImage: "clock")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Theme.tx2)
+                    .padding(.leading, 52)
+            } else if let line = costLine {
                 Text(line).font(.system(.caption2)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
             if model.recorder.recording, model.recorder.chat == chat {
@@ -624,7 +699,8 @@ private struct Composer: View {
                             Image(systemName: "mic")
                                 .font(.system(.title3, weight: .semibold))
                                 .frame(width: 44, height: 44)
-                                .foregroundStyle(Theme.lora)
+                                // Voice messages need the radio (§6.1): grey while it is away.
+                                .foregroundStyle(model.isConnected ? Theme.lora : Theme.tx2)
                         }
                         .disabled(!model.isConnected)
                         .accessibilityLabel("Record a voice message")
@@ -639,7 +715,8 @@ private struct Composer: View {
                                 .background(Theme.actBg, in: Circle())
                                 .foregroundStyle(Theme.actFg)
                         }
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.isConnected)
+                        // Texts wait for the radio (§6.1); not with a throwaway identity.
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.identityProblem != nil)
                         .accessibilityLabel("Send")
                     }
                 }
