@@ -162,6 +162,32 @@ pub struct GroupInfo {
     pub keys_known: u32,
 }
 
+/// An invitation to show as a QR code (protocol.md §10.5).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct InviteCode {
+    /// What the QR code carries.
+    pub text: String,
+    /// To revoke it.
+    pub token: Vec<u8>,
+    /// Unix seconds.
+    pub expires: u64,
+}
+
+/// What a scanned invitation says, before joining (protocol.md §10.5).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct InviteInfo {
+    pub group_name: String,
+    pub admin_name: String,
+    /// The admin's node: the contact it becomes, and `admin` in `GroupJoined`.
+    pub admin: Vec<u8>,
+    /// Unix seconds.
+    pub expires: u64,
+    /// Past its time by this phone's clock (2 minutes allowed for clocks that differ).
+    pub expired: bool,
+    /// We already belong to a group of that admin with that name.
+    pub member: bool,
+}
+
 /// A search we run (protocol.md §11): the target's node (the app's handle) and identity.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct SearchState {
@@ -2585,6 +2611,71 @@ impl LichenCore {
         i.core.add_members(&g, &ms, now_ms)?;
         i.persist();
         Ok(())
+    }
+
+    /// An invitation to group `gid` (admin only): it admits anyone who scans it for 10
+    /// minutes, until `revoke_invite` or the app stops (protocol.md §10.5).
+    pub fn create_invite(&self, gid: Vec<u8>, now_ms: u64) -> Result<InviteCode, LichenError> {
+        let g = self::gid(&gid)?;
+        let invite = self.lock().core.create_invite(&g, now_ms)?;
+        Ok(InviteCode {
+            text: invite.encode(),
+            token: invite.token.to_vec(),
+            expires: u64::from(invite.expires),
+        })
+    }
+
+    /// Closes an invitation: its code admits no one any more.
+    pub fn revoke_invite(&self, token: Vec<u8>) {
+        if let Ok(t) = <[u8; 16]>::try_from(token.as_slice()) {
+            self.lock().core.revoke_invite(&t);
+        }
+    }
+
+    /// Reads a scanned invitation; `BadCode` if the text is not one, or is ours.
+    pub fn parse_invite(&self, text: String, now_ms: u64) -> Result<InviteInfo, LichenError> {
+        let invite = lc_core::identity::Invite::decode(&text).ok_or(LichenError::BadCode)?;
+        let i = self.lock();
+        if i.core.key() == Some(&invite.admin) {
+            return Err(LichenError::BadCode);
+        }
+        let expired = i
+            .core
+            .unix_s(now_ms)
+            .is_some_and(|t| t > u64::from(invite.expires) + lc_core::group::INVITE_SKEW_S);
+        let member = i
+            .core
+            .groups()
+            .any(|g| g.admin == invite.admin && g.name == invite.group_name);
+        Ok(InviteInfo {
+            group_name: invite.group_name,
+            admin_name: invite.admin_name,
+            admin: invite.node.to_vec(),
+            expires: u64::from(invite.expires),
+            expired,
+            member,
+        })
+    }
+
+    /// Joins with a scanned invitation: the admin becomes a contact, verified (scanned in
+    /// person), and is asked to add us; `GroupJoined` follows once admitted (§10.5).
+    pub fn accept_invite(&self, text: String, now_ms: u64) -> Result<ContactInfo, LichenError> {
+        let invite = lc_core::identity::Invite::decode(&text).ok_or(LichenError::BadCode)?;
+        let mut i = self.lock();
+        if i.core.key() == Some(&invite.admin) {
+            return Err(LichenError::BadCode);
+        }
+        i.last_now = now_ms;
+        i.core.join(&invite, now_ms)?;
+        i.save_contacts();
+        let out = i
+            .core
+            .contacts()
+            .find(|k| k.key == invite.node)
+            .map(|k| ContactInfo::of(k, &i.nicknames))
+            .ok_or(LichenError::UnknownContact)?;
+        i.extra.push_back(LichenEvent::ContactsUpdated);
+        Ok(out)
     }
 
     /// Leaves a group: a member asks the admin to remove it and forgets the group at once; the

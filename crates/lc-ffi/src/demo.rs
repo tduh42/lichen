@@ -129,6 +129,14 @@ enum Action {
         from: usize,
         text: String,
     },
+    /// Léa, next to the user, scans their group invitation (§10.5), once her node is up.
+    GuestJoins(String),
+    /// A post in a given group (one the user created).
+    PostIn {
+        from: usize,
+        gid: GroupId,
+        text: String,
+    },
     /// A bot reacts to one of the app's messages (§6.2).
     React {
         from: usize,
@@ -140,8 +148,11 @@ enum Action {
 struct Demo {
     net: Net,
     app: usize,
+    hub: usize,
     camille: usize,
     julien: usize,
+    /// Léa, who scans the user's group invitation (debug `inviteDemo`).
+    guest: Option<usize>,
     origin: Option<u64>,
     group: Option<GroupId>,
     pending: Vec<(u64, Action)>,
@@ -338,6 +349,28 @@ impl Demo {
                     .net
                     .with_core(from, |c, now| c.send_datagram(&app_key, reaction, now));
             }
+            Action::GuestJoins(text) => {
+                let Some(guest) = self.guest else {
+                    return;
+                };
+                let ready = self
+                    .net
+                    .with_core_ref(guest, lc_core::Core::ready)
+                    .unwrap_or(false);
+                if !ready {
+                    self.pending
+                        .push((self.net.now + 2 * SEC, Action::GuestJoins(text)));
+                    return;
+                }
+                if let Some(invite) = lc_core::identity::Invite::decode(&text) {
+                    let _ = self.net.with_core(guest, |c, now| c.join(&invite, now));
+                }
+            }
+            Action::PostIn { from, gid, text } => {
+                let _ = self
+                    .net
+                    .with_core(from, |c, now| c.send_group_text(&gid, &text, ts, now));
+            }
             Action::GroupPost { from, text } => {
                 if let Some(gid) = self.group {
                     let _ = self
@@ -410,6 +443,21 @@ impl Demo {
             let _ = self.net.with_core(self.camille, |c, now| {
                 c.send_datagram(&app_key, announce, now)
             });
+        }
+        // Léa says hello once the user's admitted her.
+        if let Some(guest) = self.guest {
+            for e in self.net.take_events(guest) {
+                if let Event::GroupJoined { gid, .. } = e {
+                    self.pending.push((
+                        now + 20 * SEC,
+                        Action::PostIn {
+                            from: guest,
+                            gid,
+                            text: "Hi, it's Léa! I'm at the car park, see you at the col.".into(),
+                        },
+                    ));
+                }
+            }
         }
         for (bot, name) in [(self.camille, "Camille"), (self.julien, "Julien")] {
             for e in self.net.take_events(bot) {
@@ -665,8 +713,10 @@ impl DemoNetwork {
             inner: Mutex::new(Demo {
                 net,
                 app,
+                hub,
                 camille,
                 julien,
+                guest: None,
                 origin: None,
                 group: None,
                 pending,
@@ -709,6 +759,32 @@ impl DemoNetwork {
         }
         d.net.connect(camille);
         d.net.connect(julien);
+    }
+
+    /// Léa, standing next to the user, scans their group invitation `text` (debug
+    /// `inviteDemo`, §10.5): her node comes up a few seconds later and asks to join.
+    pub fn guest_scans(&self, text: String) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guest = match d.guest {
+            Some(g) => g,
+            None => {
+                let (app, hub) = (d.app, d.hub);
+                let g = d.net.add_companion(4, "Léa");
+                d.net.link(g, app);
+                d.net.link(g, hub);
+                d.net.connect(g);
+                let wall = d.wall0 + d.net.now;
+                let _ = d.net.with_core(g, |c, now| c.set_clock(wall, now));
+                d.guest = Some(g);
+                g
+            }
+        };
+        let _ = guest;
+        let at = d.net.now + 3 * SEC;
+        d.pending.push((at, Action::GuestJoins(text)));
     }
 
     /// Camille also in SOS (at the refuge, with GPS) from `after_s` for `for_s` seconds: two
@@ -761,6 +837,60 @@ impl DemoNetwork {
 mod tests {
     use super::*;
     use crate::{LichenCore, LichenEvent, Message};
+
+    /// The user creates a group alone and shows its invitation; Léa, next to them, scans it,
+    /// is admitted and says hello (§10.5).
+    #[test]
+    fn a_guest_joins_by_invitation() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("demo-test".into(), vec![8; 32], vec![108; 32], None).unwrap();
+        core.set_clock(unix_now_ms(), 0);
+        core.connect(0);
+        let mut gid = None;
+        let (mut joined, mut hello) = (None, None);
+        for step in 0..(10 * 60 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                match e {
+                    LichenEvent::MemberJoined { .. } => joined = joined.or(Some(now / 1000)),
+                    LichenEvent::GroupMessage {
+                        message: Message::Text { text, .. },
+                        ..
+                    } if text.starts_with("Hi, it's Léa") => hello = Some(now / 1000),
+                    _ => {}
+                }
+            }
+            if gid.is_none() && now >= 5_000 {
+                let g = core
+                    .create_group("Sortie du dimanche".into(), vec![], now)
+                    .unwrap();
+                let code = core.create_invite(g.clone(), now).unwrap();
+                let info = core.parse_invite(code.text.clone(), now);
+                assert_eq!(info, Err(crate::LichenError::BadCode), "our own invitation");
+                demo.guest_scans(code.text);
+                gid = Some(g);
+            }
+            if hello.is_some() {
+                break;
+            }
+        }
+        eprintln!("Léa admitted at {joined:?} s, her hello at {hello:?} s");
+        assert!(joined.is_some(), "Léa was not admitted");
+        assert!(hello.is_some(), "Léa's hello did not arrive");
+        let g = core
+            .groups()
+            .into_iter()
+            .find(|g| Some(&g.gid) == gid.as_ref())
+            .unwrap();
+        assert!(g.members.iter().any(|m| m.name == "Léa"));
+    }
 
     /// The demo as the app runs it: frames back and forth, events out.
     #[test]

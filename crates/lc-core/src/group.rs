@@ -23,7 +23,7 @@ pub const MAX_MEMBERS: usize = 32;
 /// How long an invitation admits people (§10.5).
 pub const INVITE_TTL_MS: Millis = 10 * 60_000;
 /// How late by our clock a scanned invitation may be and still be tried: phone clocks differ.
-const INVITE_SKEW_S: u64 = 120;
+pub const INVITE_SKEW_S: u64 = 120;
 /// Every group message is flooded this many times by default (§10.3): a flood lost at its
 /// first hop, to a collision with other traffic, is lost for everyone.
 pub const COPIES: u8 = 2;
@@ -487,7 +487,8 @@ impl Core {
         k
     }
 
-    /// Creates a group with us as admin and `members` (contacts) as the other members.
+    /// Creates a group with us as admin and `members` (contacts, possibly none) as the other
+    /// members.
     pub fn create_group(
         &mut self,
         name: &str,
@@ -514,7 +515,8 @@ impl Core {
                 });
             }
         }
-        if list.len() < 2 || list.len() > MAX_MEMBERS {
+        // The admin may start alone and invite in person (§10.5).
+        if list.len() > MAX_MEMBERS {
             return Err(Error::TooLarge);
         }
         let mut gid = [0u8; 16];
