@@ -18,6 +18,12 @@ struct ChatView: View {
     @State private var unseen = 0
     /// The message to keep at the top while an earlier page comes in.
     @State private var keepAt: Int64?
+    /// The first message that was unread when the chat opened, and how many were: the divider
+    /// stays there until the chat is left.
+    @State private var dividerBefore: Int64?
+    @State private var unreadAtOpen = 0
+    /// A message opened from a search, highlighted for a moment.
+    @State private var highlight: Int64?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,7 +46,10 @@ struct ChatView: View {
                             if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
                                 DaySeparator(date: m.date)
                             }
-                            MessageView(message: m, isGroup: isGroup, error: $error).id(m.id)
+                            if m.id == dividerBefore {
+                                UnreadDivider(count: unreadAtOpen)
+                            }
+                            MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id).id(m.id)
                         }
                         if let failed = lastFailure {
                             FailureBanner(message: failed) { error = model.retry(failed) }
@@ -72,11 +81,16 @@ struct ChatView: View {
                 }
                 // Opens on the latest messages, once the history is loaded (onAppear) and again
                 // once images are laid out; later ones scroll into view.
+                // On a message from a search, or on the unread divider, else at the end.
                 .task(id: chat) {
                     await Task.yield()
-                    proxy.scrollTo(Self.bottom, anchor: .bottom)
+                    scrollToStart(proxy)
                     try? await Task.sleep(for: .milliseconds(250))
-                    proxy.scrollTo(Self.bottom, anchor: .bottom)
+                    scrollToStart(proxy)
+                    if highlight != nil {
+                        try? await Task.sleep(for: .seconds(2))
+                        withAnimation { highlight = nil }
+                    }
                 }
                 // A new last message: follow it when we were at the bottom or sent it; else count
                 // it in the pill. Older pages, loaded at the top, move nothing.
@@ -138,6 +152,15 @@ struct ChatView: View {
         }
         .onAppear {
             model.load(chat)
+            if let f = model.focus, f.chat == chat {
+                model.focus = nil
+                model.loadUntil(chat, f.id)
+                highlight = f.id
+            }
+            // Before marking them read: where the unread messages start.
+            let unread = messages.filter { !$0.outgoing && !$0.read }
+            dividerBefore = unread.first?.id
+            unreadAtOpen = unread.count
             model.markRead(chat)
             // On screen: its messages need no notification.
             model.notifier.visibleChat = chat
@@ -184,6 +207,21 @@ struct ChatView: View {
 
     /// The end of the conversation, to scroll to.
     private static let bottom = "bottom"
+
+    /// Opens on a message from a search, on the first unread one, else at the end. Not at the
+    /// end, the reading position is that message: a new one then shows the pill.
+    private func scrollToStart(_ proxy: ScrollViewProxy) {
+        if let h = highlight {
+            proxy.scrollTo(h, anchor: .center)
+            bottomVisible = h
+        } else if let d = dividerBefore {
+            // The first unread message near the top, its divider just above it.
+            proxy.scrollTo(d, anchor: UnitPoint(x: 0.5, y: 0.12))
+            bottomVisible = d
+        } else {
+            proxy.scrollTo(Self.bottom, anchor: .bottom)
+        }
+    }
 
     /// The last message we sent, when it failed: a banner offers to send it again.
     private var lastFailure: StoredMessage? {
@@ -379,11 +417,31 @@ private struct FailureBanner: View {
     }
 }
 
+/// "3 unread messages", before the first one that was unread when the chat opened.
+private struct UnreadDivider: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(Theme.line).frame(height: 1)
+            Text("\(count) unread messages")
+                .font(.system(.caption, weight: .semibold))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize()
+            Rectangle().fill(Theme.line).frame(height: 1)
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct MessageView: View {
     let message: StoredMessage
     let isGroup: Bool
     @Binding var error: String?
+    var highlighted = false
     @Environment(AppModel.self) private var model
+    @State private var selecting = false
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
@@ -406,10 +464,28 @@ private struct MessageView: View {
         }
         .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
         .padding(message.outgoing ? .leading : .trailing, 64)
+        // A text reads as one: author, text, time and status. Media keep their buttons.
+        .accessibilityElement(children: isText ? .combine : .contain)
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 22).fill(highlighted ? Theme.warnBg : .clear))
+        .padding(-4)
+        .sheet(isPresented: $selecting) {
+            if case let .text(_, text) = message.message { SelectTextSheet(text: text) }
+        }
     }
 
-    /// Long press: cancel a text that is still waiting, send a failed one again.
+    private var isText: Bool {
+        if case .text = message.message { return true }
+        return false
+    }
+
+    /// Long press: copy or select a text; cancel one that is still waiting, send a failed one
+    /// again.
     @ViewBuilder private var actions: some View {
+        if case let .text(_, text) = message.message {
+            Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") }
+            Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") }
+        }
         if case let .waiting(_, started, _) = message.status, !started {
             Button(role: .destructive) { error = model.cancel(message) } label: {
                 Label("Cancel sending", systemImage: "xmark.circle")
@@ -1183,3 +1259,42 @@ private struct BridgeSection: View {
     }
 }
 
+/// A message's text, to select part of it; links, addresses and phone numbers can be tapped.
+private struct SelectTextSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            SelectableText(text: text)
+                .padding(.horizontal, 12)
+                .screen()
+                .navigationTitle("Select text")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct SelectableText: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView()
+        v.isEditable = false
+        v.isSelectable = true
+        v.dataDetectorTypes = [.link, .phoneNumber, .address]
+        v.backgroundColor = .clear
+        v.font = .preferredFont(forTextStyle: .body)
+        v.adjustsFontForContentSizeCategory = true
+        v.textColor = .label
+        return v
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        v.text = text
+    }
+}

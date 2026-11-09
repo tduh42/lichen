@@ -8,6 +8,7 @@ struct ConversationsView: View {
     @State private var path: [ChatID] = []
     @State private var deleting: Row?
     @State private var renaming: Data?
+    @State private var searching = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -31,7 +32,13 @@ struct ConversationsView: View {
                                 .listRowInsets(EdgeInsets())
                                 .listRowBackground(Theme.s1)
                                 .alignmentGuide(.listRowSeparatorLeading) { _ in 72 }
-                                // Swipe left: delete (confirmed below), rename a contact.
+                                // Swipe right: pin; left: delete (confirmed below), rename a contact.
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button { model.setPinned(row.id, !row.pinned) } label: {
+                                        Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
+                                    }
+                                    .tint(Theme.tx2)
+                                }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                     Button { deleting = row } label: { Label("Delete", systemImage: "trash") }
                                         .tint(Theme.sos)
@@ -41,6 +48,21 @@ struct ConversationsView: View {
                                     }
                                 }
                                 .contextMenu {
+                                    Button { model.setPinned(row.id, !row.pinned) } label: {
+                                        Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
+                                    }
+                                    if row.muted {
+                                        Button { model.unmute(row.id) } label: { Label("Unmute", systemImage: "bell") }
+                                    } else {
+                                        // SOS alerts are never muted.
+                                        Menu {
+                                            Button("For 1 hour") { model.mute(row.id, hours: 1) }
+                                            Button("For 8 hours") { model.mute(row.id, hours: 8) }
+                                            Button("Until I turn it back on") { model.mute(row.id, hours: nil) }
+                                        } label: {
+                                            Label("Mute", systemImage: "bell.slash")
+                                        }
+                                    }
                                     if case let .contact(key) = row.id {
                                         Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
                                     }
@@ -59,6 +81,13 @@ struct ConversationsView: View {
             .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ChatID.self) { ChatView(chat: $0) }
+            .sheet(isPresented: $searching) {
+                SearchMessagesView { chat, id in
+                    searching = false
+                    if let id { model.focus = (chat, id) }
+                    path = [chat]
+                }
+            }
             .onChange(of: model.debugOpen) {
                 if let chat = model.debugOpen { path = [chat] }
             }
@@ -67,6 +96,8 @@ struct ConversationsView: View {
                 if let chat = model.debugOpen, path.isEmpty { path = [chat] }
                 #if DEBUG
                 if model.debugScreen == "contact" { addingContact = true }
+                // -screen searchMessages -query <text>: the search sheet, filled in.
+                if model.debugScreen == "searchMessages" { searching = true }
                 #endif
             }
             .sheet(isPresented: $composing) {
@@ -99,6 +130,7 @@ struct ConversationsView: View {
                 .tracking(-0.5)
             Spacer()
             HStack(spacing: 8) {
+                RoundIconButton(systemName: "magnifyingglass", label: "Search messages") { searching = true }
                 RoundIconButton(systemName: "qrcode", label: "Add a contact") { addingContact = true }
                 RoundIconButton(systemName: "plus", label: "New message", prominent: true) { composing = true }
             }
@@ -117,6 +149,10 @@ struct ConversationsView: View {
         let unread: Int
         /// Our last message is still waiting (§6.1).
         var waiting = false
+        /// Pinned (since when, Unix ms) and muted now.
+        var pinnedAt: Int64?
+        var muted = false
+        var pinned: Bool { pinnedAt != nil }
     }
 
     private var rows: [Row] {
@@ -128,7 +164,8 @@ struct ConversationsView: View {
                 id: chat, title: g.name, key: g.gid,
                 preview: last?.preview(model) ?? String(localized: "\(g.members.count) members"),
                 date: last?.date, badge: String(localized: "Group · flood"), unread: model.unread(chat),
-                waiting: last?.isWaiting ?? false
+                waiting: last?.isWaiting ?? false,
+                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
         // A contact appears once there is something to show: radios the node heard but nobody
@@ -139,10 +176,15 @@ struct ConversationsView: View {
             out.append(Row(
                 id: chat, title: c.name, key: c.key, preview: last.preview(model),
                 date: last.date, badge: hopsBadge(c.hops), unread: model.unread(chat),
-                waiting: last.isWaiting
+                waiting: last.isWaiting,
+                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
-        return out.sorted { ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title) }
+        // Pinned first (the latest pinned on top), then the most recent.
+        return out.sorted {
+            if $0.pinnedAt != $1.pinnedAt { return ($0.pinnedAt ?? .min) > ($1.pinnedAt ?? .min) }
+            return ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title)
+        }
     }
 }
 
@@ -161,8 +203,16 @@ private struct ChatRow: View {
         HStack(alignment: .top, spacing: 12) {
             Avatar(name: row.title, key: row.key)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.title).font(.system(.callout, weight: .semibold)).lineLimit(1)
+                    if row.pinned {
+                        Image(systemName: "pin.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                            .accessibilityLabel("Pinned")
+                    }
+                    if row.muted {
+                        Image(systemName: "bell.slash.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                            .accessibilityLabel("Muted")
+                    }
                     Spacer()
                     if let d = row.date {
                         Text(d, style: .time).font(.system(.footnote)).foregroundStyle(Theme.tx2)
@@ -186,8 +236,9 @@ private struct ChatRow: View {
                             .font(.system(.caption, weight: .bold))
                             .padding(.horizontal, 6)
                             .frame(minWidth: 20, minHeight: 20)
-                            .background(Theme.actBg, in: Capsule())
-                            .foregroundStyle(Theme.actFg)
+                            // Grey when muted.
+                            .background(row.muted ? Theme.s2 : Theme.actBg, in: Capsule())
+                            .foregroundStyle(row.muted ? Theme.tx2 : Theme.actFg)
                             .accessibilityLabel("\(row.unread) unread")
                     }
                 }

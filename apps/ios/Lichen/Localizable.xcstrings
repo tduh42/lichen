@@ -421,6 +421,46 @@
         }
       }
     },
+    "%lld unread messages": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld unread message"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld unread messages"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld message non lu"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld messages non lus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld°": {
       "localizations": {
         "fr": {
@@ -1251,6 +1291,26 @@
         }
       }
     },
+    "Conversations": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversations"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copier"
+          }
+        }
+      }
+    },
     "Could not cancel.": {
       "localizations": {
         "fr": {
@@ -1787,6 +1847,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Suivre le thème"
+          }
+        }
+      }
+    },
+    "For 1 hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pendant 1 heure"
+          }
+        }
+      }
+    },
+    "For 8 hours": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pendant 8 heures"
           }
         }
       }
@@ -2561,6 +2641,26 @@
         }
       }
     },
+    "Mute": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mettre en sourdine"
+          }
+        }
+      }
+    },
+    "Muted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En sourdine"
+          }
+        }
+      }
+    },
     "My code": {
       "localizations": {
         "fr": {
@@ -2757,6 +2857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore de mesure"
+          }
+        }
+      }
+    },
+    "No messages found": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun message trouvé"
           }
         }
       }
@@ -3161,12 +3271,32 @@
         }
       }
     },
+    "Pin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épingler"
+          }
+        }
+      }
+    },
     "Ping": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Pinger"
+          }
+        }
+      }
+    },
+    "Pinned": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épinglée"
           }
         }
       }
@@ -3651,6 +3781,16 @@
         }
       }
     },
+    "Search messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher dans les messages"
+          }
+        }
+      }
+    },
     "Search · %@": {
       "localizations": {
         "fr": {
@@ -3677,6 +3817,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Recherche · %@%@"
+          }
+        }
+      }
+    },
+    "Select text": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sélectionner le texte"
           }
         }
       }
@@ -4641,12 +4791,42 @@
         }
       }
     },
+    "Unmute": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réactiver les notifications"
+          }
+        }
+      }
+    },
+    "Unpin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désépingler"
+          }
+        }
+      }
+    },
     "Unsupported content (type %@, %@ bytes)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Contenu non pris en charge (type %@, %@ octets)"
+          }
+        }
+      }
+    },
+    "Until I turn it back on": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jusqu'à ce que je les réactive"
           }
         }
       }

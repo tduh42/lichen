@@ -56,6 +56,10 @@ final class AppModel {
     var chats: [ChatID: [StoredMessage]] = [:]
     /// Conversations with messages, most recent first, with their unread counts.
     var conversations: [Conversation] = []
+    /// Pinned and muted conversations (local, per identity).
+    var prefs: [ChatID: ChatPrefs] = [:]
+    /// A message to open its chat on (from a search): taken by that chat's screen.
+    var focus: (chat: ChatID, id: Int64)?
     var secured: Set<Data> = []
     var lastSnr: [Data: Float] = [:]
     /// Running on the simulated network instead of a real node.
@@ -129,6 +133,10 @@ final class AppModel {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var demo: DemoNetwork?
     @ObservationIgnored private var demoTimer: Timer?
+    /// The simulated network runs on a queue of its own, reads and writes in order: catching up
+    /// after a pause can take seconds, and must not freeze the screen.
+    @ObservationIgnored private let demoQueue = DispatchQueue(label: "lichen.demo", qos: .userInitiated)
+    @ObservationIgnored private var demoReading = false
     @ObservationIgnored private var debugSay: String?
     @ObservationIgnored private var debugVoiceSent = false
     @ObservationIgnored private var debugFilled = false
@@ -152,6 +160,7 @@ final class AppModel {
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
         conversations = core.conversations()
+        refreshPrefs()
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
         companion.onFound = { [weak self] f in MainActor.assumeIsolated { self?.found = f } }
         companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.frame(d) } }
@@ -248,6 +257,7 @@ final class AppModel {
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
         conversations = core.conversations()
+        refreshPrefs()
         shares = core.shares()
         positions = core.positions(nowMs: now())
         if isConnected { core.connect(nowMs: now()) }
@@ -362,6 +372,7 @@ final class AppModel {
         }
         companionState = companion.state
         shares = core.shares()
+        refreshPrefs()
         updateLocator()
     }
 
@@ -375,13 +386,24 @@ final class AppModel {
     }
 
     private func demoStep() {
-        guard let demo else { return }
+        guard let demo, !demoReading else { return }
+        demoReading = true
         let t = now()
-        // Radio off: the network goes on, and what it pushes is lost.
-        for f in demo.read(nowMs: t) where !demoRadioOff {
-            core.onCompanionFrame(frame: f, nowMs: t)
+        demoQueue.async { [weak self] in
+            let frames = demo.read(nowMs: t)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.demoReading = false
+                    guard self.demo === demo else { return }
+                    // Radio off: the network goes on, and what it pushes is lost.
+                    for f in frames where !self.demoRadioOff {
+                        self.core.onCompanionFrame(frame: f, nowMs: t)
+                    }
+                    self.pump()
+                }
+            }
         }
-        pump()
     }
 
     private func resetState() {
@@ -393,6 +415,8 @@ final class AppModel {
         groups = []
         chats = [:]
         conversations = []
+        prefs = [:]
+        focus = nil
         secured = []
         lastSnr = [:]
         shares = []
@@ -440,17 +464,31 @@ final class AppModel {
         pump()
     }
 
+    /// Our simulated position, read on the demo's queue.
+    private func demoFix(_ demo: DemoNetwork) {
+        demoQueue.async { [weak self] in
+            let fix = demo.myPosition()
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.gotFix(fix) }
+            }
+        }
+    }
+
     /// Writes due frames, reads events, and sets the timer for the next wake-up.
     func pump() {
         let t = now()
         core.setClock(unixMs: UInt64(Date().timeIntervalSince1970 * 1000), nowMs: t)
         core.tick(nowMs: t)
+        var toDemo: [Data] = []
         while let f = core.pollCompanion(nowMs: t) {
-            if let demo {
-                if !demoRadioOff { demo.write(frame: f, nowMs: t) }
+            if demo != nil {
+                if !demoRadioOff { toDemo.append(f) }
             } else {
                 companion.write(f)
             }
+        }
+        if let demo, !toDemo.isEmpty {
+            demoQueue.async { for f in toDemo { demo.write(frame: f, nowMs: t) } }
         }
         while let e = core.pollEvent() {
             handle(e)
@@ -495,6 +533,10 @@ final class AppModel {
                 debugFilled = true
                 try? core.demoFillHistory(chat: .contact(key: c.key), count: UInt32(UserDefaults.standard.integer(forKey: "fill")))
                 conversations = core.conversations()
+                // -focus <text>: open on the first message found, as a search result does.
+                if let q = UserDefaults.standard.string(forKey: "focus"), let m = searchMessages(q).first {
+                    focus = (m.chat, m.id)
+                }
             }
             if shares.isEmpty, let name = UserDefaults.standard.string(forKey: "share"),
                let c = contacts.first(where: { $0.name == name }) {
@@ -518,7 +560,10 @@ final class AppModel {
             secured.insert(peer)
         case let .received(from, message, snr, _):
             lastSnr[from] = snr
-            notifier.message(.contact(key: from), title: name(of: from), body: message.display)
+            // A muted chat stays silent; SOS alerts go through `notifier.sos`, never muted.
+            if !isMuted(.contact(key: from)) {
+                notifier.message(.contact(key: from), title: name(of: from), body: message.display)
+            }
             #if DEBUG
             if let say = debugSay {
                 debugSay = nil
@@ -539,7 +584,9 @@ final class AppModel {
         case let .groupMessage(gid, from, message, snr, _):
             lastSnr[from] = snr
             let chat = ChatID.group(gid: gid)
-            notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
+            if !isMuted(chat) {
+                notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
+            }
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
@@ -647,6 +694,52 @@ final class AppModel {
     }
 
     private static let draftsDefault = "lichen.drafts"
+
+    /// Loads earlier pages until message `id` is there (a search result), 20 pages at most.
+    func loadUntil(_ chat: ChatID, _ id: Int64) {
+        if chats[chat] == nil { load(chat) }
+        var pages = 0
+        while !(chats[chat]?.contains { $0.id == id } ?? true), olderAvailable[chat] == true, pages < 20 {
+            loadOlder(chat)
+            pages += 1
+        }
+    }
+
+    // MARK: chat essentials (pins, mutes, search)
+
+    func refreshPrefs() {
+        prefs = Dictionary(core.chatPrefs().map { ($0.chat, $0) }, uniquingKeysWith: { a, _ in a })
+    }
+
+    func isPinned(_ chat: ChatID) -> Bool { prefs[chat]?.pinnedAtMs != nil }
+
+    /// Muted now: its messages post no notification (SOS alerts still do).
+    func isMuted(_ chat: ChatID) -> Bool {
+        guard let until = prefs[chat]?.mutedUntilMs else { return false }
+        return until > Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
+    func setPinned(_ chat: ChatID, _ pinned: Bool) {
+        try? core.setPinned(chat: chat, pinned: pinned)
+        refreshPrefs()
+    }
+
+    /// Mutes `chat` for `hours`, or until the user turns it back on (`nil`).
+    func mute(_ chat: ChatID, hours: Double?) {
+        let until = hours.map { Int64((Date().timeIntervalSince1970 + $0 * 3600) * 1000) } ?? Int64.max
+        try? core.setMuted(chat: chat, untilMs: until)
+        refreshPrefs()
+    }
+
+    func unmute(_ chat: ChatID) {
+        try? core.setMuted(chat: chat, untilMs: nil)
+        refreshPrefs()
+    }
+
+    /// Text messages containing `query` (case and accents aside), newest first.
+    func searchMessages(_ query: String) -> [StoredMessage] {
+        core.searchMessages(query: query, limit: 50)
+    }
 
     func markRead(_ chat: ChatID) {
         try? core.markRead(chat: chat)
@@ -835,11 +928,11 @@ final class AppModel {
         if let demo {
             locator.stop()
             if needed, demoFixTimer == nil {
-                gotFix(demo.myPosition())
+                demoFix(demo)
                 demoFixTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
                     MainActor.assumeIsolated {
                         guard let self, let demo = self.demo else { return }
-                        self.gotFix(demo.myPosition())
+                        self.demoFix(demo)
                     }
                 }
             } else if !needed {
