@@ -216,7 +216,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | Type | Name | Body | Milestone |
 |---|---|---|---|
 | 0x01 | TEXT | `ts u32 (sender's Unix seconds) ‖ UTF-8 text (≥ 1 byte)` | L2 |
-| 0x02 | FILE | §13.2 (images; small files, ADR-0022) | L6 |
+| 0x02 | FILE | §13.2 (images; small files, ADR-0022, compressed, ADR-0023) | L6 |
 | 0x03 | LOCATION | §12 (14 bytes) | L5 |
 | 0x04 | ANNOUNCE | §14.1 | L7 |
 | 0x05 | VOICE | §13.1 | L6 |
@@ -498,7 +498,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 `ts u32 ‖ kind u8 ‖ media_id [8] ‖ variant u8 ‖ width u16 ‖ height u16 ‖ full_len u16 ‖ data`
 
-- `kind` 1: an AVIF image; `kind` 2: a small file (below). Other kinds are shown as unsupported.
+- `kind` 1: an AVIF image; `kind` 2: a small file, `kind` 3: a compressed small file (below). Other kinds are shown as unsupported.
 - `media_id`: random, chosen by the sender; the same for both variants.
 - `variant` 0: the **preview**, at most 450 bytes of AVIF (3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
 - `full_len`: size of the full variant, so the receiver can show its cost before asking; 0 when there is none.
@@ -512,7 +512,16 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 - It is a medium: refused when its first round does not fit in the hour (§13.4). Its cost is shown before sending: 8 KB is about 53 fragments, measured in `docs/measurements.md`.
 - Anything larger goes over the Internet bridge (§14.1, `kind` 3).
 
-Vectors: `testdata/lichen/content.toml` (`[[file]]`).
+**A compressed small file** (`kind` 3, ADR-0023): the same file, its content compressed.
+
+`ts u32 ‖ kind u8 (3) ‖ name_len u8 ‖ name (UTF-8, 1..=64 bytes) ‖ size u32 ‖ deflate (1..=8,192 bytes)`
+
+- `deflate` is raw DEFLATE (RFC 1951, no zlib or gzip wrapper) of the content; `size` is the content's length once inflated, 1..=65,536 bytes.
+- The sender compresses when that makes the datagram smaller, and otherwise sends `kind` 2: text, tracks (GPX, KML), CSV and JSON shrink several times, while PDFs, images and archives are already compressed. A file goes over LoRa when its datagram (kind 2 or 3) carries at most 8,192 bytes of data.
+- The receiver inflates into at most `size` bytes and drops the datagram when the stream is invalid, does not end within the data, or yields more or fewer than `size` bytes: a few KB can never expand into more than 64 KiB.
+- The file is then the inflated content: shown, saved and opened like `kind` 2. Its reference (§6.2) is computed on the datagram as sent.
+
+Vectors: `testdata/lichen/content.toml` (`[[file]]`, `[[bad_file]]`).
 
 ### 13.3 MEDIA_REQUEST (0x06)
 

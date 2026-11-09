@@ -1351,6 +1351,16 @@
         }
       }
     },
+    "Compressed to %@ · %@ · ≈ %@ s of airtime, %@ %% of your hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compressé à %@ · %@ · ≈ %@ s de temps d'antenne, %@ %% de ton heure"
+          }
+        }
+      }
+    },
     "Connect my radio": {
       "localizations": {
         "fr": {
@@ -5371,12 +5381,12 @@
         }
       }
     },
-    "Too large for LoRa (%@, up to 8 KB)": {
+    "Too large for LoRa (%@, up to 8 KB once compressed)": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trop gros pour LoRa (%@, 8 Ko au plus)"
+            "value": "Trop gros pour LoRa (%@, 8 Ko au plus une fois compressé)"
           }
         }
       }
@@ -5591,12 +5601,12 @@
         }
       }
     },
-    "Up to 8 KB fit in a LoRa message. Turn on iroh or Tor in Settings to send larger files over the Internet.": {
+    "Up to 8 KB fit in a LoRa message, once compressed. Turn on iroh or Tor in Settings to send larger files over the Internet.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un message LoRa contient 8 Ko au plus. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet."
+            "value": "Un message LoRa contient 8 Ko au plus, une fois compressé. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet."
           }
         }
       }

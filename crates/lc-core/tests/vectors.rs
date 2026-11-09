@@ -180,7 +180,15 @@ fn small_files() {
             name: s(v, "file_name").to_owned(),
             data: h(v, "data"),
         };
-        assert_eq!(content.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        // The encoder's DEFLATE bytes are not fixed (ADR-0023): only decoding them is. Our own
+        // encoding must decode to the same file, compressed when the vector is.
+        let ours = content.encode();
+        assert_eq!(Content::decode(&ours).as_ref(), Some(&content));
+        if v.get("compressed").is_some() {
+            assert_eq!(ours.get(5), Some(&3), "{}", s(v, "name"));
+        } else {
+            assert_eq!(ours, h(v, "datagram"), "{}", s(v, "name"));
+        }
         assert_eq!(
             Content::decode(&h(v, "datagram")),
             Some(content),

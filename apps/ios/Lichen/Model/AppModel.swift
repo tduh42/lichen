@@ -852,17 +852,18 @@ final class AppModel {
         return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
     }
 
-    /// A small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact.
+    /// A small file over LoRa (§13.2, ADR-0022), compressed when smaller (ADR-0023): up to 8 KB
+    /// on the air, to a contact.
     func sendFile(_ data: Data, name: String, to chat: ChatID) -> String? {
         guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
         return sendMedia(chat) { try core.sendFile(to: key, name: name, data: data, sentAt: $0, nowMs: $1) }
     }
 
-    /// What a small file costs over LoRa to a contact; nil for a group.
-    func estimateFile(_ chat: ChatID, name: String, size: Int) -> Estimate? {
+    /// How a small file would go over LoRa to a contact: its size on the air (compressed when
+    /// smaller), fragments and airtime; nil for a group, or when it does not fit.
+    func loraFile(_ chat: ChatID, name: String, data: Data) -> LoraFile? {
         guard case let .contact(key) = chat else { return nil }
-        return try? core.estimateFile(to: key, nameLen: UInt32(fitFileName(name: name, maxBytes: 64).utf8.count),
-                                      size: UInt32(size))
+        return (try? core.loraFile(to: key, name: name, data: data)) ?? nil
     }
 
     /// A copy of a file under its own name, to open or share it (QuickLook and other apps go

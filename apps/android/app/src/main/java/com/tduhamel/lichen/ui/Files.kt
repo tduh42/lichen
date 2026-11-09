@@ -56,9 +56,6 @@ import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.fragmentsText
 import java.io.File
 
-/** The most a file sent over LoRa holds (§13.2 kind 2, ADR-0022). */
-const val LORA_FILE_MAX = 8_192
-
 /** A file picked in the composer. */
 class FileDraft(val name: String, val data: ByteArray)
 
@@ -147,8 +144,9 @@ fun FileCard(f: Message.File) {
 private enum class FileRoute { LORA, IROH, TOR }
 
 /**
- * How to send a picked file (ADR-0022): over LoRa when small (up to 8 KB, contacts only, its
- * airtime shown), else over iroh or Tor; why not, when neither can.
+ * How to send a picked file (ADR-0022): over LoRa when small (up to 8 KB on the air once
+ * compressed, ADR-0023; contacts only, its airtime shown), else over iroh or Tor; why not, when
+ * neither can.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -158,7 +156,9 @@ fun SendFileSheet(model: AppModel, chat: ChatId, draft: FileDraft, done: (String
     val res = LocalResources.current
     var mode by remember { mutableStateOf<FileRoute?>(null) }
     val size = Formatter.formatShortFileSize(context, draft.data.size.toLong())
-    val loraOK = !chat.group && draft.data.size <= LORA_FILE_MAX
+    // The file as it would go over LoRa, compressed when smaller; null when it does not fit.
+    val lora = remember(draft) { model.loraFile(chat, draft.name, draft.data) }
+    val loraOK = lora != null
     val irohOK = model.bridgeOnline
     val torOK = model.torStatus == AppModel.TorStatus.READY
     val chosen = mode ?: when {
@@ -167,16 +167,21 @@ fun SendFileSheet(model: AppModel, chat: ChatId, draft: FileDraft, done: (String
         torOK -> FileRoute.TOR
         else -> null
     }
-    val estimate = if (loraOK) model.estimateFile(chat, draft.name, draft.data.size) else null
     val loraDetail = when {
         chat.group -> stringResource(R.string.contacts_only_never_flooded)
-        !loraOK -> stringResource(R.string.too_large_for_lora, size)
-        estimate == null -> stringResource(R.string.direct_acknowledged)
+        lora == null -> stringResource(R.string.too_large_for_lora, size)
+        lora.compressed -> stringResource(
+            R.string.lora_file_compressed,
+            Formatter.formatShortFileSize(context, lora.wireBytes.toLong()),
+            fragmentsText(res, lora.fragments.toInt()),
+            "%.0f".format(lora.airtimeMs.toDouble() / 1000),
+            "%.0f".format(lora.airtimeMs.toDouble() / 3600),
+        )
         else -> stringResource(
             R.string.lora_file_detail,
-            fragmentsText(res, estimate.fragments.toInt()),
-            "%.0f".format(estimate.airtimeMs.toDouble() / 1000),
-            "%.0f".format(estimate.airtimeMs.toDouble() / 3600),
+            fragmentsText(res, lora.fragments.toInt()),
+            "%.0f".format(lora.airtimeMs.toDouble() / 1000),
+            "%.0f".format(lora.airtimeMs.toDouble() / 3600),
         )
     }
     val irohDetail = when {
@@ -198,7 +203,7 @@ fun SendFileSheet(model: AppModel, chat: ChatId, draft: FileDraft, done: (String
             Text(stringResource(R.string.send_a_file), fontSize = 22.sp, color = t.tx)
             FileRow(draft.name, draft.data.size.toLong())
             SectionLabel(stringResource(R.string.how_to_send, model.title(chat)))
-            val loraBadge = estimate?.let { stringResource(R.string.approx_seconds, "%.0f".format(maxOf(1.0, it.airtimeMs.toDouble() / 1000))) } ?: "LoRa"
+            val loraBadge = lora?.let { stringResource(R.string.approx_seconds, "%.0f".format(maxOf(1.0, it.airtimeMs.toDouble() / 1000))) } ?: "LoRa"
             RouteOption(stringResource(R.string.over_lora), loraDetail, loraBadge, Transport.LORA, chosen == FileRoute.LORA, loraOK) {
                 mode = FileRoute.LORA
             }

@@ -17,4 +17,4 @@ Tanguy asked why a PDF, or any other file, cannot be sent. The apps sent text, v
 
 - An 8 KB file costs about a minute of the sender's airtime on one hop, a sixth of the hour: the send sheet says so before sending.
 - Without Internet, larger files cannot be sent; the app says why and how (turn on iroh or Tor) instead of failing.
-- Rejected: splitting large files over several datagrams on LoRa (hours of airtime for a common PDF, and the band's budget for everyone else nearby); compressing on the way (most documents worth sending are already compressed).
+- Rejected: splitting large files over several datagrams on LoRa (hours of airtime for a common PDF, and the band's budget for everyone else nearby); compressing on the way (most documents worth sending are already compressed). Revisited by ADR-0023: a hiking track (GPX) is text, compresses several times and is the file most often sent off-grid.

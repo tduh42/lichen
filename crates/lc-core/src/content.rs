@@ -11,11 +11,15 @@ pub type MediaId = [u8; 8];
 pub const VOICE_MAX_FRAMES: u16 = 375;
 /// Largest image variant.
 pub const IMAGE_MAX: usize = 4_096;
-/// The largest small file sent over LoRa (§13.2 kind 2, ADR-0022), and its name.
+/// The most data a small file carries over LoRa (§13.2 kinds 2 and 3, ADR-0022), and its name.
 pub const FILE_MAX: usize = 8_192;
 pub const FILE_NAME_MAX: usize = 64;
+/// The largest small file once inflated (§13.2 kind 3, ADR-0023).
+pub const FILE_INFLATED_MAX: usize = 65_536;
 /// FILE kind of a small file (§13.2).
 const KIND_FILE: u8 = 2;
+/// FILE kind of a compressed small file (§13.2, ADR-0023).
+const KIND_FILE_DEFLATE: u8 = 3;
 /// FILE kind of an AVIF image.
 const KIND_AVIF: u8 = 1;
 
@@ -114,7 +118,8 @@ pub enum Content {
         target: MessageRef,
         emoji: String,
     },
-    /// A small file (§13.2 kind 2, ADR-0022): a name and up to 8 KB, to a contact.
+    /// A small file (§13.2 kinds 2 and 3, ADR-0022, ADR-0023): a name and its content, to a
+    /// contact. Encoded compressed when that is smaller; at most 8 KB on the air, 64 KiB inflated.
     File {
         sent_at: u32,
         name: String,
@@ -332,13 +337,27 @@ impl Content {
                 name,
                 data,
             } => {
-                let mut v = Vec::with_capacity(7 + name.len() + data.len());
+                // Compressed when the datagram gets smaller (ADR-0023): its size field costs 4.
+                let deflated = (data.len() <= FILE_INFLATED_MAX)
+                    .then(|| miniz_oxide::deflate::compress_to_vec(data, 9))
+                    .filter(|d| d.len() + 4 < data.len());
+                let mut v = Vec::with_capacity(11 + name.len() + data.len());
                 v.push(content::FILE);
                 v.extend_from_slice(&sent_at.to_le_bytes());
-                v.push(KIND_FILE);
+                v.push(if deflated.is_some() {
+                    KIND_FILE_DEFLATE
+                } else {
+                    KIND_FILE
+                });
                 v.push(name.len().min(255) as u8);
                 v.extend_from_slice(name.as_bytes());
-                v.extend_from_slice(data);
+                match deflated {
+                    Some(d) => {
+                        v.extend_from_slice(&(data.len() as u32).to_le_bytes());
+                        v.extend_from_slice(&d);
+                    }
+                    None => v.extend_from_slice(data),
+                }
                 v
             }
             Content::Notice(n) => {
@@ -372,7 +391,9 @@ impl Content {
             decode_voice(body)
         } else if content_type == content::FILE && body.get(4) == Some(&KIND_AVIF) {
             decode_image(body)
-        } else if content_type == content::FILE && body.get(4) == Some(&KIND_FILE) {
+        } else if content_type == content::FILE
+            && matches!(body.get(4), Some(&KIND_FILE | &KIND_FILE_DEFLATE))
+        {
             decode_file(body)
         } else if content_type == content::ANNOUNCE {
             decode_announce(body)
@@ -479,23 +500,50 @@ fn decode_announce(body: &[u8]) -> Option<Content> {
     }))
 }
 
-/// `ts ‖ 2 ‖ name_len ‖ name ‖ data` (§13.2): a name of 1..=64 bytes of UTF-8, 1..=8,192 bytes.
+/// `ts ‖ 2 ‖ name_len ‖ name ‖ data`, or `ts ‖ 3 ‖ name_len ‖ name ‖ size u32 ‖ deflate`
+/// (§13.2): a name of 1..=64 bytes of UTF-8, 1..=8,192 bytes of data on the air.
 fn decode_file(body: &[u8]) -> Option<Content> {
     let (ts, rest) = body.split_first_chunk::<4>()?;
-    let (&[_kind, n], rest) = rest.split_first_chunk::<2>()?;
+    let (&[kind, n], rest) = rest.split_first_chunk::<2>()?;
     let n = usize::from(n);
     if !(1..=FILE_NAME_MAX).contains(&n) {
         return None;
     }
-    let (name, data) = rest.split_at_checked(n)?;
-    if data.is_empty() || data.len() > FILE_MAX {
+    let (name, rest) = rest.split_at_checked(n)?;
+    let data = if kind == KIND_FILE_DEFLATE {
+        let (size, stream) = rest.split_first_chunk::<4>()?;
+        inflate(stream, usize::try_from(u32::from_le_bytes(*size)).ok()?)?
+    } else {
+        rest.to_vec()
+    };
+    if data.is_empty() || (kind == KIND_FILE && data.len() > FILE_MAX) {
         return None;
     }
     Some(Content::File {
         sent_at: u32::from_le_bytes(*ts),
         name: std::str::from_utf8(name).ok()?.to_owned(),
-        data: data.to_vec(),
+        data,
     })
+}
+
+/// Raw DEFLATE (RFC 1951) into exactly `size` bytes, 1..=64 KiB, from a stream of 1..=8,192
+/// bytes that ends within itself (ADR-0023). Never allocates more than `size`.
+fn inflate(stream: &[u8], size: usize) -> Option<Vec<u8>> {
+    use miniz_oxide::inflate::TINFLStatus;
+    use miniz_oxide::inflate::core::{DecompressorOxide, decompress, inflate_flags};
+    if !(1..=FILE_INFLATED_MAX).contains(&size) || !(1..=FILE_MAX).contains(&stream.len()) {
+        return None;
+    }
+    let mut out = vec![0u8; size];
+    let mut state = Box::<DecompressorOxide>::default();
+    let (status, read, written) = decompress(
+        &mut state,
+        stream,
+        &mut out,
+        0,
+        inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+    );
+    (status == TINFLStatus::Done && read == stream.len() && written == size).then_some(out)
 }
 
 fn decode_image(body: &[u8]) -> Option<Content> {
@@ -544,6 +592,58 @@ fn decode_image(body: &[u8]) -> Option<Content> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn file(data: Vec<u8>) -> Content {
+        Content::File {
+            sent_at: 1_793_001_000,
+            name: "track.gpx".into(),
+            data,
+        }
+    }
+
+    #[test]
+    fn files_are_compressed_when_smaller() {
+        let text = b"<trkpt lat=\"45.07\" lon=\"5.52\"><ele>1200</ele></trkpt>\n".repeat(400);
+        let c = file(text.clone());
+        let d = c.encode();
+        assert_eq!(d.get(5), Some(&KIND_FILE_DEFLATE));
+        assert!(d.len() < text.len() / 4, "{} bytes", d.len());
+        assert_eq!(Content::decode(&d), Some(c));
+        // Already compressed: sent as it is.
+        let noise: Vec<u8> = (0..3000u32)
+            .flat_map(|i| Sha256::digest(i.to_le_bytes()).to_vec())
+            .take(3000)
+            .collect();
+        let c = file(noise);
+        let d = c.encode();
+        assert_eq!(d.get(5), Some(&KIND_FILE));
+        assert_eq!(Content::decode(&d), Some(c));
+        // Too short to gain anything.
+        let c = file(b"code 4521".to_vec());
+        assert_eq!(c.encode().get(5), Some(&KIND_FILE));
+    }
+
+    #[test]
+    fn inflating_is_bounded() {
+        let c = file(vec![0; FILE_INFLATED_MAX]);
+        let d = c.encode();
+        assert!(d.len() < 200, "{} bytes", d.len());
+        assert_eq!(Content::decode(&d), Some(c));
+        // One byte more inflated than announced, or one byte less: dropped.
+        let stream = miniz_oxide::deflate::compress_to_vec(&[7; 1000], 9);
+        for size in [999u32, 1001] {
+            let mut d = vec![content::FILE, 0, 0, 0, 0, KIND_FILE_DEFLATE, 1, b'a'];
+            d.extend_from_slice(&size.to_le_bytes());
+            d.extend_from_slice(&stream);
+            assert_eq!(Content::decode(&d), None, "{size}");
+        }
+        // Trailing bytes after the end of the stream: dropped.
+        let mut d = vec![content::FILE, 0, 0, 0, 0, KIND_FILE_DEFLATE, 1, b'a'];
+        d.extend_from_slice(&1000u32.to_le_bytes());
+        d.extend_from_slice(&stream);
+        d.push(0);
+        assert_eq!(Content::decode(&d), None);
+    }
 
     #[test]
     fn notice_round_trip() {

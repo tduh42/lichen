@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
 GROUP_STATE and SENDER_KEYS (§10.1–10.2), group invitations and GROUP_JOIN (§10.5), small
-files (§13.2 kind 2).
+files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
     python3 -I testdata/lichen/gen.py > testdata/lichen/content.toml
@@ -9,6 +9,7 @@ An independent oracle (Python's hashlib and struct, not the Rust code). Regenera
 import base64
 import hashlib
 import struct
+import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 
@@ -220,10 +221,39 @@ def small_file(ts: int, name: str, data: bytes) -> bytes:
     return bytes([FILE]) + struct.pack("<I", ts) + bytes([2, len(n)]) + n + data
 
 
+def deflate(data: bytes) -> bytes:
+    c = zlib.compressobj(9, zlib.DEFLATED, -15)
+    return c.compress(data) + c.flush()
+
+
+def compressed_file(ts: int, name: str, size: int, stream: bytes) -> bytes:
+    n = name.encode()
+    return bytes([FILE]) + struct.pack("<I", ts) + bytes([3, len(n)]) + n + struct.pack("<I", size) + stream
+
+
+def noise(n: int) -> bytes:
+    """Incompressible bytes."""
+    return b"".join(hashlib.sha256(struct.pack("<I", i)).digest() for i in range(n // 32 + 1))[:n]
+
+
+def track(points: int) -> bytes:
+    """A GPX track shaped like a hiking route export (§13.2 kind 3, ADR-0023)."""
+    out = ['<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="lichen vectors">\n<trk><name>Corniche</name><trkseg>\n']
+    lat, lon, ele = 45_070_000, 5_520_000, 1_200
+    for i in range(points):
+        lat += (i * 37) % 23 - 9
+        lon += (i * 53) % 29 - 11
+        ele += (i * 11) % 7 - 3
+        out.append(f'<trkpt lat="{lat / 1e6:.6f}" lon="{lon / 1e6:.6f}"><ele>{ele}</ele></trkpt>\n')
+    out.append("</trkseg></trk>\n</gpx>\n")
+    return "".join(out).encode()
+
+
+# Uncompressed (kind 2): too short to gain, or incompressible.
 files = [
     ("a note", 1_793_001_000, "note.txt", b"Refuge de la Pra, code 4521.\n"),
-    ("a route, accents in the name", 1_793_001_001, "Été_Vercors.gpx", bytes(range(256)) * 4),
-    ("the largest", 1_793_001_002, "a" * 64, bytes(i * 7 % 256 for i in range(8192))),
+    ("a photo, accents in the name", 1_793_001_001, "Été_Vercors.jpg", noise(1024)),
+    ("the largest", 1_793_001_002, "a" * 64, noise(8192)),
 ]
 for nm, ts, fname, data in files:
     print("[[file]]")
@@ -234,6 +264,24 @@ for nm, ts, fname, data in files:
     print(f'datagram = "{small_file(ts, fname, data).hex()}"')
     print()
 
+# Compressed (kind 3): decoding is fixed, the encoder's bytes are not (ADR-0023).
+gpx = track(300)
+compressed = [
+    ("a compressed track", 1_793_001_003, "corniche.gpx", gpx),
+    ("a compressed note", 1_793_001_004, "note.txt", b"Refuge de la Pra, code 4521. " * 40),
+]
+for nm, ts, fname, data in compressed:
+    stream = deflate(data)
+    assert len(stream) <= 8192
+    print("[[file]]")
+    print(f'name = "{nm}"')
+    print(f"ts = {ts}")
+    print(f'file_name = "{fname}"')
+    print(f'data = "{data.hex()}"')
+    print(f'datagram = "{compressed_file(ts, fname, len(data), stream).hex()}"')
+    print("compressed = true")
+    print()
+
 bad_files = [
     ("no name", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 0]) + b"x"),
     ("no content", small_file(1, "a.txt", b"")),
@@ -241,6 +289,16 @@ bad_files = [
     ("a name over 64 bytes", small_file(1, "b" * 65, b"x")),
     ("a name that is not UTF-8", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 2]) + b"\xff\xfe" + b"x"),
     ("cut in the name", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 9]) + b"a.t"),
+    ("compressed: inflates to more than its size", compressed_file(1, "a.txt", 10, deflate(b"a" * 11))),
+    ("compressed: inflates to less than its size", compressed_file(1, "a.txt", 12, deflate(b"a" * 11))),
+    ("compressed: size 0", compressed_file(1, "a.txt", 0, deflate(b"a"))),
+    ("compressed: size over 64 KiB", compressed_file(1, "a.bin", 65_537, deflate(bytes(65_537)))),
+    ("compressed: a bomb, 1 MiB of zeros", compressed_file(1, "a.bin", 65_536, deflate(bytes(1 << 20)))),
+    ("compressed: stream cut short", compressed_file(1, "a.txt", 600, deflate(b"Refuge " * 100)[:-3])),
+    ("compressed: no stream", compressed_file(1, "a.txt", 1, b"")),
+    ("compressed: over 8 KB on the air", compressed_file(1, "a.bin", 9000, deflate(noise(9000)))),
+    ("compressed: not DEFLATE", compressed_file(1, "a.txt", 4, b"\xff\xff\xff\xff")),
+    ("compressed: size cut", bytes([FILE]) + struct.pack("<I", 1) + bytes([3, 5]) + b"a.txt" + b"\x04\x00"),
 ]
 for nm, d in bad_files:
     print("[[bad_file]]")

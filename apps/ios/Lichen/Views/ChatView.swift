@@ -1572,24 +1572,26 @@ private func byteCount(_ n: Int) -> String {
     ByteCountFormatter.string(fromByteCount: Int64(n), countStyle: .file)
 }
 
-/// How to send a picked file (ADR-0022): over LoRa when small (up to 8 KB, contacts only,
-/// its airtime shown), else over iroh or Tor; why not, when neither can.
+/// How to send a picked file (ADR-0022): over LoRa when small (up to 8 KB on the air once
+/// compressed, ADR-0023; contacts only, its airtime shown), else over iroh or Tor; why not, when
+/// neither can.
 private struct SendFileSheet: View {
     let chat: ChatID
     let draft: FileDraft
     let done: (String?) -> Void
     @Environment(AppModel.self) private var model
     @State private var mode: Mode?
+    /// The file as it would go over LoRa, compressed or not; nil when it does not fit.
+    @State private var lora: LoraFile?
+    @State private var checked = false
 
     enum Mode { case lora, iroh, tor }
-
-    private static let loraMax = 8_192
 
     private var isGroup: Bool {
         if case .group = chat { return true }
         return false
     }
-    private var loraOK: Bool { !isGroup && draft.data.count <= Self.loraMax }
+    private var loraOK: Bool { !isGroup && lora != nil }
     private var irohOK: Bool { model.bridgeOnline }
     private var torOK: Bool { model.torStatus == .ready }
     private var chosen: Mode? {
@@ -1598,16 +1600,17 @@ private struct SendFileSheet: View {
         if irohOK { return .iroh }
         return torOK ? .tor : nil
     }
-    private var estimate: Estimate? { model.estimateFile(chat, name: draft.name, size: draft.data.count) }
-
     private var loraDetail: String {
         if isGroup { return String(localized: "Contacts only: never flooded to a group") }
-        if draft.data.count > Self.loraMax {
-            return String(localized: "Too large for LoRa (\(byteCount(draft.data.count)), up to 8 KB)")
+        guard checked else { return String(localized: "Direct, acknowledged") }
+        guard let e = lora else {
+            return String(localized: "Too large for LoRa (\(byteCount(draft.data.count)), up to 8 KB once compressed)")
         }
-        guard let e = estimate else { return String(localized: "Direct, acknowledged") }
-        let share = Double(e.airtimeMs) / 3_600
-        return String(localized: "\(fragmentsText(e.fragments)) · ≈ \(seconds(e.airtimeMs)) s of airtime, \(String(format: "%.0f", share)) % of your hour")
+        let share = String(format: "%.0f", Double(e.airtimeMs) / 3_600)
+        if e.compressed {
+            return String(localized: "Compressed to \(byteCount(Int(e.wireBytes))) · \(fragmentsText(e.fragments)) · ≈ \(seconds(e.airtimeMs)) s of airtime, \(share) % of your hour")
+        }
+        return String(localized: "\(fragmentsText(e.fragments)) · ≈ \(seconds(e.airtimeMs)) s of airtime, \(share) % of your hour")
     }
 
     private var irohDetail: String {
@@ -1641,7 +1644,7 @@ private struct SendFileSheet: View {
                     }
                     SectionLabel("How to send it to \(model.title(of: chat))")
                     option(title: String(localized: "Over LoRa"), detail: loraDetail,
-                           badge: loraOK ? estimate.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa" : "LoRa",
+                           badge: lora.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa",
                            kind: .lora, selected: chosen == .lora, enabled: loraOK)
                         .onTapGesture { if loraOK { mode = .lora } }
                     option(title: String(localized: "Via iroh"), detail: irohDetail,
@@ -1652,7 +1655,7 @@ private struct SendFileSheet: View {
                         .onTapGesture { if torOK { mode = .tor } }
                     if chosen == nil {
                         Banner(kind: .warn, title: String(localized: "This file cannot go over LoRa"),
-                               message: String(localized: "Up to 8 KB fit in a LoRa message. Turn on iroh or Tor in Settings to send larger files over the Internet."))
+                               message: String(localized: "Up to 8 KB fit in a LoRa message, once compressed. Turn on iroh or Tor in Settings to send larger files over the Internet."))
                     }
                     Text("Airtime left: \(seconds(model.airtimeLeftMs)) s. The recipient opens it with the app for its type.")
                         .font(.system(.footnote))
@@ -1672,6 +1675,12 @@ private struct SendFileSheet: View {
                 .padding(16)
             }
             .screen()
+            .onAppear {
+                if !checked {
+                    lora = model.loraFile(chat, name: draft.name, data: draft.data)
+                    checked = true
+                }
+            }
             .navigationTitle("Send a file")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Theme.s1, for: .navigationBar)

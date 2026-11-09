@@ -671,9 +671,10 @@
     <string name="via_iroh">Par iroh</string>
     <string name="via_tor">Par Tor</string>
     <string name="lora_file_detail">%1$s · ≈ %2$s s de temps d\'antenne, %3$s %% de ton heure</string>
-    <string name="too_large_for_lora">Trop gros pour LoRa (%1$s, 8 Ko au plus)</string>
+    <string name="lora_file_compressed">Compressé à %1$s · %2$s · ≈ %3$s s de temps d\'antenne, %4$s %% de ton heure</string>
+    <string name="too_large_for_lora">Trop gros pour LoRa (%1$s, 8 Ko au plus une fois compressé)</string>
     <string name="file_no_lora_title">Ce fichier ne peut pas passer par LoRa</string>
-    <string name="file_no_lora_note">Un message LoRa contient 8 Ko au plus. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet.</string>
+    <string name="file_no_lora_note">Un message LoRa contient 8 Ko au plus, une fois compressé. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet.</string>
     <string name="send_over_lora">Envoyer par LoRa</string>
     <string name="file_unreadable">Ce fichier est illisible.</string>
     <string name="download">Télécharger</string>

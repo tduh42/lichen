@@ -291,6 +291,33 @@ pub struct Estimate {
     pub airtime_ms: u64,
 }
 
+/// A small file as it would go over LoRa (§13.2, ADR-0023): compressed when that is smaller.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct LoraFile {
+    /// Bytes of the datagram on the air (name and header included).
+    pub wire_bytes: u32,
+    pub compressed: bool,
+    pub fragments: u8,
+    pub airtime_ms: u64,
+}
+
+/// The FILE datagram for `name` and `data` when it can go over LoRa: at most 8 KB of data on the
+/// air, 64 KiB once inflated (§13.2). The name is fitted to 64 bytes, its extension kept.
+fn small_file(name: String, data: Vec<u8>, sent_at: u32) -> Option<(Content, Vec<u8>)> {
+    if data.is_empty() || data.len() > lc_core::content::FILE_INFLATED_MAX {
+        return None;
+    }
+    let name = fit_file_name(name, lc_core::content::FILE_NAME_MAX as u32);
+    let content = Content::File {
+        sent_at,
+        name: if name.is_empty() { "file".into() } else { name },
+        data,
+    };
+    let datagram = content.encode();
+    // What a receiver accepts is exactly what fits.
+    matches!(Content::decode(&datagram), Some(Content::File { .. })).then_some((content, datagram))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Message {
     Text {
@@ -2425,25 +2452,31 @@ impl LichenCore {
         Ok(i.stored_outgoing(Chat::Contact(k), full, id, estimate, false, Some(&datagram)))
     }
 
-    /// What a small file costs over LoRa to `to` (§13.2 kind 2): fragments and airtime on the
-    /// current path. `name_len` and `size` in bytes.
-    pub fn estimate_file(
+    /// How a small file would go over LoRa to `to` (§13.2, ADR-0023): its size on the air,
+    /// compressed or not, fragments and airtime on the current path. None when it does not fit
+    /// (over 8 KB on the air even compressed, or over 64 KiB).
+    pub fn lora_file(
         &self,
         to: Vec<u8>,
-        name_len: u32,
-        size: u32,
-    ) -> Result<Estimate, LichenError> {
+        name: String,
+        data: Vec<u8>,
+    ) -> Result<Option<LoraFile>, LichenError> {
         let k = key(&to)?;
-        let len = 7 + name_len as usize + size as usize;
-        let (fragments, airtime_ms) = self.lock().core.estimate_send(&k, len);
-        Ok(Estimate {
+        let Some((_, datagram)) = small_file(name, data, 0) else {
+            return Ok(None);
+        };
+        let (fragments, airtime_ms) = self.lock().core.estimate_send(&k, datagram.len());
+        Ok(Some(LoraFile {
+            wire_bytes: datagram.len() as u32,
+            compressed: datagram.get(5) == Some(&3),
             fragments,
             airtime_ms,
-        })
+        }))
     }
 
-    /// Sends a small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact;
-    /// refused when over budget (§13.4). The name is fitted to 64 bytes, its extension kept.
+    /// Sends a small file over LoRa (§13.2, ADR-0022), compressed when that is smaller
+    /// (ADR-0023): at most 8 KB on the air, to a contact; refused when over budget (§13.4).
+    /// The name is fitted to 64 bytes, its extension kept.
     pub fn send_file(
         &self,
         to: Vec<u8>,
@@ -2456,16 +2489,7 @@ impl LichenCore {
         if data.is_empty() {
             return Err(LichenError::Empty);
         }
-        if data.len() > lc_core::content::FILE_MAX {
-            return Err(LichenError::TooLarge);
-        }
-        let name = fit_file_name(name, lc_core::content::FILE_NAME_MAX as u32);
-        let content = Content::File {
-            sent_at,
-            name: if name.is_empty() { "file".into() } else { name },
-            data,
-        };
-        let datagram = content.encode();
+        let (content, datagram) = small_file(name, data, sent_at).ok_or(LichenError::TooLarge)?;
         let mut i = self.lock();
         i.last_now = now_ms;
         let estimate = i.core.estimate_send(&k, datagram.len());
@@ -3775,7 +3799,91 @@ mod receiver {
 
 #[cfg(test)]
 mod file_names {
-    use super::fit_file_name;
+    use super::{fit_file_name, small_file};
+
+    /// A track shaped like a hiking route export, `points` long.
+    fn track(points: u32) -> Vec<u8> {
+        let mut s = String::from("<?xml version=\"1.0\"?>\n<gpx><trk><trkseg>\n");
+        let (mut lat, mut lon, mut ele) = (45_070_000i64, 5_520_000i64, 1200i64);
+        for i in 0..i64::from(points) {
+            lat += (i * 37) % 23 - 9;
+            lon += (i * 53) % 29 - 11;
+            ele += (i * 11) % 7 - 3;
+            s.push_str(&format!(
+                "<trkpt lat=\"{}.{:06}\" lon=\"{}.{:06}\"><ele>{ele}</ele></trkpt>\n",
+                lat / 1_000_000,
+                lat % 1_000_000,
+                lon / 1_000_000,
+                lon % 1_000_000
+            ));
+        }
+        s.push_str("</trkseg></trk></gpx>\n");
+        s.into_bytes()
+    }
+
+    /// Sizes on the air of typical small files (ADR-0023, `docs/measurements.md`):
+    /// `cargo test -p lc-ffi --release --lib -- --ignored file_sizes --nocapture`.
+    #[test]
+    #[ignore]
+    fn file_sizes() {
+        let prose = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/spec/design.md"
+        ))
+        .unwrap_or_default();
+        let mut x = 0x2545_F491_4F6C_DD1Du64;
+        let pdf: Vec<u8> = (0..6_000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 32) as u8
+            })
+            .collect();
+        for (name, data) in [
+            ("track.gpx", track(400)),
+            ("note.txt", prose.get(..6_000).unwrap_or(&prose).to_vec()),
+            ("scan.pdf", pdf),
+        ] {
+            let len = data.len();
+            match small_file(name.into(), data, 1) {
+                Some((_, d)) => println!(
+                    "{name}: {len} bytes, {} on the air ({})",
+                    d.len(),
+                    if d.get(5) == Some(&3) {
+                        "compressed"
+                    } else {
+                        "as is"
+                    }
+                ),
+                None => println!("{name}: {len} bytes, does not fit"),
+            }
+        }
+    }
+
+    #[test]
+    fn compressed_files_fit_over_lora() {
+        // A 25 KB track goes over LoRa once compressed (ADR-0023).
+        let gpx = track(330);
+        assert!(gpx.len() > 20_000, "{}", gpx.len());
+        let (_, d) = small_file("visorando.gpx".into(), gpx, 1).expect("fits");
+        assert_eq!(d.get(5), Some(&3));
+        assert!(d.len() < 8_192, "{}", d.len());
+        // 9 KB that do not compress: too large. 64 KiB + 1: too large however compressible.
+        let mut x = 0x9E37_79B9_7F4A_7C15u64;
+        let noise: Vec<u8> = (0..9_000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x >> 32) as u8
+            })
+            .collect();
+        assert!(small_file("a.jpg".into(), noise, 1).is_none());
+        assert!(small_file("zeros.bin".into(), vec![0; 65_537], 1).is_none());
+        assert!(small_file("zeros.bin".into(), vec![0; 65_536], 1).is_some());
+        assert!(small_file("empty.txt".into(), Vec::new(), 1).is_none());
+    }
 
     #[test]
     fn long_names_keep_their_extension() {

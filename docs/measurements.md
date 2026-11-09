@@ -299,3 +299,15 @@ The demo (`lc-ffi` test `reactions_and_a_reply_with_camille`, with Camille's ðŸ‘
 | 8 KB (the most) | 62 | 93 s | 5.6 min |
 
 The repeater spends about as much airtime as the sender. An 8 KB file is a quarter of the sender's hour (360 s), and the app shows its fragments and airtime before sending, as for voice and photos; anything larger goes over the Internet bridge.
+
+## 2026-11-09 â€” Compressed small files (ADR-0023)
+
+Sizes from `cargo test -p lc-ffi --release --lib -- --ignored file_sizes --nocapture` (the app's encoder, DEFLATE level 9); airtime and delivery from `lichen sim --repeaters 1 --loss 0 --bytes N --cr 8` as above (one hop, French preset, cold start).
+
+| File | Size | On the air | Frames sent by alice | Her airtime | Delivered after |
+|---|---|---|---|---|---|
+| Hiking track (GPX, 400 points, like a Visorando export) | 24.9 KB | 2.3 KB, compressed | 22 | 29 s | 1.8 min |
+| A note (6 KB of English prose) | 6.0 KB | 2.9 KB, compressed | 27 | 36 s | 2.2 min |
+| A PDF (already compressed: random bytes) | 6.0 KB | 6.0 KB, as is | 48 | 70 s | 4.2 min |
+
+The track that could not leave the phone in the first field test (25 KB, over the 8 KB limit) now costs 29 s of the hour: 8 % of it, less than an uncompressed 2 KB file. Text halves; a PDF, a photo or an archive is sent as it is.

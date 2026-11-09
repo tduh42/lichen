@@ -17,6 +17,7 @@ import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.Conversation
 import com.tduhamel.lichen.core.DemoNetwork
 import com.tduhamel.lichen.core.Estimate
+import com.tduhamel.lichen.core.LoraFile
 import com.tduhamel.lichen.core.GroupInfo
 import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
@@ -1225,17 +1226,19 @@ class AppModel(val app: Application) {
         return sendMedia(chat) { at, now -> core.sendVoice(key, voice, at, now) }
     }
 
-    /** A small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact. */
+    /** A small file over LoRa (§13.2, ADR-0022), compressed when smaller (ADR-0023): up to 8 KB on the air, to a contact. */
     fun sendFile(data: ByteArray, name: String, chat: ChatId): String? {
         val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
         return sendMedia(chat) { at, now -> core.sendFile(key, name, data, at, now) }
     }
 
-    /** What a small file costs over LoRa to a contact; null for a group. */
-    fun estimateFile(chat: ChatId, name: String, size: Int): Estimate? {
+    /**
+     * How a small file would go over LoRa to a contact: its size on the air (compressed when
+     * smaller), fragments and airtime; null for a group, or when it does not fit.
+     */
+    fun loraFile(chat: ChatId, name: String, data: ByteArray): LoraFile? {
         val key = chat.contactKey ?: return null
-        val nameLen = fitFileName(name, 64u).toByteArray().size.toUInt()
-        return runCatching { core.estimateFile(key, nameLen, size.toUInt()) }.getOrNull()
+        return runCatching { core.loraFile(key, name, data) }.getOrNull()
     }
 
     fun sendImage(image: PreparedImage, chat: ChatId): String? {
