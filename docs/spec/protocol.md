@@ -216,7 +216,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | Type | Name | Body | Milestone |
 |---|---|---|---|
 | 0x01 | TEXT | `ts u32 (sender's Unix seconds) ‖ UTF-8 text (≥ 1 byte)` | L2 |
-| 0x02 | FILE | §13.2 (images) | L6 |
+| 0x02 | FILE | §13.2 (images; small files, ADR-0022) | L6 |
 | 0x03 | LOCATION | §12 (14 bytes) | L5 |
 | 0x04 | ANNOUNCE | §14.1 | L7 |
 | 0x05 | VOICE | §13.1 | L6 |
@@ -494,15 +494,25 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 - At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200, 3,000 in 1600, 4,500 in 2400. Ten seconds on one hop: 875 bytes (6 fragments) in 700C, 2,000 (13) in 1600, 3,000 (20) in 2400.
 - Before encoding, the sender removes DC and rumble (high-pass at about 100 Hz) and brings the speech to about -20 dBFS (at most +24 dB, peaks softly limited); in 700C the encoder's equaliser is on. Codec2 is sensitive to level: a quiet recording comes out muffled.
 
-### 13.2 FILE (0x02): images
+### 13.2 FILE (0x02): images and small files
 
 `ts u32 ‖ kind u8 ‖ media_id [8] ‖ variant u8 ‖ width u16 ‖ height u16 ‖ full_len u16 ‖ data`
 
-- `kind` 1: an AVIF image (other kinds: later).
+- `kind` 1: an AVIF image; `kind` 2: a small file (below). Other kinds are shown as unsupported.
 - `media_id`: random, chosen by the sender; the same for both variants.
 - `variant` 0: the **preview**, at most 450 bytes of AVIF (3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
 - `full_len`: size of the full variant, so the receiver can show its cost before asking; 0 when there is none.
 - The sender sends the preview only. The full variant goes out when the receiver asks for it (§13.3), and the receiver replaces the preview with it.
+
+**A small file** (`kind` 2, ADR-0022): any type, up to 8 KB, in one datagram, to a contact only (never flooded).
+
+`ts u32 ‖ kind u8 (2) ‖ name_len u8 ‖ name (UTF-8, 1..=64 bytes) ‖ data (1..=8,192 bytes)`
+
+- The name says what it is (its extension); the receiver opens it with whatever handles that type, and never runs it.
+- It is a medium: refused when its first round does not fit in the hour (§13.4). Its cost is shown before sending: 8 KB is about 53 fragments, measured in `docs/measurements.md`.
+- Anything larger goes over the Internet bridge (§14.1, `kind` 3).
+
+Vectors: `testdata/lichen/content.toml` (`[[file]]`).
 
 ### 13.3 MEDIA_REQUEST (0x06)
 
@@ -520,7 +530,7 @@ LoRa carries an authenticated **announcement**; the content travels over the Int
 
 `ts u32 ‖ media_id [8] ‖ kind u8 ‖ hash [32] ‖ size u32 ‖ n (1..2) ‖ n × (transport u8 ‖ key [32]) ‖ name_len u8 ‖ name (UTF-8, ≤ 32)`
 
-- `kind`: 1 image, 2 voice, 3 file.
+- `kind`: 1 image, 2 voice, 3 file (any type, ADR-0022). A name longer than 32 bytes is cut before its extension, which is kept: the receiver recognises the type by it.
 - `hash`: BLAKE3 of the content; `size`: its length in bytes (at most 64 MiB).
 - `transport` 1: **iroh**, `key` the provider's iroh endpoint id (Ed25519); 2: **Tor**, `key` the provider's onion service identity (Ed25519, the v3 address derives from it). Unknown transports are skipped.
 - `media_id` links the announcement to a LoRa preview of the same image (§13.2), when one was sent.

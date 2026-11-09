@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
-GROUP_STATE and SENDER_KEYS (§10.1–10.2), group invitations and GROUP_JOIN (§10.5).
+GROUP_STATE and SENDER_KEYS (§10.1–10.2), group invitations and GROUP_JOIN (§10.5), small
+files (§13.2 kind 2).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
     python3 -I testdata/lichen/gen.py > testdata/lichen/content.toml
@@ -9,7 +10,7 @@ import base64
 import hashlib
 import struct
 
-TEXT, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x08, 0x09, 0x11, 0x13, 0x14
+TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -31,7 +32,7 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §10.1–10.2, §10.5, §13.2), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -209,6 +210,40 @@ bad = [
 ]
 for nm, d in bad:
     print("[[bad_group_control]]")
+    print(f'name = "{nm}"')
+    print(f'datagram = "{d.hex()}"')
+    print()
+
+
+def small_file(ts: int, name: str, data: bytes) -> bytes:
+    n = name.encode()
+    return bytes([FILE]) + struct.pack("<I", ts) + bytes([2, len(n)]) + n + data
+
+
+files = [
+    ("a note", 1_793_001_000, "note.txt", b"Refuge de la Pra, code 4521.\n"),
+    ("a route, accents in the name", 1_793_001_001, "Été_Vercors.gpx", bytes(range(256)) * 4),
+    ("the largest", 1_793_001_002, "a" * 64, bytes(i * 7 % 256 for i in range(8192))),
+]
+for nm, ts, fname, data in files:
+    print("[[file]]")
+    print(f'name = "{nm}"')
+    print(f"ts = {ts}")
+    print(f'file_name = "{fname}"')
+    print(f'data = "{data.hex()}"')
+    print(f'datagram = "{small_file(ts, fname, data).hex()}"')
+    print()
+
+bad_files = [
+    ("no name", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 0]) + b"x"),
+    ("no content", small_file(1, "a.txt", b"")),
+    ("over 8 KB", small_file(1, "a.bin", bytes(8193))),
+    ("a name over 64 bytes", small_file(1, "b" * 65, b"x")),
+    ("a name that is not UTF-8", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 2]) + b"\xff\xfe" + b"x"),
+    ("cut in the name", bytes([FILE]) + struct.pack("<I", 1) + bytes([2, 9]) + b"a.t"),
+]
+for nm, d in bad_files:
+    print("[[bad_file]]")
     print(f'name = "{nm}"')
     print(f'datagram = "{d.hex()}"')
     print()
