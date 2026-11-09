@@ -6,7 +6,7 @@ The product brief (`docs/messaging-product-brief-2026-11-08.md`) makes off-grid 
 |---|---|---|---|
 | 1 | Dependable outbox | **Done** (§6.1, ADR-0018): texts are accepted without the radio and survive a restart; the core pauses while the radio is away; waiting reasons (radio, earlier messages, path, session, airtime), cancel before the first frame, 24 h expiry, retry as the same message, receiver deduplication; group texts count as sent once they left. Drafts per chat (M07). | Voice notes and photos still need the radio (by design, §13.4). |
 | 2 | Replies and reactions | — | Everything, and it is protocol: a stable message reference (sender + per-sender id), reply and reaction content types, their cost on air, deduplication. |
-| 3 | Chat essentials | History in pages (M06), new-message pill and reading position (M07), day separators, message times, swipe to delete, contact nicknames. | Copy / select text; an unread divider; search in messages; pin and mute per chat. |
+| 3 | Chat essentials | **Done**: copy and select text (iOS: links, addresses and phone numbers tappable); an unread divider the chat opens on; search in every conversation, case and accents aside, opening the chat on the message; pin and mute per chat (1 h, 8 h, until turned back on). With history in pages (M06), the new-message pill (M07), day separators, message times, swipe to delete, contact nicknames. **SOS is never muted**: muting a chat silences its ordinary messages only; an SOS from a member of a muted group still raises the alert and its critical notification. | "Show on the map" for coordinates in a text (needs a map focus API). |
 | 4 | Complete groups | Create, invite, leave, close, remove with key rotation (M08, ADR-0017); verification badges; group cost before sending (M15). | An invitation by QR in person; group pictures (later, never flooded). |
 | 5 | Voice notes | Record (bound to its chat, M02), cost so far, three quality modes, playback. | Preview before sending, discard after stopping, seeking; the quality choice explained as "voice quality vs time on air". |
 | 6 | Photos | LoRa preview, the full thumbnail on request, the original over iroh or Tor, verified by hash. | One message that improves (preview → original) is mostly there; retry / cancel of an original's download and a clear "offered / waiting / unavailable" state are partial. |
@@ -15,7 +15,7 @@ The product brief (`docs/messaging-product-brief-2026-11-08.md`) makes off-grid 
 ## Proposed order
 
 1. ~~**A dependable outbox**~~ (done: §6.1, ADR-0018) (protocol-free in the main): messages accepted while the radio is away, persisted as intents (never sessions, keys or nonces), sent when it comes back, with a visible waiting reason, cancel before transmission and an expiry. Needs a spec section for the restart rules (what is resent, duplicates on the receiving side).
-2. **Chat essentials** (app-only): copy / select, the unread divider, pin and mute, search in the local history.
+2. ~~**Chat essentials**~~ (done) (app-only): copy / select, the unread divider, pin and mute, search in the local history.
 3. **Replies and reactions** (protocol): spec and vectors first (message references, content types, airtime), then both apps.
 4. Voice and photo polish, a group invitation by QR.
 
