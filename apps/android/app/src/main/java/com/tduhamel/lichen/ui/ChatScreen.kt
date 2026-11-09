@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.model.noticeText
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.outlined.GppMaybe
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.Message
@@ -645,6 +646,7 @@ private fun QuoteBox(model: AppModel, q: Quote, chat: ChatId, modifier: Modifier
         q.kind == QuoteKind.TEXT -> q.excerpt
         q.kind == QuoteKind.VOICE -> stringResource(R.string.voice_message)
         q.kind == QuoteKind.PHOTO -> stringResource(R.string.photo)
+        q.kind == QuoteKind.FILE -> stringResource(R.string.file_named, q.excerpt)
         else -> stringResource(R.string.a_message)
     }
     Row(
@@ -762,6 +764,34 @@ private fun Composer(
     var preparing by remember { mutableStateOf(false) }
     var picked by remember { mutableStateOf<Pair<PreparedImage, ByteArray>?>(null) }
     var locating by remember { mutableStateOf(false) }
+    // A file picked, waiting for its route (LoRa when small, else the bridge, ADR-0022).
+    var file by remember { mutableStateOf<FileDraft?>(null) }
+    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val picked = withContext(Dispatchers.IO) {
+                runCatching {
+                    val cr = context.contentResolver
+                    val name = cr.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                        if (c.moveToFirst()) c.getString(0) else null
+                    } ?: uri.lastPathSegment ?: "file"
+                    val data = cr.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+                    FileDraft(name, data)
+                }.getOrNull()
+            }
+            if (picked == null || picked.data.isEmpty()) onError(res.getString(R.string.file_unreadable)) else file = picked
+        }
+    }
+    // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document.
+    LaunchedEffect(Unit) {
+        val screen = model.debugScreen
+        if (screen == "file" || screen == "fileBig") {
+            val line = "Refuge de la Pra: code 4521, wood in the shed, water 200 m north.\n".toByteArray()
+            val n = if (screen == "fileBig") 3_700 else 45
+            val data = ByteArray(line.size * n) { line[it % line.size] }
+            file = FileDraft(if (screen == "fileBig") "Topo Vercors 2026.pdf" else "Refuge notes.txt", data)
+        }
+    }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         preparing = true
@@ -876,6 +906,15 @@ private fun Composer(
                         },
                     )
                     DropdownMenuItem(
+                        text = { Text(stringResource(R.string.file)) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Outlined.InsertDriveFile, null) },
+                        enabled = !chat.group || bridgeAvailable,
+                        onClick = {
+                            menu = false
+                            pickFile.launch(arrayOf("*/*"))
+                        },
+                    )
+                    DropdownMenuItem(
                         text = { Text(stringResource(R.string.share_my_location)) },
                         leadingIcon = { Icon(Icons.Outlined.LocationOn, null) },
                         onClick = {
@@ -936,6 +975,12 @@ private fun Composer(
         }
     }
     if (locating) ChatShareSheet(model, chat) { locating = false }
+    file?.let { draft ->
+        SendFileSheet(model, chat, draft) { e ->
+            file = null
+            e?.let(onError)
+        }
+    }
     picked?.let { (image, original) ->
         SendPhotoSheet(model, chat, image, original) { e ->
             picked = null

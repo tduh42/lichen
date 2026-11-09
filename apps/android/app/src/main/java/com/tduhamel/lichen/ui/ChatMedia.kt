@@ -68,6 +68,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Spacer
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.Message
 import com.tduhamel.lichen.core.PreparedImage
@@ -89,6 +90,7 @@ fun MediaContent(model: AppModel, m: StoredMessage): Boolean {
     when (val msg = m.message) {
         is Message.Voice -> VoiceNote(model, m, msg)
         is Message.Image -> ImageCard(model, m, msg)
+        is Message.File -> FileCard(msg)
         // Shown inside its LoRa preview's card when that preview is here.
         is Message.Announce -> if (model.preview(msg.mediaId, ChatId.of(m.chat)) == null) {
             Column(
@@ -273,8 +275,14 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
     val a = announce.message as? Message.Announce ?: return
     val h = a.hash.hex()
     val file = model.downloads[h]
+    // A file (ADR-0022), not a photo: its icon and name, opened once here.
+    val isFile = a.kind.toInt() == 3
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (standalone && file != null) {
+        if (isFile) {
+            Box(Modifier.clickable(enabled = file != null) { file?.let { openFile(context, a.name, file = it) } }) {
+                FileRow(a.name, a.size.toLong())
+            }
+        } else if (standalone && file != null) {
             val bitmap = remember(file) { decodeFile(file)?.asImageBitmap() }
             var viewing by remember { mutableStateOf(false) }
             if (viewing) PhotoViewer(model, announce) { viewing = false }
@@ -286,9 +294,11 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
                 )
             }
         }
-        Row {
-            Text(a.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 1, modifier = Modifier.weight(1f))
-            Text(Formatter.formatShortFileSize(context, a.size.toLong()), fontSize = 13.sp, color = t.tx2)
+        if (!isFile) {
+            Row {
+                Text(a.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 1, modifier = Modifier.weight(1f))
+                Text(Formatter.formatShortFileSize(context, a.size.toLong()), fontSize = 13.sp, color = t.tx2)
+            }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (p in a.providers) {
@@ -300,6 +310,12 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
             if (file != null) {
                 Icon(Icons.Outlined.Verified, null, tint = t.ok, modifier = Modifier.size(14.dp))
                 Text(stringResource(R.string.hash_verified), fontSize = 11.sp, color = t.ok)
+                if (isFile) {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { openFile(context, a.name, file = file) }) {
+                        Text(stringResource(R.string.open), color = t.tx, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
         model.fetchErrors[h]?.let { Text(it, fontSize = 12.sp, color = t.sosFg) }
@@ -320,11 +336,17 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
                 val route = model.fetchRoute(a.providers)
                 if (route.isEmpty()) {
                     // Offered, but nothing here reaches the sender.
-                    Text(stringResource(R.string.original_unavailable), fontSize = 13.sp, color = t.tx2)
+                    Text(stringResource(if (isFile) R.string.file_unavailable else R.string.original_unavailable), fontSize = 13.sp, color = t.tx2)
                 } else {
                     val torOnly = route.first().transport.toInt() == 2
                     SecondaryButton(
-                        stringResource(if (model.fetchErrors[h] != null) R.string.try_again else R.string.download_full),
+                        stringResource(
+                            when {
+                                model.fetchErrors[h] != null -> R.string.try_again
+                                isFile -> R.string.download
+                                else -> R.string.download_full
+                            },
+                        ),
                         background = if (torOnly) t.torBg else t.irohBg,
                         foreground = if (torOnly) t.torFg else t.irohFg,
                     ) { model.fetch(announce) }

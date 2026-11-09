@@ -656,4 +656,25 @@
     <string name="key_changed_compare">Their key changed: compare</string>
     <string name="key_verified">Key verified</string>
     <string name="verify_their_key">Verify their key</string>
+    <!-- Files (ADR-0022) -->
+    <string name="file">File</string>
+    <string name="file_named">File: %1$s</string>
+    <string name="send_a_file">Send a file</string>
+    <string name="over_lora">Over LoRa</string>
+    <string name="via_iroh">Via iroh</string>
+    <string name="via_tor">Via Tor</string>
+    <string name="lora_file_detail">%1$s · ≈ %2$s s of airtime, %3$s %% of your hour</string>
+    <string name="too_large_for_lora">Too large for LoRa (%1$s, up to 8 KB)</string>
+    <string name="file_no_lora_title">This file cannot go over LoRa</string>
+    <string name="file_no_lora_note">Up to 8 KB fit in a LoRa message. Turn on iroh or Tor in Settings to send larger files over the Internet.</string>
+    <string name="send_over_lora">Send over LoRa</string>
+    <string name="file_unreadable">This file could not be read.</string>
+    <string name="download">Download</string>
+    <string name="open">Open</string>
+    <string name="file_unavailable">Unavailable: turn on iroh or Tor in Settings to fetch the file.</string>
+    <string name="airtime_left_files">Airtime left: %1$d s. The recipient opens it with the app for its type.</string>
+    <string name="iroh_file_detail">1-packet LoRa announcement, peer-to-peer transfer</string>
+    <string name="tor_file_detail">Anonymous, slower: they fetch it from your onion service</string>
+    <string name="direct_acknowledged">Direct, acknowledged</string>
+    <string name="no_app_to_open">No app opens this type: share it</string>
 </resources>

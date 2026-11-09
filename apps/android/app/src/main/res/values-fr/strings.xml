@@ -663,4 +663,25 @@
     <string name="key_changed_compare">Sa clé a changé : comparer</string>
     <string name="key_verified">Clé vérifiée</string>
     <string name="verify_their_key">Vérifier sa clé</string>
+    <!-- Files (ADR-0022) -->
+    <string name="file">Fichier</string>
+    <string name="file_named">Fichier : %1$s</string>
+    <string name="send_a_file">Envoyer un fichier</string>
+    <string name="over_lora">Par LoRa</string>
+    <string name="via_iroh">Par iroh</string>
+    <string name="via_tor">Par Tor</string>
+    <string name="lora_file_detail">%1$s · ≈ %2$s s de temps d\'antenne, %3$s %% de ton heure</string>
+    <string name="too_large_for_lora">Trop gros pour LoRa (%1$s, 8 Ko au plus)</string>
+    <string name="file_no_lora_title">Ce fichier ne peut pas passer par LoRa</string>
+    <string name="file_no_lora_note">Un message LoRa contient 8 Ko au plus. Active iroh ou Tor dans les Réglages pour envoyer de plus gros fichiers par Internet.</string>
+    <string name="send_over_lora">Envoyer par LoRa</string>
+    <string name="file_unreadable">Ce fichier est illisible.</string>
+    <string name="download">Télécharger</string>
+    <string name="open">Ouvrir</string>
+    <string name="file_unavailable">Indisponible : active iroh ou Tor dans les Réglages pour récupérer le fichier.</string>
+    <string name="airtime_left_files">Temps d\'antenne restant : %1$d s. La personne l\'ouvre avec l\'app de son type.</string>
+    <string name="iroh_file_detail">Annonce LoRa d\'un paquet, transfert de pair à pair</string>
+    <string name="tor_file_detail">Anonyme, plus lent : la personne le récupère sur ton service onion</string>
+    <string name="direct_acknowledged">Direct, avec accusé de réception</string>
+    <string name="no_app_to_open">Aucune app n\'ouvre ce type : partage-le</string>
 </resources>

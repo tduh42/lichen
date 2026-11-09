@@ -67,7 +67,8 @@ fun Message.display(res: Resources, me: ByteArray? = null): String = when (this)
     is Message.Text -> text
     is Message.Voice -> res.getString(R.string.voice_message_length, clock(durationMs.toDouble() / 1000))
     is Message.Image -> res.getString(R.string.photo)
-    is Message.Announce -> res.getString(R.string.photo_named, name)
+    is Message.Announce -> res.getString(if (kind.toInt() == 3) R.string.file_named else R.string.photo_named, name)
+    is Message.File -> res.getString(R.string.file_named, name)
     is Message.Other ->
         if (contentType.toInt() == 0x03) {
             res.getString(R.string.position)

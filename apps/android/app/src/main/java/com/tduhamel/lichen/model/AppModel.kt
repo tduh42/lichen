@@ -44,6 +44,7 @@ import kotlin.math.sqrt
 import kotlin.math.PI
 import kotlin.math.sin
 import com.tduhamel.lichen.core.seedFromPhrase
+import com.tduhamel.lichen.core.fitFileName
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1224,6 +1225,19 @@ class AppModel(val app: Application) {
         return sendMedia(chat) { at, now -> core.sendVoice(key, voice, at, now) }
     }
 
+    /** A small file over LoRa (§13.2 kind 2, ADR-0022): up to 8 KB, to a contact. */
+    fun sendFile(data: ByteArray, name: String, chat: ChatId): String? {
+        val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
+        return sendMedia(chat) { at, now -> core.sendFile(key, name, data, at, now) }
+    }
+
+    /** What a small file costs over LoRa to a contact; null for a group. */
+    fun estimateFile(chat: ChatId, name: String, size: Int): Estimate? {
+        val key = chat.contactKey ?: return null
+        val nameLen = fitFileName(name, 64u).toByteArray().size.toUInt()
+        return runCatching { core.estimateFile(key, nameLen, size.toUInt()) }.getOrNull()
+    }
+
     fun sendImage(image: PreparedImage, chat: ChatId): String? {
         val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
         return sendMedia(chat) { at, now -> core.sendImage(key, image, at, now) }
@@ -1373,15 +1387,18 @@ class AppModel(val app: Application) {
 
     /** Offers a photo on the bridge and announces it in one LoRa frame (§14.1); `anonymous`:
      * over Tor only, so the recipient never learns our IP address. */
-    fun sendOverBridge(original: ByteArray, name: String, chat: ChatId, anonymous: Boolean): String? {
+    /** Offers `original` over the bridge and announces it over LoRa (§14.1): `kind` 1 a
+     * photo, 3 any file (ADR-0022). */
+    fun sendOverBridge(original: ByteArray, name: String, chat: ChatId, anonymous: Boolean, kind: UByte = 1u): String? {
         val providers = bridgeProviders(anonymous)
         val b = bridge
         if (b == null || providers.isEmpty()) return res.getString(R.string.no_internet_for_photo)
+        val fitted = fitFileName(name, 32u)
         return try {
             val offered = b.offer(original)
-            keep(original, offered.hash, name)
+            keep(original, offered.hash, fitted)
             val m = core.sendAnnounce(
-                chat.ref, ByteArray(0), 1u, offered.hash, offered.size, providers, name,
+                chat.ref, ByteArray(0), kind, offered.hash, offered.size, providers, fitted,
                 (System.currentTimeMillis() / 1000).toUInt(), now(),
             )
             if (chats[chat] == null) load(chat) else upsert(m)
