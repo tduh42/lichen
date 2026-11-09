@@ -176,9 +176,9 @@ open Lichen.xcodeproj                     # Run on a simulator or an iPhone
 
 Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings → **Try the demo network** runs the app's real core against a simulated network with two other users and a group, in real time.
 
-| Messages | Chat |
-|---|---|
-| ![Messages](docs/screenshots/ios-demo-messages-en.png) | ![Chat](docs/screenshots/ios-demo-chat-en.png) |
+| Messages | Chat | Map |
+|---|---|---|
+| ![Messages](docs/screenshots/ios-conversations-en.png) | ![Chat](docs/screenshots/ios-chat-en.png) | ![Map](docs/screenshots/ios-map-en.png) |
 
 ## Android app
 
