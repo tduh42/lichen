@@ -99,6 +99,24 @@ impl Bot {
                 self.last_from = Some(*from);
                 let radio = format!("SNR {:.1} dB, RSSI {rssi} dBm", f32::from(*snr4) / 4.0);
                 self.keep(core, from, content);
+                // A reaction is echoed: the same emoji on the same message (an empty one
+                // removes ours). The app never reacts by itself, so this cannot loop.
+                if let (true, Content::Reaction { target, emoji, .. }) = (self.echo, content) {
+                    let echo = Content::Reaction {
+                        sent_at: unix_now(),
+                        target: *target,
+                        emoji: emoji.clone(),
+                    };
+                    let what = if emoji.is_empty() {
+                        format!("removes its reaction to {}", hex::encode(target))
+                    } else {
+                        format!("reacts {emoji} to {}", hex::encode(target))
+                    };
+                    match core.send_datagram(from, echo.encode(), now) {
+                        Ok(id) => println!("  -> {} {what} (message {id})", short(from)),
+                        Err(e) => println!("  !! reaction not sent: {e:?}"),
+                    }
+                }
                 if let Some(reply) = self.reply(core, from, content, &radio, now) {
                     report(
                         core.send_text(from, &reply, unix_now(), now),
@@ -314,4 +332,61 @@ fn wav(pcm: &[i16], rate: u32) -> Vec<u8> {
         out.extend_from_slice(&s.to_le_bytes());
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lc_core::fakenet::Net;
+    use lc_meshcore::airtime::LoRaParams;
+
+    /// A reaction to the bot comes back: the same emoji on the same message, and a removal
+    /// is mirrored too.
+    #[test]
+    fn reactions_are_echoed() {
+        let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 7);
+        let (phone, bot_node) = (net.add_companion(1, "phone"), net.add_companion(2, "bot"));
+        net.link(phone, bot_node);
+        net.know(phone, bot_node, true);
+        net.know(bot_node, phone, true);
+        net.connect(phone);
+        net.connect(bot_node);
+        net.run_until(10_000, |_| false);
+        net.introduce(phone, bot_node);
+        let mut bot = Bot::new(true, None, None).unwrap();
+        let bot_key = net.key(bot_node);
+        let target = [7u8; 8];
+        let mut got = Vec::new();
+        for emoji in ["👍", ""] {
+            let reaction = Content::Reaction {
+                sent_at: 1,
+                target,
+                emoji: emoji.into(),
+            };
+            net.with_core(phone, |c, now| {
+                c.send_datagram(&bot_key, reaction.encode(), now)
+            })
+            .unwrap()
+            .unwrap();
+            net.run_until(net.now + 60_000, |n| {
+                for e in n.take_events(bot_node) {
+                    n.with_core(bot_node, |c, now| bot.on_event(c, &e, now));
+                }
+                for e in n.take_events(phone) {
+                    if let Event::Received {
+                        content: Content::Reaction { target, emoji, .. },
+                        ..
+                    } = e
+                    {
+                        got.push((target, emoji));
+                    }
+                }
+                false
+            });
+        }
+        assert_eq!(
+            got,
+            vec![(target, "👍".to_owned()), (target, String::new())]
+        );
+    }
 }
