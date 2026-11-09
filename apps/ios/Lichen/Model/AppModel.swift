@@ -982,6 +982,11 @@ final class AppModel {
         }
     }
 
+    /// Renames a group we administer; its members see the change.
+    func renameGroup(_ gid: Data, to name: String) -> String? {
+        groupCall { try core.renameGroup(gid: gid, name: name, nowMs: now()) }
+    }
+
     /// The invitation's screen closed: its code admits no one any more.
     func revokeInvite(_ token: Data) { core.revokeInvite(token: token) }
 
@@ -1524,7 +1529,31 @@ extension Message {
         case .image: return String(localized: "Photo")
         case let .announce(_, _, _, _, _, _, name): return String(localized: "Photo: \(name)")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
+        case .notice:
+            return noticeText(me: UserDefaults.standard.data(forKey: "lichen.nodeKey")) { _, name in name }
         case let .other(type, body): return String(localized: "Unsupported content (type \(String(type)), \(String(body.count)) bytes)")
+        }
+    }
+
+    /// A membership notice as a sentence (ADR-0021): "You" for ourselves (`me`, our node), the
+    /// others named by `name(node, name then)`.
+    func noticeText(me: Data?, name: (Data, String) -> String) -> String {
+        guard case let .notice(kind, actor, actorName, subjects, text) = self else { return "" }
+        let mine = actor == me
+        let who = name(actor, actorName)
+        let names = ListFormatter.localizedString(byJoining: subjects.map { name($0.node, $0.name) })
+        switch kind {
+        case 1: return mine ? String(localized: "You created the group") : String(localized: "\(who) created the group")
+        case 2: return String(localized: "\(who) added you")
+        case 3: return String(localized: "\(names) joined")
+        case 4: return String(localized: "\(names) left")
+        case 5: return mine ? String(localized: "You removed \(names)") : String(localized: "\(who) removed \(names)")
+        case 6: return String(localized: "No longer in the group: \(names)")
+        case 7: return String(localized: "\(who) removed you")
+        case 8: return mine ? String(localized: "You closed the group") : String(localized: "\(who) closed the group")
+        case 9: return mine ? String(localized: "You renamed the group “\(text)”") : String(localized: "\(who) renamed the group “\(text)”")
+        case 10: return String(localized: "You left the group")
+        default: return String(localized: "The group changed")
         }
     }
 
@@ -1533,7 +1562,7 @@ extension Message {
         case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _),
              let .announce(sentAt, _, _, _, _, _, _):
             if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
-        case .other:
+        case .notice, .other:
             break
         }
         return Date()

@@ -31,6 +31,16 @@
         }
       }
     },
+    "%@ added you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ t'a ajouté au groupe"
+          }
+        }
+      }
+    },
     "%@ added you. The other members' keys arrive over the next minutes.": {
       "localizations": {
         "fr": {
@@ -61,12 +71,32 @@
         }
       }
     },
+    "%@ closed the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a fermé le groupe"
+          }
+        }
+      }
+    },
     "%@ connected": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ connecté"
+          }
+        }
+      }
+    },
+    "%@ created the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a créé le groupe"
           }
         }
       }
@@ -91,6 +121,16 @@
         }
       }
     },
+    "%@ joined": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a rejoint le groupe"
+          }
+        }
+      }
+    },
     "%@ joined with your invitation": {
       "localizations": {
         "fr": {
@@ -101,12 +141,52 @@
         }
       }
     },
+    "%@ left": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a quitté le groupe"
+          }
+        }
+      }
+    },
     "%@ reacted %@ to “%@”": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%@ a réagi %@ à « %@ »"
+          }
+        }
+      }
+    },
+    "%@ removed %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ a retiré %2$@"
+          }
+        }
+      }
+    },
+    "%@ removed you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ t'a retiré du groupe"
+          }
+        }
+      }
+    },
+    "%@ renamed the group “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ a renommé le groupe « %2$@ »"
           }
         }
       }
@@ -1861,6 +1941,16 @@
         }
       }
     },
+    "Every member sees the new name.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous les membres voient le nouveau nom."
+          }
+        }
+      }
+    },
     "Every member stops receiving it. The messages already received stay on each phone.": {
       "localizations": {
         "fr": {
@@ -2921,6 +3011,16 @@
         }
       }
     },
+    "Name": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom"
+          }
+        }
+      }
+    },
     "Needs an Internet connection": {
       "localizations": {
         "fr": {
@@ -3097,6 +3197,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas encore de conversation"
+          }
+        }
+      }
+    },
+    "No longer in the group: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ne fait plus partie du groupe : %@"
           }
         }
       }
@@ -3887,6 +3997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renommer"
+          }
+        }
+      }
+    },
+    "Rename the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renommer le groupe"
           }
         }
       }
@@ -4717,6 +4837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La première position part dans un instant."
+          }
+        }
+      }
+    },
+    "The group changed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le groupe a changé"
           }
         }
       }
@@ -5571,12 +5701,62 @@
         }
       }
     },
+    "You closed the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as fermé le groupe"
+          }
+        }
+      }
+    },
+    "You created the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as créé le groupe"
+          }
+        }
+      }
+    },
     "You joined %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Tu as rejoint %@"
+          }
+        }
+      }
+    },
+    "You left the group": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as quitté le groupe"
+          }
+        }
+      }
+    },
+    "You removed %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as retiré %@"
+          }
+        }
+      }
+    },
+    "You renamed the group “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as renommé le groupe « %@ »"
           }
         }
       }

@@ -139,6 +139,15 @@ private struct JoinPanel: View {
             .padding(16)
             .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
             if let gid = model.joinedByInvite[info.admin] {
+                #if DEBUG
+                // -joinNow YES: the group opens once joined (screenshots).
+                Color.clear.frame(height: 0).onAppear {
+                    if UserDefaults.standard.bool(forKey: "joinNow") {
+                        model.debugOpen = .group(gid: gid)
+                        done()
+                    }
+                }
+                #endif
                 Banner(kind: .ok, title: String(localized: "You joined \(name)"),
                        message: String(localized: "\(admin) added you. The other members' keys arrive over the next minutes."))
                 Button("Open the group") {

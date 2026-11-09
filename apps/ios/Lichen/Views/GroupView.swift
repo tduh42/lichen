@@ -9,6 +9,8 @@ struct GroupView: View {
     @State private var consent = false
     @State private var inviting = false
     @State private var showingCode = false
+    @State private var renaming = false
+    @State private var newName = ""
     @State private var leaving = false
     @State private var removing: ContactInfo?
     @Environment(\.dismiss) private var dismiss
@@ -25,27 +27,7 @@ struct GroupView: View {
                             memberRow(m, group: g)
                         }
                     }
-                    if isAdmin {
-                        SectionLabel("Invite").padding(.top, 10)
-                        CardList {
-                            Button { showingCode = true } label: {
-                                CardRow(title: String(localized: "Invite with a QR code"),
-                                        subtitle: String(localized: "People next to you scan it and join, for 10 minutes")) {
-                                    Image(systemName: "qrcode").foregroundStyle(Theme.tx2)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            CardDivider()
-                            Button { inviting = true } label: {
-                                CardRow(title: String(localized: "Invite contacts")) {
-                                    Image(systemName: "person.badge.plus").foregroundStyle(Theme.tx2)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
+                    if isAdmin { adminCards(g) }
                     SectionLabel("Location").padding(.top, 10)
                     CardList {
                         CardRow(title: String(localized: "Let this group locate me"),
@@ -101,6 +83,16 @@ struct GroupView: View {
         .sheet(isPresented: $sharing) { ChatShareSheet(chat: .group(gid: gid)) }
         .sheet(isPresented: $inviting) { InviteSheet(gid: gid) }
         .sheet(isPresented: $showingCode) { InviteCodeSheet(gid: gid) }
+        .alert("Rename the group", isPresented: $renaming) {
+            TextField("Group name", text: $newName)
+            Button("Rename") {
+                let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty { error = model.renameGroup(gid, to: name) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every member sees the new name.")
+        }
         .confirmationDialog(isAdmin ? "Close the group?" : "Leave the group?", isPresented: $leaving, titleVisibility: .visible) {
             Button(isAdmin ? "Close the group" : "Leave the group", role: .destructive) {
                 // The chat closes itself once the group is gone (ChatView), this screen with it.
@@ -120,13 +112,55 @@ struct GroupView: View {
         .onAppear {
             consent = model.searchConsent(gid)
             #if DEBUG
-            if model.debugScreen == "invite", isAdmin { showingCode = true }
+            if model.debugScreen == "invite", isAdmin {
+                showingCode = true
+                model.debugScreen = nil
+            }
             #endif
         }
         .alert("Not changed", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(error ?? "")
+        }
+    }
+
+    /// The admin's cards: the group's name, and inviting.
+    @ViewBuilder private func adminCards(_ g: GroupInfo) -> some View {
+        CardList {
+            Button {
+                newName = g.name
+                renaming = true
+            } label: {
+                CardRow(title: String(localized: "Name")) {
+                    HStack(spacing: 6) {
+                        Text(g.name).font(.system(.subheadline)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "pencil").foregroundStyle(Theme.tx2)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 10)
+        SectionLabel("Invite").padding(.top, 10)
+        CardList {
+            Button { showingCode = true } label: {
+                CardRow(title: String(localized: "Invite with a QR code"),
+                        subtitle: String(localized: "People next to you scan it and join, for 10 minutes")) {
+                    Image(systemName: "qrcode").foregroundStyle(Theme.tx2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            CardDivider()
+            Button { inviting = true } label: {
+                CardRow(title: String(localized: "Invite contacts")) {
+                    Image(systemName: "person.badge.plus").foregroundStyle(Theme.tx2)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 

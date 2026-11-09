@@ -53,9 +53,13 @@ struct ChatView: View {
                             if m.id == dividerBefore {
                                 UnreadDivider(count: unreadAtOpen)
                             }
-                            MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id,
-                                        reply: { replyTo = m }, openQuote: { jumpTo = $0 })
-                                .id(m.id)
+                            if case .notice = m.message {
+                                NoticeLine(message: m.message).id(m.id)
+                            } else {
+                                MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id,
+                                            reply: { replyTo = m }, openQuote: { jumpTo = $0 })
+                                    .id(m.id)
+                            }
                         }
                         if let failed = lastFailure {
                             FailureBanner(message: failed) { error = model.retry(failed) }
@@ -307,6 +311,22 @@ struct ChatView: View {
             }
             return String(localized: "\(g.members.count) members · flood")
         }
+    }
+}
+
+/// A membership change in a group (ADR-0021): "Léa joined", "Camille removed Bob".
+struct NoticeLine: View {
+    let message: Message
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Text(message.noticeText(me: model.nodeKey) { node, name in model.contact(node)?.name ?? name })
+            .font(.system(.caption))
+            .foregroundStyle(Theme.tx2)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 4)
     }
 }
 
