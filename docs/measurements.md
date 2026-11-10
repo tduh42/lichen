@@ -314,13 +314,15 @@ The track that could not leave the phone in the first field test (25 KB, over th
 
 ## 2026-11-09 — Recovering lost group messages (ADR-0024)
 
-`cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`: five members around one repeater (none hears another), random loss on every link, 10 seeds. Every member posts 8 times, a post a minute overall, then once more (a later message that reveals the last gaps; not counted). Delivered = distinct posts each member received, out of 8 × 4 per member; frames = every transmission on the network during the posts, repeater included, per run.
+`cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`: five members around one repeater (none hears another), random loss on every link, 40 seeds. Every member posts 8 times, a post a minute overall, then once more (a later message that reveals the last gaps; not counted). Delivered = distinct posts each member received, out of 8 × 4 per member; delay = from a post going out to its recovery (median and 90th percentile, to 10 s); frames = every transmission on the network from the first post to half an hour after the last, repeater included, per run.
 
-| Loss per link | | Delivered | Recovered (late) | Frames per run |
-|---|---|---|---|---|
-| 10 % | without | 1527/1600 (95.4 %) | — | 170 |
-| 10 % | with recovery | 1584/1600 (99.0 %) | 83 | 327 |
-| 20 % | without | 1402/1600 (87.6 %) | — | 163 |
-| 20 % | with recovery | 1527/1600 (95.4 %) | 250 | 1151 |
+| Loss per link | | Delivered | Recovered (late) | Delay of recovered posts | Frames per run |
+|---|---|---|---|---|---|
+| 10 % | without | 6144/6400 (96.0 %) | — | — | 171 |
+| 10 % | with recovery | 6366/6400 (99.5 %) | 304 | 360 s / 440 s | 309 |
+| 20 % | without | 5602/6400 (87.5 %) | — | — | 162 |
+| 20 % | with recovery | 6047/6400 (94.5 %) | 1030 | 410 s / 990 s | 1257 |
 
-At 10 % per link, recovery brings back four losses in five for about twice the frames (a request and an answer through the repeater, unicast and acknowledged). At 20 %, each exchange itself needs retries, often a new handshake with the admin, and every member that lost the same post asks on its own: seven times the frames for half the losses. Recovered posts come 20–40 s late at least (the wait for the second copy) and are marked "arrived late". What is still lost: requests that fail twice, and losses not followed by another message from the same author.
+At 10 % per link, recovery brings back seven losses in eight for 80 % more frames (a request and an answer through the repeater, unicast and acknowledged). At 20 %, each exchange itself needs retries, often a new handshake, and every member that lost the same post asks on its own: almost eight times the frames for more than half the losses. A gap is only seen when its author posts again, here every 5 minutes: that wait is most of the delay; then 20–40 s for the second copy, then the exchange. What is still lost: requests that fail twice, and losses not followed by another message from the same author.
+
+A member asked for a post it lost too hands it on once it recovers it (§10.6). With the first rule, where it stayed silent and the asker turned to the author after 2 minutes: 99.5 % at 10 % with a 90th percentile of 540 s instead of 440 s and 298 frames; 95.3 % at 20 % (1080 s, 1134 frames). Held requests cut the slow tail by about 100 s for 4–11 % more frames. An empty answer instead (the asker turning to the author at once) did worse: 90.4 % delivered at 20 % for 1928 frames, against 95.7 % and 1187 for the first rule in the same run (frames counted until the network went quiet), every member opening a session with the author at the same moment.

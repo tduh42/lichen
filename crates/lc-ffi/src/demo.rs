@@ -647,7 +647,19 @@ impl Demo {
                     text: "Leaving the col now, at the refuge around 2 pm.".into(),
                 },
             ));
-            self.pending.push((now + 50 * SEC, Action::JulienGif));
+            // The app's radio misses both copies of his next post (interference at its end, the
+            // hub busy): his GIF shows the gap, and a member hands the post back, late (§10.6).
+            if let Some(n) = self.net.nodes.get_mut(self.app) {
+                n.misses_groups = now + 30 * SEC..now + 75 * SEC;
+            }
+            self.pending.push((
+                now + 35 * SEC,
+                Action::GroupPost {
+                    from: self.julien,
+                    text: "Mist on the ridge, I'm taking the forest path instead.".into(),
+                },
+            ));
+            self.pending.push((now + 85 * SEC, Action::JulienGif));
         }
     }
 }
@@ -1004,10 +1016,21 @@ mod tests {
                 demo.write(f, now);
             }
             while let Some(e) = core.poll_event() {
-                if matches!(&e, LichenEvent::GroupMessage { message: Message::Text { text, .. }, .. }
-                    if text.starts_with("Leaving the col"))
+                if let LichenEvent::GroupMessage {
+                    message: Message::Text { text, .. },
+                    late,
+                    ..
+                } = &e
+                    && (text.starts_with("Leaving the col") || text.starts_with("Mist"))
                 {
-                    eprintln!("Julien's post at {} s", now / 1000);
+                    eprintln!("{text} at {} s, late: {late}", now / 1000);
+                }
+                if let LichenEvent::GroupMessage {
+                    message: Message::Gif { .. },
+                    ..
+                } = &e
+                {
+                    eprintln!("Julien's GIF at {} s", now / 1000);
                 }
                 events.push(e);
             }
@@ -1048,9 +1071,32 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, LichenEvent::Delivered { .. }))
         );
-        assert!(
-            texts.iter().any(|t| t.starts_with("Leaving the col")),
-            "{texts:?}"
+        // His second post, missed on the air, comes after his GIF: handed back by a member and
+        // marked late (§10.6).
+        let order: Vec<(&str, bool)> = events
+            .iter()
+            .filter_map(|e| match e {
+                LichenEvent::GroupMessage {
+                    message: Message::Text { text, .. },
+                    late,
+                    ..
+                } if text.starts_with("Leaving the col") => Some(("leaving", *late)),
+                LichenEvent::GroupMessage {
+                    message: Message::Text { text, .. },
+                    late,
+                    ..
+                } if text.starts_with("Mist") => Some(("mist", *late)),
+                LichenEvent::GroupMessage {
+                    message: Message::Gif { .. },
+                    late,
+                    ..
+                } => Some(("gif", *late)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            order,
+            vec![("leaving", false), ("gif", false), ("mist", true)]
         );
     }
 }
@@ -1496,6 +1542,13 @@ mod persistence {
             if step == 1 && now > 12 * 60_000 {
                 step = 2;
                 c.send_group_text(group.gid.clone(), "back online".into(), 3, now)
+                    .unwrap();
+            }
+            // Camille answers each post; one of her answers lost at her first hop comes back
+            // with the next (§10.6).
+            if step == 2 && now > 15 * 60_000 {
+                step = 3;
+                c.send_group_text(group.gid.clone(), "anyone at the refuge?".into(), 4, now)
                     .unwrap();
             }
         });

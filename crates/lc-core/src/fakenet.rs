@@ -30,6 +30,7 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
+use std::ops::Range;
 
 use lc_meshcore::air::{Packet, PayloadType, Route};
 use lc_meshcore::airtime::LoRaParams;
@@ -81,6 +82,9 @@ pub struct Node {
     pub rssi_zero: bool,
     /// Last reception (for `GET_STATS`).
     last_rx: (i8, i8),
+    /// The node hears no group flood (`GRP_DATA`) during this time: a burst of interference,
+    /// a repeater busy elsewhere (the demo's lost group post, §10.6).
+    pub misses_groups: Range<Millis>,
 }
 
 impl std::fmt::Debug for Node {
@@ -236,6 +240,7 @@ impl Net {
             noise_dbm: -118,
             rssi_zero: false,
             last_rx: (0, 0),
+            misses_groups: 0..0,
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -948,6 +953,18 @@ impl Net {
                 self.stats.random_losses += 1;
                 continue;
             };
+            if self
+                .nodes
+                .get(r)
+                .is_some_and(|n| n.misses_groups.contains(&self.now))
+                && Packet::decode(&tx.frame).is_ok_and(|p| p.ptype == PayloadType::GrpData)
+            {
+                self.stats.random_losses += 1;
+                if trace {
+                    eprintln!("{:>8} {}->{} missed {}", self.now, tx.from, r, label());
+                }
+                continue;
+            }
             if self.rng.next_u32() % 100 < self.loss_pct {
                 self.stats.random_losses += 1;
                 if trace {

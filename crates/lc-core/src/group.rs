@@ -47,6 +47,8 @@ const KEPT_MAX: usize = 64;
 const KEPT_MS: Millis = 3_600_000;
 /// Missing counters remembered per group (§10.6).
 const GAPS_MAX: usize = 16;
+/// Requests for messages we miss too, answered once we recover them (§10.6), per group.
+const OWED_MAX: usize = 32;
 /// A gap is asked for this long after it is seen, plus up to as much again (§10.6).
 const ASK_AFTER_MS: Millis = 20_000;
 /// How long an answer is awaited before asking the other one, then giving up.
@@ -221,11 +223,22 @@ struct Gap {
     asked: Option<PubKey>,
 }
 
+/// A member asked for a message we are missing too: it gets it once we recover it (§10.6).
+#[derive(Clone, Debug)]
+struct Owed {
+    node: PubKey,
+    author: PubKey,
+    epoch: u8,
+    counter: u32,
+    until: Millis,
+}
+
 /// What a member keeps and misses, to recover lost messages (§10.6, ADR-0024). Memory only.
 #[derive(Clone, Debug, Default)]
 struct Recovery {
     kept: VecDeque<Kept>,
     gaps: Vec<Gap>,
+    owed: Vec<Owed>,
     /// When we saw each member added: nobody gets back what was sent before it joined.
     since: HashMap<PubKey, Millis>,
 }
@@ -1387,7 +1400,7 @@ impl Core {
             Some(&content::GROUP_MISSING) => {
                 if let Some((gid, author, epoch, counters)) = decode_missing(datagram) {
                     let from = *from;
-                    self.on_group_missing(&node, &from, &gid, &author, epoch, &counters);
+                    self.on_group_missing(&node, &from, &gid, (&author, epoch, &counters), now);
                 }
             }
             Some(&content::GROUP_RESEND) => {
@@ -1400,17 +1413,17 @@ impl Core {
         }
     }
 
-    /// A member asks for messages it missed (§10.6): what we kept of them since it joined.
+    /// A member asks for messages it missed (§10.6): what we kept of them since it joined;
+    /// those we miss too, it gets once we recover them.
     fn on_group_missing(
         &mut self,
         node: &PubKey,
         from: &PubKey,
         gid: &GroupId,
-        author: &PubKey,
-        epoch: u8,
-        counters: &[u32],
+        (author, epoch, counters): (&PubKey, u8, &[u32]),
+        now: Millis,
     ) {
-        let Some(g) = self.groups.get(gid) else {
+        let Some(g) = self.groups.get_mut(gid) else {
             return;
         };
         if !g.is_member(from) {
@@ -1428,6 +1441,22 @@ impl Core {
                 break;
             }
             payloads.extend(k.payloads.iter().cloned());
+        }
+        let r = &mut g.recovery;
+        for &c in counters {
+            let ours = |x: &Gap| x.author == *author && x.epoch == epoch && x.counter == c;
+            let owed = |o: &Owed| {
+                o.node == *node && o.author == *author && o.epoch == epoch && o.counter == c
+            };
+            if r.gaps.iter().any(ours) && !r.owed.iter().any(owed) && r.owed.len() < OWED_MAX {
+                r.owed.push(Owed {
+                    node: *node,
+                    author: *author,
+                    epoch,
+                    counter: c,
+                    until: now + ANSWER_MS,
+                });
+            }
         }
         if !payloads.is_empty() {
             let d = encode_resend(gid, &payloads);
@@ -2024,6 +2053,7 @@ impl Core {
         for g in self.groups.values_mut() {
             g.partials.retain(|p| p.at + PARTIAL_MS > now);
             g.recovery.kept.retain(|k| k.at + KEPT_MS > now);
+            g.recovery.owed.retain(|o| o.until > now);
         }
         self.held.retain(|h| h.at + HELD_MS > now);
         self.ask_missing(now);
@@ -2185,6 +2215,7 @@ impl Core {
         };
         self.dirty_groups.insert(gid);
         // Gaps it fills or opens, and the message kept for members who miss it (§10.6).
+        let mut answers: Vec<PubKey> = Vec::new();
         let jitter = if skipped.is_empty() {
             0
         } else {
@@ -2214,14 +2245,25 @@ impl Core {
                 }
             }
             if recoverable(&body) {
+                // Members who asked us for it while we missed it too.
+                r.owed.retain(|o| {
+                    let due = o.author == member && o.epoch == epoch && o.counter == counter;
+                    if due {
+                        answers.push(o.node);
+                    }
+                    !due
+                });
                 r.keep(Kept {
                     author: member,
                     epoch,
                     counter,
-                    payloads,
+                    payloads: payloads.clone(),
                     at: now,
                 });
             }
+        }
+        for node in answers {
+            self.enqueue_internal(&node, encode_resend(&gid, &payloads));
         }
         // Local notices never come from the air (§6).
         if Content::is_local(&body) {
@@ -2598,6 +2640,50 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// Asked for a message we lost too (a busy repeater drops it for everyone behind it, the
+    /// admin included): the asker gets it as soon as we recover it, not 2 minutes later from
+    /// the author (§10.6).
+    #[test]
+    fn a_request_waits_for_our_own_recovery() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let (_, carol) = member(&mut probe, 8, [2; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 0), (carol, [20; 32], 0)]);
+        member(&mut core, 7, [1; 32]);
+        member(&mut core, 8, [2; 32]);
+        let e1 = envelope(&bob, &[10; 32], 1, &bob_prv, "lost at the hub");
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 0, &bob_prv, "a"), 0, 0, 0);
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 2, &bob_prv, "c"), 0, 0, 1_000);
+        texts(&mut core);
+        let resent = |core: &Core| -> Vec<_> {
+            core.queued(&[2; 32])
+                .iter()
+                .filter_map(|d| decode_resend(d))
+                .collect()
+        };
+        core.on_group_control(&[2; 32], &encode_missing(&GID, &bob, 0, &[1]), 30_000);
+        assert!(resent(&core).is_empty());
+        // Bob hands it to us: Carol gets it too.
+        core.on_group_control(
+            &[1; 32],
+            &encode_resend(&GID, std::slice::from_ref(&e1)),
+            45_000,
+        );
+        assert_eq!(resent(&core), vec![(GID, vec![e1.clone()])]);
+        // Once only.
+        core.on_group_envelope(&e1, 0, 0, 46_000);
+        assert_eq!(resent(&core).len(), 1);
+        // A request we cannot serve in time is dropped.
+        let e3 = envelope(&bob, &[10; 32], 3, &bob_prv, "d");
+        let e5 = envelope(&bob, &[10; 32], 5, &bob_prv, "f");
+        core.on_group_envelope(&e3, 0, 0, 50_000);
+        core.on_group_envelope(&e5, 0, 0, 51_000);
+        core.on_group_control(&[2; 32], &encode_missing(&GID, &bob, 0, &[4]), 80_000);
+        core.tick_groups(80_000 + ANSWER_MS);
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 4, &bob_prv, "e"), 0, 0, 210_000);
+        assert_eq!(resent(&core).len(), 1);
     }
 
     /// A relayed envelope is checked like one heard (§10.6): a forgery or a non-member's

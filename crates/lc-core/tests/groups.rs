@@ -314,9 +314,11 @@ fn measure_group_delivery_one_or_two_copies() {
 #[test]
 #[ignore = "measurement, prints numbers for docs/measurements.md"]
 fn measure_group_recovery() {
+    const SEEDS: u64 = 40;
     for (loss, recovery) in [(10, false), (10, true), (20, false), (20, true)] {
         let (mut ok, mut total, mut late, mut frames) = (0usize, 0usize, 0usize, 0u64);
-        for seed in 0..10u64 {
+        let mut delays: Vec<u64> = Vec::new();
+        for seed in 0..SEEDS {
             let (mut net, m) = star_with_loss(300 + seed, loss);
             for &i in &m {
                 net.with_core(i, |c, _| c.set_group_recovery(recovery));
@@ -334,18 +336,36 @@ fn measure_group_recovery() {
                 net.take_events(i);
             }
             let before = net.stats.transmissions;
+            // Events with when they came (to 10 s), and when each post went out.
+            let mut got: Vec<Vec<(u64, Event)>> = m.iter().map(|_| Vec::new()).collect();
+            let mut sent_at = std::collections::HashMap::new();
+            let step = |net: &mut Net, got: &mut Vec<Vec<(u64, Event)>>| {
+                net.run_until(net.now + MIN / 6, |_| false);
+                for (k, &i) in m.iter().enumerate() {
+                    let at = net.now;
+                    if let Some(g) = got.get_mut(k) {
+                        g.extend(net.take_events(i).into_iter().map(|e| (at, e)));
+                    }
+                }
+            };
             for round in 0..9 {
                 for (j, &i) in m.iter().enumerate() {
                     let text = format!("{round}-{j}");
+                    sent_at.insert(text.clone(), net.now);
                     net.with_core(i, |c, now| c.send_group_text(&gid, &text, 1, now));
-                    net.run_until(net.now + MIN, |_| false);
+                    for _ in 0..6 {
+                        step(&mut net, &mut got);
+                    }
                 }
             }
-            settle(&mut net);
+            // Recovery is over well within half an hour.
+            for _ in 0..180 {
+                step(&mut net, &mut got);
+            }
             frames += net.stats.transmissions - before;
-            for &i in &m {
+            for events in got {
                 let mut seen = std::collections::HashSet::new();
-                for e in net.take_events(i) {
+                for (at, e) in events {
                     if let Event::GroupMessage {
                         content: Content::Text { text, .. },
                         late: l,
@@ -357,17 +377,27 @@ fn measure_group_recovery() {
                         ok += 1;
                         if l {
                             late += 1;
+                            if let Some(t) = sent_at.get(&text) {
+                                delays.push(at - t);
+                            }
                         }
                     }
                 }
                 total += 8 * (m.len() - 1);
             }
         }
+        delays.sort_unstable();
+        let pct = |q: usize| match delays.get(delays.len() * q / 100) {
+            Some(d) => format!("{} s", d / 1000),
+            None => "—".into(),
+        };
         println!(
-            "| {loss} % | {} | {ok}/{total} ({:.1} %) | {late} | {:.0} |",
+            "| {loss} % | {} | {ok}/{total} ({:.1} %) | {late} | {} / {} | {:.0} |",
             if recovery { "with recovery" } else { "without" },
             100.0 * ok as f64 / total.max(1) as f64,
-            frames as f64 / 10.0
+            pct(50),
+            pct(90),
+            frames as f64 / SEEDS as f64
         );
     }
 }
