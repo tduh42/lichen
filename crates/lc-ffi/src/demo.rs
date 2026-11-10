@@ -179,6 +179,19 @@ struct Demo {
     camille_sos: Option<(u64, u64)>,
 }
 
+/// The app's radio misses every copy of `author`'s second group message (its sender byte;
+/// message counter 1 under a new key, §10.3), whenever it goes out.
+fn lose_second_message(app: usize, author: Option<u8>) -> lc_core::fakenet::Deaf {
+    Box::new(move |receiver, frame| {
+        receiver == app
+            && lc_meshcore::air::Packet::decode(frame)
+                .ok()
+                .filter(|p| p.ptype == lc_meshcore::air::PayloadType::GrpData)
+                .and_then(|p| lc_proto::group::parse(p.payload))
+                .is_some_and(|(h, _)| Some(h.sender) == author && h.counter == 1)
+    })
+}
+
 /// A point in metres east and north of the user (the fake network's plane).
 fn plane(at: (f64, f64)) -> (f64, f64) {
     let m = 111_320.0;
@@ -649,8 +662,11 @@ impl Demo {
             ));
             // The app's radio misses both copies of his next post (interference at its end, the
             // hub busy): his GIF shows the gap, and a member hands the post back, late (§10.6).
-            if let Some(n) = self.net.nodes.get_mut(self.app) {
-                n.misses_groups = now + 30 * SEC..now + 75 * SEC;
+            if let Some(julien) = self
+                .net
+                .with_core_ref(self.julien, |c| c.key().map(|k| k[0]))
+            {
+                self.net.deaf = Some(lose_second_message(self.app, julien));
             }
             self.pending.push((
                 now + 35 * SEC,

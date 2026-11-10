@@ -101,7 +101,7 @@ Your identity is a key made on your phone from a seed in the Keychain or Keystor
 
 A post is encrypted once with the sender's key, signed with the sender's identity, and flooded twice. Keys travel over pairwise sessions; when people join, the admin relays every key, so strangers never need a session with each other. People next to you join by scanning a QR code that holds the admin's public card and a 10-minute token, never a key. When someone leaves or is removed, everyone draws a new key. Members keep the last hour of posts: one who misses a post asks the author or the admin for it, and gets the original signed envelope back, shown as "arrived late".
 
-| 99.5 % | 130 s | 237 s | 1–32 |
+| 100 % | 130 s | 237 s | 1–32 |
 |---|---|---|---|
 | posts delivered at 10 % loss per link with recovery (96.0 % without) | two people join by QR: every key everywhere (median of 10; 489 s before the relay) | a group of 5 from contacts (median of 10; 412 s before) | members; a group may start with the admin alone |
 

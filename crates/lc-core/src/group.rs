@@ -160,15 +160,23 @@ impl KeyState {
     }
 
     /// The counters before `counter` that never came under this key and still could (inside
-    /// the window once `counter` is marked), between two messages received (§10.6). None for
-    /// a key's first message: what came before may predate our membership.
+    /// the window once `counter` is marked, §10.6): after the highest message received, or
+    /// from the key's next counter for its first one (sent after the key reached us).
     fn skipped_before(&self, counter: u32) -> Vec<u32> {
-        match self.highest {
-            Some(h) if counter > h && counter < AUX => {
-                (h.saturating_add(1).max(counter.saturating_sub(63))..counter).collect()
-            }
-            _ => Vec::new(),
-        }
+        let from = match self.highest {
+            _ if counter >= AUX => return Vec::new(),
+            Some(h) if counter > h => h.saturating_add(1),
+            Some(_) => return Vec::new(),
+            None => self.floor,
+        };
+        (from.max(counter.saturating_sub(63))..counter).collect()
+    }
+
+    /// The next message counter expected under this key: one past the highest received, or
+    /// the key's own next counter (what the admin relays, §10.2).
+    fn expected(&self) -> u32 {
+        self.highest
+            .map_or(self.floor, |h| self.floor.max(h.saturating_add(1)))
     }
 
     fn mark(&mut self, counter: u32) {
@@ -1858,7 +1866,7 @@ impl Core {
                     continue;
                 }
                 if let Some(c) = g.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
-                    entries.push((m.key, c.epoch, c.key, c.floor));
+                    entries.push((m.key, c.epoch, c.key, c.expected()));
                 }
             }
             out.push((node, encode_sender_keys(gid, &entries)));
@@ -2640,6 +2648,50 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// A member's first message lost: the next one shows it missing from the key's next
+    /// counter, nothing before it (§10.6).
+    #[test]
+    fn a_lost_first_message_comes_back() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 5)]);
+        member(&mut core, 7, [1; 32]);
+        core.on_group_envelope(&envelope(&bob, &[10; 32], 7, &bob_prv, "c"), 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["c"]);
+        core.ask_missing(41_000);
+        let asked: Vec<_> = core
+            .queued(&[1; 32])
+            .iter()
+            .filter_map(|d| decode_missing(d))
+            .collect();
+        assert_eq!(asked, vec![(GID, bob, 0, vec![5, 6])]);
+    }
+
+    /// The admin relays a key with the next counter it expects from its owner, not the one the
+    /// key came with: a newcomer then misses nothing sent before it joined (§10.2, §10.6).
+    #[test]
+    fn relayed_keys_start_after_what_was_heard() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let (_, carol) = member(&mut probe, 8, [2; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 0), (carol, [20; 32], 0)]);
+        member(&mut core, 7, [1; 32]);
+        member(&mut core, 8, [2; 32]);
+        for c in 0..3 {
+            core.on_group_envelope(&envelope(&bob, &[10; 32], c, &bob_prv, "x"), 0, 0, 0);
+        }
+        core.send_bundle(&GID, &[carol]);
+        let relayed: Vec<_> = core
+            .queued(&[2; 32])
+            .iter()
+            .filter_map(|d| decode_sender_keys(d))
+            .flat_map(|(_, entries)| entries)
+            .filter(|e| e.0 == bob)
+            .map(|e| e.3)
+            .collect();
+        assert_eq!(relayed, vec![3]);
     }
 
     /// Asked for a message we lost too (a busy repeater drops it for everyone behind it, the

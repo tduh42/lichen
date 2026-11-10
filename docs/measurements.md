@@ -319,10 +319,18 @@ The track that could not leave the phone in the first field test (25 KB, over th
 | Loss per link | | Delivered | Recovered (late) | Delay of recovered posts | Frames per run |
 |---|---|---|---|---|---|
 | 10 % | without | 6144/6400 (96.0 %) | — | — | 171 |
-| 10 % | with recovery | 6366/6400 (99.5 %) | 304 | 360 s / 440 s | 309 |
+| 10 % | with recovery | 6400/6400 (100 %) | 326 | 360 s / 440 s | 313 |
 | 20 % | without | 5602/6400 (87.5 %) | — | — | 162 |
-| 20 % | with recovery | 6047/6400 (94.5 %) | 1030 | 410 s / 990 s | 1257 |
+| 20 % | with recovery | 5961/6400 (93.1 %) | 1344 | 450 s / 1540 s | 1795 |
 
-At 10 % per link, recovery brings back seven losses in eight for 80 % more frames (a request and an answer through the repeater, unicast and acknowledged). At 20 %, each exchange itself needs retries, often a new handshake, and every member that lost the same post asks on its own: almost eight times the frames for more than half the losses. A gap is only seen when its author posts again, here every 5 minutes: that wait is most of the delay; then 20–40 s for the second copy, then the exchange. What is still lost: requests that fail twice, and losses not followed by another message from the same author.
+At 10 % per link, recovery brings back every loss for 80 % more frames (a request and an answer through the repeater, unicast and acknowledged). At 20 %, each exchange itself needs retries, often a new handshake, and every member that lost the same post asks on its own: eleven times the frames for less than half the losses, and the admin, which answers most requests, runs into its airtime budget (the 90th percentile of 26 minutes). A gap is only seen when its author posts again, here every 5 minutes: that wait is most of the delay; then 20–40 s for the second copy, then the exchange. What is still lost: requests that fail twice, and losses not followed by another message from the same author.
 
-A member asked for a post it lost too hands it on once it recovers it (§10.6). With the first rule, where it stayed silent and the asker turned to the author after 2 minutes: 99.5 % at 10 % with a 90th percentile of 540 s instead of 440 s and 298 frames; 95.3 % at 20 % (1080 s, 1134 frames). Held requests cut the slow tail by about 100 s for 4–11 % more frames. An empty answer instead (the asker turning to the author at once) did worse: 90.4 % delivered at 20 % for 1928 frames, against 95.7 % and 1187 for the first rule in the same run (frames counted until the network went quiet), every member opening a session with the author at the same moment.
+Two refinements since the first version (§10.6), measured one after the other:
+
+| Rule | 10 %: delivered, delay p90, frames | 20 %: delivered, delay p90, frames |
+|---|---|---|
+| first version | 99.5 %, 540 s, 298 | 95.3 %, 1080 s, 1134 |
+| + a member asked for a post it lost too hands it on once recovered | 99.5 %, 440 s, 309 | 94.5 %, 990 s, 1257 |
+| + gaps before a key's first message count from its next counter | 100 %, 440 s, 313 | 93.1 %, 1540 s, 1795 |
+
+At 10 %, the first cuts the slow tail by 100 s and the second recovers members' first posts, which nothing could bring back before: every post arrives, for 5 % more frames. At 20 %, each extra recovery adds collisions and handshakes that cost more than they bring. An empty answer instead (the asker turning to the author at once) did worse: 90.4 % delivered at 20 % for 1928 frames, against 95.7 % and 1187 for the first rule in the same run (frames counted until the network went quiet), every member opening a session with the author at the same moment.
