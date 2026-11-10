@@ -1439,12 +1439,20 @@ impl Core {
         }
         let since = g.recovery.since.get(from).copied().unwrap_or(0);
         let mut payloads: Vec<Vec<u8>> = Vec::new();
-        for k in g.recovery.kept.iter().filter(|k| {
-            k.author == *author
-                && k.epoch == epoch
-                && counters.contains(&k.counter)
-                && k.at >= since
-        }) {
+        let mut held: Vec<&Kept> = g
+            .recovery
+            .kept
+            .iter()
+            .filter(|k| {
+                k.author == *author
+                    && k.epoch == epoch
+                    && counters.contains(&k.counter)
+                    && k.at >= since
+            })
+            .collect();
+        // In the order they were written, whatever order they came to us in.
+        held.sort_by_key(|k| k.counter);
+        for k in held {
             if payloads.len() + k.payloads.len() > RESEND_MAX {
                 break;
             }
@@ -2795,6 +2803,18 @@ mod tests {
             .recovery
             .since
             .insert(dave, 5_000);
+        // Kept out of order (the later one first): handed on in counter order.
+        let e2 = envelope(&bob, &[10; 32], 2, &bob_prv, "after a gap");
+        let e1 = envelope(&bob, &[10; 32], 1, &bob_prv, "came late");
+        core.on_group_envelope(&e2, 0, 0, 2_000);
+        core.on_group_envelope(&e1, 0, 0, 3_000);
+        core.on_group_control(&[2; 32], &encode_missing(&GID, &bob, 0, &[2, 1]), 4_000);
+        let ordered: Vec<_> = core
+            .queued(&[2; 32])
+            .iter()
+            .filter_map(|d| decode_resend(d))
+            .collect();
+        assert_eq!(ordered, vec![(GID, vec![e1, e2])]);
         let ask = encode_missing(&GID, &bob, 0, &[0]);
         core.on_group_control(&[4; 32], &ask, 6_000);
         assert!(core.queued(&[4; 32]).is_empty());
@@ -2804,7 +2824,7 @@ mod tests {
             .iter()
             .filter_map(|d| decode_resend(d))
             .collect();
-        assert_eq!(answer, vec![(GID, vec![e0])]);
+        assert_eq!(answer.last(), Some(&(GID, vec![e0])));
     }
 
     /// Positions are not kept: a gap that was a position gets no answer.
