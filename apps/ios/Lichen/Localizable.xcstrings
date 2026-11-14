@@ -2551,6 +2551,16 @@
         }
       }
     },
+    "Forward": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transférer"
+          }
+        }
+      }
+    },
     "From its 24 words: replaces this one": {
       "localizations": {
         "fr": {
@@ -4137,6 +4147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas chiffré par lichen"
+          }
+        }
+      }
+    },
+    "Not lichen-encrypted.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas chiffré par lichen."
           }
         }
       }

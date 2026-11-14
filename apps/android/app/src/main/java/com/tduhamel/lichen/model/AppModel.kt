@@ -1211,6 +1211,17 @@ class AppModel(val app: Application) {
         e.display(res)
     }
 
+    /** Forwards `m` to `chat` as a new message of ours (ADR-0027). */
+    fun forward(m: StoredMessage, chat: ChatId): String? = try {
+        val sent = core.forward(m.id, chat.ref, (System.currentTimeMillis() / 1000).toUInt(), now())
+        if (chats[chat] == null) load(chat) else upsert(sent)
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
     /** Removes a message from this phone only. */
     fun deleteForMe(m: StoredMessage): String? = try {
         core.deleteForMe(m.id)

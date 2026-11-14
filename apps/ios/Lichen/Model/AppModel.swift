@@ -1145,6 +1145,21 @@ final class AppModel {
         }
     }
 
+    /// Forwards `m` to `chat` as a new message of ours (ADR-0027).
+    func forward(_ m: StoredMessage, to chat: ChatID) -> String? {
+        do {
+            let sent = try core.forward(messageId: m.id, to: chat, sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now())
+            if chats[chat] == nil { load(chat) } else { upsert(sent) }
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
     /// Removes a message from this phone only.
     func deleteForMe(_ m: StoredMessage) -> String? {
         do {

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.automirrored.outlined.Forward
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.font.FontStyle
@@ -530,6 +531,7 @@ private fun MessageBubble(
     val author = m.author
     /** Deleting for everyone (true) or for this phone (false), to confirm (§6.4). */
     var deleting by remember { mutableStateOf<Boolean?>(null) }
+    var forwarding by remember { mutableStateOf(false) }
     val status = m.status
     val text = (m.message as? Message.Text)?.text
     // Long press: copy or select a text; cancel one that is still waiting, send a failed one
@@ -621,6 +623,17 @@ private fun MessageBubble(
                     },
                 )
             }
+            // A new message of ours with the same content (ADR-0027).
+            if (forwardable(m)) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.forward)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Forward, null) },
+                    onClick = {
+                        menu = false
+                        forwarding = true
+                    },
+                )
+            }
             // Ours within 24 hours (§6.4).
             if (m.editable) {
                 DropdownMenuItem(
@@ -651,6 +664,7 @@ private fun MessageBubble(
                 },
             )
         }
+        if (forwarding) ForwardSheet(model, m) { forwarding = false }
         deleting?.let { everyone ->
             AlertDialog(
                 onDismissRequest = { deleting = null },

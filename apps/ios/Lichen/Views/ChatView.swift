@@ -629,6 +629,7 @@ private struct MessageView: View {
     @State private var selecting = false
     /// Deleting for everyone (true) or for this phone (false), to confirm.
     @State private var deleting: Bool?
+    @State private var forwarding = false
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
@@ -641,6 +642,7 @@ private struct MessageView: View {
             }
             bubble
                 .contextMenu { actions }
+                .sheet(isPresented: $forwarding) { ForwardSheet(message: message) }
                 .confirmationDialog(deleting == true ? String(localized: "Delete for everyone?") : String(localized: "Delete for you?"),
                                     isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                                     titleVisibility: .visible) {
@@ -731,6 +733,13 @@ private struct MessageView: View {
             default:
                 EmptyView()
             }
+        }
+        // A new message of ours with the same content (ADR-0027).
+        switch message.message {
+        case .text, .sticker, .gif, .file, .voice:
+            Button { forwarding = true } label: { Label("Forward", systemImage: "arrowshape.turn.up.right") }
+        default:
+            EmptyView()
         }
         // Ours within 24 hours (§6.4).
         if message.editable {

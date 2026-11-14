@@ -3292,6 +3292,77 @@ impl LichenCore {
         self.lock().amend(message_id, None, now_ms)
     }
 
+    /// Forwards message `message_id` to `to` (ADR-0027): a new message of ours with the same
+    /// content, through the usual send paths and their checks. A text (an edited one as it
+    /// is now, a reply as a plain text), a sticker or a GIF; a small file or a voice message to
+    /// a contact. A MeshCore chat takes text only. Nothing marks it as forwarded.
+    pub fn forward(
+        &self,
+        message_id: i64,
+        to: ChatRef,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let current = {
+            let i = self.lock();
+            let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+            let m = st
+                .get(message_id)
+                .ok()
+                .flatten()
+                .ok_or(LichenError::Storage)?;
+            i.present(m).message
+        };
+        match (current, to.to_store()?) {
+            (Message::Text { text, .. }, Chat::Contact(k)) => {
+                self.send_text(k.to_vec(), text, sent_at, now_ms)
+            }
+            (Message::Text { text, .. }, Chat::Group(g)) => {
+                self.send_group_text(g.to_vec(), text, sent_at, now_ms)
+            }
+            (Message::Text { text, .. }, Chat::Mesh(_) | Chat::Channel(_)) => {
+                self.send_plain(to, text, sent_at, now_ms)
+            }
+            (Message::Sticker { emoji, .. }, Chat::Contact(_) | Chat::Group(_)) => {
+                self.send_sticker(to, emoji, sent_at, now_ms)
+            }
+            (
+                Message::Gif {
+                    id,
+                    width,
+                    height,
+                    title,
+                    ..
+                },
+                Chat::Contact(_) | Chat::Group(_),
+            ) => self.send_gif(to, id, width, height, title, sent_at, now_ms),
+            (Message::File { name, data, .. }, Chat::Contact(k)) => {
+                self.send_file(k.to_vec(), name, data, sent_at, now_ms)
+            }
+            (
+                Message::Voice {
+                    mode,
+                    frames,
+                    duration_ms,
+                    data,
+                    ..
+                },
+                Chat::Contact(k),
+            ) => self.send_voice(
+                k.to_vec(),
+                PreparedVoice {
+                    mode,
+                    frames,
+                    duration_ms,
+                    data,
+                },
+                sent_at,
+                now_ms,
+            ),
+            _ => Err(LichenError::NotAllowed),
+        }
+    }
+
     /// Removes message `message_id` from this phone only (§6.4); nothing is sent.
     pub fn delete_for_me(&self, message_id: i64) -> Result<(), LichenError> {
         let mut i = self.lock();
@@ -4698,6 +4769,66 @@ mod reactions {
         drop(i);
         let h = core.history(chat, None, 10).unwrap();
         assert_eq!(h[1].message, Message::Deleted { sent_at: now });
+    }
+
+    /// Forwarding (ADR-0027): the current text goes as a new message of ours; a sticker
+    /// never goes to a MeshCore chat.
+    #[test]
+    fn forwarding() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![144; 32], None).unwrap();
+        let mut i = core.lock();
+        i.core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        let gid = [6; 16];
+        let now = u32::try_from(unix_ms() / 1000).unwrap();
+        let text = Content::Text {
+            sent_at: now,
+            text: "trail closed".into(),
+        };
+        let target = message_ref(&[110; 32], &text.encode());
+        let group = |content: Content| Event::GroupMessage {
+            gid,
+            from: [10; 32],
+            author: [110; 32],
+            content,
+            snr4: 0,
+            rssi: 0,
+            late: false,
+        };
+        assert!(i.on_event(&group(text)));
+        assert!(!i.on_event(&group(Content::Edit {
+            sent_at: now + 1,
+            target,
+            text: "trail closed after the bridge".into(),
+        })));
+        assert!(i.on_event(&group(Content::Sticker {
+            sent_at: now,
+            set: 1,
+            emoji: "🥳".into(),
+        })));
+        drop(i);
+        let h = core
+            .history(ChatRef::Group { gid: gid.to_vec() }, None, 10)
+            .unwrap();
+        let bob = ChatRef::Contact { key: vec![9; 32] };
+        let f = core.forward(h[0].id, bob.clone(), now + 5, 0).unwrap();
+        assert!(f.outgoing);
+        assert_eq!(
+            f.message,
+            Message::Text {
+                sent_at: now + 5,
+                text: "trail closed after the bridge".into()
+            }
+        );
+        assert!(core.forward(h[1].id, bob, now + 6, 0).is_ok());
+        let plain = ChatRef::Mesh { key: vec![9; 32] };
+        assert!(core.forward(h[1].id, plain, now + 7, 0).is_err());
     }
 
     /// Our own: editable and deletable for 24 hours; deleted here at once.

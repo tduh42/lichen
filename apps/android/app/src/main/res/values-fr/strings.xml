@@ -784,4 +784,5 @@
     <string name="message_deleted">Message supprimé</string>
     <string name="editing_your_message">Modification de ton message</string>
     <string name="cancel_edit">Annuler la modification</string>
+    <string name="forward">Transférer</string>
 </resources>
