@@ -3,10 +3,14 @@
 /// App commands used by lichen.
 pub mod cmd {
     pub const APP_START: u8 = 1;
+    pub const SEND_TXT_MSG: u8 = 2;
+    pub const SEND_CHANNEL_TXT_MSG: u8 = 3;
     pub const GET_CONTACTS: u8 = 4;
     pub const GET_DEVICE_TIME: u8 = 5;
     pub const SET_DEVICE_TIME: u8 = 6;
     pub const SEND_SELF_ADVERT: u8 = 7;
+    pub const SET_ADVERT_NAME: u8 = 8;
+    pub const SYNC_NEXT_MESSAGE: u8 = 10;
     pub const SET_RADIO_TX_POWER: u8 = 12;
     pub const RESET_PATH: u8 = 13;
     pub const GET_BATT_AND_STORAGE: u8 = 20;
@@ -14,6 +18,8 @@ pub mod cmd {
     pub const EXPORT_PRIVATE_KEY: u8 = 23;
     pub const SEND_RAW_DATA: u8 = 25;
     pub const GET_CONTACT_BY_KEY: u8 = 30;
+    pub const GET_CHANNEL: u8 = 31;
+    pub const SET_CHANNEL: u8 = 32;
     pub const SEND_PATH_DISCOVERY_REQ: u8 = 52;
     pub const GET_STATS: u8 = 56;
     pub const GET_DEFAULT_FLOOD_SCOPE: u8 = 64;
@@ -29,12 +35,17 @@ pub mod resp {
     pub const END_OF_CONTACTS: u8 = 4;
     pub const SELF_INFO: u8 = 5;
     pub const SENT: u8 = 6;
+    pub const CONTACT_MSG_LEGACY: u8 = 7;
+    pub const CHANNEL_MSG_LEGACY: u8 = 8;
     pub const CURR_TIME: u8 = 9;
     pub const NO_MORE_MESSAGES: u8 = 10;
     pub const BATT_AND_STORAGE: u8 = 12;
     pub const DEVICE_INFO: u8 = 13;
     pub const PRIVATE_KEY: u8 = 14;
     pub const DISABLED: u8 = 15;
+    pub const CONTACT_MSG: u8 = 0x10;
+    pub const CHANNEL_MSG: u8 = 0x11;
+    pub const CHANNEL_INFO: u8 = 0x12;
     pub const STATS: u8 = 24;
     pub const DEFAULT_FLOOD_SCOPE: u8 = 28;
 

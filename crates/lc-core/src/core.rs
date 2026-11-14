@@ -219,10 +219,15 @@ pub enum Event {
         id: MsgId,
         reason: FailReason,
     },
-    /// The first copy of every fragment of group message `id` has left (§10.3, §6.1).
+    /// The first copy of every fragment of group message `id` has left (§10.3, §6.1), or
+    /// the companion took channel post `id` (§15.3).
     GroupSent {
         id: MsgId,
     },
+    /// A plain MeshCore message from someone with a stock client (§15.1).
+    PlainReceived(crate::plain::PlainMessage),
+    /// The companion's channel list changed, or was read (§15.3).
+    ChannelsUpdated,
     /// Someone added us to a group.
     GroupJoined {
         gid: GroupId,
@@ -376,6 +381,16 @@ pub(crate) enum Expect {
     TxPower(i8),
     /// `GET_STATS` radio (the noise floor).
     Stats,
+    /// `SYNC_NEXT_MESSAGE` (§15.1).
+    Sync,
+    /// `GET_CHANNEL` of this slot (§15.3).
+    Channel(u8),
+    /// `SET_CHANNEL` of this slot.
+    ChannelSet(u8),
+    /// `SEND_TXT_MSG` of this plain direct message (§15.2).
+    PlainSent(MsgId),
+    /// `SEND_CHANNEL_TXT_MSG` of this post (§15.3).
+    ChannelPost(MsgId),
 }
 
 #[derive(Clone, Debug)]
@@ -573,6 +588,8 @@ pub struct Core {
     peers: HashMap<PubKey, Peer>,
     commands: VecDeque<(Vec<u8>, Expect)>,
     awaiting: Option<(Expect, Millis)>,
+    /// Plain MeshCore text (§15).
+    pub(crate) plain: crate::plain::Plain,
     pub(crate) events: VecDeque<Event>,
     pub(crate) next_id: MsgId,
     deferred_until: Option<Millis>,
@@ -663,6 +680,7 @@ impl Core {
             peers: HashMap::new(),
             commands: VecDeque::new(),
             awaiting: None,
+            plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
             next_id: 1,
             deferred_until: None,
@@ -847,6 +865,7 @@ impl Core {
         );
         self.command(&Command::GetDefaultFloodScope, Expect::Scope);
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        self.plain_connected();
         self.tick(now);
     }
 
@@ -857,6 +876,7 @@ impl Core {
         self.online = false;
         self.commands.clear();
         self.awaiting = None;
+        self.plain_disconnected();
     }
 
     /// Adds or updates a contact by hand (contact card, tests); a known identity is kept.
@@ -977,6 +997,9 @@ impl Core {
     /// Where unfinished message `id` stands (§6.1): `None` once it is delivered, failed,
     /// sent to its group or cancelled, and for the core's own messages.
     pub fn outgoing(&self, id: MsgId, now: Millis) -> Option<Outbound> {
+        if let Some(o) = self.plain_outgoing(id) {
+            return Some(o);
+        }
         let budget = self.deferred_until.filter(|&u| u > now);
         if let Some(pos) = self
             .group_tx
@@ -1034,6 +1057,9 @@ impl Core {
 
     /// Cancels a message the app sent, as long as none of its frames went out (§6.1).
     pub fn cancel(&mut self, id: MsgId) -> Result<(), Error> {
+        if let Some(r) = self.plain_cancel(id) {
+            return r;
+        }
         if self.group_tx.iter().any(|f| f.id == id && f.user) {
             if !self.group_tx.iter().any(|f| f.id == id && f.seq == 0) {
                 return Err(Error::Started);
@@ -1061,6 +1087,9 @@ impl Core {
     /// transfer is abandoned (an ABORT goes out), and it is reported failed (`Expired`).
     /// Returns whether it was found.
     pub fn abandon(&mut self, id: MsgId) -> bool {
+        if self.plain_abandon(id) {
+            return true;
+        }
         let expired = Event::Failed {
             id,
             reason: FailReason::Expired,
@@ -1269,7 +1298,9 @@ impl Core {
                 self.command(&Command::GetContactByKey { key: &key }, Expect::Contact);
             }
             Response::LogRxData { snr4, rssi, raw } => self.on_log_rx(raw, snr4, rssi, now),
-            Response::NewAdvert(_) | Response::MsgWaiting | Response::SendConfirmed { .. } => {}
+            Response::MsgWaiting => self.plain_sync(),
+            Response::SendConfirmed { ack, .. } => self.on_send_confirmed(ack),
+            Response::NewAdvert(_) => {}
             Response::Other { code, .. } if code >= 0x80 => {}
             r => self.on_reply(r, now),
         }
@@ -1287,6 +1318,7 @@ impl Core {
         self.tick_groups(now);
         self.tick_locations(now);
         self.tick_search(now);
+        self.tick_plain(now);
         // Round robin: start after the peer served last, so that sessions share the radio.
         let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
         keys.sort_unstable();
@@ -1322,6 +1354,9 @@ impl Core {
             consider(d);
         }
         if let Some(d) = self.next_search_wakeup() {
+            consider(d);
+        }
+        if let Some(d) = self.next_plain_wakeup() {
             consider(d);
         }
         let slot = self.next_slot.max(self.deferred_until.unwrap_or(0));
@@ -1422,18 +1457,72 @@ impl Core {
                     self.events.push_back(Event::ContactsUpdated);
                 }
             }
-            Response::EndOfContacts { .. } => self.events.push_back(Event::ContactsUpdated),
+            Response::EndOfContacts { .. } => {
+                self.events.push_back(Event::ContactsUpdated);
+                self.plain_contacts_updated(now);
+            }
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
-            Response::Ok => {
-                if let Some(Expect::TxPower(dbm)) = expect {
-                    self.search_power_applied(dbm);
+            Response::Ok => match expect {
+                Some(Expect::TxPower(dbm)) => self.search_power_applied(dbm),
+                Some(Expect::ChannelPost(id)) => self.events.push_back(Event::GroupSent { id }),
+                _ => {}
+            },
+            Response::Err(_) => match expect {
+                Some(Expect::TxPower(dbm)) => self.search_power_refused(dbm),
+                Some(Expect::Channel(index)) => self.on_channel_info(index, None, now),
+                Some(Expect::ChannelSet(index)) => {
+                    self.command(&Command::GetChannel { index }, Expect::Channel(index));
+                }
+                Some(Expect::PlainSent(id)) => self.on_plain_refused(id),
+                Some(Expect::ChannelPost(id)) => self.events.push_back(Event::Failed {
+                    id,
+                    reason: FailReason::Refused,
+                }),
+                Some(Expect::Sync) => self.plain.syncing = false,
+                _ => {}
+            },
+            Response::Sent {
+                tag, timeout_ms, ..
+            } => {
+                if let Some(Expect::PlainSent(id)) = expect {
+                    self.on_plain_sent(id, tag, timeout_ms, now);
                 }
             }
-            Response::Err(_) => {
-                if let Some(Expect::TxPower(dbm)) = expect {
-                    self.search_power_refused(dbm);
+            Response::NoMoreMessages => self.plain.syncing = false,
+            Response::ContactMsg {
+                snr4,
+                prefix,
+                path_len,
+                kind,
+                ts,
+                text,
+            } => {
+                self.on_contact_msg(prefix, kind, ts, text, snr4, path_len, now);
+                if expect == Some(Expect::Sync) {
+                    self.plain.syncing = false;
+                    self.plain_sync();
                 }
             }
+            Response::ChannelMsg {
+                snr4,
+                channel,
+                path_len,
+                kind,
+                ts,
+                text,
+            } => {
+                self.on_channel_msg(channel, kind, ts, text, snr4, path_len, now);
+                if expect == Some(Expect::Sync) {
+                    self.plain.syncing = false;
+                    self.plain_sync();
+                }
+            }
+            Response::ChannelInfo {
+                index,
+                name,
+                secret,
+            } => self.on_channel_info(index, Some((name, secret)), now),
+            Response::DeviceInfo(d) => self.plain_set_max_channels(d.max_channels),
             Response::RadioStats { noise, .. } => self.search_noise(noise),
             _ => {}
         }
@@ -1565,6 +1654,22 @@ impl Core {
             _ => 7,
         };
         self.next_slot += t_ack * k + 200;
+    }
+
+    /// Airtime of an on-air frame of `bytes` bytes, in milliseconds.
+    pub(crate) fn airtime_ms(&self, bytes: usize) -> Millis {
+        self.radio.airtime_us(bytes) / 1000
+    }
+
+    /// Counts a transmission the companion makes for us in the budget and the radio slot.
+    pub(crate) fn record_airtime(&mut self, now: Millis, airtime_ms: Millis, hops: Option<u8>) {
+        self.budget.record(now, airtime_ms);
+        self.occupy(now, airtime_ms, hops);
+    }
+
+    /// Whether `airtime_ms` fits in the budget now.
+    pub(crate) fn budget_allows(&mut self, now: Millis, airtime_ms: Millis) -> bool {
+        self.budget.can_transmit(now, airtime_ms)
     }
 
     fn occupy(&mut self, now: Millis, airtime_ms: Millis, hops: Option<u8>) {

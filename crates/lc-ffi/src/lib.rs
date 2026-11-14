@@ -12,8 +12,8 @@ use lc_core::content::{MessageRef, REACTION_MAX, message_ref};
 use lc_core::location::{self as loc, EXTRAPOLATE_MAX_S};
 use lc_core::store::{self, Chat, Status, Store, StoredPosition};
 use lc_core::{
-    Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Outbound, Precision,
-    PubKey, Stage,
+    ChannelId, Config, Content, Core, Event, FailReason as CoreFail, Fix, GroupId, Outbound,
+    PlainChat, Precision, PubKey, Stage,
 };
 use lc_proto::location::{ALT_UNKNOWN, HEADING_UNKNOWN, SPEED_UNKNOWN};
 use lc_proto::search::BearingClass;
@@ -803,6 +803,15 @@ pub enum LichenEvent {
         dbm: i8,
         previous: Option<i8>,
     },
+    /// A plain MeshCore message (§15.1), already in the history (`MessageChanged`): for the
+    /// notification. `label`: the sender's name (contact, or a channel post's author).
+    PlainReceived {
+        chat: ChatRef,
+        label: Option<String>,
+        text: String,
+    },
+    /// The radio's MeshCore channels changed, or were read (§15.3): see `channels()`.
+    ChannelsUpdated,
 }
 
 fn snr(snr4: i8) -> f32 {
@@ -880,6 +889,12 @@ impl LichenEvent {
                 gid: gid.to_vec(),
                 node: node.to_vec(),
             },
+            Event::PlainReceived(m) => Self::PlainReceived {
+                chat: ChatRef::from_store(&plain_chat(m.chat)),
+                label: m.label,
+                text: m.text,
+            },
+            Event::ChannelsUpdated => Self::ChannelsUpdated,
             Event::GroupMessage {
                 gid,
                 from,
@@ -959,8 +974,20 @@ fn unix_ms() -> i64 {
 /// A conversation.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, uniffi::Enum)]
 pub enum ChatRef {
-    Contact { key: Vec<u8> },
-    Group { gid: Vec<u8> },
+    Contact {
+        key: Vec<u8>,
+    },
+    Group {
+        gid: Vec<u8>,
+    },
+    /// Plain MeshCore direct messages with node `key` (§15.2): not lichen-encrypted.
+    Mesh {
+        key: Vec<u8>,
+    },
+    /// A MeshCore channel (§15.3), by its 8-byte id.
+    Channel {
+        id: Vec<u8>,
+    },
 }
 
 impl ChatRef {
@@ -968,6 +995,8 @@ impl ChatRef {
         Ok(match self {
             Self::Contact { key: k } => Chat::Contact(key(k)?),
             Self::Group { gid: g } => Chat::Group(gid(g)?),
+            Self::Mesh { key: k } => Chat::Mesh(key(k)?),
+            Self::Channel { id } => Chat::Channel(channel(id)?),
         })
     }
 
@@ -975,6 +1004,72 @@ impl ChatRef {
         match c {
             Chat::Contact(k) => Self::Contact { key: k.to_vec() },
             Chat::Group(g) => Self::Group { gid: g.to_vec() },
+            Chat::Mesh(k) => Self::Mesh { key: k.to_vec() },
+            Chat::Channel(c) => Self::Channel { id: c.to_vec() },
+        }
+    }
+}
+
+/// A private channel's 16-byte secret from 32 hex digits (spaces allowed); never all zero.
+fn secret_from_hex(s: &str) -> Option<[u8; 16]> {
+    let digits: Vec<u8> = s
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .map(|c| c.to_digit(16).and_then(|d| u8::try_from(d).ok()))
+        .collect::<Option<_>>()?;
+    if digits.len() != 32 {
+        return None;
+    }
+    let mut out = [0u8; 16];
+    for (o, pair) in out.iter_mut().zip(digits.chunks(2)) {
+        *o = pair.first()? << 4 | pair.get(1)?;
+    }
+    (out != [0; 16]).then_some(out)
+}
+
+fn plain_chat(c: PlainChat) -> Chat {
+    match c {
+        PlainChat::Direct(k) => Chat::Mesh(k),
+        PlainChat::Channel(id) => Chat::Channel(id),
+    }
+}
+
+fn channel(b: &[u8]) -> Result<ChannelId, LichenError> {
+    b.try_into().map_err(|_| LichenError::InvalidKey)
+}
+
+/// What kind of MeshCore channel (§15.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ChannelKind {
+    /// MeshCore's public channel: anyone in range reads it.
+    Public,
+    /// `#tag`: anyone who knows the tag reads it.
+    Hashtag,
+    /// A secret shared by whoever created it.
+    Private,
+}
+
+/// A MeshCore channel of the radio.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MeshChannel {
+    pub id: Vec<u8>,
+    pub name: String,
+    pub kind: ChannelKind,
+}
+
+impl From<&lc_core::Channel> for MeshChannel {
+    fn from(c: &lc_core::Channel) -> Self {
+        let kind = if c.secret == lc_core::plain::PUBLIC_SECRET {
+            ChannelKind::Public
+        } else if lc_core::plain::hashtag(&c.name).is_some_and(|(_, s)| s == c.secret) {
+            ChannelKind::Hashtag
+        } else {
+            ChannelKind::Private
+        };
+        Self {
+            id: c.id().to_vec(),
+            name: c.name.clone(),
+            kind,
         }
     }
 }
@@ -1043,6 +1138,9 @@ pub struct StoredMessage {
     /// A group message recovered from a member after it was lost on the air (§10.6): shown
     /// where it arrived, with "arrived late" and its sending time.
     pub late: bool,
+    /// The author's name as its radio advertises it: posts on a MeshCore channel (§15.1),
+    /// whose authors are known by name only.
+    pub author_name: Option<String>,
 }
 
 /// What kind of message a reply answers.
@@ -1121,6 +1219,7 @@ impl From<store::Message> for StoredMessage {
             referable: m.msg_ref.is_some(),
             quote: None,
             reactions: Vec::new(),
+            author_name: None,
         }
     }
 }
@@ -1231,11 +1330,21 @@ impl Inner {
             let expires = expires.unwrap_or(m.at_ms + self.outbox_expiry_ms);
             let datagram = m.content.encode();
             let now = self.last_now;
-            let id = match m.chat {
-                Chat::Contact(k) => self.core.send_datagram(&k, datagram, now),
-                Chat::Group(g) => self.core.send_group_datagram(&g, &datagram, now),
+            let id = match (m.chat, &m.content) {
+                (Chat::Contact(k), _) => self.core.send_datagram(&k, datagram, now),
+                (Chat::Group(g), _) => self.core.send_group_datagram(&g, &datagram, now),
+                (Chat::Mesh(k), Content::Text { sent_at, text }) => {
+                    self.core.send_plain(&k, text, *sent_at, now)
+                }
+                (Chat::Channel(c), Content::Text { sent_at, text }) => {
+                    self.core.send_channel(&c, text, *sent_at, now)
+                }
+                (Chat::Mesh(_) | Chat::Channel(_), _) => Err(lc_core::Error::NotAllowed),
             };
             match id {
+                Ok(id) if matches!(m.chat, Chat::Channel(_)) => {
+                    self.inflight.insert(id, m.id);
+                }
                 Ok(id) => self.track(m.id, id, m.chat, expires, m.status, m.fragments),
                 Err(_) => {
                     if let Some(st) = &self.store {
@@ -1316,7 +1425,27 @@ impl Inner {
             .msg_ref
             .map(|r| self.reaction_counts(&m.chat, &r))
             .unwrap_or_default();
+        // A received channel post is stored as it came, "name: text" (§15.1).
+        let label = match (&m.chat, m.outgoing, &m.content) {
+            (Chat::Channel(_), false, Content::Text { sent_at, text }) => {
+                let (name, body) = lc_core::plain::split_post(text);
+                name.map(|n| {
+                    (
+                        n.to_owned(),
+                        Message::Text {
+                            sent_at: *sent_at,
+                            text: body.to_owned(),
+                        },
+                    )
+                })
+            }
+            _ => None,
+        };
         let mut out = StoredMessage::from(m);
+        if let Some((name, body)) = label {
+            out.author_name = Some(name);
+            out.message = body;
+        }
         if let Some(p) = self.outbox.get(&row) {
             out.status = self.live_status(p, self.core.outgoing(p.core_id, self.last_now));
         }
@@ -1404,6 +1533,7 @@ impl Inner {
                 .contacts()
                 .find(|c| c.key == *k)
                 .and_then(|c| c.identity),
+            Chat::Mesh(_) | Chat::Channel(_) => None,
         }
     }
 
@@ -1415,6 +1545,9 @@ impl Inner {
         author: Option<PubKey>,
         plaintext: &[u8],
     ) -> Option<MessageRef> {
+        if chat.is_plain() {
+            return None;
+        }
         self.author_identity(chat, outgoing, author)
             .map(|a| message_ref(&a, plaintext))
     }
@@ -1454,6 +1587,7 @@ impl Inner {
         let id = match chat {
             Chat::Contact(k) => self.core.send_datagram(&k, datagram, now),
             Chat::Group(g) => self.core.send_group_datagram(&g, &datagram, now),
+            Chat::Mesh(_) | Chat::Channel(_) => return,
         };
         // Not accepted now: it stays pending and goes again at the next start.
         if let Ok(id) = id {
@@ -1680,6 +1814,18 @@ impl Inner {
         } else {
             Err(LichenError::Storage)
         }
+    }
+
+    /// Joins a channel (§15.3); a new one starts muted.
+    fn join_channel(&mut self, name: &str, secret: [u8; 16]) -> Result<ChatRef, LichenError> {
+        let known = self.core.channels().iter().any(|c| c.secret == secret);
+        let id = self.core.join_channel(name, secret)?;
+        let chat = Chat::Channel(id);
+        if !known && let Some(st) = &self.store {
+            let _ = st.set_muted(&chat, Some(i64::MAX));
+        }
+        self.persist();
+        Ok(ChatRef::from_store(&chat))
     }
 
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
@@ -1929,6 +2075,37 @@ impl Inner {
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
             Event::GroupSent { id } => self.update(*id, Status::Flooded, true),
+            // A plain MeshCore message (§15.1): a channel post is kept as it came.
+            Event::PlainReceived(m) => {
+                let text = match (&m.chat, &m.label) {
+                    (PlainChat::Channel(_), Some(label)) => format!("{label}: {}", m.text),
+                    _ => m.text.clone(),
+                };
+                self.record(store::Message {
+                    id: 0,
+                    chat: plain_chat(m.chat),
+                    outgoing: false,
+                    author: m.from,
+                    content: Content::Text {
+                        sent_at: m.sent_at,
+                        text,
+                    },
+                    at_ms: unix_ms(),
+                    status: Status::Received,
+                    fragments: 0,
+                    airtime_ms: 0,
+                    snr4: m.snr4,
+                    read: false,
+                    msg_ref: None,
+                });
+            }
+            Event::ChannelsUpdated => {
+                if self.core.channels_known()
+                    && let Some(st) = &self.store
+                {
+                    let _ = st.put_channels(self.core.channels());
+                }
+            }
             _ => {}
         }
         true
@@ -2074,6 +2251,26 @@ impl LichenCore {
             (Chat::Contact(k), _) if text => i.core.send_datagram(k, datagram, now_ms)?,
             (Chat::Group(g), _) if text => i.core.send_group_datagram(g, &datagram, now_ms)?,
             (Chat::Contact(k), Content::Voice { .. }) => i.core.send_media(k, datagram, now_ms)?,
+            // A plain text goes again as it was (§15.2): same timestamp, so a receiver that
+            // got it already sees a retry.
+            (Chat::Mesh(k), Content::Text { sent_at, text }) => {
+                i.core.send_plain(k, text, *sent_at, now_ms)?
+            }
+            (Chat::Channel(c), Content::Text { sent_at, text }) => {
+                let id = i.core.send_channel(c, text, *sent_at, now_ms)?;
+                if let Some(st) = &i.store {
+                    st.set_status(m.id, Status::Sending { sent: 0, total: 1 })
+                        .map_err(|_| LichenError::Storage)?;
+                }
+                i.inflight.insert(id, m.id);
+                i.persist();
+                let row = i
+                    .store
+                    .as_ref()
+                    .and_then(|s| s.get(m.id).ok().flatten())
+                    .ok_or(LichenError::Storage)?;
+                return Ok(i.present(row));
+            }
             _ => return Err(LichenError::NotAllowed),
         };
         let status = if text {
@@ -2633,6 +2830,8 @@ impl LichenCore {
         });
         let datagram = content.encode();
         match c {
+            // Lichen content never goes into a plain MeshCore chat (§15).
+            Chat::Mesh(_) | Chat::Channel(_) => Err(LichenError::NotAllowed),
             Chat::Contact(k) => {
                 let estimate = i.core.estimate_send(&k, datagram.len());
                 let id = i.core.send_datagram(&k, datagram, now_ms)?;
@@ -2697,6 +2896,8 @@ impl LichenCore {
         };
         let datagram = content.encode();
         let (id, estimate) = match c {
+            // Lichen content never goes into a plain MeshCore chat (§15).
+            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
             Chat::Contact(k) => (
                 i.core.send_datagram(&k, datagram.clone(), now_ms)?,
                 i.core.estimate_send(&k, datagram.len()),
@@ -2818,6 +3019,8 @@ impl LichenCore {
         // ts, reference and a 4-byte emoji.
         let len = 1 + 4 + 8 + 4;
         let (fragments, airtime_ms) = match c {
+            // Lichen content never goes into a plain MeshCore chat (§15).
+            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
             Chat::Contact(k) => i.core.estimate_send(&k, len),
             Chat::Group(_) => i.core.estimate_group_send(len),
         };
@@ -3145,6 +3348,125 @@ impl LichenCore {
         let i = self.lock();
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;
         st.set_muted(&c, until_ms).map_err(|_| LichenError::Storage)
+    }
+
+    // ----- MeshCore chats (§15, ADR-0026) ---------------------------------------------
+
+    /// Sends a plain MeshCore text to `chat`, a node (`Mesh`) or a channel (§15.2, §15.3).
+    /// A direct one waits for the radio like a lichen text (§6.1); a channel post needs the
+    /// radio now.
+    pub fn send_plain(
+        &self,
+        chat: ChatRef,
+        text: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let c = chat.to_store()?;
+        let mut i = self.lock();
+        i.writable()?;
+        i.last_now = now_ms;
+        let content = Content::Text {
+            sent_at,
+            text: text.clone(),
+        };
+        match c {
+            Chat::Mesh(k) => {
+                let airtime = i.core.estimate_plain(&PlainChat::Direct(k), text.len());
+                let id = i.core.send_plain(&k, &text, sent_at, now_ms)?;
+                i.stored_outgoing(c, content, id, (1, airtime), true, None)
+            }
+            Chat::Channel(ch) => {
+                let airtime = i.core.estimate_plain(&PlainChat::Channel(ch), text.len());
+                let id = i.core.send_channel(&ch, &text, sent_at, now_ms)?;
+                i.stored_outgoing(c, content, id, (1, airtime), false, None)
+            }
+            Chat::Contact(_) | Chat::Group(_) => Err(LichenError::NotAllowed),
+        }
+    }
+
+    /// Airtime of a plain text of `len` bytes to `chat` (§15.5).
+    pub fn estimate_plain(&self, chat: ChatRef, len: u32) -> Result<Estimate, LichenError> {
+        let plain = match chat.to_store()? {
+            Chat::Mesh(k) => PlainChat::Direct(k),
+            Chat::Channel(c) => PlainChat::Channel(c),
+            _ => return Err(LichenError::NotAllowed),
+        };
+        Ok(Estimate {
+            fragments: 1,
+            airtime_ms: self.lock().core.estimate_plain(&plain, len as usize),
+        })
+    }
+
+    /// The longest text for `chat`, in bytes: 160, less our name on a channel (§15.3).
+    pub fn plain_text_max(&self, chat: ChatRef) -> Result<u32, LichenError> {
+        let i = self.lock();
+        let max = match chat.to_store()? {
+            Chat::Mesh(_) => lc_core::plain::TEXT_MAX,
+            Chat::Channel(_) => i.core.channel_text_max(),
+            _ => return Err(LichenError::NotAllowed),
+        };
+        Ok(u32::try_from(max).unwrap_or(0))
+    }
+
+    /// The radio's channels (§15.3); the ones saved last while it is away.
+    pub fn channels(&self) -> Vec<MeshChannel> {
+        let i = self.lock();
+        if i.core.channels_known() {
+            return i.core.channels().iter().map(MeshChannel::from).collect();
+        }
+        i.store
+            .as_ref()
+            .and_then(|s| s.channels().ok())
+            .unwrap_or_default()
+            .iter()
+            .map(MeshChannel::from)
+            .collect()
+    }
+
+    /// Joins MeshCore's public channel (§15.3), muted.
+    pub fn join_public_channel(&self) -> Result<ChatRef, LichenError> {
+        self.lock()
+            .join_channel(lc_core::plain::PUBLIC_NAME, lc_core::plain::PUBLIC_SECRET)
+    }
+
+    /// Joins hashtag channel `tag` (`#hiking` or `hiking`), muted.
+    pub fn join_hashtag_channel(&self, tag: String) -> Result<ChatRef, LichenError> {
+        let (name, secret) = lc_core::plain::hashtag(&tag).ok_or(LichenError::BadCode)?;
+        self.lock().join_channel(&name, secret)
+    }
+
+    /// Joins a private channel from its name and 32 hex digits, muted.
+    pub fn join_private_channel(
+        &self,
+        name: String,
+        secret_hex: String,
+    ) -> Result<ChatRef, LichenError> {
+        let secret = secret_from_hex(&secret_hex).ok_or(LichenError::BadCode)?;
+        self.lock().join_channel(name.trim(), secret)
+    }
+
+    /// Leaves channel `id` (its history stays until the conversation is deleted).
+    pub fn leave_channel(&self, id: Vec<u8>) -> Result<(), LichenError> {
+        let id = channel(&id)?;
+        let mut i = self.lock();
+        i.core.leave_channel(&id)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Our node's name as MeshCore users see it (§15.4).
+    pub fn mesh_name(&self) -> String {
+        self.lock().core.node_name().to_owned()
+    }
+
+    /// Sets our node's name (§15.4), at most 31 bytes, and announces it.
+    pub fn set_mesh_name(&self, name: String, now_ms: u64) -> Result<(), LichenError> {
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        i.core.set_node_name(&name, now_ms)?;
+        i.persist();
+        Ok(())
     }
 
     /// Conversations that have messages, most recent first.
@@ -3552,6 +3874,8 @@ impl LichenCore {
         i.last_now = now_ms;
         let datagram = content.encode();
         let (id, estimate) = match c {
+            // Lichen content never goes into a plain MeshCore chat (§15).
+            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
             Chat::Contact(k) => (
                 i.core.send_datagram(&k, datagram.clone(), now_ms)?,
                 i.core.estimate_send(&k, datagram.len()),

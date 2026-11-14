@@ -150,6 +150,38 @@ fn command_for<'a>(name: &str, frame: &'a [u8]) -> Option<Command<'a>> {
             priority: 1,
             raw: &frame[2..],
         },
+        "txt-msg" => Command::SendTxtMsg {
+            kind: 0,
+            attempt: 2,
+            ts: 1_793_000_000,
+            prefix: frame[7..13].try_into().unwrap(),
+            text: &frame[13..],
+        },
+        "channel-txt" => Command::SendChannelTxtMsg {
+            kind: 0,
+            channel: 1,
+            ts: 1_793_000_000,
+            text: b"hello",
+        },
+        "channel-txt-empty" => Command::SendChannelTxtMsg {
+            kind: 0,
+            channel: 0,
+            ts: 1_793_000_000,
+            text: b"",
+        },
+        "set-advert-name" => Command::SetAdvertName { name: b"oxymesh" },
+        "sync" => Command::SyncNextMessage,
+        "get-channel" => Command::GetChannel { index: 39 },
+        "set-channel" => Command::SetChannel {
+            index: 39,
+            name: b"ln-abcd",
+            secret: frame[34..50].try_into().unwrap(),
+        },
+        "set-channel-clear" => Command::SetChannel {
+            index: 38,
+            name: b"",
+            secret: &[0; 16],
+        },
         _ => return None,
     })
 }
@@ -168,7 +200,7 @@ fn commands_match_meshcore_js() {
         assert_eq!(&out[..n], frame.as_slice(), "{}", s(v, "name"));
         seen += 1;
     }
-    assert_eq!(seen, 18);
+    assert_eq!(seen, 26);
 }
 
 #[test]
@@ -223,7 +255,9 @@ fn responses_decode() {
                     (4123, Some(12), Some(1408))
                 );
             }
-            ("device-info", Ok(Response::DeviceInfo(d))) => assert_eq!(d.fw_ver, 14),
+            ("device-info", Ok(Response::DeviceInfo(d))) => {
+                assert_eq!((d.fw_ver, d.max_channels), (14, Some(40)));
+            }
             ("path-discovery-response", Ok(Response::PathDiscoveryResponse { out_path, .. })) => {
                 assert_eq!(
                     (out_path.len_byte(), out_path.bytes()),
@@ -233,6 +267,72 @@ fn responses_decode() {
             ("private-key", Ok(r)) => assert!(matches!(r, Response::PrivateKey(_))),
             ("disabled", Ok(r)) => assert_eq!(r, Response::Disabled),
             ("err", Ok(r)) => assert_eq!(r, Response::Err(2)),
+            (
+                "contact-msg-plain",
+                Ok(Response::ContactMsg {
+                    snr4,
+                    prefix,
+                    path_len,
+                    kind,
+                    ts,
+                    text,
+                }),
+            ) => {
+                assert_eq!((snr4, prefix[0], path_len, kind), (Some(40), 0x80, 255, 0));
+                assert_eq!((ts, text), (1_793_000_000, &b"hello"[..]));
+            }
+            ("contact-msg", Ok(Response::ContactMsg { snr4, path_len, .. })) => {
+                assert_eq!((snr4, path_len), (Some(-20), 3));
+            }
+            ("contact-msg-legacy", Ok(Response::ContactMsg { snr4, text, .. })) => {
+                assert_eq!((snr4, text), (None, &b"hello"[..]));
+            }
+            (
+                "channel-msg",
+                Ok(Response::ChannelMsg {
+                    snr4,
+                    channel,
+                    path_len,
+                    kind,
+                    ts,
+                    text,
+                }),
+            ) => {
+                assert_eq!((snr4, channel, path_len, kind), (Some(20), 0, 1, 0));
+                assert_eq!((ts, text), (1_793_000_000, &b"alice: hi"[..]));
+            }
+            (
+                "channel-msg-legacy",
+                Ok(Response::ChannelMsg {
+                    snr4,
+                    channel,
+                    text,
+                    ..
+                }),
+            ) => {
+                assert_eq!((snr4, channel, text), (None, 2, &b"bob: yo"[..]));
+            }
+            (
+                "channel-info",
+                Ok(Response::ChannelInfo {
+                    index,
+                    name,
+                    secret,
+                }),
+            ) => {
+                assert_eq!((index, name, secret[0]), (39, &b"ln-abcd"[..], 0x40));
+            }
+            (
+                "channel-info-empty",
+                Ok(Response::ChannelInfo {
+                    index,
+                    name,
+                    secret,
+                }),
+            ) => {
+                assert_eq!((index, name, secret), (5, &b""[..], &[0u8; 16]));
+            }
+            ("channel-info-short", r) => assert!(r.is_err()),
             _ => {}
         }
     }

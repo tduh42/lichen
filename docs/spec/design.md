@@ -19,7 +19,7 @@ An encrypted application layer on top of MeshCore, running on the host (phone or
 **Non-goals**
 
 - Real-time voice calls over LoRa (duty cycle).
-- Compatibility with official MeshCore clients for the new features: they simply ignore our packets.
+- Compatibility with official MeshCore clients for the new features: they simply ignore our packets. Plain text with them is supported, in separate "MeshCore" chats that never carry lichen content (ADR-0026, protocol §15).
 - Replacing MeshCore routing: we use it as is.
 
 ## Overall architecture

@@ -413,6 +413,8 @@ impl Core {
             Chat::Group(g) if self.groups.contains_key(g) => Ok(()),
             Chat::Contact(_) => Err(Error::UnknownContact),
             Chat::Group(_) => Err(Error::UnknownGroup),
+            // Positions are lichen content: never in a plain MeshCore chat (§15).
+            Chat::Mesh(_) | Chat::Channel(_) => Err(Error::NotAllowed),
         }
     }
 
@@ -427,6 +429,7 @@ impl Core {
                 true
             }
             Chat::Group(g) => self.send_group(g, &body, false, now).is_ok(),
+            Chat::Mesh(_) | Chat::Channel(_) => false,
         }
     }
 

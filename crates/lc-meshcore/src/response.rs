@@ -50,6 +50,8 @@ pub struct DeviceInfo<'a> {
     pub version: &'a [u8],
     pub repeat: Option<bool>,
     pub path_hash_mode: Option<u8>,
+    /// Channel slots, when the frame carries the limits.
+    pub max_channels: Option<u8>,
 }
 
 /// A frame from the device.
@@ -125,6 +127,34 @@ pub enum Response<'a> {
         prefix: &'a [u8; 6],
         out_path: Path<'a>,
         in_path: Path<'a>,
+    },
+    /// A plain MeshCore direct message taken from the companion's queue (`SYNC_NEXT_MESSAGE`):
+    /// `CONTACT_MSG` (v3, with the SNR) or its legacy form. `path_len` is 0xFF for a message
+    /// that came direct, otherwise the flood path's length byte; `kind` 0 is plain text, 1 a
+    /// CLI command, 2 a signed post (a room server's, the text starts with the author's
+    /// 4-byte key prefix).
+    ContactMsg {
+        snr4: Option<i8>,
+        prefix: &'a [u8; 6],
+        path_len: u8,
+        kind: u8,
+        ts: u32,
+        text: &'a [u8],
+    },
+    /// A post on one of the companion's channels ("name: text"): `CHANNEL_MSG` (v3) or legacy.
+    ChannelMsg {
+        snr4: Option<i8>,
+        channel: u8,
+        path_len: u8,
+        kind: u8,
+        ts: u32,
+        text: &'a [u8],
+    },
+    /// `GET_CHANNEL`'s answer: an empty name and a zero secret for a free slot.
+    ChannelInfo {
+        index: u8,
+        name: &'a [u8],
+        secret: &'a [u8; 16],
     },
     /// A code lichen does not interpret.
     Other {
@@ -244,9 +274,12 @@ impl<'a> Response<'a> {
                     version: &[],
                     repeat: None,
                     path_hash_mode: None,
+                    max_channels: None,
                 };
                 if r.remaining() >= 78 {
-                    let _limits = r.bytes(6).ok_or(t)?;
+                    // Contacts / 2, channel slots, BLE PIN u32.
+                    let limits = r.bytes(6).ok_or(t)?;
+                    info.max_channels = limits.get(1).copied();
                     info.build_date = trim_nul(r.bytes(12).ok_or(t)?);
                     info.manufacturer = trim_nul(r.bytes(40).ok_or(t)?);
                     info.version = trim_nul(r.bytes(20).ok_or(t)?);
@@ -322,6 +355,45 @@ impl<'a> Response<'a> {
                     in_path,
                 }
             }
+            resp::CONTACT_MSG | resp::CONTACT_MSG_LEGACY => {
+                let snr4 = if code == resp::CONTACT_MSG {
+                    let snr4 = r.i8().ok_or(t)?;
+                    let _reserved = r.bytes(2).ok_or(t)?;
+                    Some(snr4)
+                } else {
+                    None
+                };
+                Response::ContactMsg {
+                    snr4,
+                    prefix: r.array::<6>().ok_or(t)?,
+                    path_len: r.u8().ok_or(t)?,
+                    kind: r.u8().ok_or(t)?,
+                    ts: r.u32().ok_or(t)?,
+                    text: r.rest(),
+                }
+            }
+            resp::CHANNEL_MSG | resp::CHANNEL_MSG_LEGACY => {
+                let snr4 = if code == resp::CHANNEL_MSG {
+                    let snr4 = r.i8().ok_or(t)?;
+                    let _reserved = r.bytes(2).ok_or(t)?;
+                    Some(snr4)
+                } else {
+                    None
+                };
+                Response::ChannelMsg {
+                    snr4,
+                    channel: r.u8().ok_or(t)?,
+                    path_len: r.u8().ok_or(t)?,
+                    kind: r.u8().ok_or(t)?,
+                    ts: r.u32().ok_or(t)?,
+                    text: r.rest(),
+                }
+            }
+            resp::CHANNEL_INFO => Response::ChannelInfo {
+                index: r.u8().ok_or(t)?,
+                name: trim_nul(r.array::<32>().ok_or(t)?),
+                secret: r.array::<16>().ok_or(t)?,
+            },
             code => Response::Other {
                 code,
                 body: r.rest(),

@@ -618,3 +618,60 @@ The iroh key is `HKDF(seed, "lichen/1 iroh")` (§2): stable for a phone, so conn
 - **Recipient**: tries iroh first (when on), then Tor, moving on only when the provider is unreachable or too slow; any other failure (unknown hash, size, hash mismatch) ends the fetch. A recipient without Tor connects to it on demand, without publishing an onion service.
 - **Relay only**: iroh without direct paths; contacts see the relay, never our IP address (the relay does).
 
+## 15. MeshCore chats (ADR-0026)
+
+lichen also exchanges **plain MeshCore text** with people who use a stock MeshCore client: direct messages with any node the companion knows, and posts on the companion's channels. MeshCore encrypts and acknowledges these itself; lichen only drives the companion. They are **separate conversations**: a MeshCore chat never carries lichen content (no session, reply, reaction, media or edit), and a lichen chat never falls back to plain text. The two kinds of chat with the same person are never merged.
+
+### 15.1 Receiving
+
+The companion decrypts plain messages for us and keeps them in its offline queue, also while the phone is away.
+
+- At connection (after the contacts), and on every push `MSG_WAITING` (0x83), the app sends `SYNC_NEXT_MESSAGE` (10) one at a time until `NO_MORE_MESSAGES` (10).
+- `CONTACT_MSG` (0x10: `snr×4 i8 ‖ reserved (2) ‖ key prefix (6) ‖ path_len ‖ txt_type ‖ ts u32 ‖ text`, or legacy 7 without the first three bytes) is a direct message from the contact whose key starts with the prefix. A prefix that matches no known contact is held until the contacts are fetched again, then dropped.
+- `CHANNEL_MSG` (0x11: `snr×4 ‖ reserved (2) ‖ channel index ‖ path_len ‖ txt_type ‖ ts u32 ‖ text`, or legacy 8) is a post on that channel slot. Its text is `name: body`; the name, as the sender's radio advertises it, is the author's label. A text without ": " has no label.
+- Only `txt_type` 0 (plain text) is shown. Type 1 (CLI command) and type 2 (a room server's signed post) are dropped.
+- `path_len` 0xFF means the message came direct; otherwise its low six bits are the flood path's hop count.
+- A message with the same sender (or channel), timestamp and text as one received in the last hour is a retry and is dropped.
+- Text is UTF-8; invalid sequences are replaced (U+FFFD). Plain messages are never parsed for lichen content.
+
+### 15.2 Direct messages
+
+- **Sending**: `SEND_TXT_MSG` (2): `txt_type 0 ‖ attempt ‖ ts u32 ‖ recipient key prefix (6) ‖ text`, text ≤ **160 bytes**. The companion answers `SENT` (6): `flood u8 ‖ ack u32 ‖ timeout_ms u32`; push `SEND_CONFIRMED` (0x82) with the same `ack` means delivered.
+- **Retries**, as stock clients do: when no confirmation arrives within `timeout_ms` + 2 s, the same text and timestamp go again with `attempt` + 1. Before the third and last attempt the app sends `RESET_PATH` (13), so that one floods. With no confirmation after it, the message failed. An `ERR` to `SEND_TXT_MSG` fails it at once.
+- One plain direct message is in flight at a time; the others wait in order. They wait while the companion is away, like lichen texts (§6.1), and expire after 24 hours.
+
+### 15.3 Channels
+
+A channel is a 16-byte secret held in one of the companion's channel slots, with a name of at most 31 bytes.
+
+- **Reading**: at connection the app reads the slots with `GET_CHANNEL` (31) → `CHANNEL_INFO` (0x12: `index ‖ name (32, NUL-padded) ‖ secret (16)`), from index 0, until `ERR`, the slot count in `DEVICE_INFO`, or four empty slots in a row. An empty name and a zero secret is a free slot.
+- **Identity**: a channel is `SHA-256(secret)[0..8]` in the app, so its history follows the channel, not the slot.
+- **Joining**: `SET_CHANNEL` (32): `index ‖ name (32) ‖ secret (16)` into the first free slot.
+  - *Public*: name `Public`, secret `8b3387e9c5cdea6ac9e5edbaa115cd72` (MeshCore's public channel).
+  - *Hashtag*: name `#` + the tag, lower-cased (letters, digits and `-`), secret `SHA-256("#" ‖ tag)[0..16]`, as stock clients derive it.
+  - *Private*: a name and 16 bytes given by whoever created it (32 hex digits).
+  - A channel already in a slot is not added twice.
+- **Leaving**: `SET_CHANNEL` with an empty name and a zero secret.
+- **Posting**: `SEND_CHANNEL_TXT_MSG` (3): `txt_type 0 ‖ index ‖ ts u32 ‖ text`. The companion floods `name: text`, so `text` ≤ 160 − 2 − the length of our node's name. `OK` means the post left; nobody acknowledges it.
+
+### 15.4 Our name
+
+What MeshCore users see is our node's advertised name, and channel posts start with it. The app sets it with `SET_ADVERT_NAME` (8), at most 31 bytes, then sends a flooded advert so that other radios learn it.
+
+### 15.5 Airtime
+
+Every plain transmission counts in the hourly budget (§9) like lichen's:
+
+- a direct message, each attempt: `TXT_MSG` with a header and path length byte, the path, two 1-byte hashes, a 2-byte MAC and the ciphertext, `5 + text` bytes rounded up to 16;
+- a channel post: `GRP_TXT` with a header and path length byte, the channel hash, a 2-byte MAC and `5 + name + 2 + text` bytes rounded up to 16.
+
+The apps show the estimate before sending, as for lichen messages.
+
+### 15.6 What the apps show
+
+- A MeshCore chat is marked as such in the conversation list.
+- Its header says it is not lichen-encrypted:
+  - **direct messages** are encrypted by MeshCore between the two radios: AES-128, a 2-byte MAC, no forward secrecy, and the companion sees the text;
+  - **a channel** is readable by everyone who has its secret, and Public by anyone in range.
+- The composer is text only and counts bytes.
+- A channel joined from lichen starts muted.

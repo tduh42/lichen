@@ -46,6 +46,9 @@ enum Cmd {
         text: Option<String>,
         #[arg(long)]
         file: Option<PathBuf>,
+        /// Send the text as a plain MeshCore message, as stock clients do (§15).
+        #[arg(long, requires = "text")]
+        plain: bool,
         /// Give up after this many minutes.
         #[arg(long, default_value_t = 30)]
         timeout_min: u64,
@@ -343,6 +346,33 @@ fn describe(core: &Core, e: &Event) -> String {
                 name_of(core, from)
             )
         }
+        Event::PlainReceived(m) => {
+            let place = match m.chat {
+                lc_core::PlainChat::Direct(_) => "[MeshCore]".to_owned(),
+                lc_core::PlainChat::Channel(id) => {
+                    let name = core
+                        .channels()
+                        .iter()
+                        .find(|c| c.id() == id)
+                        .map_or_else(|| hex::encode(id), |c| c.name.clone());
+                    format!("[MeshCore {name}]")
+                }
+            };
+            let route = m.hops.map_or("direct".to_owned(), |h| format!("{h} hops"));
+            format!(
+                "{place} {}: \"{}\" ({route})",
+                m.label.as_deref().unwrap_or("?"),
+                m.text
+            )
+        }
+        Event::ChannelsUpdated => {
+            let names: Vec<String> = core
+                .channels()
+                .iter()
+                .map(|c| format!("{} {}", c.index, c.name))
+                .collect();
+            format!("MeshCore channels: {}", names.join(", "))
+        }
         Event::Location {
             from,
             group,
@@ -469,6 +499,7 @@ fn send(
     to: &str,
     text: Option<String>,
     file: Option<PathBuf>,
+    plain: bool,
     timeout_min: u64,
     verbose: bool,
 ) -> Result<(), String> {
@@ -476,6 +507,7 @@ fn send(
     let key = find_contact(&dev.core, to)?;
     let now = dev.now();
     let id = match (text, file) {
+        (Some(t), _) if plain => dev.core.send_plain(&key, &t, unix_now(), now),
         (Some(t), _) => dev.core.send_text(&key, &t, unix_now(), now),
         (None, Some(f)) => {
             let body = std::fs::read(&f).map_err(|e| format!("{}: {e}", f.display()))?;
@@ -689,9 +721,10 @@ fn main() {
             to,
             text,
             file,
+            plain,
             timeout_min,
             verbose,
-        } => send(&port, &to, text, file, timeout_min, verbose),
+        } => send(&port, &to, text, file, plain, timeout_min, verbose),
         Cmd::Listen {
             port,
             minutes,

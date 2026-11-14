@@ -137,6 +137,29 @@ impl Bot {
                     );
                 }
             }
+            // A plain MeshCore direct message is answered the same way, in plain (§15).
+            Event::PlainReceived(lc_core::PlainMessage {
+                chat: lc_core::PlainChat::Direct(from),
+                text,
+                hops,
+                snr4,
+                ..
+            }) if self.echo && !text.starts_with("echo:") => {
+                let route = hops.map_or("direct".to_owned(), |h| format!("{h} hops"));
+                let signal = snr4.map_or(String::new(), |s| {
+                    format!(", SNR {:.1} dB", f32::from(s) / 4.0)
+                });
+                let mut reply = format!("echo: {text} ({route}{signal})");
+                while reply.len() > lc_core::plain::TEXT_MAX {
+                    reply.pop();
+                }
+                report(
+                    core.send_plain(from, &reply, unix_now(), now),
+                    core,
+                    from,
+                    &reply,
+                );
+            }
             Event::GroupMessage {
                 gid, from, content, ..
             } => {

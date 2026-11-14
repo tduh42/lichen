@@ -147,6 +147,13 @@ enum Action {
     CamilleSticker,
     /// Julien posts a GIF in the group, a sunrise over the mountains (§6.3).
     JulienGif,
+    /// Marc, who has the stock MeshCore app, writes to the user in plain (§15).
+    MarcWrites(String),
+    /// A post on MeshCore's public channel from someone with a stock client (§15.3).
+    PublicPost {
+        from: usize,
+        text: String,
+    },
 }
 
 struct Demo {
@@ -177,6 +184,9 @@ struct Demo {
     next_camille_ping: u64,
     /// Camille's own SOS, from and until (simulated ms), for two incidents at once.
     camille_sos: Option<(u64, u64)>,
+    /// Marc, at the refuge with the stock MeshCore app (§15).
+    marc: usize,
+    marc_answered: bool,
 }
 
 /// The app's radio misses every copy of `author`'s second group message (its sender byte;
@@ -377,6 +387,11 @@ impl Demo {
                     .net
                     .with_core(camille, |c, now| c.send_datagram(&app_key, sticker, now));
             }
+            Action::MarcWrites(text) => {
+                let (marc, app) = (self.marc, self.app);
+                self.net.send_plain_text(marc, app, &text, ts);
+            }
+            Action::PublicPost { from, text } => self.net.post_on_channel(from, 0, &text, ts),
             Action::JulienGif => {
                 if let Some(gid) = self.group {
                     let gif = Content::Gif {
@@ -454,6 +469,26 @@ impl Demo {
         }
         self.locate();
         self.camille_acts();
+        // Marc answers the user's first plain message, and posts on Public (§15).
+        let marc_heard = self
+            .net
+            .nodes
+            .get_mut(self.marc)
+            .is_some_and(|n| !std::mem::take(&mut n.inbox).is_empty());
+        if marc_heard && !self.marc_answered {
+            self.marc_answered = true;
+            self.pending.push((
+                now + 8 * SEC,
+                Action::MarcWrites("It works! See you tonight, I'll keep the soup warm.".into()),
+            ));
+            self.pending.push((
+                now + 40 * SEC,
+                Action::PublicPost {
+                    from: self.marc,
+                    text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
+                },
+            ));
+        }
         let app_key = self.net.key(self.app);
         // Once her photo's preview went out and the bridge is up, Camille announces the full
         // resolution (one LoRa frame).
@@ -757,6 +792,22 @@ impl DemoNetwork {
             net.know(a, b, true);
             net.know(b, a, true);
         }
+        // People with the stock MeshCore app (§15): Marc at the refuge, Lucie on the trail.
+        // Everyone follows the public channel.
+        let marc = net.add_stock_companion(5, "Marc");
+        let lucie = net.add_stock_companion(6, "Lucie");
+        net.link(hub, marc);
+        net.link(hub, lucie);
+        net.know(app, marc, true);
+        net.know(marc, app, true);
+        for n in [app, marc, lucie] {
+            net.set_channel(
+                n,
+                0,
+                lc_core::plain::PUBLIC_NAME,
+                lc_core::plain::PUBLIC_SECRET,
+            );
+        }
         net.connect(camille);
         net.connect(julien);
         // The bots' clocks are the real one (the demo runs in real time).
@@ -775,6 +826,27 @@ impl DemoNetwork {
             (60 * SEC, Action::CreateGroup),
             (90 * SEC, Action::CamilleShares),
             (150 * SEC, Action::CamillePhoto),
+            (
+                20 * SEC,
+                Action::PublicPost {
+                    from: lucie,
+                    text: "Fog on the Pas de la Ville this morning, take care on the ridge.".into(),
+                },
+            ),
+            (
+                110 * SEC,
+                Action::PublicPost {
+                    from: lucie,
+                    text: "The fog is lifting, the ridge is clear now.".into(),
+                },
+            ),
+            (
+                45 * SEC,
+                Action::MarcWrites(
+                    "Hi! Marc from the refuge. Are you on lichen? I only have the MeshCore app."
+                        .into(),
+                ),
+            ),
         ];
         Arc::new(Self {
             inner: Mutex::new(Demo {
@@ -798,6 +870,8 @@ impl DemoNetwork {
                 camille_searching: false,
                 next_camille_ping: 0,
                 camille_sos: None,
+                marc,
+                marc_answered: false,
             }),
         })
     }
@@ -1088,7 +1162,8 @@ mod tests {
                 .any(|e| matches!(e, LichenEvent::Delivered { .. }))
         );
         // His second post, missed on the air, comes after his GIF: handed back by a member and
-        // marked late (§10.6).
+        // marked late (§10.6). His first one, often lost at the hub to Camille's photo, comes
+        // back late too when it is.
         let order: Vec<(&str, bool)> = events
             .iter()
             .filter_map(|e| match e {
@@ -1110,10 +1185,12 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(
-            order,
-            vec![("leaving", false), ("gif", false), ("mist", true)]
-        );
+        let gif = order.iter().position(|o| *o == ("gif", false)).unwrap();
+        let mist = order.iter().position(|o| *o == ("mist", true)).unwrap();
+        assert!(gif < mist, "{order:?}");
+        let leaving = order.iter().position(|o| o.0 == "leaving").unwrap();
+        assert!(leaving < gif || order[leaving].1, "{order:?}");
+        assert_eq!(order.len(), 3, "{order:?}");
     }
 }
 
@@ -2030,5 +2107,112 @@ mod replies {
         run(&demo, &core, 70_000, 180_000);
         assert_eq!(pending(&core), 0, "delivered after the restart");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
+/// MeshCore chats in the demo (protocol.md §15, ADR-0026): Marc writes from the stock app,
+/// Lucie posts on Public, and Marc answers the user's reply.
+#[cfg(test)]
+mod meshcore {
+    use super::*;
+    use crate::{ChatRef, LichenCore, LichenEvent, Message, MessageStatus};
+
+    fn run(demo: &DemoNetwork, core: &LichenCore, from: u64, to: u64) -> Vec<LichenEvent> {
+        let mut events = Vec::new();
+        let mut now = from;
+        while now < to {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                events.push(e);
+            }
+            now += 100;
+        }
+        events
+    }
+
+    fn text(m: &crate::StoredMessage) -> &str {
+        match &m.message {
+            Message::Text { text, .. } => text,
+            _ => "",
+        }
+    }
+
+    #[test]
+    fn marc_and_the_public_channel() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![150; 32], None).unwrap();
+        core.connect(0);
+        let events = run(&demo, &core, 0, 70_000);
+        let channels = core.channels();
+        assert_eq!(channels.len(), 1);
+        assert_eq!(channels[0].kind, crate::ChannelKind::Public);
+
+        let marc = core
+            .contacts()
+            .into_iter()
+            .find(|c| c.name == "Marc")
+            .unwrap()
+            .key;
+        let mesh = ChatRef::Mesh { key: marc.clone() };
+        assert!(events.iter().any(|e| matches!(e,
+            LichenEvent::PlainReceived { chat, label: Some(l), .. } if *chat == mesh && l == "Marc")));
+        let h = core.history(mesh.clone(), None, 10).unwrap();
+        assert!(text(&h[0]).starts_with("Hi! Marc from the refuge."));
+        assert!(
+            !h[0].referable,
+            "no replies or reactions in a MeshCore chat"
+        );
+
+        // Lichen content is refused in a MeshCore chat.
+        assert!(
+            core.send_sticker(mesh.clone(), "🥳".into(), 1, 70_000)
+                .is_err()
+        );
+
+        // The user answers once the hub is quiet (in the first minutes the group's setup and
+        // Camille's photo keep it busy, and acknowledgements collide there); Marc's radio
+        // acknowledges, and he answers once.
+        run(&demo, &core, 70_000, 330_000);
+        let mine = core
+            .send_plain(
+                mesh.clone(),
+                "Yes! Write to me here.".into(),
+                1_793_000_000,
+                330_000,
+            )
+            .unwrap();
+        let events = run(&demo, &core, 330_000, 420_000);
+        let h = core.history(mesh.clone(), None, 10).unwrap();
+        let ours = h.iter().find(|m| m.id == mine.id).unwrap();
+        assert_eq!(ours.status, MessageStatus::Delivered, "{events:?}");
+        assert!(
+            h.iter()
+                .any(|m| !m.outgoing && text(m).starts_with("It works!"))
+        );
+        let posts = core
+            .history(
+                ChatRef::Channel {
+                    id: channels[0].id.clone(),
+                },
+                None,
+                10,
+            )
+            .unwrap();
+        // Three posts on Public, by Lucie and Marc, with their names. A post is flooded once
+        // and never retried (as with stock clients), so in the demo's busy first minutes one
+        // may be lost.
+        assert!(!posts.is_empty());
+        for m in &posts {
+            assert!(
+                matches!(m.author_name.as_deref(), Some("Lucie" | "Marc")),
+                "{m:?}"
+            );
+        }
     }
 }

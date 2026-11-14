@@ -25,6 +25,13 @@
 //! `SEND_PATH_DISCOVERY_REQ` gets `SENT` and no answer, as with stock firmware whose owner did
 //! not allow telemetry (the default): lichen discovers paths itself (§4.5).
 //!
+//! **Plain MeshCore text** (§15): `SEND_TXT_MSG` and `SEND_CHANNEL_TXT_MSG` put a `TXT_MSG` or
+//! `GRP_TXT` of the real size on the air (its content is not encrypted in the simulation); the
+//! recipient's companion queues it for `SYNC_NEXT_MESSAGE`, pushes `MSG_WAITING`, and answers a
+//! direct message with an `ACK` that comes back as `SEND_CONFIRMED`. Channel slots answer
+//! `GET_CHANNEL` and `SET_CHANNEL`. A companion without an app (someone with a stock client)
+//! is driven with [`Net::send_plain_text`] and [`Net::post_on_channel`].
+//!
 //! Debugging: `LICHEN_TRACE=1` prints the lichen frames each companion hands over and receives,
 //! `LICHEN_TRACE_AIR=1` the fate of every reception (ok, lost, collision, half duplex).
 
@@ -81,7 +88,16 @@ pub struct Node {
     pub rssi_zero: bool,
     /// Last reception (for `GET_STATS`).
     last_rx: (i8, i8),
+    /// Channel slots: name and secret (§15.3).
+    pub channels: Vec<Option<(String, [u8; 16])>>,
+    /// Plain messages waiting for `SYNC_NEXT_MESSAGE` (companion frames).
+    pub inbox: VecDeque<Vec<u8>>,
+    /// Direct messages sent and not acknowledged yet: their ACK tag and when they left.
+    acks: Vec<(u32, Millis)>,
 }
+
+/// Channel slots of a simulated companion.
+const CHANNEL_SLOTS: usize = 8;
 
 impl std::fmt::Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -243,6 +259,9 @@ impl Net {
             noise_dbm: -118,
             rssi_zero: false,
             last_rx: (0, 0),
+            channels: vec![None; CHANNEL_SLOTS],
+            inbox: VecDeque::new(),
+            acks: Vec::new(),
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -257,6 +276,57 @@ impl Net {
         let i = self.add(seed, name, Role::Companion);
         self.attach_app(i, seed);
         i
+    }
+
+    /// A companion with no lichen app: someone with a stock MeshCore client (§15), driven
+    /// with [`Net::send_plain_text`] and [`Net::post_on_channel`].
+    pub fn add_stock_companion(&mut self, seed: u8, name: &str) -> usize {
+        let i = self.add(seed, name, Role::Companion);
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.connected = true;
+        }
+        i
+    }
+
+    /// Node `i` sends a plain direct message to node `to`, as a stock client would.
+    pub fn send_plain_text(&mut self, i: usize, to: usize, text: &str, ts: u32) {
+        let key = self.key(to);
+        let mut frame = [0u8; 176];
+        let cmd = lc_meshcore::Command::SendTxtMsg {
+            kind: 0,
+            attempt: 0,
+            ts,
+            prefix: key[..6].try_into().unwrap_or(&[0; 6]),
+            text: text.as_bytes(),
+        };
+        if let Ok(n) = cmd.encode(&mut frame) {
+            let _ = self.companion_command(i, &frame[..n]);
+        }
+    }
+
+    /// Node `i` puts a channel in slot `index` (§15.3).
+    pub fn set_channel(&mut self, i: usize, index: usize, name: &str, secret: [u8; 16]) {
+        if let Some(slot) = self
+            .nodes
+            .get_mut(i)
+            .and_then(|n| n.channels.get_mut(index))
+        {
+            *slot = Some((name.to_owned(), secret));
+        }
+    }
+
+    /// Node `i` posts on the channel of slot `index`, as a stock client would.
+    pub fn post_on_channel(&mut self, i: usize, index: u8, text: &str, ts: u32) {
+        let mut frame = [0u8; 176];
+        let cmd = lc_meshcore::Command::SendChannelTxtMsg {
+            kind: 0,
+            channel: index,
+            ts,
+            text: text.as_bytes(),
+        };
+        if let Ok(n) = cmd.encode(&mut frame) {
+            let _ = self.companion_command(i, &frame[..n]);
+        }
     }
 
     /// A companion driven by an app outside the simulation.
@@ -835,8 +905,229 @@ impl Net {
                 v.extend_from_slice(&20_000u32.to_le_bytes());
                 vec![v]
             }
+            cmd::SYNC_NEXT_MESSAGE => {
+                let next = self.nodes.get_mut(i).and_then(|n| n.inbox.pop_front());
+                vec![next.unwrap_or_else(|| vec![resp::NO_MORE_MESSAGES])]
+            }
+            cmd::GET_CHANNEL => {
+                let index = usize::from(frame.get(1).copied().unwrap_or(0));
+                match node.channels.get(index) {
+                    Some(slot) => {
+                        let mut v = vec![resp::CHANNEL_INFO, index as u8];
+                        let mut name = [0u8; 32];
+                        let mut secret = [0u8; 16];
+                        if let Some((n, s)) = slot {
+                            let b = n.as_bytes();
+                            name[..b.len().min(31)].copy_from_slice(&b[..b.len().min(31)]);
+                            secret = *s;
+                        }
+                        v.extend_from_slice(&name);
+                        v.extend_from_slice(&secret);
+                        vec![v]
+                    }
+                    None => vec![vec![resp::ERR, 2]],
+                }
+            }
+            cmd::SET_CHANNEL => {
+                let (Some(&index), Some(name), Some(secret)) =
+                    (frame.get(1), frame.get(2..34), frame.get(34..50))
+                else {
+                    return vec![vec![resp::ERR, 6]];
+                };
+                let name = name.iter().take_while(|&&b| b != 0).copied().collect();
+                let name = String::from_utf8(name).unwrap_or_default();
+                let secret: [u8; 16] = secret.try_into().unwrap_or([0; 16]);
+                let value = (!name.is_empty() || secret != [0; 16]).then_some((name, secret));
+                match self
+                    .nodes
+                    .get_mut(i)
+                    .and_then(|n| n.channels.get_mut(usize::from(index)))
+                {
+                    Some(slot) => {
+                        *slot = value;
+                        vec![vec![resp::OK]]
+                    }
+                    None => vec![vec![resp::ERR, 2]],
+                }
+            }
+            cmd::SET_ADVERT_NAME => {
+                let name = String::from_utf8_lossy(frame.get(1..).unwrap_or(&[])).into_owned();
+                if let Some(n) = self.nodes.get_mut(i) {
+                    n.name = name;
+                }
+                vec![vec![resp::OK]]
+            }
+            cmd::RESET_PATH => {
+                let k = frame.get(1..33);
+                if let Some(n) = self.nodes.get_mut(i)
+                    && let Some(c) = n.contacts.iter_mut().find(|(c, ..)| Some(&c[..]) == k)
+                {
+                    c.2 = None;
+                }
+                vec![vec![resp::OK]]
+            }
+            cmd::SEND_TXT_MSG => {
+                let (Some(&attempt), Some(ts), Some(prefix), Some(text)) = (
+                    frame.get(2),
+                    frame.get(3..7),
+                    frame.get(7..13),
+                    frame.get(13..),
+                ) else {
+                    return vec![vec![resp::ERR, 6]];
+                };
+                let Some((to, _, path, _)) =
+                    node.contacts.iter().find(|(k, ..)| k.starts_with(prefix))
+                else {
+                    return vec![vec![resp::ERR, 2]];
+                };
+                let tag = plain_tag(ts, attempt, text, &key);
+                // Dest hash, source hash, MAC, then the block: ts, flags (attempt), text.
+                let mut payload = vec![to[0], key[0], 0, 0];
+                payload.extend_from_slice(ts);
+                payload.push(attempt & 3);
+                payload.extend_from_slice(text);
+                payload.resize(4 + (5 + text.len()).div_ceil(16) * 16, 0);
+                let flood = path.is_none();
+                let air = plain_packet(PayloadType::TxtMsg, path.as_ref(), &payload);
+                if let Some(n) = self.nodes.get_mut(i) {
+                    n.acks.push((tag, self.now));
+                }
+                self.enqueue_tx(i, air, 0.2);
+                let mut v = vec![resp::SENT, u8::from(flood)];
+                v.extend_from_slice(&tag.to_le_bytes());
+                let timeout: u32 = if flood { 16_000 } else { 8_000 };
+                v.extend_from_slice(&timeout.to_le_bytes());
+                vec![v]
+            }
+            cmd::SEND_CHANNEL_TXT_MSG => {
+                let (Some(&index), Some(ts), Some(text)) =
+                    (frame.get(2), frame.get(3..7), frame.get(7..))
+                else {
+                    return vec![vec![resp::ERR, 6]];
+                };
+                let Some(Some((_, secret))) = node.channels.get(usize::from(index)) else {
+                    return vec![vec![resp::ERR, 2]];
+                };
+                let id = crate::plain::channel_id(secret);
+                // Channel hash, MAC (here: more of the channel id), then ts, flags, "name: text".
+                let mut payload = vec![id[0], id[1], id[2]];
+                payload.extend_from_slice(ts);
+                payload.push(0);
+                payload.extend_from_slice(name.as_bytes());
+                payload.extend_from_slice(b": ");
+                payload.extend_from_slice(text);
+                payload.resize(3 + (5 + name.len() + 2 + text.len()).div_ceil(16) * 16, 0);
+                let air = plain_packet(PayloadType::GrpTxt, None, &payload);
+                self.enqueue_tx(i, air, 0.0);
+                vec![vec![resp::OK]]
+            }
             _ => vec![vec![resp::ERR, 1]],
         }
+    }
+
+    /// A plain message reached companion `r` (§15): queued, and an ACK for a direct one.
+    fn plain_received(&mut self, r: usize, p: &Packet<'_>, snr4: i8) {
+        let path_len = if matches!(p.route, Route::Direct | Route::TransportDirect) {
+            0xFF
+        } else {
+            p.path.len_byte()
+        };
+        let Some(node) = self.nodes.get(r) else {
+            return;
+        };
+        let my_key = node.key;
+        match p.ptype {
+            PayloadType::TxtMsg => {
+                let pl = p.payload;
+                let (Some(&dst), Some(&src), Some(ts), Some(&flags)) =
+                    (pl.first(), pl.get(1), pl.get(4..8), pl.get(8))
+                else {
+                    return;
+                };
+                if dst != my_key[0] {
+                    return;
+                }
+                let Some((from, _, back, _)) =
+                    node.contacts.iter().find(|(k, ..)| k[0] == src).cloned()
+                else {
+                    return;
+                };
+                let text: Vec<u8> = pl
+                    .get(9..)
+                    .unwrap_or(&[])
+                    .iter()
+                    .copied()
+                    .take_while(|&b| b != 0)
+                    .collect();
+                let mut f = vec![resp::CONTACT_MSG, snr4 as u8, 0, 0];
+                f.extend_from_slice(&from[..6]);
+                f.extend_from_slice(&[path_len, 0]);
+                f.extend_from_slice(ts);
+                f.extend_from_slice(&text);
+                self.queue_plain(r, f);
+                // The ACK goes back the way the recipient knows, or floods.
+                let tag = plain_tag(ts, flags & 3, &text, &from);
+                let air = plain_packet(PayloadType::Ack, back.as_ref(), &tag.to_le_bytes());
+                self.enqueue_tx(r, air, 0.2);
+            }
+            PayloadType::GrpTxt => {
+                let pl = p.payload;
+                let Some(index) = node.channels.iter().position(|c| {
+                    c.as_ref().is_some_and(|(_, s)| {
+                        let id = crate::plain::channel_id(s);
+                        pl.get(..3) == Some(&id[..3])
+                    })
+                }) else {
+                    return;
+                };
+                let (Some(ts), Some(body)) = (pl.get(3..7), pl.get(8..)) else {
+                    return;
+                };
+                let text: Vec<u8> = body.iter().copied().take_while(|&b| b != 0).collect();
+                let mut f = vec![
+                    resp::CHANNEL_MSG,
+                    snr4 as u8,
+                    0,
+                    0,
+                    index as u8,
+                    path_len,
+                    0,
+                ];
+                f.extend_from_slice(ts);
+                f.extend_from_slice(&text);
+                self.queue_plain(r, f);
+            }
+            PayloadType::Ack => {
+                let Some(tag) = p
+                    .payload
+                    .get(..4)
+                    .and_then(|b| b.try_into().ok())
+                    .map(u32::from_le_bytes)
+                else {
+                    return;
+                };
+                let now = self.now;
+                let Some(n) = self.nodes.get_mut(r) else {
+                    return;
+                };
+                let Some(pos) = n.acks.iter().position(|(t, _)| *t == tag) else {
+                    return;
+                };
+                let (_, at) = n.acks.remove(pos);
+                let mut push = vec![resp::SEND_CONFIRMED];
+                push.extend_from_slice(&tag.to_le_bytes());
+                push.extend_from_slice(&u32::try_from(now - at).unwrap_or(u32::MAX).to_le_bytes());
+                self.push_to_app(r, &push);
+            }
+            _ => {}
+        }
+    }
+
+    fn queue_plain(&mut self, r: usize, frame: Vec<u8>) {
+        if let Some(n) = self.nodes.get_mut(r) {
+            n.inbox.push_back(frame);
+        }
+        self.push_to_app(r, &[resp::MSG_WAITING]);
     }
 
     // ----- radio side ------------------------------------------------------------------
@@ -1029,6 +1320,15 @@ impl Net {
             }
             return;
         }
+        if role == Role::Companion
+            && matches!(
+                p.ptype,
+                PayloadType::TxtMsg | PayloadType::GrpTxt | PayloadType::Ack
+            )
+        {
+            self.plain_received(r, &p, snr4);
+            return;
+        }
         if direct && role == Role::Companion && p.ptype == PayloadType::RawCustom {
             if let Some(n) = self.nodes.get_mut(r) {
                 n.raw_pushed += 1;
@@ -1046,6 +1346,38 @@ impl Net {
             self.push_to_app(r, &push);
         }
     }
+}
+
+/// The ACK tag of a plain direct message (MeshCore: a CRC over the timestamp, the flags, the
+/// text and the sender's key; here, SHA-256).
+fn plain_tag(ts: &[u8], attempt: u8, text: &[u8], sender: &PubKey) -> u32 {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(ts);
+    h.update([attempt & 3]);
+    h.update(text);
+    h.update(sender);
+    let d = h.finalize();
+    u32::from_le_bytes([d[0], d[1], d[2], d[3]])
+}
+
+/// A plain packet: direct along `path`, or flooded.
+fn plain_packet(ptype: PayloadType, path: Option<&OwnedPath>, payload: &[u8]) -> Vec<u8> {
+    let route = if path.is_some() {
+        Route::Direct
+    } else {
+        Route::Flood
+    };
+    let mut air = vec![((ptype as u8) << 2) | route as u8];
+    match path {
+        Some(p) => {
+            air.push(p.len_byte);
+            air.extend_from_slice(&p.bytes);
+        }
+        None => air.push(0),
+    }
+    air.extend_from_slice(payload);
+    air
 }
 
 fn remember(ring: &mut VecDeque<[u8; 8]>, h: [u8; 8]) {

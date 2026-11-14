@@ -40,7 +40,44 @@ pub enum Command<'a> {
     SetRadioTxPower { dbm: i8 },
     /// `[56] type` (v8+) → `STATS`; type 1: noise floor, last RSSI and SNR, airtime (§11.2).
     GetStats { kind: u8 },
+    /// `[2] txt_type ‖ attempt ‖ ts u32 ‖ key prefix (6) ‖ text` → `SENT`, then push
+    /// `SEND_CONFIRMED` once the recipient acknowledged: a plain MeshCore direct message.
+    SendTxtMsg {
+        kind: u8,
+        attempt: u8,
+        ts: u32,
+        prefix: &'a [u8; 6],
+        text: &'a [u8],
+    },
+    /// `[3] txt_type ‖ channel ‖ ts u32 ‖ text` → `OK`: a channel post, flooded; the companion
+    /// prefixes it with the node's name ("name: text").
+    SendChannelTxtMsg {
+        kind: u8,
+        channel: u8,
+        ts: u32,
+        text: &'a [u8],
+    },
+    /// `[8] name` → `OK`: the name the node advertises.
+    SetAdvertName { name: &'a [u8] },
+    /// `[10]` → the next queued message (`CONTACT_MSG`, `CHANNEL_MSG`…) or `NO_MORE_MESSAGES`.
+    SyncNextMessage,
+    /// `[31] index` → `CHANNEL_INFO`, or `ERR 2` past the last slot.
+    GetChannel { index: u8 },
+    /// `[32] index ‖ name (32, NUL-padded) ‖ secret (16)` → `OK`; an empty name and a zero
+    /// secret clear the slot.
+    SetChannel {
+        index: u8,
+        name: &'a [u8],
+        secret: &'a [u8; 16],
+    },
 }
+
+/// Longest text of a plain MeshCore message (`MAX_TEXT_LEN`, ten AES blocks). A channel post
+/// also carries "name: " within it.
+pub const TEXT_MAX: usize = 160;
+
+/// Longest channel name in `SET_CHANNEL` (32 bytes, NUL-terminated).
+pub const CHANNEL_NAME_MAX: usize = 31;
 
 /// Smallest `SEND_RAW_DATA` payload accepted by the firmware.
 pub const RAW_DATA_MIN: usize = 4;
@@ -103,6 +140,59 @@ impl Command<'_> {
             Command::GetDefaultFloodScope => w.u8(cmd::GET_DEFAULT_FLOOD_SCOPE)?,
             Command::SetRadioTxPower { dbm } => w.put(&[cmd::SET_RADIO_TX_POWER, dbm as u8])?,
             Command::GetStats { kind } => w.put(&[cmd::GET_STATS, kind])?,
+            Command::SendTxtMsg {
+                kind,
+                attempt,
+                ts,
+                prefix,
+                text,
+            } => {
+                if text.len() > TEXT_MAX {
+                    return Err(EncodeError::Invalid);
+                }
+                w.put(&[cmd::SEND_TXT_MSG, kind, attempt])?;
+                w.u32(ts)?;
+                w.put(prefix)?;
+                w.put(text)?;
+            }
+            Command::SendChannelTxtMsg {
+                kind,
+                channel,
+                ts,
+                text,
+            } => {
+                if text.len() > TEXT_MAX {
+                    return Err(EncodeError::Invalid);
+                }
+                w.put(&[cmd::SEND_CHANNEL_TXT_MSG, kind, channel])?;
+                w.u32(ts)?;
+                w.put(text)?;
+            }
+            Command::SetAdvertName { name } => {
+                if name.len() > CHANNEL_NAME_MAX {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SET_ADVERT_NAME)?;
+                w.put(name)?;
+            }
+            Command::SyncNextMessage => w.u8(cmd::SYNC_NEXT_MESSAGE)?,
+            Command::GetChannel { index } => w.put(&[cmd::GET_CHANNEL, index])?,
+            Command::SetChannel {
+                index,
+                name,
+                secret,
+            } => {
+                if name.len() > CHANNEL_NAME_MAX || name.contains(&0) {
+                    return Err(EncodeError::Invalid);
+                }
+                let mut padded = [0u8; 32];
+                for (p, &b) in padded.iter_mut().zip(name) {
+                    *p = b;
+                }
+                w.put(&[cmd::SET_CHANNEL, index])?;
+                w.put(&padded)?;
+                w.put(secret)?;
+            }
             Command::SendRawPacket { priority, raw } => {
                 if raw.len() < 2 {
                     return Err(EncodeError::Invalid);

@@ -21,6 +21,7 @@ fn media_id(c: &Content) -> Option<MediaId> {
 use crate::core::{Contact, FailReason, OwnedPath, PubKey};
 use crate::group::GroupId;
 use crate::location::{Precision, Share};
+use crate::plain::{Channel, ChannelId};
 use lc_proto::location::Position;
 
 pub use rusqlite::Error;
@@ -36,13 +37,19 @@ pub use rusqlite::Error;
 /// 8: pinned and muted conversations (`chat_prefs`, table added).
 /// 9: replies and reactions (ADR-0019): `messages.ref`, added to older databases and filled by
 /// the app; `reactions` (table added).
-const VERSION: i32 = 9;
+/// 10: MeshCore chats (ADR-0026): chat kinds 2 (a node, plain) and 3 (a channel), and
+/// `channels` (table added, nothing migrated).
+const VERSION: i32 = 10;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Chat {
     Contact(PubKey),
     Group(GroupId),
+    /// Plain MeshCore direct messages with a node (§15.2), apart from any lichen chat with it.
+    Mesh(PubKey),
+    /// A MeshCore channel (§15.3). Received posts are stored as they came, "name: text".
+    Channel(ChannelId),
 }
 
 impl Chat {
@@ -50,13 +57,16 @@ impl Chat {
         match self {
             Chat::Contact(_) => 0,
             Chat::Group(_) => 1,
+            Chat::Mesh(_) => 2,
+            Chat::Channel(_) => 3,
         }
     }
 
     fn bytes(&self) -> &[u8] {
         match self {
-            Chat::Contact(k) => k,
+            Chat::Contact(k) | Chat::Mesh(k) => k,
             Chat::Group(g) => g,
+            Chat::Channel(c) => c,
         }
     }
 
@@ -64,8 +74,15 @@ impl Chat {
         match kind {
             0 => bytes.try_into().ok().map(Chat::Contact),
             1 => bytes.try_into().ok().map(Chat::Group),
+            2 => bytes.try_into().ok().map(Chat::Mesh),
+            3 => bytes.try_into().ok().map(Chat::Channel),
             _ => None,
         }
+    }
+
+    /// A plain MeshCore conversation (§15): text only, not lichen-encrypted.
+    pub const fn is_plain(&self) -> bool {
+        matches!(self, Chat::Mesh(_) | Chat::Channel(_))
     }
 }
 
@@ -243,6 +260,12 @@ CREATE TABLE IF NOT EXISTS chat_prefs (
     muted_until INTEGER,
     PRIMARY KEY (chat_kind, chat)
 );
+CREATE TABLE IF NOT EXISTS channels (
+    id BLOB PRIMARY KEY,
+    name TEXT NOT NULL,
+    secret BLOB NOT NULL,
+    slot INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS search_consent (
     gid BLOB PRIMARY KEY
 );
@@ -383,6 +406,53 @@ impl Store {
         )?;
         conn.pragma_update(None, "user_version", VERSION)?;
         Ok(Self { conn })
+    }
+
+    // ----- MeshCore channels (protocol.md §15.3) ----------------------------------------
+
+    /// Replaces the saved channel list by the companion's.
+    pub fn put_channels(&self, channels: &[Channel]) -> Result<(), Error> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM channels", [])?;
+        for c in channels {
+            tx.execute(
+                "INSERT OR REPLACE INTO channels (id, name, secret, slot) VALUES (?1, ?2, ?3, ?4)",
+                params![c.id().as_slice(), c.name, c.secret.as_slice(), c.index],
+            )?;
+        }
+        tx.commit()
+    }
+
+    /// The channels saved last, in slot order.
+    pub fn channels(&self) -> Result<Vec<Channel>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT name, secret, slot FROM channels ORDER BY slot")?;
+        let rows = st.query_map([], |r| {
+            let secret: Vec<u8> = r.get(1)?;
+            Ok((r.get::<_, String>(0)?, secret, r.get::<_, u8>(2)?))
+        })?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|(name, secret, index)| {
+                Some(Channel {
+                    index,
+                    name,
+                    secret: secret.as_slice().try_into().ok()?,
+                })
+            })
+            .collect())
+    }
+
+    /// Channel `id`'s saved name.
+    pub fn channel_name(&self, id: &ChannelId) -> Result<Option<String>, Error> {
+        self.conn
+            .query_row(
+                "SELECT name FROM channels WHERE id = ?1",
+                params![id.as_slice()],
+                |r| r.get(0),
+            )
+            .optional()
     }
 
     // ----- location (protocol.md §12) ---------------------------------------------------
