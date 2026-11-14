@@ -2315,6 +2315,7 @@ impl Core {
             Some(content) => self.events.push_back(Event::GroupMessage {
                 gid,
                 from: member_node,
+                author: member,
                 content,
                 snr4,
                 rssi,

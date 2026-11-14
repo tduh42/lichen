@@ -1039,8 +1039,9 @@ impl Store {
         Ok(())
     }
 
-    /// Messages unfinished when the app stopped (§6.1): the texts are returned with their
-    /// expiry (Unix ms), to be sent again; the rest (media) fail as `Interrupted`.
+    /// Messages unfinished when the app stopped (§6.1): texts, replies, stickers and GIFs are
+    /// returned with their expiry (Unix ms), to be sent again; the rest (media) fail as
+    /// `Interrupted`.
     pub fn resume_unfinished(&self) -> Result<Vec<(Message, Option<i64>)>, Error> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT {COLUMNS}, expires_ms FROM messages WHERE outgoing = 1 AND status IN (1, 5)
@@ -1052,7 +1053,15 @@ impl Store {
         let mut texts = Vec::new();
         for (m, id, expires) in rows {
             match m {
-                Some(m) if matches!(m.content, Content::Text { .. } | Content::Reply { .. }) => {
+                Some(m)
+                    if matches!(
+                        m.content,
+                        Content::Text { .. }
+                            | Content::Reply { .. }
+                            | Content::Sticker { .. }
+                            | Content::Gif { .. }
+                    ) =>
+                {
                     texts.push((m, expires));
                 }
                 _ => {
@@ -1293,7 +1302,8 @@ mod tests {
         );
         let up = s.set_status(m2.id, Status::Delivered).unwrap().unwrap();
         assert_eq!(up.status, Status::Delivered);
-        // Unfinished at a restart (§6.1): texts come back with their expiry, media fail.
+        // Unfinished at a restart (§6.1): texts and stickers come back with their expiry,
+        // media fail.
         let m3 = s.insert(&text(b, true, "pending", 50)).unwrap();
         s.set_expiry(m3.id, Some(9_000)).unwrap();
         let mut queued = text(b, true, "queued", 51);
@@ -1307,6 +1317,13 @@ mod tests {
             data: vec![0; 8],
         };
         let m5 = s.insert(&voice).unwrap();
+        let mut sticker = queued.clone();
+        sticker.content = Content::Sticker {
+            sent_at: 53,
+            set: crate::content::STICKER_SET_NOTO,
+            emoji: "🥳".into(),
+        };
+        let m6 = s.insert(&sticker).unwrap();
         let resumed = s.resume_unfinished().unwrap();
         assert_eq!(
             resumed
@@ -1315,9 +1332,11 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 (m3.id, Status::Sending { sent: 0, total: 1 }, Some(9_000)),
-                (m4.id, Status::Queued, None)
+                (m4.id, Status::Queued, None),
+                (m6.id, Status::Queued, None)
             ]
         );
+        s.delete_message(m6.id).unwrap();
         assert_eq!(
             s.get(m5.id).unwrap().unwrap().status,
             Status::Failed(FailReason::Interrupted)

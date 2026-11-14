@@ -887,6 +887,7 @@ impl LichenEvent {
                 snr4,
                 rssi,
                 late,
+                ..
             } => Self::GroupMessage {
                 gid: gid.to_vec(),
                 from: from.to_vec(),
@@ -1826,6 +1827,7 @@ impl Inner {
             Event::GroupMessage {
                 gid,
                 from,
+                author,
                 content,
                 snr4,
                 late,
@@ -1835,7 +1837,7 @@ impl Inner {
                 if self.is_resend(&chat, Some(from), content) {
                     return false;
                 }
-                let msg_ref = self.reference(&chat, false, Some(*from), &content.encode());
+                let msg_ref = self.reference(&chat, false, Some(*author), &content.encode());
                 self.record(store::Message {
                     id: 0,
                     chat,
@@ -3996,6 +3998,55 @@ mod reactions {
             }]
         );
     }
+
+    /// A group message's reference is computed with its author's identity, as its author
+    /// computed it (§6.2), not with the node the member is known by: a reaction made on the
+    /// author's phone finds it.
+    #[test]
+    fn group_references_use_the_identity() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![141; 32], None).unwrap();
+        let mut i = core.lock();
+        let gid = [3; 16];
+        let text = Content::Text {
+            sent_at: 5,
+            text: "hi".into(),
+        };
+        assert!(i.on_event(&Event::GroupMessage {
+            gid,
+            from: [9; 32],
+            author: [7; 32],
+            content: text.clone(),
+            snr4: 0,
+            rssi: 0,
+            late: false,
+        }));
+        let by_identity = message_ref(&[7; 32], &text.encode());
+        let st = i.store.as_ref().unwrap();
+        assert!(
+            st.message_by_ref(&Chat::Group(gid), &by_identity)
+                .unwrap()
+                .is_some()
+        );
+        // The author's own reaction, computed on its phone, attaches to it.
+        assert!(!i.on_event(&Event::GroupMessage {
+            gid,
+            from: [9; 32],
+            author: [7; 32],
+            content: Content::Reaction {
+                sent_at: 6,
+                target: by_identity,
+                emoji: "👍".into(),
+            },
+            snr4: 0,
+            rssi: 0,
+            late: false,
+        }));
+        drop(i);
+        let h = core
+            .history(ChatRef::Group { gid: vec![3; 16] }, None, 10)
+            .unwrap();
+        assert_eq!(h[0].reactions.len(), 1);
+    }
 }
 
 #[cfg(test)]
@@ -4023,6 +4074,7 @@ mod receiver {
             late: false,
             gid: [3; 16],
             from: [from; 32],
+            author: [from; 32],
             content: text("hi"),
             snr4: 0,
             rssi: 0,

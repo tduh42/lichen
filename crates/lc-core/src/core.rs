@@ -250,7 +250,11 @@ pub enum Event {
     },
     GroupMessage {
         gid: GroupId,
+        /// The author's node, as the app knows members.
         from: PubKey,
+        /// The author's identity (ADR-0013): what message references are computed with
+        /// (§6.2).
+        author: PubKey,
         content: Content,
         snr4: i8,
         rssi: i8,
