@@ -88,8 +88,8 @@ private data class Row(
     val pinnedAt: Long? = null,
     val muted: Boolean = false,
 ) {
-    /** A contact (can be renamed), not a group. */
-    val contact: Boolean get() = !id.group
+    /** A node, lichen or MeshCore (can be renamed): not a group or a channel. */
+    val contact: Boolean get() = id.nodeKey != null
 }
 
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
@@ -130,6 +130,28 @@ fun ConversationsScreen(
                 Row(
                     chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat),
                     last.isWaiting, model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
+                ),
+            )
+        }
+        // MeshCore chats (§15): a node someone wrote to in plain, and the radio's channels.
+        for (c in model.contacts) {
+            val chat = ChatId.mesh(c.key)
+            val last = model.last(chat) ?: continue
+            add(
+                Row(
+                    chat, c.name, c.key, preview(model, last, res), last.atMs, res.getString(R.string.meshcore), model.unread(chat),
+                    last.isWaiting, model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
+                ),
+            )
+        }
+        for (ch in model.channels) {
+            val chat = ChatId.channel(ch.id)
+            val last = model.last(chat)
+            add(
+                Row(
+                    chat, ch.name, ch.id, last?.let { preview(model, it, res) } ?: channelKindLabel(res, ch.kind),
+                    last?.atMs, res.getString(R.string.meshcore_channel), model.unread(chat), last?.isWaiting == true,
+                    model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
                 ),
             )
         }
@@ -213,11 +235,15 @@ fun ConversationsScreen(
     }
 }
 
-/** One line for the conversation list ("Camille: …" in groups). */
+/** One line for the conversation list ("Camille: …" in groups and channels). */
 private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, res: android.content.res.Resources): String {
     val text = m.message.display(res, model.nodeKey)
     val author = m.author
-    return if (author != null && !m.outgoing) "${model.name(author)}: $text" else text
+    return when {
+        m.authorName != null && !m.outgoing -> "${m.authorName}: $text"
+        author != null && !m.outgoing && !ChatId.of(m.chat).plain -> "${model.name(author)}: $text"
+        else -> text
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -319,7 +345,8 @@ private fun ChatRow(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TransportBadge(Transport.LORA, row.badge)
+                // A MeshCore chat is marked as such (§15.6), never in LoRa orange alone.
+                TransportBadge(if (row.id.plain) Transport.NEUTRAL else Transport.LORA, row.badge)
                 Spacer(Modifier.weight(1f))
                 if (row.unread > 0) {
                     val label = pluralStringResource(R.plurals.unread, row.unread, row.unread)

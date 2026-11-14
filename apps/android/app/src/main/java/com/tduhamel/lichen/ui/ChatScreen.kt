@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.border
 import com.tduhamel.lichen.core.QuoteKind
+import com.tduhamel.lichen.core.ChatRef
 import com.tduhamel.lichen.core.Quote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Reply
@@ -52,6 +53,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.NoEncryption
 import androidx.compose.material.icons.outlined.Photo
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.CircularProgressIndicator
@@ -121,6 +123,7 @@ import com.tduhamel.lichen.model.fragmentsText
 import com.tduhamel.lichen.model.hopsBadge
 import com.tduhamel.lichen.model.isWaiting
 import com.tduhamel.lichen.model.secondsText
+import com.tduhamel.lichen.model.unhex
 import com.tduhamel.lichen.model.writtenAtMs
 import com.tduhamel.lichen.model.writtenEarlierMs
 
@@ -134,6 +137,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     // The verification sheet: an empty array for the current identity, else a pending one.
     var verifying by remember { mutableStateOf<ByteArray?>(null) }
     var renaming by remember { mutableStateOf(false) }
+    /** What a MeshCore chat is (§15.6). */
+    var plainInfo by remember { mutableStateOf(false) }
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
@@ -169,7 +174,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         // Debug extra `screen`: the group's details, or the verification sheet.
         when (model.debugScreen) {
             "group", "invite" -> if (chat.group) details()
-            "verify" -> if (!chat.group) verifying = ByteArray(0)
+            "verify" -> if (chat.contactKey != null) verifying = ByteArray(0)
         }
     }
     // The list's rows: the history state, the session line, a separator per day, the messages,
@@ -242,7 +247,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             },
             title = {
                 // A contact's name: tap to rename it on this phone.
-                Column(if (chat.group) Modifier else Modifier.clickable { renaming = true }) {
+                Column(if (chat.nodeKey == null) Modifier else Modifier.clickable { renaming = true }) {
                     Text(model.title(chat), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                     Text(subtitle(model, chat), fontSize = 12.sp, color = t.tx2)
                 }
@@ -250,6 +255,14 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             actions = {
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
+                } else if (chat.plain) {
+                    IconButton(onClick = { plainInfo = true }) {
+                        Icon(
+                            Icons.Outlined.Info,
+                            stringResource(if (chat.channel) R.string.channel_details else R.string.about_meshcore_chats),
+                            tint = t.tx,
+                        )
+                    }
                 } else {
                     // Their key, always within reach: to verify, verified, or changed.
                     val c = chat.contactKey?.let { model.contact(it) }
@@ -270,7 +283,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             ),
         )
         // A new key waiting for the user stays in sight, above the messages.
-        if (!chat.group && model.conflicts.containsKey(chat.hex)) {
+        if (chat.contactKey != null && model.conflicts.containsKey(chat.hex)) {
             Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
                 Banner(
                     BannerKind.SOS,
@@ -303,7 +316,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                     }
                 }
             }
-            item(key = "session") { SessionLine(model, chat) { verifying = it } }
+            item(key = "session") { SessionLine(model, chat, { plainInfo = true }) { verifying = it } }
             messages.forEachIndexed { i, m ->
                 // A separator when the day changes: "Today", "Yesterday", the date.
                 if (i == 0 || dayOf(messages[i - 1].atMs) != dayOf(m.atMs)) {
@@ -317,7 +330,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
                 item(key = m.id) {
                     MessageBubble(
-                        model, m, chat.group, highlight == m.id,
+                        model, m, chat.group || chat.channel, highlight == m.id,
                         reply = { replyTo = m },
                         // A quote tapped: its original, loading earlier pages if needed.
                         openQuote = { id ->
@@ -355,8 +368,9 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         Composer(model, chat, replyTo, { replyTo = null }) { error = it }
     }
 
+    if (renaming) chat.nodeKey?.let { RenameDialog(model, it) { renaming = false } }
+    if (plainInfo) PlainInfoSheet(model, chat, { plainInfo = false }) { plainInfo = false; back() }
     val node = chat.contactKey
-    if (renaming && node != null) RenameDialog(model, node) { renaming = false }
     val v = verifying
     if (node != null && v != null) {
         VerifySheet(model, node, v.takeIf { it.isNotEmpty() }) { verifying = null }
@@ -389,6 +403,8 @@ private fun rowOf(model: AppModel, chat: ChatId, id: Long, divider: Long?): Int 
 @Composable
 private fun subtitle(model: AppModel, chat: ChatId): String {
     val res = LocalResources.current
+    if (chat.channel) return model.channel(chat)?.let { channelKindLabel(res, it.kind) } ?: stringResource(R.string.meshcore_channel)
+    if (chat.kind == ChatId.Kind.MESH) return stringResource(R.string.meshcore_hops, hopsBadge(res, model.contact(chat.hex.unhex())?.hops))
     if (!chat.group) {
         val key = chat.contactKey ?: return ""
         val c = model.contact(key)
@@ -407,8 +423,19 @@ private fun subtitle(model: AppModel, chat: ChatId): String {
 }
 
 @Composable
-private fun SessionLine(model: AppModel, chat: ChatId, verify: (ByteArray) -> Unit) {
+private fun SessionLine(model: AppModel, chat: ChatId, explain: () -> Unit, verify: (ByteArray) -> Unit) {
     val t = lichen
+    // Not lichen-encrypted, said where the lock would be (§15.6).
+    if (chat.plain) {
+        Box(Modifier.fillMaxWidth().clickable(onClick = explain)) {
+            TintedLine(
+                Icons.Outlined.NoEncryption, t.warn,
+                stringResource(if (chat.channel) R.string.meshcore_channel_not_lichen else R.string.meshcore_not_lichen),
+                t.warnFg,
+            )
+        }
+        return
+    }
     if (chat.group) {
         TintedLine(Icons.Outlined.Lock, t.ok, stringResource(R.string.group_signed), t.tx2)
         return
@@ -588,9 +615,11 @@ private fun MessageBubble(
                 )
             }
         }
-        if (isGroup && !m.outgoing && author != null) {
+        // A group member, or a channel post's author as its radio calls itself (§15.1).
+        val authorName = m.authorName ?: author?.let { model.name(it) }
+        if (isGroup && !m.outgoing && authorName != null) {
             Text(
-                model.name(author), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2,
+                authorName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2,
                 modifier = Modifier.padding(horizontal = 6.dp),
             )
         }
@@ -730,18 +759,27 @@ private fun caption(m: StoredMessage, isGroup: Boolean): String? {
             is WaitReason.Budget -> stringResource(R.string.waiting_for_airtime, timeOf(context, r.atMs))
         }
         is MessageStatus.Sending ->
-            if (isGroup) {
+            if (m.chat is ChatRef.Channel) {
+                stringResource(R.string.sending_to_channel)
+            } else if (m.chat is ChatRef.Mesh) {
+                stringResource(R.string.waiting_for_radio_ack)
+            } else if (isGroup) {
                 stringResource(R.string.sending_to_group)
             } else if (s.total.toInt() > 1) {
                 stringResource(R.string.waiting_for_ack)
             } else {
                 stringResource(R.string.sending_fragments, minOf(s.sent.toInt(), s.total.toInt()), s.total.toInt())
             }
-        MessageStatus.Delivered -> pluralStringResource(
-            R.plurals.delivered_fragments, m.fragments.toInt(), m.fragments.toInt(), secondsText(m.airtimeMs),
-        )
+        MessageStatus.Delivered -> if (m.chat is ChatRef.Mesh) {
+            stringResource(R.string.delivered_airtime, secondsText(m.airtimeMs))
+        } else {
+            pluralStringResource(
+                R.plurals.delivered_fragments, m.fragments.toInt(), m.fragments.toInt(), secondsText(m.airtimeMs),
+            )
+        }
         is MessageStatus.Failed -> stringResource(R.string.not_delivered, s.reason.display(res))
-        MessageStatus.Flooded -> stringResource(R.string.sent_to_group)
+        MessageStatus.Flooded ->
+            stringResource(if (m.chat is ChatRef.Channel) R.string.sent_to_channel else R.string.sent_to_group)
     }
 }
 
@@ -771,7 +809,10 @@ private fun Composer(
     var locating by remember { mutableStateOf(false) }
     // The sticker picker; a GIPHY link in the draft goes as a GIF unless asked otherwise (§6.3).
     var stickers by remember { mutableStateOf(false) }
-    val gifLink = remember(draft) { com.tduhamel.lichen.core.gifLink(draft) }
+    val gifLink = remember(draft) { if (chat.plain) null else com.tduhamel.lichen.core.gifLink(draft) }
+    // Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
+    val plainMax = if (chat.plain) model.plainTextMax(chat) else 0
+    val plainOver = if (chat.plain) maxOf(0, draft.toByteArray().size - plainMax) else 0
     var linkAsText by remember(chat) { mutableStateOf(false) }
     var gifData by remember { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(gifLink?.id) {
@@ -830,6 +871,14 @@ private fun Composer(
     // own airtime, and nobody acknowledges it.
     val estimate = model.estimate(chat, draft)
     val cost = when {
+        chat.plain && plainOver > 0 -> stringResource(R.string.plain_too_long, plainOver, plainMax)
+        chat.plain && estimate == null -> if (chat.channel) {
+            stringResource(R.string.channel_flooded_no_ack)
+        } else {
+            stringResource(R.string.plain_up_to, plainMax)
+        }
+        chat.plain && estimate != null ->
+            stringResource(R.string.plain_bytes_cost, draft.toByteArray().size, plainMax, secondsText(estimate.airtimeMs))
         estimate == null -> if (chat.group) stringResource(R.string.flooded_to_every_member) else null
         chat.group -> stringResource(R.string.group_cost, fragmentsText(res, estimate.fragments.toInt()), secondsText(estimate.airtimeMs))
         else -> stringResource(R.string.estimated_cost, fragmentsText(res, estimate.fragments.toInt()), secondsText(estimate.airtimeMs))
@@ -896,7 +945,9 @@ private fun Composer(
                 Text(stringResource(R.string.sharing_until, precisionName(share.precision), until), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx2)
             }
         }
-        if (!model.isConnected) {
+        if (chat.channel && !model.isConnected) {
+            Text(stringResource(R.string.channel_needs_radio_now), fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
+        } else if (!model.isConnected) {
             // Texts wait for the radio (§6.1).
             Row(
                 Modifier.padding(start = 8.dp),
@@ -910,7 +961,8 @@ private fun Composer(
             Text(cost, fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(start = 8.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Box {
+            // A MeshCore chat carries text only (§15).
+            if (!chat.plain) Box {
                 IconButton(
                     onClick = { menu = true },
                     enabled = !preparing,
@@ -974,7 +1026,7 @@ private fun Composer(
                     focusedPlaceholderColor = t.tx2, unfocusedPlaceholderColor = t.tx2,
                 ),
             )
-            if (!chat.group && draft.isEmpty()) {
+            if (chat.contactKey != null && draft.isEmpty()) {
                 IconButton(
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
@@ -1005,7 +1057,8 @@ private fun Composer(
                         }
                     },
                     // Texts wait for the radio (§6.1); not with a throwaway identity.
-                    enabled = text.isNotEmpty() && model.identityProblem == null,
+                    enabled = text.isNotEmpty() && model.identityProblem == null && plainOver == 0 &&
+                        !(chat.channel && !model.isConnected),
                     modifier = Modifier.size(48.dp),
                     colors = IconButtonDefaults.iconButtonColors(
                         containerColor = t.actBg, contentColor = t.actFg,

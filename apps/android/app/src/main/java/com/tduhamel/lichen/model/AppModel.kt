@@ -11,6 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
+import com.tduhamel.lichen.core.ChannelKind
+import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.InviteCode
 import com.tduhamel.lichen.core.Budget
 import com.tduhamel.lichen.core.ContactInfo
@@ -85,6 +87,8 @@ class AppModel(val app: Application) {
         val demo: Boolean = false,
         val open: String? = null,
         val say: String? = null,
+        /** Answer the first MeshCore direct message with this (§15). */
+        val sayPlain: String? = null,
         val tab: String? = null,
         val screen: String? = null,
         /** A companion to reach over TCP at launch, e.g. `10.0.2.2:5000` (`lichen bridge`). */
@@ -148,6 +152,8 @@ class AppModel(val app: Application) {
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
     var contacts by mutableStateOf(listOf<ContactInfo>())
     var groups by mutableStateOf(listOf<GroupInfo>())
+    /** The radio's MeshCore channels (protocol.md §15.3). */
+    var channels by mutableStateOf(listOf<MeshChannel>())
 
     /** Loaded histories, by conversation (filled when a chat is opened). */
     val chats = mutableStateMapOf<ChatId, List<StoredMessage>>()
@@ -462,6 +468,7 @@ class AppModel(val app: Application) {
     private fun refreshAll() {
         contacts = people()
         groups = core.groups()
+        channels = core.channels()
         conversations = core.conversations()
         refreshChatPrefs()
     }
@@ -849,6 +856,26 @@ class AppModel(val app: Application) {
             }
             // lc-ffi keeps the power to restore; we show it while it is lowered.
             is LichenEvent.TxPower -> loweredPower = if (e.previous == null) null else e.dbm
+            is LichenEvent.PlainReceived -> {
+                // A MeshCore message (§15.1): "Marc", or "Lucie · Public" on a channel.
+                val chat = ChatId.of(e.chat)
+                if (!isMuted(chat)) {
+                    val title = if (chat.channel) listOfNotNull(e.label, title(chat)).joinToString(" · ")
+                    else e.label ?: title(chat)
+                    notify(chat, title, e.text)
+                }
+                if (chat.kind == ChatId.Kind.MESH) {
+                    debug.sayPlain?.let { say ->
+                        debug = debug.copy(sayPlain = null)
+                        send(say, chat)
+                    }
+                }
+            }
+            is LichenEvent.ChannelsUpdated -> {
+                channels = core.channels()
+                refreshChatPrefs()
+                debugOpen()
+            }
         }
     }
 
@@ -916,8 +943,11 @@ class AppModel(val app: Application) {
 
     private fun debugOpen() {
         val name = debug.open ?: return
-        val chat = contacts.firstOrNull { it.name == name }?.let { ChatId.contact(it.key) }
+        // Someone without lichen (the demo's Marc): their MeshCore chat (§15).
+        val chat = contacts.firstOrNull { it.name == name }
+            ?.let { if (it.identity == null) ChatId.mesh(it.key) else ChatId.contact(it.key) }
             ?: groups.firstOrNull { it.name == name }?.let { ChatId.group(it.gid) }
+            ?: channels.firstOrNull { it.name == name }?.let { ChatId.channel(it.id) }
             ?: return
         debug = debug.copy(open = null)
         openChat = chat
@@ -1059,6 +1089,7 @@ class AppModel(val app: Application) {
         if (text.isEmpty()) return null
         val len = text.toByteArray().size.toUInt()
         if (chat.group) return core.estimateGroupText(len)
+        if (chat.plain) return runCatching { core.estimatePlain(chat.ref, len) }.getOrNull()
         val key = chat.contactKey ?: return null
         return runCatching { core.estimateText(key, len) }.getOrNull()
     }
@@ -1067,10 +1098,10 @@ class AppModel(val app: Application) {
     fun send(text: String, chat: ChatId): String? {
         val sentAt = (System.currentTimeMillis() / 1000).toUInt()
         return try {
-            val m = if (chat.group) {
-                core.sendGroupText(chat.hex.unhex(), text, sentAt, now())
-            } else {
-                core.sendText(chat.hex.unhex(), text, sentAt, now())
+            val m = when (chat.kind) {
+                ChatId.Kind.GROUP -> core.sendGroupText(chat.hex.unhex(), text, sentAt, now())
+                ChatId.Kind.CONTACT -> core.sendText(chat.hex.unhex(), text, sentAt, now())
+                ChatId.Kind.MESH, ChatId.Kind.CHANNEL -> core.sendPlain(chat.ref, text, sentAt, now())
             }
             if (chats[chat] == null) load(chat) else upsert(m)
             conversations = core.conversations()
@@ -1566,10 +1597,56 @@ class AppModel(val app: Application) {
         return contact(key)?.name ?: key.copyOf(4).hex()
     }
 
-    fun title(chat: ChatId): String = if (chat.group) {
-        groups.firstOrNull { it.gid.hex() == chat.hex }?.name ?: res.getString(R.string.group)
-    } else {
-        name(chat.hex.unhex())
+    fun title(chat: ChatId): String = when (chat.kind) {
+        ChatId.Kind.GROUP -> groups.firstOrNull { it.gid.hex() == chat.hex }?.name ?: res.getString(R.string.group)
+        ChatId.Kind.CHANNEL -> channel(chat)?.name ?: res.getString(R.string.channel)
+        ChatId.Kind.CONTACT, ChatId.Kind.MESH -> name(chat.hex.unhex())
+    }
+
+    fun channel(chat: ChatId): MeshChannel? =
+        if (chat.channel) channels.firstOrNull { it.id.hex() == chat.hex } else null
+
+    // ----- MeshCore chats (protocol.md §15) -----
+
+    /** The longest text for a plain chat, in bytes. */
+    fun plainTextMax(chat: ChatId): Int = runCatching { core.plainTextMax(chat.ref).toInt() }.getOrDefault(160)
+
+    /** Joins Public, a hashtag or a private channel (`secret`: 32 hex digits): the channel, or
+     * an error message. */
+    fun joinChannel(kind: ChannelKind, name: String = "", secret: String = ""): Result<ChatId> = try {
+        val ref = when (kind) {
+            ChannelKind.PUBLIC_CHANNEL -> core.joinPublicChannel()
+            ChannelKind.HASHTAG_CHANNEL -> core.joinHashtagChannel(name)
+            ChannelKind.PRIVATE_CHANNEL -> core.joinPrivateChannel(name, secret)
+        }
+        channels = core.channels()
+        refreshChatPrefs()
+        pump()
+        Result.success(ChatId.of(ref))
+    } catch (e: LichenException) {
+        Result.failure(IllegalArgumentException(res.getString(when (e) {
+            is LichenException.BadCode ->
+                if (kind == ChannelKind.HASHTAG_CHANNEL) R.string.hashtag_rules else R.string.channel_secret_rules
+            is LichenException.NoIdentity -> R.string.channel_needs_radio
+            is LichenException.TooLarge -> R.string.channel_no_slot
+            else -> R.string.channel_join_failed
+        })))
+    }
+
+    fun leaveChannel(id: ByteArray) {
+        runCatching { core.leaveChannel(id) }
+        channels = core.channels()
+        pump()
+    }
+
+    /** Our node's name as MeshCore users see it (§15.4); an error message, or null. */
+    fun setMeshName(name: String): String? = try {
+        core.setMeshName(name, now())
+        nodeName = core.meshName()
+        pump()
+        null
+    } catch (e: LichenException) {
+        res.getString(R.string.mesh_name_rules)
     }
 
     fun group(chat: ChatId): GroupInfo? = if (chat.group) groups.firstOrNull { it.gid.hex() == chat.hex } else null

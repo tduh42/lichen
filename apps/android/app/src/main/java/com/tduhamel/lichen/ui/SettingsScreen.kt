@@ -21,6 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.SettingsInputAntenna
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -68,6 +72,8 @@ fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean
 fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
+    var naming by remember { mutableStateOf(false) }
+    var nameError by remember { mutableStateOf<String?>(null) }
     Scaffold(
         containerColor = t.bg,
         // The tab bar below takes the navigation bar.
@@ -113,6 +119,16 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                             stringResource(if (advertSent) R.string.advert_sent else R.string.send_advert_note),
                         ) {
                             Icon(Icons.Outlined.SettingsInputAntenna, null, tint = if (model.isConnected) t.lora else t.tx2)
+                        }
+                    }
+                    CardDivider()
+                    // What MeshCore users and channels see (protocol.md §15.4).
+                    Box(Modifier.clickable(enabled = model.isConnected) { naming = true }) {
+                        CardRow(
+                            stringResource(R.string.name_on_mesh),
+                            model.nodeName.ifEmpty { stringResource(R.string.name_on_mesh_note) },
+                        ) {
+                            Icon(Icons.Outlined.Edit, null, tint = t.tx2)
                         }
                     }
                 }
@@ -251,6 +267,36 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                 }
             }
         }
+    }
+    if (naming) {
+        var name by remember { mutableStateOf(model.nodeName) }
+        AlertDialog(
+            onDismissRequest = { naming = false },
+            title = { Text(stringResource(R.string.name_on_mesh)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.name_on_mesh_explainer), fontSize = 14.sp, color = t.tx2)
+                    OutlinedTextField(name, { name = it }, singleLine = true, colors = fieldColors())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    naming = false
+                    nameError = model.setMeshName(name.trim())
+                }) { Text(stringResource(R.string.save), color = t.tx) }
+            },
+            dismissButton = { TextButton(onClick = { naming = false }) { Text(stringResource(R.string.cancel), color = t.tx2) } },
+            containerColor = t.s1,
+        )
+    }
+    nameError?.let {
+        AlertDialog(
+            onDismissRequest = { nameError = null },
+            title = { Text(stringResource(R.string.not_changed)) },
+            text = { Text(it) },
+            confirmButton = { TextButton(onClick = { nameError = null }) { Text(stringResource(R.string.ok), color = t.tx) } },
+            containerColor = t.s1,
+        )
     }
 }
 

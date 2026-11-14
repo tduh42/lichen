@@ -8,6 +8,8 @@ extension ChatRef {
         switch self {
         case let .contact(key): "c" + key.hex
         case let .group(gid): "g" + gid.hex
+        case let .mesh(key): "m" + key.hex
+        case let .channel(id): "h" + id.hex
         }
     }
 }

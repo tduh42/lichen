@@ -2,8 +2,18 @@ import CoreLocation
 import Foundation
 import Observation
 
-/// A conversation: `ChatRef` comes from the core (contact or group).
+/// A conversation: `ChatRef` comes from the core (contact, group, or a plain MeshCore chat).
 typealias ChatID = ChatRef
+
+extension ChatRef {
+    /// A plain MeshCore chat (protocol.md §15): text only, not lichen-encrypted.
+    var isPlain: Bool {
+        switch self {
+        case .mesh, .channel: true
+        case .contact, .group: false
+        }
+    }
+}
 
 /// The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
 @MainActor @Observable
@@ -58,6 +68,11 @@ final class AppModel {
         didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
     }
     var contacts: [ContactInfo] = []
+    /// The radio's MeshCore channels (§15.3).
+    var channels: [MeshChannel] = []
+    #if DEBUG
+    @ObservationIgnored private var debugPlainSaid = false
+    #endif
     var groups: [GroupInfo] = []
     /// Loaded histories, by conversation (filled when a chat is opened).
     var chats: [ChatID: [StoredMessage]] = [:]
@@ -181,6 +196,7 @@ final class AppModel {
         }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
+        channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
@@ -280,6 +296,7 @@ final class AppModel {
         if !core.storageOk() { identityProblem = .storage }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
+        channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
         shares = core.shares()
@@ -550,7 +567,8 @@ final class AppModel {
             #if DEBUG
             if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
-                debugOpen = .contact(key: c.key)
+                // Someone without lichen (the demo's Marc): their MeshCore chat (§15).
+                debugOpen = c.identity == nil ? .mesh(key: c.key) : .contact(key: c.key)
             }
             // -fill N: N older messages with Camille (paging checks), once.
             if isDemo, !debugFilled, UserDefaults.standard.integer(forKey: "fill") > 0,
@@ -654,6 +672,32 @@ final class AppModel {
             if !isMuted(chat) {
                 notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
             }
+        case let .plainReceived(chat, label, text):
+            // A MeshCore message (§15.1): "Marc", or "Lucie · Public" on a channel.
+            if !isMuted(chat) {
+                let title: String = switch chat {
+                case .channel: [label, self.title(of: chat)].compactMap { $0 }.joined(separator: " · ")
+                default: label ?? self.title(of: chat)
+                }
+                notifier.message(chat, title: title, body: text)
+            }
+            #if DEBUG
+            // -sayPlain <text>: answer the first MeshCore direct message.
+            if case .mesh = chat, let say = UserDefaults.standard.string(forKey: "sayPlain"), !debugPlainSaid {
+                debugPlainSaid = true
+                _ = send(say, to: chat)
+            }
+            #endif
+        case .channelsUpdated:
+            channels = core.channels()
+            refreshPrefs()
+            #if DEBUG
+            // -open Public: a MeshCore channel.
+            if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
+               let c = channels.first(where: { $0.name == name }) {
+                debugOpen = .channel(id: c.id)
+            }
+            #endif
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
@@ -847,6 +891,7 @@ final class AppModel {
         switch chat {
         case let .contact(key): return try? core.estimateText(to: key, textLen: UInt32(text.utf8.count))
         case .group: return core.estimateGroupText(textLen: UInt32(text.utf8.count))
+        case .mesh, .channel: return try? core.estimatePlain(chat: chat, len: UInt32(text.utf8.count))
         }
     }
 
@@ -860,6 +905,8 @@ final class AppModel {
                 m = try core.sendText(to: key, text: text, sentAt: sentAt, nowMs: now())
             case let .group(gid):
                 m = try core.sendGroupText(gid: gid, text: text, sentAt: sentAt, nowMs: now())
+            case .mesh, .channel:
+                m = try core.sendPlain(chat: chat, text: text, sentAt: sentAt, nowMs: now())
             }
             if chats[chat] == nil { load(chat) } else { upsert(m) }
             conversations = core.conversations()
@@ -1610,8 +1657,64 @@ final class AppModel {
 
     func title(of chat: ChatID) -> String {
         switch chat {
-        case let .contact(key): return name(of: key)
+        case let .contact(key), let .mesh(key): return name(of: key)
         case let .group(gid): return groups.first { $0.gid == gid }?.name ?? String(localized: "Group")
+        case let .channel(id): return channels.first { $0.id == id }?.name ?? String(localized: "Channel")
+        }
+    }
+
+    // MARK: MeshCore chats (protocol.md §15)
+
+    /// The longest text for a plain chat, in bytes.
+    func plainTextMax(_ chat: ChatID) -> Int {
+        Int((try? core.plainTextMax(chat: chat)) ?? 160)
+    }
+
+    /// Joins Public, a hashtag, or a private channel (`secret`: 32 hex digits); returns the
+    /// channel, or an error message.
+    func joinChannel(_ kind: ChannelKind, name: String = "", secret: String = "") -> Result<ChatID, ChannelError> {
+        do {
+            let chat: ChatID = switch kind {
+            case .publicChannel: try core.joinPublicChannel()
+            case .hashtagChannel: try core.joinHashtagChannel(tag: name)
+            case .privateChannel: try core.joinPrivateChannel(name: name, secretHex: secret)
+            }
+            channels = core.channels()
+            refreshPrefs()
+            pump()
+            return .success(chat)
+        } catch LichenError.BadCode {
+            return .failure(ChannelError(message: kind == .hashtagChannel
+                ? String(localized: "A hashtag is letters, digits and dashes.")
+                : String(localized: "A channel secret is 32 hexadecimal digits.")))
+        } catch LichenError.NoIdentity {
+            return .failure(ChannelError(message: String(localized: "Connect the radio first: channels live on it.")))
+        } catch LichenError.TooLarge {
+            return .failure(ChannelError(message: String(localized: "The radio has no free channel slot.")))
+        } catch {
+            return .failure(ChannelError(message: String(localized: "Could not join the channel.")))
+        }
+    }
+
+    struct ChannelError: Error { let message: String }
+
+    func leaveChannel(_ id: Data) {
+        try? core.leaveChannel(id: id)
+        channels = core.channels()
+        pump()
+    }
+
+    /// Our node's name as MeshCore users see it (§15.4).
+    var meshName: String { core.meshName() }
+
+    func setMeshName(_ name: String) -> String? {
+        do {
+            try core.setMeshName(name: name, nowMs: now())
+            nodeName = core.meshName()
+            pump()
+            return nil
+        } catch {
+            return String(localized: "A name is 1 to 31 bytes.")
         }
     }
 
@@ -1663,10 +1766,11 @@ extension StoredMessage {
         return !outgoing && date.timeIntervalSince(written) > 600 ? written : nil
     }
 
-    /// One line for the conversation list ("Camille: …" in groups).
+    /// One line for the conversation list ("Camille: …" in groups and channels).
     @MainActor func preview(_ model: AppModel) -> String {
         let text = message.display
-        if let author, !outgoing { return "\(model.name(of: author)): \(text)" }
+        if let authorName, !outgoing { return "\(authorName): \(text)" }
+        if let author, !outgoing, !chat.isPlain { return "\(model.name(of: author)): \(text)" }
         return text
     }
 }

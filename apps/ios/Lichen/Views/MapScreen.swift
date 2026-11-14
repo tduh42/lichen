@@ -402,8 +402,9 @@ private struct ShareRow: View {
 
     private var avatarKey: Data {
         switch share.chat {
-        case let .contact(key): key
+        case let .contact(key), let .mesh(key): key
         case let .group(gid): gid
+        case let .channel(id): id
         }
     }
 
@@ -418,6 +419,9 @@ private struct ShareRow: View {
         case let .group(gid):
             let n = model.groups.first { $0.gid == gid }?.members.count ?? 0
             return String(localized: "Group · \(n) members · flood")
+        // Positions never go to a plain MeshCore chat (§15).
+        case .mesh, .channel:
+            return ""
         }
     }
 }

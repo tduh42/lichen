@@ -1042,11 +1042,11 @@ fn channel(b: &[u8]) -> Result<ChannelId, LichenError> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum ChannelKind {
     /// MeshCore's public channel: anyone in range reads it.
-    Public,
+    PublicChannel,
     /// `#tag`: anyone who knows the tag reads it.
-    Hashtag,
+    HashtagChannel,
     /// A secret shared by whoever created it.
-    Private,
+    PrivateChannel,
 }
 
 /// A MeshCore channel of the radio.
@@ -1060,11 +1060,11 @@ pub struct MeshChannel {
 impl From<&lc_core::Channel> for MeshChannel {
     fn from(c: &lc_core::Channel) -> Self {
         let kind = if c.secret == lc_core::plain::PUBLIC_SECRET {
-            ChannelKind::Public
+            ChannelKind::PublicChannel
         } else if lc_core::plain::hashtag(&c.name).is_some_and(|(_, s)| s == c.secret) {
-            ChannelKind::Hashtag
+            ChannelKind::HashtagChannel
         } else {
-            ChannelKind::Private
+            ChannelKind::PrivateChannel
         };
         Self {
             id: c.id().to_vec(),

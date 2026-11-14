@@ -21,6 +21,16 @@
         }
       }
     },
+    "#hiking": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "#rando"
+          }
+        }
+      }
+    },
     "%@": {
       "localizations": {
         "fr": {
@@ -361,6 +371,16 @@
         }
       }
     },
+    "%lld bytes too long: MeshCore takes %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld octets de trop : MeshCore en prend %lld"
+          }
+        }
+      }
+    },
     "%lld dBm · MeshCore companion": {
       "localizations": {
         "fr": {
@@ -631,6 +651,16 @@
         }
       }
     },
+    "%lld/%lld bytes · ≈ %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld/%lld octets · ≈ %@ s de temps d'antenne"
+          }
+        }
+      }
+    },
     "%lld°": {
       "localizations": {
         "fr": {
@@ -851,6 +881,16 @@
         }
       }
     },
+    "A channel secret is 32 hexadecimal digits.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le secret d'un canal fait 32 chiffres hexadécimaux."
+          }
+        }
+      }
+    },
     "A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.": {
       "localizations": {
         "fr": {
@@ -881,12 +921,32 @@
         }
       }
     },
+    "A hashtag is letters, digits and dashes.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un hashtag, ce sont des lettres, des chiffres et des tirets."
+          }
+        }
+      }
+    },
     "A message not on this phone": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Un message absent de ce téléphone"
+          }
+        }
+      }
+    },
+    "A name is 1 to 31 bytes.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un nom fait de 1 à 31 octets."
           }
         }
       }
@@ -947,6 +1007,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À propos"
+          }
+        }
+      }
+    },
+    "About MeshCore chats": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À propos des discussions MeshCore"
           }
         }
       }
@@ -1151,6 +1221,26 @@
         }
       }
     },
+    "Anyone who joins %@ in a MeshCore app reads it and can write in it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quiconque rejoint %@ dans une appli MeshCore le lit et peut y écrire."
+          }
+        }
+      }
+    },
+    "Anyone who knows the tag reads it, as in the MeshCore apps.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quiconque connaît le tag le lit, comme dans les applis MeshCore."
+          }
+        }
+      }
+    },
     "Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.": {
       "localizations": {
         "fr": {
@@ -1297,6 +1387,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fêtes"
+          }
+        }
+      }
+    },
+    "Channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal"
+          }
+        }
+      }
+    },
+    "Channel details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détails du canal"
+          }
+        }
+      }
+    },
+    "Channels your radio follows, as in the MeshCore apps. Not lichen-encrypted.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les canaux que suit ta radio, comme dans les applis MeshCore. Pas chiffrés par lichen."
           }
         }
       }
@@ -1457,6 +1577,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connecter ma radio"
+          }
+        }
+      }
+    },
+    "Connect the radio first: channels live on it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte d'abord la radio : les canaux sont enregistrés dedans."
           }
         }
       }
@@ -1681,6 +1811,16 @@
         }
       }
     },
+    "Could not join the channel.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de rejoindre le canal."
+          }
+        }
+      }
+    },
     "Could not join the group.": {
       "localizations": {
         "fr": {
@@ -1767,6 +1907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Supprimer la conversation avec %@ ?"
+          }
+        }
+      }
+    },
+    "Delivered · %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remis · %@ s de temps d'antenne"
           }
         }
       }
@@ -2141,6 +2291,26 @@
         }
       }
     },
+    "Everyone in range with a MeshCore radio reads this channel. Posts are flooded once and never acknowledged.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous ceux à portée qui ont une radio MeshCore lisent ce canal. Les messages sont diffusés une fois, sans accusé de réception."
+          }
+        }
+      }
+    },
+    "Everyone who has this channel's secret reads it. Posts are flooded once and never acknowledged.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous ceux qui ont le secret de ce canal le lisent. Les messages sont diffusés une fois, sans accusé de réception."
+          }
+        }
+      }
+    },
     "Exact": {
       "localizations": {
         "fr": {
@@ -2247,6 +2417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Diffusé à tous les membres, sans accusé de réception"
+          }
+        }
+      }
+    },
+    "Flooded to everyone on the channel, without acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diffusé à tout le canal, sans accusé de réception"
           }
         }
       }
@@ -2501,6 +2681,16 @@
         }
       }
     },
+    "Hashtag channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal hashtag"
+          }
+        }
+      }
+    },
     "Have your contact scan this code, in person.": {
       "localizations": {
         "fr": {
@@ -2701,6 +2891,16 @@
         }
       }
     },
+    "Its secret comes from whoever created it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son secret vient de celui qui l'a créé."
+          }
+        }
+      }
+    },
     "Join": {
       "localizations": {
         "fr": {
@@ -2721,12 +2921,52 @@
         }
       }
     },
+    "Join Public": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre Public"
+          }
+        }
+      }
+    },
+    "Join a channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre un canal"
+          }
+        }
+      }
+    },
     "Join a group": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Rejoindre un groupe"
+          }
+        }
+      }
+    },
+    "Join the hashtag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre le hashtag"
+          }
+        }
+      }
+    },
+    "Join the private channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre le canal privé"
           }
         }
       }
@@ -2797,6 +3037,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Plus tard"
+          }
+        }
+      }
+    },
+    "Leave": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter"
+          }
+        }
+      }
+    },
+    "Leave %@?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter %@ ?"
+          }
+        }
+      }
+    },
+    "Leave the channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter le canal"
           }
         }
       }
@@ -3171,12 +3441,92 @@
         }
       }
     },
-    "MeshCore node: lichen not seen yet": {
+    "MeshCore": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nœud MeshCore : lichen pas encore vu"
+            "value": "MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore channel · hashtag": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal MeshCore · hashtag"
+          }
+        }
+      }
+    },
+    "MeshCore channel · not lichen-encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal MeshCore · pas chiffré par lichen"
+          }
+        }
+      }
+    },
+    "MeshCore channel · private": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal MeshCore · privé"
+          }
+        }
+      }
+    },
+    "MeshCore channel · public": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal MeshCore · public"
+          }
+        }
+      }
+    },
+    "MeshCore channels": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canaux MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore chat": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discussion MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore chat · not lichen-encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discussion MeshCore · pas chiffrée par lichen"
           }
         }
       }
@@ -3187,6 +3537,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radio MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MeshCore · %@"
+          }
+        }
+      }
+    },
+    "MeshCore · not lichen-encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MeshCore · pas chiffré par lichen"
+          }
+        }
+      }
+    },
+    "MeshCore's public channel: everyone in range reads it. It starts muted.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le canal public de MeshCore : tous ceux à portée le lisent. Il démarre en sourdine."
           }
         }
       }
@@ -3287,6 +3667,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nom"
+          }
+        }
+      }
+    },
+    "Name on the mesh": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nom sur le réseau"
           }
         }
       }
@@ -3641,6 +4031,16 @@
         }
       }
     },
+    "Not lichen-encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas chiffré par lichen"
+          }
+        }
+      }
+    },
     "Not sent": {
       "localizations": {
         "fr": {
@@ -3961,6 +4361,16 @@
         }
       }
     },
+    "People with a MeshCore app see this name, and channel posts start with it. Your radio announces it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les utilisateurs d'une appli MeshCore voient ce nom, et tes messages dans les canaux commencent par lui. Ta radio l'annonce."
+          }
+        }
+      }
+    },
     "Photo": {
       "localizations": {
         "fr": {
@@ -4131,6 +4541,26 @@
         }
       }
     },
+    "Private channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Canal privé"
+          }
+        }
+      }
+    },
+    "Public: already joined": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Public : déjà rejoint"
+          }
+        }
+      }
+    },
     "Publishing your onion service…": {
       "localizations": {
         "fr": {
@@ -4171,6 +4601,16 @@
         }
       }
     },
+    "Radio not connected: channel posts need it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radio non connectée : les messages de canal en ont besoin"
+          }
+        }
+      }
+    },
     "Radio not connected: messages wait for it, up to 24 h": {
       "localizations": {
         "fr": {
@@ -4181,12 +4621,12 @@
         }
       }
     },
-    "Radios your node has heard. A first message introduces you; someone without lichen will not answer.": {
+    "Radios your node has heard. With someone who has lichen, the chat is end-to-end encrypted; with someone who only has a MeshCore app, it is a MeshCore chat, readable by the radios.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les radios que ton nœud a entendues. Un premier message vous présente ; quelqu'un sans lichen ne répondra pas."
+            "value": "Les radios que ton nœud a entendues. Avec quelqu'un qui a lichen, la discussion est chiffrée de bout en bout ; avec quelqu'un qui n'a qu'une appli MeshCore, c'est une discussion MeshCore, lisible par les radios."
           }
         }
       }
@@ -4621,6 +5061,16 @@
         }
       }
     },
+    "Secret: 32 hexadecimal digits": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secret : 32 chiffres hexadécimaux"
+          }
+        }
+      }
+    },
     "Select text": {
       "localizations": {
         "fr": {
@@ -4781,6 +5231,16 @@
         }
       }
     },
+    "Sending to the channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi au canal"
+          }
+        }
+      }
+    },
     "Sending to the group": {
       "localizations": {
         "fr": {
@@ -4807,6 +5267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoi seulement quand tu t'écartes de plus de 50 m de ta trajectoire. Le chiffrement ne masque pas ta position radio."
+          }
+        }
+      }
+    },
+    "Sent to the channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé au canal"
           }
         }
       }
@@ -5351,6 +5821,26 @@
         }
       }
     },
+    "The radio has no free channel slot.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio n'a plus d'emplacement de canal libre."
+          }
+        }
+      }
+    },
+    "The radio stops following it. Its messages stay here until you delete the conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio arrête de le suivre. Ses messages restent ici jusqu'à ce que tu supprimes la conversation."
+          }
+        }
+      }
+    },
     "The same on both phones: nobody in between. Compare them aloud, or over another channel.": {
       "localizations": {
         "fr": {
@@ -5507,6 +5997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Il n'y a pas de version complète à demander."
+          }
+        }
+      }
+    },
+    "These messages use MeshCore's own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces messages utilisent le chiffrement de MeshCore, entre vos deux radios : AES-128 avec un contrôle court, sans confidentialité persistante, et les radios voient le texte. Bien pour parler avec ceux qui utilisent une appli MeshCore ; pour tout ce qui est privé, utilise lichen."
           }
         }
       }
@@ -5901,6 +6401,16 @@
         }
       }
     },
+    "Up to %lld bytes, acknowledged by their radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Jusqu'à %lld octets, avec accusé de réception de sa radio"
+          }
+        }
+      }
+    },
     "Up to 8 KB fit in a LoRa message, once compressed. Turn on iroh or Tor in Settings to send larger files over the Internet.": {
       "localizations": {
         "fr": {
@@ -6101,6 +6611,16 @@
         }
       }
     },
+    "Waiting for their radio's acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de l'accusé de réception de sa radio"
+          }
+        }
+      }
+    },
     "Waiting for your position": {
       "localizations": {
         "fr": {
@@ -6137,6 +6657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce qui est enregistré sur ce téléphone n’est pas une identité valide. Restaure-la depuis ses 24 mots, ou crée une nouvelle identité."
+          }
+        }
+      }
+    },
+    "What people with a MeshCore app see": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce que voient les utilisateurs d'une appli MeshCore"
           }
         }
       }
@@ -6697,6 +7227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "lichen"
+          }
+        }
+      }
+    },
+    "lichen chats with the same people stay end-to-end encrypted; nothing from them ever goes into a MeshCore chat.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes discussions lichen avec les mêmes personnes restent chiffrées de bout en bout ; rien n'en passe jamais dans une discussion MeshCore."
           }
         }
       }

@@ -184,6 +184,28 @@ struct ConversationsView: View {
                 pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
+        // MeshCore chats (§15): a node someone wrote to in plain, and the radio's channels.
+        for c in model.contacts {
+            let chat = ChatID.mesh(key: c.key)
+            guard let last = model.last(chat) else { continue }
+            out.append(Row(
+                id: chat, title: c.name, key: c.key, preview: last.preview(model),
+                date: last.date, badge: String(localized: "MeshCore"), unread: model.unread(chat),
+                waiting: last.isWaiting,
+                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
+            ))
+        }
+        for ch in model.channels {
+            let chat = ChatID.channel(id: ch.id)
+            let last = model.last(chat)
+            out.append(Row(
+                id: chat, title: ch.name, key: ch.id,
+                preview: last?.preview(model) ?? ch.kind.label,
+                date: last?.date, badge: String(localized: "MeshCore channel"), unread: model.unread(chat),
+                waiting: last?.isWaiting ?? false,
+                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
+            ))
+        }
         // Pinned first (the latest pinned on top), then the most recent.
         return out.sorted {
             if $0.pinnedAt != $1.pinnedAt { return ($0.pinnedAt ?? .min) > ($1.pinnedAt ?? .min) }
@@ -233,7 +255,8 @@ private struct ChatRow: View {
                     .foregroundStyle(Theme.tx2)
                 }
                 HStack {
-                    TransportBadge(kind: .lora, label: row.badge)
+                    // A MeshCore chat is marked as such (§15.6), never in LoRa orange alone.
+                    TransportBadge(kind: row.id.isPlain ? .neutral : .lora, label: row.badge)
                     Spacer()
                     if row.unread > 0 {
                         Text(String(row.unread))

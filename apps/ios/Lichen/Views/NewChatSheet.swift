@@ -9,6 +9,7 @@ struct NewChatSheet: View {
     @State private var selected: Set<Data> = []
     @State private var error: String?
     @State private var search = ""
+    @State private var joining = false
 
     /// People the node knows, lichen users first (their identity is known), then by name.
     private var people: [ContactInfo] {
@@ -27,13 +28,14 @@ struct NewChatSheet: View {
                     if model.contacts.isEmpty {
                         Text("No contacts yet: they come from your node.").foregroundStyle(Theme.secondaryText)
                     }
+                    // Someone without lichen gets a MeshCore chat (§15); a lichen user, a lichen one.
                     ForEach(people, id: \.key) { c in
-                        Button { open(.contact(key: c.key)) } label: {
+                        Button { open(c.identity == nil ? .mesh(key: c.key) : .contact(key: c.key)) } label: {
                             HStack(spacing: 12) {
                                 Avatar(name: c.name, key: c.key, size: 32)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(c.name).foregroundStyle(Theme.tx).lineLimit(1)
-                                    Text(c.identity == nil ? String(localized: "MeshCore node: lichen not seen yet")
+                                    Text(c.identity == nil ? String(localized: "MeshCore chat · not lichen-encrypted")
                                                            : String(localized: "lichen"))
                                         .font(.system(.caption))
                                         .foregroundStyle(Theme.tx2)
@@ -46,7 +48,28 @@ struct NewChatSheet: View {
                 } header: {
                     Text("Contacts")
                 } footer: {
-                    Text("Radios your node has heard. A first message introduces you; someone without lichen will not answer.")
+                    Text("Radios your node has heard. With someone who has lichen, the chat is end-to-end encrypted; with someone who only has a MeshCore app, it is a MeshCore chat, readable by the radios.")
+                }
+                Section {
+                    ForEach(model.channels, id: \.id) { c in
+                        Button { open(.channel(id: c.id)) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: c.kind == .publicChannel ? "globe" : "number")
+                                    .frame(width: 32, height: 32)
+                                    .background(Theme.s2, in: Circle())
+                                    .foregroundStyle(Theme.tx2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(c.name).foregroundStyle(Theme.tx)
+                                    Text(c.kind.label).font(.system(.caption)).foregroundStyle(Theme.tx2)
+                                }
+                            }
+                        }
+                    }
+                    Button { joining = true } label: { Label("Join a channel", systemImage: "plus") }
+                } header: {
+                    Text("MeshCore channels")
+                } footer: {
+                    Text("Channels your radio follows, as in the MeshCore apps. Not lichen-encrypted.")
                 }
                 Section {
                     TextField("Group name", text: $groupName)
@@ -77,6 +100,7 @@ struct NewChatSheet: View {
             .background(Theme.bg)
             .listRowBackground(Theme.s1)
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always))
+            .sheet(isPresented: $joining) { JoinChannelSheet(open: open) }
             .navigationTitle("New conversation")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

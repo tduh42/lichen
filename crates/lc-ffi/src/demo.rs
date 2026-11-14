@@ -469,7 +469,7 @@ impl Demo {
         }
         self.locate();
         self.camille_acts();
-        // Marc answers the user's first plain message, and posts on Public (§15).
+        // Marc answers the user's first plain message (§15).
         let marc_heard = self
             .net
             .nodes
@@ -480,13 +480,6 @@ impl Demo {
             self.pending.push((
                 now + 8 * SEC,
                 Action::MarcWrites("It works! See you tonight, I'll keep the soup warm.".into()),
-            ));
-            self.pending.push((
-                now + 40 * SEC,
-                Action::PublicPost {
-                    from: self.marc,
-                    text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
-                },
             ));
         }
         let app_key = self.net.key(self.app);
@@ -792,12 +785,14 @@ impl DemoNetwork {
             net.know(a, b, true);
             net.know(b, a, true);
         }
-        // People with the stock MeshCore app (§15): Marc at the refuge, Lucie on the trail.
+        // People with the stock MeshCore app (§15): Marc at the refuge, Lucie on the trail,
+        // within reach of the user and of the hub.
         // Everyone follows the public channel.
         let marc = net.add_stock_companion(5, "Marc");
         let lucie = net.add_stock_companion(6, "Lucie");
         net.link(hub, marc);
         net.link(hub, lucie);
+        net.link(app, lucie);
         net.know(app, marc, true);
         net.know(marc, app, true);
         for n in [app, marc, lucie] {
@@ -827,7 +822,7 @@ impl DemoNetwork {
             (90 * SEC, Action::CamilleShares),
             (150 * SEC, Action::CamillePhoto),
             (
-                20 * SEC,
+                12 * SEC,
                 Action::PublicPost {
                     from: lucie,
                     text: "Fog on the Pas de la Ville this morning, take care on the ridge.".into(),
@@ -838,6 +833,20 @@ impl DemoNetwork {
                 Action::PublicPost {
                     from: lucie,
                     text: "The fog is lifting, the ridge is clear now.".into(),
+                },
+            ),
+            (
+                280 * SEC,
+                Action::PublicPost {
+                    from: lucie,
+                    text: "Sun on the plateau, the path to the refuge is dry.".into(),
+                },
+            ),
+            (
+                320 * SEC,
+                Action::PublicPost {
+                    from: marc,
+                    text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
                 },
             ),
             (
@@ -2151,7 +2160,7 @@ mod meshcore {
         let events = run(&demo, &core, 0, 70_000);
         let channels = core.channels();
         assert_eq!(channels.len(), 1);
-        assert_eq!(channels[0].kind, crate::ChannelKind::Public);
+        assert_eq!(channels[0].kind, crate::ChannelKind::PublicChannel);
 
         let marc = core
             .contacts()

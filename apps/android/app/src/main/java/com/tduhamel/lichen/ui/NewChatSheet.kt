@@ -50,6 +50,7 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
     var groupName by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(setOf<String>()) }
     var error by remember { mutableStateOf<String?>(null) }
+    var joining by remember { mutableStateOf(false) }
     val q = query.trim()
     val people = model.contacts
         .filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
@@ -87,14 +88,20 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
                 if (people.isEmpty()) {
                     item { Text(stringResource(R.string.no_contacts_yet), color = t.tx2, fontSize = 14.sp, modifier = Modifier.padding(8.dp)) }
                 }
+                // Someone without lichen gets a MeshCore chat (§15); a lichen user, a lichen one.
                 items(people, key = { "c" + it.name + it.key.contentHashCode() }) { c ->
                     val sub = if (c.identity != null) {
                         stringResource(R.string.lichen_contact, hopsBadge(res, c.hops))
                     } else {
-                        hopsBadge(res, c.hops)
+                        stringResource(R.string.meshcore_contact, hopsBadge(res, c.hops))
                     }
-                    PickRow(c.name, c.key, sub) { open(ChatId.contact(c.key)) }
+                    PickRow(c.name, c.key, sub) { open(if (c.identity == null) ChatId.mesh(c.key) else ChatId.contact(c.key)) }
                 }
+                item {
+                    Text(stringResource(R.string.contacts_meshcore_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(4.dp))
+                }
+                item { SectionLabel(stringResource(R.string.meshcore_channels), Modifier.padding(top = 16.dp)) }
+                item { ChannelRows(model.channels, open) { joining = true } }
                 item { SectionLabel(stringResource(R.string.new_group), Modifier.padding(top = 16.dp)) }
                 item {
                     OutlinedTextField(
@@ -138,6 +145,7 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
             }
         }
     }
+    if (joining) JoinChannelSheet(model, { joining = false }, open)
 }
 
 @Composable

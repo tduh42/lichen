@@ -13,6 +13,8 @@ struct ChatView: View {
     /// The verification sheet: an empty value for the current identity, else a pending one.
     @State private var verifying: Data?
     @State private var renaming = false
+    /// What a MeshCore chat is (§15.6).
+    @State private var plainInfo = false
     @Environment(\.dismiss) private var dismissChat
     /// The bottom-most message on screen: new ones follow only when it is the last one.
     @State private var bottomVisible: Int64?
@@ -66,7 +68,7 @@ struct ChatView: View {
                             if case .notice = m.message {
                                 NoticeLine(message: m.message).id(m.id)
                             } else {
-                                MessageView(message: m, isGroup: isGroup, error: $error, highlighted: highlight == m.id,
+                                MessageView(message: m, isGroup: isGroup || isChannel, error: $error, highlighted: highlight == m.id,
                                             reply: { replyTo = m }, openQuote: { jumpTo = $0 })
                                     .id(m.id)
                             }
@@ -173,8 +175,8 @@ struct ChatView: View {
                     Text(model.title(of: chat)).font(.system(.body, weight: .semibold))
                     Text(subtitle).font(.system(.caption)).foregroundStyle(Theme.tx2)
                 }
-                .onTapGesture { if !isGroup { renaming = true } }
-                .accessibilityAddTraits(isGroup ? [] : .isButton)
+                .onTapGesture { if chatKey != nil { renaming = true } }
+                .accessibilityAddTraits(chatKey == nil ? [] : .isButton)
             }
             if isGroup {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -193,8 +195,15 @@ struct ChatView: View {
                                         : c.verified ? String(localized: "Key verified")
                                         : String(localized: "Verify their key"))
                 }
+            } else if chat.isPlain {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { plainInfo = true } label: { Image(systemName: "info.circle") }
+                        .accessibilityLabel(isChannel ? String(localized: "Channel details")
+                                            : String(localized: "About MeshCore chats"))
+                }
             }
         }
+        .sheet(isPresented: $plainInfo) { PlainInfoSheet(chat: chat) }
         .navigationDestination(isPresented: $showingGroup) {
             if case let .group(gid) = chat { GroupView(gid: gid) }
         }
@@ -245,8 +254,15 @@ struct ChatView: View {
     }
 
     private var chatKey: Data? {
-        if case let .contact(key) = chat { return key }
-        return nil
+        switch chat {
+        case let .contact(key), let .mesh(key): key
+        case .group, .channel: nil
+        }
+    }
+
+    private var isChannel: Bool {
+        if case .channel = chat { return true }
+        return false
     }
 
     private var messages: [StoredMessage] { model.chats[chat] ?? [] }
@@ -309,6 +325,18 @@ struct ChatView: View {
                     .labelStyle(TintedIconLabel(tint: Theme.ok))
                     .padding(.top, 4)
             }
+        } else if chat.isPlain {
+            // Not lichen-encrypted, said where the lock would be (§15.6).
+            Button { plainInfo = true } label: {
+                Label(isChannel ? String(localized: "MeshCore channel · not lichen-encrypted")
+                                : String(localized: "MeshCore · not lichen-encrypted"),
+                      systemImage: "lock.slash")
+                    .font(.system(.caption))
+                    .foregroundStyle(Theme.warnFg)
+                    .labelStyle(TintedIconLabel(tint: Theme.warn))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 4)
         } else if isGroup {
             Label("Signed group messages, flooded", systemImage: "lock")
                 .font(.system(.caption))
@@ -336,6 +364,11 @@ struct ChatView: View {
                 return String(localized: "\(g.members.count) members · keys \(Int(g.keysKnown))/\(others)")
             }
             return String(localized: "\(g.members.count) members · flood")
+        case let .mesh(key):
+            let hops = hopsBadge(model.contacts.first { $0.key == key }?.hops)
+            return String(localized: "MeshCore · \(hops)")
+        case let .channel(id):
+            return model.channels.first { $0.id == id }?.kind.label ?? String(localized: "MeshCore channel")
         }
     }
 }
@@ -699,8 +732,10 @@ private struct MessageView: View {
 
     @ViewBuilder private var bubble: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
-            if isGroup, !message.outgoing, let a = message.author {
-                Text(model.name(of: a)).font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx2)
+            // A group member, or a channel post's author as its radio calls itself (§15.1).
+            if isGroup, !message.outgoing,
+               let name = message.authorName ?? message.author.map({ model.name(of: $0) }) {
+                Text(name).font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx2)
                     .padding(.horizontal, 6)
             }
             switch message.message {
@@ -747,14 +782,18 @@ private struct MessageView: View {
                 return String(localized: "Waiting for airtime · around \(at)")
             }
         case let .sending(sent, total):
+            if case .channel = message.chat { return String(localized: "Sending to the channel") }
+            if case .mesh = message.chat { return String(localized: "Waiting for their radio's acknowledgement") }
             if isGroup { return String(localized: "Sending to the group") }
             return total > 1 ? String(localized: "Waiting for the acknowledgement") :
                 String(localized: "Sending \(min(Int(sent), Int(total))) / \(Int(total)) fragments")
         case .delivered:
+            if case .mesh = message.chat { return String(localized: "Delivered · \(airtime) s of airtime") }
             return String(localized: "Delivered · \(Int(message.fragments)) fragments · \(airtime) s of airtime")
         case let .failed(reason):
             return String(localized: "Not delivered: \(reason.display)")
         case .flooded:
+            if case .channel = message.chat { return String(localized: "Sent to the channel") }
             return String(localized: "Sent to the group")
         }
     }
@@ -965,7 +1004,12 @@ private struct Composer: View {
     }
 
     /// The draft is a GIPHY link (§6.3).
-    private var gifLink: GifLink? { Lichen.gifLink(text: draft) }
+    private var gifLink: GifLink? { chat.isPlain ? nil : Lichen.gifLink(text: draft) }
+
+    /// Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
+    private var plainOver: Int {
+        chat.isPlain ? max(0, draft.utf8.count - model.plainTextMax(chat)) : 0
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1020,7 +1064,12 @@ private struct Composer: View {
                 }
                 .padding(.leading, 52)
             }
-            if !model.isConnected {
+            if case .channel = chat, !model.isConnected {
+                Label("Radio not connected: channel posts need it", systemImage: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(.caption2))
+                    .foregroundStyle(Theme.tx2)
+                    .padding(.leading, 52)
+            } else if !model.isConnected {
                 Label("Radio not connected: messages wait for it, up to 24 h", systemImage: "clock")
                     .font(.system(.caption2))
                     .foregroundStyle(Theme.tx2)
@@ -1034,6 +1083,8 @@ private struct Composer: View {
                 reviewBar(r)
             } else {
                 HStack(spacing: 8) {
+                    // A MeshCore chat carries text only (§15).
+                    if !chat.isPlain {
                     Menu {
                         if isContact || !model.bridgeProviders(anonymous: false).isEmpty {
                             Button { picking = true } label: { Label("Photo", systemImage: "photo") }
@@ -1055,6 +1106,7 @@ private struct Composer: View {
                     }
                     .disabled(preparing)
                     .accessibilityLabel("Attach")
+                    }
                     TextField("Message", text: $draft, axis: .vertical)
                         .lineLimit(1...5)
                         .font(.system(.callout))
@@ -1091,7 +1143,8 @@ private struct Composer: View {
                                 .foregroundStyle(Theme.actFg)
                         }
                         // Texts wait for the radio (§6.1); not with a throwaway identity.
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.identityProblem != nil)
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.identityProblem != nil
+                                  || plainOver > 0 || (isChannelChat && !model.isConnected))
                         .accessibilityLabel("Send")
                     }
                 }
@@ -1345,7 +1398,22 @@ private struct Composer: View {
 
     /// Before every radio send: what it costs us. A group message is flooded: relays add their
     /// own airtime, and nobody acknowledges it.
+    private var isChannelChat: Bool {
+        if case .channel = chat { return true }
+        return false
+    }
+
     private var costLine: String? {
+        if chat.isPlain {
+            let max = model.plainTextMax(chat)
+            if plainOver > 0 { return String(localized: "\(plainOver) bytes too long: MeshCore takes \(max)") }
+            guard let e = model.estimate(chat, text: draft) else {
+                return isChannelChat ? String(localized: "Flooded to everyone on the channel, without acknowledgement")
+                                     : String(localized: "Up to \(max) bytes, acknowledged by their radio")
+            }
+            let s = String(format: "%.1f", Double(e.airtimeMs) / 1000)
+            return String(localized: "\(draft.utf8.count)/\(max) bytes · ≈ \(s) s of airtime")
+        }
         guard let e = model.estimate(chat, text: draft) else {
             if case .group = chat { return String(localized: "Flooded to every member, without acknowledgement") }
             return nil

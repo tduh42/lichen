@@ -5,6 +5,9 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearance") private var appearance = Appearance.system
     @State private var advertSent = false
+    @State private var naming = false
+    @State private var meshName = ""
+    @State private var nameError: String?
     @AppStorage("onboarded") private var onboarded = true
 
     var body: some View {
@@ -32,6 +35,18 @@ struct SettingsView: View {
                                     subtitle: advertSent ? String(localized: "Sent: radios around can add yours as a contact.")
                                                          : String(localized: "Lets radios around add yours as a contact")) {
                                 Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Theme.lora)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!model.isConnected)
+                        .opacity(model.isConnected ? 1 : 0.5)
+                        CardDivider()
+                        // What MeshCore users and channels see (protocol.md §15.4).
+                        Button { meshName = model.nodeName; naming = true } label: {
+                            CardRow(title: String(localized: "Name on the mesh"),
+                                    subtitle: model.nodeName.isEmpty ? String(localized: "What people with a MeshCore app see")
+                                                                     : model.nodeName) {
+                                Image(systemName: "pencil").foregroundStyle(Theme.tx2)
                             }
                         }
                         .buttonStyle(.plain)
@@ -160,6 +175,18 @@ struct SettingsView: View {
             }
             .screen()
             .toolbar(.hidden, for: .navigationBar)
+            .alert("Name on the mesh", isPresented: $naming) {
+                TextField("Name", text: $meshName)
+                Button("Save") { nameError = model.setMeshName(meshName) }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("People with a MeshCore app see this name, and channel posts start with it. Your radio announces it.")
+            }
+            .alert("Not changed", isPresented: Binding(get: { nameError != nil }, set: { if !$0 { nameError = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(nameError ?? "")
+            }
         }
     }
 

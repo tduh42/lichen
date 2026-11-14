@@ -60,6 +60,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         switch chat {
         case let .contact(key): "c" + key.hex
         case let .group(gid): "g" + gid.hex
+        case let .mesh(key): "m" + key.hex
+        case let .channel(id): "h" + id.hex
         }
     }
 
@@ -67,12 +69,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         switch chat {
         case let .contact(key): ["kind": "c", "id": key.hex]
         case let .group(gid): ["kind": "g", "id": gid.hex]
+        case let .mesh(key): ["kind": "m", "id": key.hex]
+        case let .channel(id): ["kind": "h", "id": id.hex]
         }
     }
 
     private nonisolated static func chat(from info: [AnyHashable: Any]) -> ChatID? {
         guard let kind = info["kind"] as? String, let hex = info["id"] as? String, let id = Data(hex: hex) else { return nil }
-        return kind == "g" ? .group(gid: id) : .contact(key: id)
+        return switch kind {
+        case "g": .group(gid: id)
+        case "m": .mesh(key: id)
+        case "h": .channel(id: id)
+        default: .contact(key: id)
+        }
     }
 
     // MARK: UNUserNotificationCenterDelegate

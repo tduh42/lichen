@@ -94,6 +94,7 @@ class MainActivity : ComponentActivity() {
             demo = e.getBoolean("demo"),
             open = e.getString("open"),
             say = e.getString("say"),
+            sayPlain = e.getString("sayPlain"),
             tab = e.getString("tab"),
             screen = e.getString("screen"),
             tcp = e.getString("tcp"),
