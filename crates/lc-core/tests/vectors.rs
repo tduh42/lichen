@@ -73,6 +73,30 @@ fn reactions() {
 }
 
 #[test]
+fn edits_and_deletes() {
+    let t = load();
+    for v in entries(&t, "edit") {
+        let c = Content::Edit {
+            sent_at: ts(v),
+            target: h(v, "target").try_into().unwrap(),
+            text: s(v, "text").into(),
+        };
+        assert_eq!(c.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(Content::decode(&h(v, "datagram")), Some(c));
+    }
+    let deletes = entries(&t, "delete");
+    assert!(!deletes.is_empty());
+    for v in deletes {
+        let c = Content::Delete {
+            sent_at: ts(v),
+            target: h(v, "target").try_into().unwrap(),
+        };
+        assert_eq!(c.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(Content::decode(&h(v, "datagram")), Some(c));
+    }
+}
+
+#[test]
 fn malformed() {
     let t = load();
     for v in entries(&t, "malformed") {

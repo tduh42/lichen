@@ -1,4 +1,4 @@
-# lichen content vectors (protocol.md §6.2, §6.3, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an
+# lichen content vectors (protocol.md §6.2, §6.3, §6.4, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an
 # independent oracle (Python hashlib). Do not edit by hand: regenerate instead.
 
 [[ref]]
@@ -61,6 +61,26 @@ target = "3abf2693286fac44"
 emoji = ""
 datagram = "093003df6a3abf2693286fac44"
 
+[[edit]]
+name = "edit"
+ts = 1793000400
+target = "3abf2693286fac44"
+text = "Hi! I'm at the refuge, room 3."
+datagram = "0cd003df6a3abf2693286fac444869212049276d20617420746865207265667567652c20726f6f6d20332e"
+
+[[edit]]
+name = "edit in french"
+ts = 1793000401
+target = "3abf2693286fac44"
+text = "Salut ! Je suis au refuge, dortoir 3."
+datagram = "0cd103df6a3abf2693286fac4453616c75742021204a652073756973206175207265667567652c20646f72746f697220332e"
+
+[[delete]]
+name = "delete"
+ts = 1793000500
+target = "3abf2693286fac44"
+datagram = "0d3404df6a3abf2693286fac44"
+
 [[malformed]]
 name = "reply without text"
 datagram = "086c03df6a3abf2693286fac44"
@@ -80,6 +100,26 @@ datagram = "096c03df6a3abf2693286fac44fffe"
 [[malformed]]
 name = "reaction over 32 bytes"
 datagram = "096c03df6a3abf2693286fac44f09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918df09f918d"
+
+[[malformed]]
+name = "edit without text"
+datagram = "0c6c03df6a3abf2693286fac44"
+
+[[malformed]]
+name = "edit not UTF-8"
+datagram = "0c6c03df6a3abf2693286fac44fffe"
+
+[[malformed]]
+name = "edit cut in its reference"
+datagram = "0c6c03df6a3abf2693"
+
+[[malformed]]
+name = "delete cut in its reference"
+datagram = "0d6c03df6a3abf2693286fac"
+
+[[malformed]]
+name = "delete with trailing bytes"
+datagram = "0d6c03df6a3abf2693286fac4400"
 
 [[invite]]
 name = "rando vercors"

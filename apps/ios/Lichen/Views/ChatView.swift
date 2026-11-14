@@ -30,6 +30,8 @@ struct ChatView: View {
     @State private var highlight: Int64?
     /// The message being answered (§6.2).
     @State private var replyTo: StoredMessage?
+    /// Our message being edited (§6.4).
+    @State private var editing: StoredMessage?
     /// A quoted original to go to.
     @State private var jumpTo: Int64?
 
@@ -69,7 +71,13 @@ struct ChatView: View {
                                 NoticeLine(message: m.message).id(m.id)
                             } else {
                                 MessageView(message: m, isGroup: isGroup || isChannel, error: $error, highlighted: highlight == m.id,
-                                            reply: { replyTo = m }, openQuote: { jumpTo = $0 })
+                                            reply: { replyTo = m; editing = nil },
+                                            edit: {
+                                                editing = m
+                                                replyTo = nil
+                                                if case let .text(_, text) = m.message { draft = text }
+                                            },
+                                            openQuote: { jumpTo = $0 })
                                     .id(m.id)
                             }
                         }
@@ -162,7 +170,7 @@ struct ChatView: View {
                     }
                 }
             }
-            Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo)
+            Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo, editing: $editing)
         }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
@@ -615,9 +623,12 @@ private struct MessageView: View {
     @Binding var error: String?
     var highlighted = false
     var reply: () -> Void = {}
+    var edit: () -> Void = {}
     var openQuote: (Int64) -> Void = { _ in }
     @Environment(AppModel.self) private var model
     @State private var selecting = false
+    /// Deleting for everyone (true) or for this phone (false), to confirm.
+    @State private var deleting: Bool?
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
@@ -630,6 +641,19 @@ private struct MessageView: View {
             }
             bubble
                 .contextMenu { actions }
+                .confirmationDialog(deleting == true ? String(localized: "Delete for everyone?") : String(localized: "Delete for you?"),
+                                    isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                                    titleVisibility: .visible) {
+                    if deleting == true {
+                        Button("Delete for everyone", role: .destructive) { error = model.deleteForEveryone(message) }
+                    } else {
+                        Button("Delete for me", role: .destructive) { error = model.deleteForMe(message) }
+                    }
+                } message: {
+                    Text(deleting == true
+                         ? String(localized: "It is removed on the phones that receive this. Whoever already read it has read it.")
+                         : String(localized: "Only on this phone. The others keep it."))
+                }
             if !message.reactions.isEmpty {
                 ReactionChips(message: message, error: $error)
             }
@@ -708,13 +732,27 @@ private struct MessageView: View {
                 EmptyView()
             }
         }
+        // Ours within 24 hours (§6.4).
+        if message.editable {
+            Button(action: edit) { Label("Edit", systemImage: "pencil") }
+        }
+        if message.deletable {
+            Button(role: .destructive) { deleting = true } label: {
+                Label("Delete for everyone", systemImage: "trash")
+            }
+        }
+        Button(role: .destructive) { deleting = false } label: {
+            Label("Delete for me", systemImage: "trash.slash")
+        }
     }
 
     private var footer: String {
         let time = message.date.formatted(date: .omitted, time: .shortened)
+        let edited = message.edited ? String(localized: "edited") : nil
         if message.outgoing {
-            return ([time] + [caption].compactMap { $0 }).joined(separator: " · ")
+            return ([time, edited] + [caption]).compactMap { $0 }.joined(separator: " · ")
         }
+        if let edited { return "\(time) · \(edited)" }
         // Lost on the air and handed on by a member (§10.6): shown where it arrived.
         if message.late {
             let written = (message.writtenEarlier ?? message.message.date).formatted(date: .omitted, time: .shortened)
@@ -754,6 +792,14 @@ private struct MessageView: View {
                 if model.preview(for: mediaId, in: message.chat) == nil {
                     BridgeSection(announce: message, standalone: true)
                 }
+            case .deleted:
+                // Taken back by its author (§6.4): its place stays.
+                Label("Message deleted", systemImage: "trash")
+                    .font(.system(.callout).italic())
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+                    .foregroundStyle(Theme.tx2)
             default:
                 Text(message.message.display)
                     .font(.system(.callout))
@@ -978,6 +1024,7 @@ private struct Composer: View {
     @Binding var draft: String
     @Binding var error: String?
     @Binding var replyTo: StoredMessage?
+    @Binding var editing: StoredMessage?
     @Environment(AppModel.self) private var model
     @State private var picked: PhotosPickerItem?
     @State private var picking = false
@@ -1004,7 +1051,7 @@ private struct Composer: View {
     }
 
     /// The draft is a GIPHY link (§6.3).
-    private var gifLink: GifLink? { chat.isPlain ? nil : Lichen.gifLink(text: draft) }
+    private var gifLink: GifLink? { chat.isPlain || editing != nil ? nil : Lichen.gifLink(text: draft) }
 
     /// Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
     private var plainOver: Int {
@@ -1013,6 +1060,19 @@ private struct Composer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if editing != nil {
+                HStack(spacing: 8) {
+                    Image(systemName: "pencil").foregroundStyle(Theme.tx2)
+                    Text("Editing your message").font(.system(.caption, weight: .semibold))
+                    Spacer()
+                    Button { editing = nil; draft = "" } label: {
+                        Image(systemName: "xmark").frame(width: 44, height: 44)
+                    }
+                    .accessibilityLabel("Cancel the edit")
+                }
+                .padding(.leading, 12)
+                .foregroundStyle(Theme.tx)
+            }
             if let r = replyTo {
                 HStack(spacing: 8) {
                     Image(systemName: "arrowshape.turn.up.left").foregroundStyle(Theme.tx2)
@@ -1132,6 +1192,8 @@ private struct Composer: View {
                             if let link = gifLink, !linkAsText {
                                 let size = gifData.flatMap(AnimatedImage.size)
                                 if let e = model.sendGif(link, size: size, to: chat) { error = e } else { draft = ""; gifData = nil }
+                            } else if let m = editing {
+                                if let e = model.edit(text, of: m) { error = e } else { draft = ""; editing = nil }
                             } else if let r = replyTo {
                                 if let e = model.reply(text, to: r) { error = e } else { draft = ""; replyTo = nil }
                             } else if let e = model.send(text, to: chat) { error = e } else { draft = "" }

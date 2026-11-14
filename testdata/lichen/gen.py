@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2),
+"""lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2), EDIT and
+DELETE (§6.4),
 GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), group invitations and GROUP_JOIN (§10.5), stickers, GIFs and GIPHY links (§6.3), small
 files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
@@ -14,6 +15,7 @@ import zlib
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 GROUP_MISSING, GROUP_RESEND = 0x15, 0x16
 STICKER, GIF = 0x0A, 0x0B
+EDIT, DELETE = 0x0C, 0x0D
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -32,10 +34,18 @@ def reaction(ts: int, target: bytes, emoji: str) -> bytes:
     return bytes([REACTION]) + struct.pack("<I", ts) + target + emoji.encode()
 
 
+def edit(ts: int, target: bytes, s: str) -> bytes:
+    return bytes([EDIT]) + struct.pack("<I", ts) + target + s.encode()
+
+
+def delete(ts: int, target: bytes) -> bytes:
+    return bytes([DELETE]) + struct.pack("<I", ts) + target
+
+
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §6.3, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
+print("# lichen content vectors (protocol.md §6.2, §6.3, §6.4, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
 print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
 print()
 
@@ -82,14 +92,41 @@ for name, ts, e in reactions:
     print(f'datagram = "{reaction(ts, target, e).hex()}"')
     print()
 
+edits = [
+    ("edit", 1_793_000_400, "Hi! I'm at the refuge, room 3."),
+    ("edit in french", 1_793_000_401, "Salut ! Je suis au refuge, dortoir 3."),
+]
+for name, ts, s in edits:
+    print("[[edit]]")
+    print(f'name = "{name}"')
+    print(f"ts = {ts}")
+    print(f'target = "{target.hex()}"')
+    print(f'text = "{s}"')
+    print(f'datagram = "{edit(ts, target, s).hex()}"')
+    print()
+
+print("[[delete]]")
+print('name = "delete"')
+print("ts = 1793000500")
+print(f'target = "{target.hex()}"')
+print(f'datagram = "{delete(1_793_000_500, target).hex()}"')
+print()
+
 head = bytes([REACTION]) + struct.pack("<I", 1_793_000_300) + target
 rhead = bytes([REPLY]) + struct.pack("<I", 1_793_000_300) + target
+ehead = bytes([EDIT]) + struct.pack("<I", 1_793_000_300) + target
+dgram = delete(1_793_000_300, target)
 malformed = [
     ("reply without text", rhead),
     ("reply cut in its reference", rhead[:9]),
     ("reaction cut in its reference", head[:10]),
     ("reaction not UTF-8", head + b"\xff\xfe"),
     ("reaction over 32 bytes", head + ("👍" * 9).encode()),
+    ("edit without text", ehead),
+    ("edit not UTF-8", ehead + b"\xff\xfe"),
+    ("edit cut in its reference", ehead[:9]),
+    ("delete cut in its reference", dgram[:12]),
+    ("delete with trailing bytes", dgram + b"\x00"),
 ]
 for name, d in malformed:
     print("[[malformed]]")

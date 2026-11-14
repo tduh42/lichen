@@ -43,6 +43,7 @@ fn timeline() {
                             format!("file {name:?} {} B", data.len())
                         }
                         Message::Sticker { emoji, .. } => format!("sticker {emoji}"),
+                        Message::Deleted { .. } => "deleted".into(),
                         Message::Gif { id, title, .. } => format!("GIF {id} {title:?}"),
                         Message::Other { content_type, .. } => format!("other {content_type}"),
                     };

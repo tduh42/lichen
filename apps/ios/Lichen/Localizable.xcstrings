@@ -1371,6 +1371,16 @@
         }
       }
     },
+    "Cancel the edit": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler la modification"
+          }
+        }
+      }
+    },
     "Cancel the reply": {
       "localizations": {
         "fr": {
@@ -1811,6 +1821,16 @@
         }
       }
     },
+    "Could not delete.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de supprimer."
+          }
+        }
+      }
+    },
     "Could not join the channel.": {
       "localizations": {
         "fr": {
@@ -1897,6 +1917,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Supprimer la conversation"
+          }
+        }
+      }
+    },
+    "Delete for everyone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer pour tous"
+          }
+        }
+      }
+    },
+    "Delete for everyone?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer pour tous ?"
+          }
+        }
+      }
+    },
+    "Delete for me": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer pour moi"
+          }
+        }
+      }
+    },
+    "Delete for you?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer pour toi ?"
           }
         }
       }
@@ -2187,6 +2247,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chaque saut coûte du temps d'antenne aux relais ; les messages tiennent jusqu'à 8"
+          }
+        }
+      }
+    },
+    "Edit": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifier"
+          }
+        }
+      }
+    },
+    "Editing your message": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modification de ton message"
           }
         }
       }
@@ -2877,6 +2957,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inviter avec un QR code"
+          }
+        }
+      }
+    },
+    "It is removed on the phones that receive this. Whoever already read it has read it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il est supprimé sur les téléphones qui reçoivent ceci. Ceux qui l'ont déjà lu l'ont lu."
           }
         }
       }
@@ -3581,6 +3671,16 @@
         }
       }
     },
+    "Message deleted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Message supprimé"
+          }
+        }
+      }
+    },
     "Messages": {
       "localizations": {
         "fr": {
@@ -4147,6 +4247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "En ligne, via les relais"
+          }
+        }
+      }
+    },
+    "Only on this phone. The others keep it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seulement sur ce téléphone. Les autres le gardent."
           }
         }
       }
@@ -7097,6 +7207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "en cours"
+          }
+        }
+      }
+    },
+    "edited": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "modifié"
           }
         }
       }

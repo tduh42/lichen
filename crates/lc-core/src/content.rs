@@ -147,9 +147,19 @@ pub enum Content {
         id: String,
         title: String,
     },
+    /// The new text of the sender's TEXT or REPLY `target` (§6.4).
+    Edit {
+        sent_at: u32,
+        target: MessageRef,
+        text: String,
+    },
+    /// The sender takes its message `target` back (§6.4).
+    Delete { sent_at: u32, target: MessageRef },
     /// A membership notice this phone records in a group's conversation (§6, 0xE0, local:
     /// never on the air).
     Notice(Notice),
+    /// What is left of a message its author deleted (§6.4, 0xE1, local): when it was written.
+    Deleted { sent_at: u32 },
     /// A type this version does not interpret.
     Other { content_type: u8, body: Vec<u8> },
 }
@@ -158,6 +168,11 @@ pub enum Content {
 pub const LOCAL_TYPES: std::ops::RangeInclusive<u8> = 0xE0..=0xEF;
 /// A membership notice (ADR-0021).
 pub const NOTICE: u8 = 0xE0;
+/// A deleted message's place in the history (ADR-0027).
+pub const DELETED: u8 = 0xE1;
+
+/// How long after its own timestamp a message can still be edited or deleted (§6.4), seconds.
+pub const EDIT_WINDOW_S: u32 = 86_400;
 
 /// What changed in a group, as the conversation shows it (ADR-0021).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -411,9 +426,33 @@ impl Content {
                 v.extend_from_slice(title.as_bytes());
                 v
             }
+            Content::Edit {
+                sent_at,
+                target,
+                text,
+            } => {
+                let mut v = Vec::with_capacity(13 + text.len());
+                v.push(content::EDIT);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.extend_from_slice(target);
+                v.extend_from_slice(text.as_bytes());
+                v
+            }
+            Content::Delete { sent_at, target } => {
+                let mut v = Vec::with_capacity(13);
+                v.push(content::DELETE);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.extend_from_slice(target);
+                v
+            }
             Content::Notice(n) => {
                 let mut v = vec![NOTICE];
                 n.encode_body(&mut v);
+                v
+            }
+            Content::Deleted { sent_at } => {
+                let mut v = vec![DELETED];
+                v.extend_from_slice(&sent_at.to_le_bytes());
                 v
             }
             Content::Other { content_type, body } => {
@@ -494,13 +533,57 @@ impl Content {
             })
         } else if content_type == content::GIF {
             decode_gif(body)
+        } else if content_type == content::EDIT {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let (target, text) = rest.split_first_chunk::<8>()?;
+            if text.is_empty() {
+                return None;
+            }
+            Some(Content::Edit {
+                sent_at: u32::from_le_bytes(*ts),
+                target: *target,
+                text: std::str::from_utf8(text).ok()?.to_owned(),
+            })
+        } else if content_type == content::DELETE {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let target: [u8; 8] = rest.try_into().ok()?;
+            Some(Content::Delete {
+                sent_at: u32::from_le_bytes(*ts),
+                target,
+            })
         } else if content_type == NOTICE {
             Notice::decode_body(body).map(Content::Notice)
+        } else if content_type == DELETED {
+            Some(Content::Deleted {
+                sent_at: u32::from_le_bytes(body.try_into().ok()?),
+            })
         } else {
             Some(Content::Other {
                 content_type,
                 body: body.to_vec(),
             })
+        }
+    }
+
+    /// The sender's timestamp, for the messages that carry one.
+    pub const fn sent_at(&self) -> Option<u32> {
+        match self {
+            Content::Text { sent_at, .. }
+            | Content::Voice { sent_at, .. }
+            | Content::Image { sent_at, .. }
+            | Content::Reply { sent_at, .. }
+            | Content::Reaction { sent_at, .. }
+            | Content::File { sent_at, .. }
+            | Content::Sticker { sent_at, .. }
+            | Content::Gif { sent_at, .. }
+            | Content::Edit { sent_at, .. }
+            | Content::Delete { sent_at, .. }
+            | Content::Deleted { sent_at } => Some(*sent_at),
+            Content::Announce(a) => Some(a.sent_at),
+            Content::Location(_)
+            | Content::MediaRequest { .. }
+            | Content::Notice(_)
+            | Content::Other { .. } => None,
         }
     }
 

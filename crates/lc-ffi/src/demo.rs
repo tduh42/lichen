@@ -1561,6 +1561,7 @@ mod persistence {
             | Message::File { .. }
             | Message::Sticker { .. }
             | Message::Gif { .. }
+            | Message::Deleted { .. }
             | Message::Other { .. } => "",
         }
     }

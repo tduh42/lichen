@@ -392,6 +392,10 @@ pub enum Message {
         subjects: Vec<NoticeSubject>,
         text: String,
     },
+    /// A message its author took back (§6.4): its place in the history, when it was written.
+    Deleted {
+        sent_at: u32,
+    },
     Other {
         content_type: u8,
         body: Vec<u8>,
@@ -422,8 +426,8 @@ impl From<Content> for Message {
             Content::Text { sent_at, text } | Content::Reply { sent_at, text, .. } => {
                 Self::Text { sent_at, text }
             }
-            // Reactions are state, never shown as messages.
-            c @ Content::Reaction { .. } => {
+            // Reactions, edits and deletes are state, never shown as messages.
+            c @ (Content::Reaction { .. } | Content::Edit { .. } | Content::Delete { .. }) => {
                 let mut body = c.encode();
                 let content_type = body.remove(0);
                 Self::Other { content_type, body }
@@ -532,6 +536,7 @@ impl From<Content> for Message {
                     .collect(),
                 text: n.text,
             },
+            Content::Deleted { sent_at } => Self::Deleted { sent_at },
             Content::Other { content_type, body } => Self::Other { content_type, body },
         }
     }
@@ -1141,6 +1146,12 @@ pub struct StoredMessage {
     /// The author's name as its radio advertises it: posts on a MeshCore channel (§15.1),
     /// whose authors are known by name only.
     pub author_name: Option<String>,
+    /// Its author changed its text (§6.4): `message` shows the current one.
+    pub edited: bool,
+    /// Ours, and still within 24 hours: it can be edited (a text or a reply) or deleted for
+    /// everyone (§6.4).
+    pub editable: bool,
+    pub deletable: bool,
 }
 
 /// What kind of message a reply answers.
@@ -1220,6 +1231,9 @@ impl From<store::Message> for StoredMessage {
             quote: None,
             reactions: Vec::new(),
             author_name: None,
+            edited: false,
+            editable: false,
+            deletable: false,
         }
     }
 }
@@ -1255,6 +1269,8 @@ struct Inner {
     /// Our reactions being sent: core id → conversation and target (§6.2).
     /// Our reactions on their way, with the timestamp of the change each carries.
     reaction_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
+    /// Our edits and deletes on their way (§6.4), like reactions.
+    amend_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
@@ -1318,6 +1334,7 @@ impl Inner {
         self.backfill_refs();
         self.resume_outbox();
         self.resume_reactions();
+        self.resume_amendments();
     }
 
     /// Texts unfinished when the app stopped are submitted again with their stored plaintext;
@@ -1425,6 +1442,23 @@ impl Inner {
             .msg_ref
             .map(|r| self.reaction_counts(&m.chat, &r))
             .unwrap_or_default();
+        // Ours, with a reference, not taken back, within 24 hours (§6.4).
+        let now_s = u32::try_from(unix_ms() / 1000).unwrap_or(u32::MAX);
+        let changeable = m.outgoing
+            && m.msg_ref.is_some()
+            && !matches!(m.content, Content::Deleted { .. })
+            && m.content
+                .sent_at()
+                .is_some_and(|t| now_s.saturating_sub(t) < lc_core::content::EDIT_WINDOW_S);
+        let editable_kind = matches!(m.content, Content::Text { .. } | Content::Reply { .. });
+        // Its author's latest text (§6.4).
+        let edit = self
+            .store
+            .as_ref()
+            .and_then(|s| s.amendment_for(&m).ok().flatten())
+            .filter(|a| !a.deleted)
+            .and_then(|a| a.text)
+            .zip(m.content.sent_at());
         // A received channel post is stored as it came, "name: text" (§15.1).
         let label = match (&m.chat, m.outgoing, &m.content) {
             (Chat::Channel(_), false, Content::Text { sent_at, text }) => {
@@ -1446,6 +1480,12 @@ impl Inner {
             out.author_name = Some(name);
             out.message = body;
         }
+        if let Some((text, sent_at)) = edit {
+            out.message = Message::Text { sent_at, text };
+            out.edited = true;
+        }
+        out.deletable = changeable;
+        out.editable = changeable && editable_kind;
         if let Some(p) = self.outbox.get(&row) {
             out.status = self.live_status(p, self.core.outgoing(p.core_id, self.last_now));
         }
@@ -1469,10 +1509,22 @@ impl Inner {
                 excerpt: String::new(),
             };
         };
+        // The current text of an edited message (§6.4).
+        let edited = self
+            .store
+            .as_ref()
+            .and_then(|s| s.amendment_for(&m).ok().flatten())
+            .and_then(|a| a.text);
         let (kind, excerpt) = match &m.content {
-            Content::Text { text, .. } | Content::Reply { text, .. } => {
-                (QuoteKind::Text, text.chars().take(100).collect())
-            }
+            Content::Text { text, .. } | Content::Reply { text, .. } => (
+                QuoteKind::Text,
+                edited
+                    .as_deref()
+                    .unwrap_or(text)
+                    .chars()
+                    .take(100)
+                    .collect(),
+            ),
             Content::Voice { .. } => (QuoteKind::Voice, String::new()),
             Content::File { name, .. } => (QuoteKind::File, name.clone()),
             Content::Sticker { emoji, .. } => (QuoteKind::Sticker, emoji.clone()),
@@ -1593,6 +1645,115 @@ impl Inner {
         if let Ok(id) = id {
             self.reaction_inflight.insert(id, (chat, target, ts));
         }
+    }
+
+    /// Sends our edit (`text`) or delete (`None`) of `target` (§6.4) and follows it until
+    /// delivered.
+    fn submit_amendment(&mut self, chat: Chat, target: MessageRef, text: Option<String>, ts: u32) {
+        let datagram = match text {
+            Some(text) => Content::Edit {
+                sent_at: ts,
+                target,
+                text,
+            },
+            None => Content::Delete {
+                sent_at: ts,
+                target,
+            },
+        }
+        .encode();
+        let now = self.last_now;
+        let id = match chat {
+            Chat::Contact(k) => self.core.send_datagram(&k, datagram, now),
+            Chat::Group(g) => self.core.send_group_datagram(&g, &datagram, now),
+            Chat::Mesh(_) | Chat::Channel(_) => return,
+        };
+        // Not accepted now: it stays pending and goes again at the next start.
+        if let Ok(id) = id {
+            self.amend_inflight.insert(id, (chat, target, ts));
+        }
+    }
+
+    /// Our edits and deletes not delivered when the app stopped go again, unless too old.
+    fn resume_amendments(&mut self) {
+        let Some(st) = &self.store else {
+            return;
+        };
+        let now = unix_ms();
+        for p in st.pending_amendments().unwrap_or_default() {
+            if p.expires_ms.is_some_and(|e| e <= now) {
+                if let Some(st) = &self.store {
+                    let _ = st.amendment_done(&p.chat, &p.target, p.ts);
+                }
+            } else {
+                let text = if p.deleted { None } else { p.text };
+                self.submit_amendment(p.chat, p.target, text, p.ts);
+            }
+        }
+    }
+
+    fn on_amendment_content(&mut self, chat: Chat, by: &PubKey, c: &Content) {
+        match c {
+            Content::Edit {
+                sent_at,
+                target,
+                text,
+            } => self.on_amendment(chat, *target, by, Some(text), *sent_at),
+            Content::Delete { sent_at, target } => {
+                self.on_amendment(chat, *target, by, None, *sent_at);
+            }
+            _ => {}
+        }
+    }
+
+    /// An edit (`text`) or a delete (`None`) of `target` from node `by` (§6.4). It applies
+    /// only to that author's message, now or when it arrives.
+    fn on_amendment(
+        &mut self,
+        chat: Chat,
+        target: MessageRef,
+        by: &PubKey,
+        text: Option<&str>,
+        ts: u32,
+    ) {
+        let changed = self.store.as_ref().is_some_and(|s| {
+            s.amend(&chat, &target, Some(by), text, ts, false, None)
+                .unwrap_or(false)
+        });
+        if !changed {
+            return;
+        }
+        let Some(m) = self
+            .store
+            .as_ref()
+            .and_then(|s| s.message_by_ref(&chat, &target).ok().flatten())
+        else {
+            return;
+        };
+        self.show_amended(m);
+    }
+
+    /// Message `m` after a change (§6.4): taken back when its author deleted it.
+    fn show_amended(&mut self, m: store::Message) {
+        let Some(st) = &self.store else {
+            return;
+        };
+        let deleted = st
+            .amendment_for(&m)
+            .ok()
+            .flatten()
+            .is_some_and(|a| a.deleted);
+        let m = if deleted && !matches!(m.content, Content::Deleted { .. }) {
+            match st.tombstone(m.id).ok().flatten() {
+                Some(m) => m,
+                None => return,
+            }
+        } else {
+            m
+        };
+        let message = self.present(m);
+        self.extra
+            .push_back(LichenEvent::MessageChanged { message });
     }
 
     /// Our reactions not delivered when the app stopped go again, unless too old (§6.2).
@@ -1816,6 +1977,63 @@ impl Inner {
         }
     }
 
+    /// Our edit (`text`) or delete (`None`) of message `message_id` (§6.4).
+    fn amend(
+        &mut self,
+        message_id: i64,
+        text: Option<String>,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        self.last_now = now_ms;
+        let st = self.store.as_ref().ok_or(LichenError::Storage)?;
+        let m = st
+            .get(message_id)
+            .ok()
+            .flatten()
+            .ok_or(LichenError::Storage)?;
+        let out = self.present(m.clone());
+        let allowed = if text.is_some() {
+            out.editable
+        } else {
+            out.deletable
+        };
+        if !allowed {
+            return Err(LichenError::NotAllowed);
+        }
+        let target = m.msg_ref.ok_or(LichenError::NotReferable)?;
+        let st = self.store.as_ref().ok_or(LichenError::Storage)?;
+        // Each change goes after the previous one, even within the same second.
+        let previous = st.amendment_for(&m).ok().flatten().map_or(0, |a| a.ts);
+        let ts = u32::try_from(unix_ms() / 1000)
+            .unwrap_or(u32::MAX)
+            .max(previous.saturating_add(1));
+        let expires = unix_ms() + self.outbox_expiry_ms;
+        st.amend(
+            &m.chat,
+            &target,
+            None,
+            text.as_deref(),
+            ts,
+            true,
+            Some(expires),
+        )
+        .map_err(|_| LichenError::Storage)?;
+        let row = if text.is_none() {
+            st.tombstone(message_id)
+                .ok()
+                .flatten()
+                .ok_or(LichenError::Storage)?
+        } else {
+            st.get(message_id)
+                .ok()
+                .flatten()
+                .ok_or(LichenError::Storage)?
+        };
+        self.submit_amendment(m.chat, target, text, ts);
+        self.persist();
+        Ok(self.present(row))
+    }
+
     /// Joins a channel (§15.3); a new one starts muted.
     fn join_channel(&mut self, name: &str, secret: [u8; 16]) -> Result<ChatRef, LichenError> {
         let known = self.core.channels().iter().any(|c| c.secret == secret);
@@ -1829,7 +2047,17 @@ impl Inner {
     }
 
     fn record(&mut self, m: store::Message) -> Option<StoredMessage> {
-        let row = self.store.as_ref()?.insert(&m).ok()?;
+        let st = self.store.as_ref()?;
+        let mut row = st.insert(&m).ok()?;
+        // Its author took it back before it arrived (§6.4).
+        if st
+            .amendment_for(&row)
+            .ok()
+            .flatten()
+            .is_some_and(|a| a.deleted)
+        {
+            row = st.tombstone(row.id).ok().flatten()?;
+        }
         let out = self.present(row);
         self.extra.push_back(LichenEvent::MessageChanged {
             message: out.clone(),
@@ -1926,6 +2154,24 @@ impl Inner {
                 ..
             } => {
                 self.on_reaction(Chat::Group(*gid), *target, *from, from, emoji, *sent_at);
+                return false;
+            }
+            // Edits and deletes are state, like reactions (§6.4).
+            Event::Received {
+                from,
+                content: c @ (Content::Edit { .. } | Content::Delete { .. }),
+                ..
+            } => {
+                self.on_amendment_content(Chat::Contact(*from), from, c);
+                return false;
+            }
+            Event::GroupMessage {
+                gid,
+                from,
+                content: c @ (Content::Edit { .. } | Content::Delete { .. }),
+                ..
+            } => {
+                self.on_amendment_content(Chat::Group(*gid), from, c);
                 return false;
             }
             Event::MediaRequested {
@@ -2072,6 +2318,20 @@ impl Inner {
                 self.reaction_inflight.remove(id);
                 return false;
             }
+            Event::Delivered { id } | Event::GroupSent { id }
+                if self.amend_inflight.contains_key(id) =>
+            {
+                if let (Some((chat, target, ts)), Some(st)) =
+                    (self.amend_inflight.remove(id), &self.store)
+                {
+                    let _ = st.amendment_done(&chat, &target, ts);
+                }
+                return false;
+            }
+            Event::Failed { id, .. } if self.amend_inflight.contains_key(id) => {
+                self.amend_inflight.remove(id);
+                return false;
+            }
             Event::Delivered { id } => self.update(*id, Status::Delivered, true),
             Event::Failed { id, reason } => self.update(*id, Status::Failed(*reason), true),
             Event::GroupSent { id } => self.update(*id, Status::Flooded, true),
@@ -2169,6 +2429,7 @@ impl LichenCore {
             outbox_expiry_ms: OUTBOX_EXPIRY_MS,
             clock_offset: None,
             reaction_inflight: HashMap::new(),
+            amend_inflight: HashMap::new(),
         };
         // The history is available before the node connects.
         if let Some(id) = inner.core.key().copied() {
@@ -3009,6 +3270,46 @@ impl LichenCore {
             .and_then(|s| s.get(message_id).ok().flatten())
             .ok_or(LichenError::Storage)?;
         Ok(i.present(row))
+    }
+
+    /// Changes the text of our message `message_id` (§6.4): a text or a reply, within 24
+    /// hours. Applied here at once, sent like a reaction.
+    pub fn send_edit(
+        &self,
+        message_id: i64,
+        text: String,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        if text.trim().is_empty() {
+            return Err(LichenError::Empty);
+        }
+        self.lock().amend(message_id, Some(text), now_ms)
+    }
+
+    /// Takes our message `message_id` back on every phone that receives this (§6.4), within
+    /// 24 hours. Its place stays here as "message deleted".
+    pub fn send_delete(&self, message_id: i64, now_ms: u64) -> Result<StoredMessage, LichenError> {
+        self.lock().amend(message_id, None, now_ms)
+    }
+
+    /// Removes message `message_id` from this phone only (§6.4); nothing is sent.
+    pub fn delete_for_me(&self, message_id: i64) -> Result<(), LichenError> {
+        let mut i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        if st
+            .get(message_id)
+            .ok()
+            .flatten()
+            .is_some_and(|m| m.status == Status::Queued)
+        {
+            // A waiting message is cancelled, not just hidden.
+            drop(i);
+            return self.cancel_message(message_id);
+        }
+        st.delete_for_me(message_id)
+            .map_err(|_| LichenError::Storage)?;
+        i.persist();
+        Ok(())
     }
 
     /// What a reaction costs us in `chat` (§6.2): fragments and the airtime of our own
@@ -4321,6 +4622,139 @@ mod reactions {
                 mine: false
             }]
         );
+    }
+
+    /// Edits and deletes (§6.4): only the author's apply, the latest edit shows, a delete
+    /// takes the message back, also when it arrives first.
+    #[test]
+    fn edits_and_deletes_from_the_author_only() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![142; 32], None).unwrap();
+        let mut i = core.lock();
+        let gid = [4; 16];
+        let now = u32::try_from(unix_ms() / 1000).unwrap();
+        let text = |t: &str| Content::Text {
+            sent_at: now,
+            text: t.into(),
+        };
+        let group = |from: u8, content: Content| Event::GroupMessage {
+            gid,
+            from: [from; 32],
+            author: [from + 100; 32],
+            content,
+            snr4: 0,
+            rssi: 0,
+            late: false,
+        };
+        let first = text("at the col at 9");
+        let target = message_ref(&[109; 32], &first.encode());
+        assert!(i.on_event(&group(9, first)));
+        // Another member cannot change it; its author can.
+        let edit = |ts: u32, t: &str| Content::Edit {
+            sent_at: ts,
+            target,
+            text: t.into(),
+        };
+        assert!(!i.on_event(&group(8, edit(now + 5, "forged"))));
+        assert!(!i.on_event(&group(9, edit(now + 10, "at the col at 10"))));
+        assert!(!i.on_event(&group(9, edit(now + 8, "older"))));
+        drop(i);
+        let chat = ChatRef::Group { gid: gid.to_vec() };
+        let h = core.history(chat.clone(), None, 10).unwrap();
+        assert_eq!(
+            (h[0].message.clone(), h[0].edited),
+            (
+                Message::Text {
+                    sent_at: now,
+                    text: "at the col at 10".into()
+                },
+                true
+            )
+        );
+        assert!(!h[0].editable, "not ours");
+        // Its author takes it back.
+        let mut i = core.lock();
+        assert!(!i.on_event(&group(
+            9,
+            Content::Delete {
+                sent_at: now + 20,
+                target
+            }
+        )));
+        drop(i);
+        let h = core.history(chat.clone(), None, 10).unwrap();
+        assert_eq!(h[0].message, Message::Deleted { sent_at: now });
+        // A delete before its message: the message arrives taken back.
+        let second = text("second thoughts");
+        let later = message_ref(&[109; 32], &second.encode());
+        let mut i = core.lock();
+        assert!(!i.on_event(&group(
+            9,
+            Content::Delete {
+                sent_at: now + 30,
+                target: later
+            }
+        )));
+        assert!(i.on_event(&group(9, second)));
+        drop(i);
+        let h = core.history(chat, None, 10).unwrap();
+        assert_eq!(h[1].message, Message::Deleted { sent_at: now });
+    }
+
+    /// Our own: editable and deletable for 24 hours; deleted here at once.
+    #[test]
+    fn our_edit_and_delete() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![143; 32], None).unwrap();
+        let gid = vec![5u8; 16];
+        let now = u32::try_from(unix_ms() / 1000).unwrap();
+        // Ours, as the outbox stores them (the radio is not needed to change them).
+        let ours = |text: &str, sent_at: u32| {
+            let i = core.lock();
+            let content = Content::Text {
+                sent_at,
+                text: text.into(),
+            };
+            let row = i
+                .store
+                .as_ref()
+                .unwrap()
+                .insert(&store::Message {
+                    id: 0,
+                    chat: Chat::Group([5; 16]),
+                    outgoing: true,
+                    author: None,
+                    msg_ref: Some(message_ref(&[1; 32], &content.encode())),
+                    content,
+                    at_ms: unix_ms(),
+                    status: Status::Flooded,
+                    fragments: 1,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                })
+                .unwrap();
+            i.present(row)
+        };
+        let m = ours("meet at 9", now);
+        assert!(m.editable && m.deletable);
+        let e = core.send_edit(m.id, "meet at 10".into(), 0).unwrap();
+        assert!(e.edited);
+        assert_eq!(
+            e.message,
+            Message::Text {
+                sent_at: now,
+                text: "meet at 10".into()
+            }
+        );
+        let d = core.send_delete(m.id, 0).unwrap();
+        assert_eq!(d.message, Message::Deleted { sent_at: now });
+        assert!(!d.deletable);
+        assert!(core.send_edit(m.id, "again".into(), 0).is_err());
+        // Too old to change.
+        let old = ours("yesterday", now - 90_000);
+        assert!(!old.editable && !old.deletable);
+        core.delete_for_me(old.id).unwrap();
+        let h = core.history(ChatRef::Group { gid }, None, 10).unwrap();
+        assert!(h.iter().all(|x| x.id != old.id));
     }
 
     /// A group message's reference is computed with its author's identity, as its author

@@ -39,7 +39,8 @@ pub use rusqlite::Error;
 /// the app; `reactions` (table added).
 /// 10: MeshCore chats (ADR-0026): chat kinds 2 (a node, plain) and 3 (a channel), and
 /// `channels` (table added, nothing migrated).
-const VERSION: i32 = 10;
+/// 11: edits and deletes (ADR-0027): `amendments` (table added, nothing migrated).
+const VERSION: i32 = 11;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -260,6 +261,18 @@ CREATE TABLE IF NOT EXISTS chat_prefs (
     muted_until INTEGER,
     PRIMARY KEY (chat_kind, chat)
 );
+CREATE TABLE IF NOT EXISTS amendments (
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    target BLOB NOT NULL,
+    author BLOB NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    text TEXT,
+    ts INTEGER NOT NULL,
+    pending INTEGER NOT NULL DEFAULT 0,
+    expires_ms INTEGER,
+    PRIMARY KEY (chat_kind, chat, target, author)
+);
 CREATE TABLE IF NOT EXISTS channels (
     id BLOB PRIMARY KEY,
     name TEXT NOT NULL,
@@ -288,6 +301,32 @@ pub struct StoredPosition {
     /// Unix seconds.
     pub at: u64,
     pub snr4: i8,
+}
+
+/// An edit or a delete (§6.4) as it holds for a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Amendment {
+    /// Taken back by its author.
+    pub deleted: bool,
+    /// The latest text, when edited and not deleted.
+    pub text: Option<String>,
+    pub ts: u32,
+}
+
+/// One of our edits or deletes not delivered yet (§6.4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingAmendment {
+    pub chat: Chat,
+    pub target: MessageRef,
+    pub deleted: bool,
+    pub text: Option<String>,
+    pub ts: u32,
+    pub expires_ms: Option<i64>,
+}
+
+/// Who changes a message: an empty value for us, else the sender's node (§6.4).
+fn amender(author: Option<&PubKey>) -> &[u8] {
+    author.map_or(&[], |a| a.as_slice())
 }
 
 /// One of our reactions not delivered yet (§6.2).
@@ -869,8 +908,10 @@ impl Store {
         let rows = st.query_map([], row)?;
         let mut out = Vec::new();
         for m in rows.filter_map(|r| r.ok().flatten()) {
+            // The current text of an edited message (§6.4).
+            let edited = self.amendment_for(&m).ok().flatten().and_then(|a| a.text);
             if let Content::Text { text, .. } | Content::Reply { text, .. } = &m.content
-                && fold(text).contains(&needle)
+                && fold(edited.as_deref().unwrap_or(text)).contains(&needle)
             {
                 out.push(m);
                 if out.len() >= limit {
@@ -944,11 +985,178 @@ impl Store {
             "DELETE FROM media WHERE chat_kind = ?1 AND chat = ?2",
             params![chat.kind(), chat.bytes()],
         )?;
-        self.conn.execute(
-            "DELETE FROM reactions WHERE chat_kind = ?1 AND chat = ?2",
-            params![chat.kind(), chat.bytes()],
-        )?;
+        for table in ["reactions", "amendments"] {
+            self.conn.execute(
+                &format!("DELETE FROM {table} WHERE chat_kind = ?1 AND chat = ?2"),
+                params![chat.kind(), chat.bytes()],
+            )?;
+        }
         Ok(n)
+    }
+
+    // ----- edits and deletes (protocol.md §6.4) ----------------------------------------
+
+    /// Records an edit (`text`) or a delete (`None`) of `target` in `chat` by `author` (`None`:
+    /// us), unless it changes nothing (§6.4: a delete wins; among edits the greatest `ts`, then
+    /// the greater text). `pending`: ours, not delivered yet. Returns whether it changed.
+    #[allow(clippy::too_many_arguments)]
+    pub fn amend(
+        &self,
+        chat: &Chat,
+        target: &MessageRef,
+        author: Option<&PubKey>,
+        text: Option<&str>,
+        ts: u32,
+        pending: bool,
+        expires_ms: Option<i64>,
+    ) -> Result<bool, Error> {
+        let n = self.conn.execute(
+            "INSERT INTO amendments
+                 (chat_kind, chat, target, author, deleted, text, ts, pending, expires_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT (chat_kind, chat, target, author) DO UPDATE
+             SET deleted = excluded.deleted, text = excluded.text, ts = excluded.ts,
+                 pending = excluded.pending, expires_ms = excluded.expires_ms
+             WHERE amendments.deleted = 0
+               AND (excluded.deleted = 1 OR excluded.ts > amendments.ts
+                    OR (excluded.ts = amendments.ts AND excluded.text > amendments.text))",
+            params![
+                chat.kind(),
+                chat.bytes(),
+                target.as_slice(),
+                amender(author),
+                text.is_none(),
+                text,
+                ts,
+                pending,
+                expires_ms
+            ],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// The edit or delete that holds for message `m` (§6.4): by its author, within 24 hours
+    /// of its timestamp, an edit only for a TEXT or REPLY.
+    pub fn amendment_for(&self, m: &Message) -> Result<Option<Amendment>, Error> {
+        let (Some(target), Some(sent_at)) = (m.msg_ref, m.content.sent_at()) else {
+            return Ok(None);
+        };
+        let author: Option<PubKey> = match (m.outgoing, &m.chat) {
+            (true, _) => None,
+            (false, Chat::Contact(k)) => Some(*k),
+            (false, Chat::Group(_)) => match m.author {
+                Some(a) => Some(a),
+                None => return Ok(None),
+            },
+            (false, Chat::Mesh(_) | Chat::Channel(_)) => return Ok(None),
+        };
+        let found = self
+            .conn
+            .query_row(
+                "SELECT deleted, text, ts FROM amendments
+                 WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND author = ?4",
+                params![
+                    m.chat.kind(),
+                    m.chat.bytes(),
+                    target.as_slice(),
+                    amender(author.as_ref())
+                ],
+                |r| {
+                    Ok(Amendment {
+                        deleted: r.get(0)?,
+                        text: r.get(1)?,
+                        ts: r.get(2)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(found.filter(|a| {
+            let within = a.ts.saturating_sub(sent_at) <= crate::content::EDIT_WINDOW_S;
+            let editable = matches!(m.content, Content::Text { .. } | Content::Reply { .. });
+            within && (a.deleted || editable)
+        }))
+    }
+
+    /// Our edits and deletes not delivered yet (§6.4).
+    pub fn pending_amendments(&self) -> Result<Vec<PendingAmendment>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT chat_kind, chat, target, deleted, text, ts, expires_ms FROM amendments
+             WHERE author = x'' AND pending = 1",
+        )?;
+        let rows = st.query_map([], |r| {
+            let chat: Vec<u8> = r.get(1)?;
+            let target: Vec<u8> = r.get(2)?;
+            Ok(Chat::from_row(r.get(0)?, &chat)
+                .zip(<[u8; 8]>::try_from(target.as_slice()).ok())
+                .map(|(chat, target)| PendingAmendment {
+                    chat,
+                    target,
+                    deleted: r.get(3).unwrap_or(false),
+                    text: r.get(4).ok().flatten(),
+                    ts: r.get(5).unwrap_or(0),
+                    expires_ms: r.get(6).ok().flatten(),
+                }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Our change of `target` with timestamp `ts` was delivered (or given up).
+    pub fn amendment_done(&self, chat: &Chat, target: &MessageRef, ts: u32) -> Result<(), Error> {
+        self.conn.execute(
+            "UPDATE amendments SET pending = 0
+             WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3 AND author = x'' AND ts = ?4",
+            params![chat.kind(), chat.bytes(), target.as_slice(), ts],
+        )?;
+        Ok(())
+    }
+
+    /// Message `id` was taken back by its author (§6.4): its place stays, its content, media,
+    /// reactions and edits go. Returns the row as it is now.
+    pub fn tombstone(&self, id: i64) -> Result<Option<Message>, Error> {
+        let Some(m) = self.get(id)? else {
+            return Ok(None);
+        };
+        if let Some(r) = m.msg_ref {
+            self.conn.execute(
+                "DELETE FROM reactions WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3",
+                params![m.chat.kind(), m.chat.bytes(), r.as_slice()],
+            )?;
+            self.conn.execute(
+                "UPDATE amendments SET text = NULL
+                 WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3",
+                params![m.chat.kind(), m.chat.bytes(), r.as_slice()],
+            )?;
+        }
+        if let Some(media) = media_id(&m.content) {
+            self.conn
+                .execute("DELETE FROM media WHERE id = ?1", params![media.as_slice()])?;
+        }
+        let sent_at = m.content.sent_at().unwrap_or(0);
+        self.set_content(id, &Content::Deleted { sent_at })
+    }
+
+    /// Deletes message `id` from this phone only (§6.4), with its media, reactions and
+    /// changes.
+    pub fn delete_for_me(&self, id: i64) -> Result<Option<Message>, Error> {
+        let Some(m) = self.get(id)? else {
+            return Ok(None);
+        };
+        if let Some(r) = m.msg_ref {
+            for table in ["reactions", "amendments"] {
+                self.conn.execute(
+                    &format!(
+                        "DELETE FROM {table} WHERE chat_kind = ?1 AND chat = ?2 AND target = ?3"
+                    ),
+                    params![m.chat.kind(), m.chat.bytes(), r.as_slice()],
+                )?;
+            }
+        }
+        if let Some(media) = media_id(&m.content) {
+            self.conn
+                .execute("DELETE FROM media WHERE id = ?1", params![media.as_slice()])?;
+        }
+        self.delete_message(id)?;
+        Ok(Some(m))
     }
 
     // ----- replies and reactions (protocol.md §6.2) ------------------------------------
@@ -1655,5 +1863,113 @@ mod tests {
         );
         s.set_nickname(&k, Some("  ")).unwrap();
         assert!(s.nicknames().unwrap().is_empty());
+    }
+
+    /// Edits and deletes (§6.4): the latest edit holds, a delete wins, only the author's
+    /// count, within 24 hours; deleting for oneself removes the row.
+    #[test]
+    fn edits_and_deletes() {
+        let s = Store::in_memory().unwrap();
+        let bob = [7; 32];
+        let chat = Chat::Contact(bob);
+        let text = Content::Text {
+            sent_at: 1_000,
+            text: "first".into(),
+        };
+        let m = s
+            .insert(&Message {
+                id: 0,
+                chat,
+                outgoing: false,
+                author: None,
+                content: text,
+                at_ms: 0,
+                status: Status::Received,
+                fragments: 1,
+                airtime_ms: 0,
+                snr4: None,
+                read: true,
+                msg_ref: Some([1; 8]),
+            })
+            .unwrap();
+        let r = [1; 8];
+        // Someone else's edit counts for nothing; Bob's does, the latest wins.
+        assert!(
+            s.amend(
+                &chat,
+                &r,
+                Some(&[9; 32]),
+                Some("forged"),
+                1_010,
+                false,
+                None
+            )
+            .unwrap()
+        );
+        assert_eq!(s.amendment_for(&m).unwrap(), None);
+        assert!(
+            s.amend(&chat, &r, Some(&bob), Some("second"), 1_020, false, None)
+                .unwrap()
+        );
+        assert!(
+            !s.amend(&chat, &r, Some(&bob), Some("older"), 1_015, false, None)
+                .unwrap()
+        );
+        let a = s.amendment_for(&m).unwrap().unwrap();
+        assert_eq!((a.deleted, a.text.as_deref()), (false, Some("second")));
+        assert_eq!(s.search("second", 10).unwrap().len(), 1);
+        assert!(s.search("first", 10).unwrap().is_empty());
+        // A delete wins over any later edit.
+        assert!(
+            s.amend(&chat, &r, Some(&bob), None, 1_030, false, None)
+                .unwrap()
+        );
+        assert!(
+            !s.amend(&chat, &r, Some(&bob), Some("third"), 1_040, false, None)
+                .unwrap()
+        );
+        assert!(s.amendment_for(&m).unwrap().unwrap().deleted);
+        let gone = s.tombstone(m.id).unwrap().unwrap();
+        assert_eq!(gone.content, Content::Deleted { sent_at: 1_000 });
+        assert_eq!(gone.msg_ref, Some(r));
+        // Too late: more than 24 hours after the message.
+        let late = s
+            .insert(&Message {
+                msg_ref: Some([2; 8]),
+                ..m.clone()
+            })
+            .unwrap();
+        s.amend(
+            &chat,
+            &[2; 8],
+            Some(&bob),
+            Some("much later"),
+            1_000 + 86_401,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(s.amendment_for(&late).unwrap(), None);
+        // Ours wait to be delivered.
+        let mine = s
+            .insert(&Message {
+                outgoing: true,
+                msg_ref: Some([3; 8]),
+                ..m.clone()
+            })
+            .unwrap();
+        s.amend(&chat, &[3; 8], None, Some("fixed"), 1_050, true, Some(5))
+            .unwrap();
+        assert_eq!(
+            s.amendment_for(&mine).unwrap().unwrap().text.as_deref(),
+            Some("fixed")
+        );
+        assert_eq!(s.pending_amendments().unwrap().len(), 1);
+        s.amendment_done(&chat, &[3; 8], 1_050).unwrap();
+        assert!(s.pending_amendments().unwrap().is_empty());
+        // Deleted for me: gone with its changes.
+        s.delete_for_me(mine.id).unwrap();
+        assert!(s.get(mine.id).unwrap().is_none());
+        assert_eq!(s.amendment_for(&mine).unwrap(), None);
     }
 }

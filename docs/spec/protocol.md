@@ -226,6 +226,8 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x09 | REACTION | `ts u32 ‖ ref (8) ‖ emoji (UTF-8, 0..=32 bytes)`, §6.2 | ADR-0019 |
 | 0x0A | STICKER | §6.3 | ADR-0025 |
 | 0x0B | GIF | §6.3 | ADR-0025 |
+| 0x0C | EDIT | `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, §6.4 | ADR-0027 |
+| 0x0D | DELETE | `ts u32 ‖ ref (8)`, §6.4 | ADR-0027 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
@@ -241,11 +243,11 @@ Delivery is at least once: a datagram that was delivered but whose ACKs were all
 
 ### 6.1 Outbox and restart (ADR-0018)
 
-What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT, REPLY, STICKER and GIF messages (§6.3), direct or group, and of its own REACTIONs (§6.2), and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
+What the user sends is a **message intent**: the conversation, the datagram's plaintext (`content_type ‖ body`, the sender's timestamp fixed when the user sends) and an **expiry**, 24 hours later. An app that keeps a history persists the intents of its unfinished TEXT, REPLY, STICKER and GIF messages (§6.3), direct or group, and of its own REACTIONs (§6.2), EDITs and DELETEs (§6.4), and nothing else: no session, sender key, counter, nonce or ciphertext (ADR-0003, ADR-0010). After a restart a message is encrypted afresh, under whatever session or sender key exists then.
 
 1. **States.** *Queued*: accepted, nothing transmitted; the user may cancel it, and it disappears. *Sending*: at least one frame of it went out; it can no longer be cancelled, since it may already have arrived. Then one of: *delivered* (direct: the `COMPLETE` ACK, §7.1), *sent to the group* (the first copy of every fragment has left, §10.3; nobody acknowledges), or *failed* with a reason.
 2. **Radio away.** A TEXT is accepted while the companion is disconnected. Nothing is transmitted and no timer or retry counter advances until it is back (no frame can leave, so none is counted lost); a transfer in progress resumes where it stopped. When the companion that comes back is another node, sessions and paths, which belonged to the old node, are dropped; the messages stay queued.
-3. **Restart.** At start, unfinished TEXT, REPLY, STICKER, GIF and REACTION intents (queued or sending) are submitted again with their stored plaintext. Unfinished media fail ("interrupted"): media are never queued for later (§13.4).
+3. **Restart.** At start, unfinished TEXT, REPLY, STICKER, GIF, REACTION, EDIT and DELETE intents (queued or sending) are submitted again with their stored plaintext. Unfinished media fail ("interrupted"): media are never queued for later (§13.4).
 4. **Expiry.** An unfinished message that is not being transmitted when its expiry passes stops and fails ("expired"): never sent if it was queued; if it was sending, its transfer is abandoned (ABORT `CANCELLED`, §7.2) and it may have arrived. A message being transmitted at that moment finishes normally.
 5. **Retry.** A failed message sent again by the user is the same message: the same stored plaintext, a new expiry. No failure is retried automatically: an unreachable peer would cost shared airtime for nothing.
 6. **Duplicates.** A receiver that keeps a history drops a TEXT, REPLY or VOICE whose plaintext equals one it already stored from the same sender in the same conversation (direct, or group and author), however long ago. With the sender's timestamp in the plaintext, this covers a resend after a restart on either side and a group message sent again under a new sender key. It changes nothing on the air.
@@ -285,6 +287,31 @@ Both are messages like TEXT: the outbox (§6.1), groups (§10.3), references, re
 - A sender turns a GIPHY link into a GIF: `giphy.com/gifs/[slug-]{id}`, `media[0-9].giphy.com/media/[v1.…/]{id}/…`, `i.giphy.com/{id}.(gif|webp)`, over HTTPS; the slug gives the title ("happy-dance" → "happy dance").
 
 Vectors: `testdata/lichen/content.toml` (`[[sticker]]`, `[[gif]]`, `[[bad_content]]`, `[[gif_link]]`).
+
+### 6.4 Editing and deleting (ADR-0027)
+
+An author can change the text of a message it sent, or take a message back, on the phones of the others. Neither is a message of the history: like a REACTION (§6.2), each names its target by reference and changes how the target is shown.
+
+**EDIT (0x0C)**: `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, the new text of the TEXT or REPLY `ref` of the same conversation.
+
+**DELETE (0x0D)**: `ts u32 ‖ ref (8)`: the message `ref`, of any type that has a reference, is taken back.
+
+1. **Only its author.** An edit or a delete applies only when its sender is the target's author: the sender's identity is part of `ref` (§6.2), and the receiver also checks the target's stored author before applying. Anything else is ignored.
+2. **Within 24 hours** of the target's own timestamp, by the sender's clock: `ts − target ts ≤ 86,400`. A later one is ignored; the apps no longer offer it.
+3. **State.** Per conversation and target, the edit with the greatest `ts` holds; equal `ts`, the greater bytes. A delete wins over every edit, whatever their order. The reference stays the original's: replies and reactions stay attached, and a reply's quote shows the current text.
+4. **Out of order.** An edit or a delete whose target is not stored yet is kept, and applies when the target arrives with the right author (a delete stores it taken back).
+5. **What a receiver does.**
+   - An edited message shows its current text with "edited". Searching finds the current text.
+   - A deleted message keeps its place in the history as "message deleted". Its content, its media, its reactions and its edits are dropped from the phone, and a notification for it is withdrawn.
+6. **Outbox.** Like a reaction: the sender applies it at once, keeps it until delivered or sent to the group (§6.1), submits it again after a restart, and gives up after 24 hours.
+7. **Groups.** Both are recoverable (§10.6). An edit fits one group fragment with 62 bytes of text, like a REPLY; a delete always fits one.
+8. **What it cannot do.** A delete reaches only the phones that receive it: whoever read the message has read it, and a modified app can keep it. The apps say so before sending one.
+
+Deleting a message **for oneself** sends nothing: the phone removes it, its media, reactions and edits.
+
+**Older clients** show EDIT and DELETE as unsupported content.
+
+Vectors: `testdata/lichen/content.toml` (`[[edit]]`, `[[delete]]`, `[[malformed]]`).
 
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 
@@ -445,7 +472,7 @@ Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[grou
 
 Group messages are flooded twice and never acknowledged (§10.3): when both copies collide at a busy repeater, the message is lost for every member behind it. A member that notices a gap asks for it over a pairwise session. An envelope is encrypted under its author's sender key and **signed** by the author, so any member who holds it can hand it on: the receiver authenticates it exactly as if heard on the air.
 
-**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER and GIF are kept; positions and search packets go stale, are not worth resending, and do not use message counters anyway.
+**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER, GIF, EDIT and DELETE are kept; positions and search packets go stale, are not worth resending, and do not use message counters anyway.
 
 **Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. For the first message received under a key, they start at the key's `next_counter` (§10.2): what its owner sent from there on was sent after the key reached us, by the owner itself or relayed by the admin with the counter it expected next. Nothing before that is missing: it may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed only when that member sends another message.
 

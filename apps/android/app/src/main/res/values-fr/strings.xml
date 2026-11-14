@@ -772,4 +772,16 @@
     <string name="name_on_mesh">Nom sur le réseau</string>
     <string name="name_on_mesh_note">Ce que voient les utilisateurs d\'une appli MeshCore</string>
     <string name="name_on_mesh_explainer">Les utilisateurs d\'une appli MeshCore voient ce nom, et tes messages dans les canaux commencent par lui. Ta radio l\'annonce.</string>
+    <!-- Editing and deleting (protocol.md §6.4) -->
+    <string name="edit">Modifier</string>
+    <string name="edited">modifié</string>
+    <string name="delete_for_everyone">Supprimer pour tous</string>
+    <string name="delete_for_me">Supprimer pour moi</string>
+    <string name="delete_for_everyone_q">Supprimer pour tous ?</string>
+    <string name="delete_for_me_q">Supprimer pour toi ?</string>
+    <string name="delete_for_everyone_note">Il est supprimé sur les téléphones qui reçoivent ceci. Ceux qui l\'ont déjà lu l\'ont lu.</string>
+    <string name="delete_for_me_note">Seulement sur ce téléphone. Les autres le gardent.</string>
+    <string name="message_deleted">Message supprimé</string>
+    <string name="editing_your_message">Modification de ton message</string>
+    <string name="cancel_edit">Annuler la modification</string>
 </resources>

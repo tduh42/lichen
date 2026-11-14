@@ -281,7 +281,9 @@ fn recoverable(body: &[u8]) -> bool {
                 | content::REACTION
                 | content::ANNOUNCE
                 | content::STICKER
-                | content::GIF)
+                | content::GIF
+                | content::EDIT
+                | content::DELETE)
         )
     )
 }

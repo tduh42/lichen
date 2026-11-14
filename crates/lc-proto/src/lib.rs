@@ -79,6 +79,8 @@ pub mod content {
     pub const REACTION: u8 = 0x09;
     pub const STICKER: u8 = 0x0A;
     pub const GIF: u8 = 0x0B;
+    pub const EDIT: u8 = 0x0C;
+    pub const DELETE: u8 = 0x0D;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
     pub const GROUP_LEAVE: u8 = 0x12;

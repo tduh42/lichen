@@ -5,6 +5,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.border
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.ui.text.font.FontStyle
 import com.tduhamel.lichen.core.QuoteKind
 import com.tduhamel.lichen.core.ChatRef
 import com.tduhamel.lichen.core.Quote
@@ -159,6 +163,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var highlight by remember(chat) { mutableStateOf<Long?>(null) }
     // The message being answered (§6.2).
     var replyTo by remember(chat) { mutableStateOf<StoredMessage?>(null) }
+    /** Our message being edited (§6.4). */
+    var editing by remember(chat) { mutableStateOf<StoredMessage?>(null) }
     LaunchedEffect(chat) {
         model.load(chat)
         model.focus?.takeIf { it.first == chat }?.let { (_, id) ->
@@ -331,7 +337,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 item(key = m.id) {
                     MessageBubble(
                         model, m, chat.group || chat.channel, highlight == m.id,
-                        reply = { replyTo = m },
+                        reply = { replyTo = m; editing = null },
+                        edit = { editing = m; replyTo = null },
                         // A quote tapped: its original, loading earlier pages if needed.
                         openQuote = { id ->
                             if (model.loadUntil(chat, id)) highlight = id else error = noLongerHere
@@ -365,7 +372,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
             }
         }
-        Composer(model, chat, replyTo, { replyTo = null }) { error = it }
+        Composer(model, chat, replyTo, { replyTo = null }, editing, { editing = null }) { error = it }
     }
 
     if (renaming) chat.nodeKey?.let { RenameDialog(model, it) { renaming = false } }
@@ -514,12 +521,15 @@ private fun MessageBubble(
     isGroup: Boolean,
     highlighted: Boolean,
     reply: () -> Unit,
+    edit: () -> Unit,
     openQuote: (Long) -> Unit,
     onError: (String) -> Unit,
 ) {
     val t = lichen
     val res = LocalResources.current
     val author = m.author
+    /** Deleting for everyone (true) or for this phone (false), to confirm (§6.4). */
+    var deleting by remember { mutableStateOf<Boolean?>(null) }
     val status = m.status
     val text = (m.message as? Message.Text)?.text
     // Long press: copy or select a text; cancel one that is still waiting, send a failed one
@@ -530,11 +540,8 @@ private fun MessageBubble(
     var selecting by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val press = if (text != null || cancellable || retriable || m.referable) {
-        Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true })
-    } else {
-        Modifier
-    }
+    // Every message can at least be deleted from this phone.
+    val press = Modifier.combinedClickable(onClick = {}, onLongClick = { menu = true })
     // A text reads as one: author, text, time and status. Media keep their buttons.
     val merge = if (text != null) Modifier.semantics(mergeDescendants = true) {} else Modifier
     Column(
@@ -614,6 +621,50 @@ private fun MessageBubble(
                     },
                 )
             }
+            // Ours within 24 hours (§6.4).
+            if (m.editable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.edit)) },
+                    leadingIcon = { Icon(Icons.Outlined.Edit, null) },
+                    onClick = {
+                        menu = false
+                        edit()
+                    },
+                )
+            }
+            if (m.deletable) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete_for_everyone), color = t.sos) },
+                    leadingIcon = { Icon(Icons.Outlined.Delete, null, tint = t.sos) },
+                    onClick = {
+                        menu = false
+                        deleting = true
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.delete_for_me), color = t.sos) },
+                leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = t.sos) },
+                onClick = {
+                    menu = false
+                    deleting = false
+                },
+            )
+        }
+        deleting?.let { everyone ->
+            AlertDialog(
+                onDismissRequest = { deleting = null },
+                title = { Text(stringResource(if (everyone) R.string.delete_for_everyone_q else R.string.delete_for_me_q)) },
+                text = { Text(stringResource(if (everyone) R.string.delete_for_everyone_note else R.string.delete_for_me_note)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        deleting = null
+                        (if (everyone) model.deleteForEveryone(m) else model.deleteForMe(m))?.let(onError)
+                    }) { Text(stringResource(if (everyone) R.string.delete_for_everyone else R.string.delete_for_me), color = t.sos) }
+                },
+                dismissButton = { TextButton(onClick = { deleting = null }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+                containerColor = t.s1,
+            )
         }
         // A group member, or a channel post's author as its radio calls itself (§15.1).
         val authorName = m.authorName ?: author?.let { model.name(it) }
@@ -626,7 +677,19 @@ private fun MessageBubble(
         m.quote?.let { q ->
             QuoteBox(model, q, ChatId.of(m.chat), Modifier.clickable(enabled = q.messageId != null) { q.messageId?.let(openQuote) })
         }
-        if (!MediaContent(model, m)) {
+        if (m.message is Message.Deleted) {
+            // Taken back by its author (§6.4): its place stays.
+            Row(
+                Modifier
+                    .border(1.dp, t.line, RoundedCornerShape(18.dp))
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Outlined.Delete, null, tint = t.tx2, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.message_deleted), fontSize = 16.sp, color = t.tx2, fontStyle = FontStyle.Italic)
+            }
+        } else if (!MediaContent(model, m)) {
             Text(
                 m.message.display(res),
                 fontSize = 16.sp,
@@ -644,8 +707,10 @@ private fun MessageBubble(
         val context = LocalContext.current
         val time = timeOf(context, m.atMs)
         val written = m.writtenEarlierMs
+        val edited = if (m.edited) stringResource(R.string.edited) else null
         val footer = when {
-            m.outgoing -> listOfNotNull(time, caption(m, isGroup)).joinToString(" · ")
+            m.outgoing -> listOfNotNull(time, edited, caption(m, isGroup)).joinToString(" · ")
+            edited != null -> "$time · $edited"
             // Lost on the air and handed on by a member (§10.6): shown where it arrived.
             m.late -> stringResource(R.string.arrived_late, time, timeOf(context, m.writtenAtMs ?: m.atMs))
             // Written well before it arrived: it waited (§6.1).
@@ -789,6 +854,8 @@ private fun Composer(
     chat: ChatId,
     replyTo: StoredMessage?,
     clearReply: () -> Unit,
+    editing: StoredMessage?,
+    clearEdit: () -> Unit,
     onError: (String) -> Unit,
 ) {
     val t = lichen
@@ -809,7 +876,9 @@ private fun Composer(
     var locating by remember { mutableStateOf(false) }
     // The sticker picker; a GIPHY link in the draft goes as a GIF unless asked otherwise (§6.3).
     var stickers by remember { mutableStateOf(false) }
-    val gifLink = remember(draft) { if (chat.plain) null else com.tduhamel.lichen.core.gifLink(draft) }
+    val gifLink = remember(draft, editing) { if (chat.plain || editing != null) null else com.tduhamel.lichen.core.gifLink(draft) }
+    // Editing starts from the message's current text.
+    LaunchedEffect(editing?.id) { (editing?.message as? Message.Text)?.let { draft = it.text } }
     // Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
     val plainMax = if (chat.plain) model.plainTextMax(chat) else 0
     val plainOver = if (chat.plain) maxOf(0, draft.toByteArray().size - plainMax) else 0
@@ -901,6 +970,16 @@ private fun Composer(
         review?.let { r ->
             ReviewBar(model, chat, r, change = { review = it }, onError = onError)
             return@Column
+        }
+        if (editing != null) {
+            Row(Modifier.padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.Edit, null, tint = t.tx2, modifier = Modifier.size(18.dp))
+                Text(
+                    stringResource(R.string.editing_your_message), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+                    modifier = Modifier.weight(1f).padding(start = 8.dp),
+                )
+                IconButton(onClick = { clearEdit(); draft = "" }) { Icon(Icons.Filled.Close, stringResource(R.string.cancel_edit), tint = t.tx2) }
+            }
         }
         replyTo?.let { r ->
             val res2 = LocalResources.current
@@ -1046,6 +1125,7 @@ private fun Composer(
                         val link = gifLink
                         val e = when {
                             link != null && !linkAsText -> model.sendGif(link, gifData?.let { imageSize(it) }, chat)
+                            editing != null -> model.edit(text, editing)
                             replyTo != null -> model.reply(text, replyTo)
                             else -> model.send(text, chat)
                         }
@@ -1054,6 +1134,7 @@ private fun Composer(
                         } else {
                             draft = ""
                             clearReply()
+                            clearEdit()
                         }
                     },
                     // Texts wait for the radio (§6.1); not with a throwaway identity.

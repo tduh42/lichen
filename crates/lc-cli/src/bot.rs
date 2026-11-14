@@ -201,6 +201,9 @@ impl Bot {
             // A reaction is not answered (it would be an endless exchange); a notice never
             // comes from the air; a sticker or a GIF is echoed as it is.
             Content::Reaction { .. }
+            | Content::Edit { .. }
+            | Content::Delete { .. }
+            | Content::Deleted { .. }
             | Content::Notice(_)
             | Content::Sticker { .. }
             | Content::Gif { .. } => return None,

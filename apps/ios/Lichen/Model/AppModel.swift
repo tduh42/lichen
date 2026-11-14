@@ -701,6 +701,8 @@ final class AppModel {
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
+            // Taken back by its author (§6.4): its notification goes too.
+            if case .deleted = m.message, !m.outgoing { notifier.clear(m.chat) }
             #if DEBUG
             // -media YES: ask for full images as their previews arrive, fetch what is announced.
             if UserDefaults.standard.bool(forKey: "media"), !m.outgoing {
@@ -1109,6 +1111,51 @@ final class AppModel {
             return e.display
         } catch {
             return String(localized: "Could not send.")
+        }
+    }
+
+    // MARK: editing and deleting (protocol.md §6.4)
+
+    /// Changes the text of our `target`; returns an error message to show, or nil.
+    func edit(_ text: String, of target: StoredMessage) -> String? {
+        do {
+            let m = try core.sendEdit(messageId: target.id, text: text, nowMs: now())
+            upsert(m)
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// Takes our message back on the phones that receive it.
+    func deleteForEveryone(_ m: StoredMessage) -> String? {
+        do {
+            upsert(try core.sendDelete(messageId: m.id, nowMs: now()))
+            conversations = core.conversations()
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// Removes a message from this phone only.
+    func deleteForMe(_ m: StoredMessage) -> String? {
+        do {
+            try core.deleteForMe(messageId: m.id)
+            chats[m.chat]?.removeAll { $0.id == m.id }
+            conversations = core.conversations()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not delete.")
         }
     }
 
@@ -1786,6 +1833,7 @@ extension Message {
         case let .announce(_, _, _, _, _, _, name): return String(localized: "Photo: \(name)")
         case let .file(_, name, _): return String(localized: "File: \(name)")
         case let .sticker(_, _, emoji): return String(localized: "Sticker \(emoji)")
+        case .deleted: return String(localized: "Message deleted")
         case let .gif(_, _, _, _, _, title) where !title.isEmpty: return String(localized: "GIF: \(title)")
         case .gif: return String(localized: "GIF")
         case let .other(type, _) where type == 0x03: return String(localized: "Position")
@@ -1821,7 +1869,7 @@ extension Message {
         switch self {
         case let .text(sentAt, _), let .voice(sentAt, _, _, _, _), let .image(sentAt, _, _, _, _, _, _),
              let .announce(sentAt, _, _, _, _, _, _), let .file(sentAt, _, _), let .sticker(sentAt, _, _),
-             let .gif(sentAt, _, _, _, _, _):
+             let .gif(sentAt, _, _, _, _, _), let .deleted(sentAt):
             if sentAt > 0 { return Date(timeIntervalSince1970: TimeInterval(sentAt)) }
         case .notice, .other:
             break

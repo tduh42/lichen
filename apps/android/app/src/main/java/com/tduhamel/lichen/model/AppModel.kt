@@ -824,6 +824,10 @@ class AppModel(val app: Application) {
             is LichenEvent.MessageChanged -> {
                 upsert(e.message)
                 conversations = core.conversations()
+                // Taken back by its author (§6.4): its notification goes too.
+                if (e.message.message is Message.Deleted && !e.message.outgoing) {
+                    Notifications.clear(app, ChatId.of(e.message.chat))
+                }
                 // Debug extra `media`: ask for full images as previews arrive, fetch announcements.
                 val m = e.message
                 if (debug.media && !m.outgoing) {
@@ -1180,6 +1184,39 @@ class AppModel(val app: Application) {
         upsert(core.sendReply(target.chat, target.id, text, sentAt, now()))
         conversations = core.conversations()
         pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    // ----- editing and deleting (protocol.md §6.4) -----
+
+    /** Changes the text of our `target`: an error message to show, or null. */
+    fun edit(text: String, target: StoredMessage): String? = try {
+        upsert(core.sendEdit(target.id, text, now()))
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** Takes our message back on the phones that receive it. */
+    fun deleteForEveryone(m: StoredMessage): String? = try {
+        upsert(core.sendDelete(m.id, now()))
+        conversations = core.conversations()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    /** Removes a message from this phone only. */
+    fun deleteForMe(m: StoredMessage): String? = try {
+        core.deleteForMe(m.id)
+        val chat = ChatId.of(m.chat)
+        chats[chat]?.let { list -> chats[chat] = list.filter { it.id != m.id } }
+        conversations = core.conversations()
         null
     } catch (e: LichenException) {
         e.display(res)

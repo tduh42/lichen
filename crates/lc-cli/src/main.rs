@@ -228,6 +228,11 @@ fn describe(core: &Core, e: &Event) -> String {
                 Content::Reaction { emoji, target, .. } => {
                     format!("reacts {emoji} to {}", hex::encode(target))
                 }
+                Content::Edit { text, target, .. } => {
+                    format!("edits {} to \"{text}\"", hex::encode(target))
+                }
+                Content::Delete { target, .. } => format!("deletes {}", hex::encode(target)),
+                Content::Deleted { .. } => "a deleted message".into(),
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
                 Content::Sticker { emoji, .. } => format!("sticker {emoji}"),
@@ -305,6 +310,11 @@ fn describe(core: &Core, e: &Event) -> String {
                 Content::Reaction { emoji, target, .. } => {
                     format!("reacts {emoji} to {}", hex::encode(target))
                 }
+                Content::Edit { text, target, .. } => {
+                    format!("edits {} to \"{text}\"", hex::encode(target))
+                }
+                Content::Delete { target, .. } => format!("deletes {}", hex::encode(target)),
+                Content::Deleted { .. } => "a deleted message".into(),
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
                 Content::Sticker { emoji, .. } => format!("sticker {emoji}"),
