@@ -185,6 +185,9 @@ struct RoundIconButton: View {
                 .background(prominent ? Theme.actBg : Theme.s2, in: Circle())
                 .foregroundStyle(prominent ? Theme.actFg : Theme.tx)
         }
+        // Its own tap only: in a List row, unstyled buttons all fire on any tap of the row (the
+        // Messages header has three of them).
+        .buttonStyle(.plain)
         .accessibilityLabel(label)
     }
 }

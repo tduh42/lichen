@@ -116,6 +116,8 @@ struct Banner: View {
             Spacer(minLength: 0)
             if let action {
                 Button(action.label, action: action.run)
+                    // Its own tap only, also when banners share a List row.
+                    .buttonStyle(.plain)
                     .font(.system(.subheadline, weight: .semibold))
                     .padding(.horizontal, 14)
                     .frame(minHeight: 44)
