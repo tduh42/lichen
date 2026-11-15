@@ -588,7 +588,7 @@ impl Core {
                 });
                 self.plain.channels.sort_by_key(|c| c.index);
             }
-            None => self.plain.empty_run += 1,
+            None => self.plain.empty_run = self.plain.empty_run.saturating_add(1),
         }
         if !scanning {
             self.events.push_back(Event::ChannelsUpdated);

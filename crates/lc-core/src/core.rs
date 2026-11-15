@@ -56,6 +56,8 @@ const HELLO_FRESH_S: u64 = 600;
 /// we cannot open prompts): at most this many per node in ten minutes, and this many in all
 /// in an hour (§9, review of 2026-11-15, SR-04). Data waits for the budget; these did not,
 /// and a stranger could make the phone spend its hour answering.
+/// Contacts kept from the companion at most (SR-32): stock MeshCore keeps a few hundred.
+const CONTACTS_MAX: usize = 4_096;
 const UNPROMPTED_PER_NODE: usize = 8;
 const UNPROMPTED_PER_NODE_MS: Millis = 600_000;
 const UNPROMPTED_TOTAL: usize = 60;
@@ -1521,23 +1523,27 @@ impl Core {
             }
             Response::Contact(c) => {
                 let key = *c.key;
-                let name = String::from_utf8_lossy(c.name).into_owned();
-                let out_path = c.out_path.map(OwnedPath::from_path);
-                let (identity, verified) = self
-                    .contacts
-                    .get(&key)
-                    .map_or((None, false), |c| (c.identity, c.verified));
-                self.contacts.insert(
-                    key,
-                    Contact {
+                // A companion keeps a few hundred contacts; a radio that sends more is not
+                // followed past this (review of 2026-11-15, SR-32).
+                if self.contacts.contains_key(&key) || self.contacts.len() < CONTACTS_MAX {
+                    let name = String::from_utf8_lossy(c.name).into_owned();
+                    let out_path = c.out_path.map(OwnedPath::from_path);
+                    let (identity, verified) = self
+                        .contacts
+                        .get(&key)
+                        .map_or((None, false), |c| (c.identity, c.verified));
+                    self.contacts.insert(
                         key,
-                        name,
-                        out_path,
-                        identity,
-                        verified,
-                        kind: c.kind,
-                    },
-                );
+                        Contact {
+                            key,
+                            name,
+                            out_path,
+                            identity,
+                            verified,
+                            kind: c.kind,
+                        },
+                    );
+                }
                 if expect == Some(Expect::Contacts) {
                     done = false;
                     if let Some((_, d)) = self.awaiting.as_mut() {
