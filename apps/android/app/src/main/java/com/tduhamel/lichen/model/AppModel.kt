@@ -488,6 +488,8 @@ class AppModel(val app: Application) {
     private fun refreshAll() {
         contacts = people()
         groups = core.groups()
+        // Invitations not answered yet are stored: back after a restart (§10.1).
+        invitations = core.groupInvitations()
         channels = core.channels()
         conversations = core.conversations()
         refreshChatPrefs()
@@ -1513,20 +1515,40 @@ class AppModel(val app: Application) {
         applyTor()
     }
 
-    /** Starts or stops iroh as the settings say; `bridgeOnline` once a relay answers. */
+    /** Starts or stops iroh as the settings say; `bridgeOnline` once a relay answers.
+     *
+     * iroh runs only while it is needed: something we offer is still served (7 days), a send
+     * sheet is open, or a download goes through it. Otherwise its relays would see the phone's
+     * address and its lasting endpoint id at every launch, and anyone who once got an
+     * announcement could see whether it is online (review of 2026-11-15, SR-29). */
     private fun applyIroh(restart: Boolean = false) {
         val b = bridge ?: return
-        val on = irohEnabled
+        val wanted = irohEnabled && (bridgeDemand > 0 || runCatching { b.hasOffers() }.getOrDefault(false))
         val relays = relayOnly
         scope.launch {
-            if (!on || restart) {
+            if (!wanted || restart) {
                 runCatching { b.stopIroh() }
                 bridgeOnline = false
             }
-            if (!on) return@launch
+            if (!wanted) return@launch
             if (b.endpointId() == null) runCatching { b.startIroh(relays) }
             bridgeOnline = runCatching { b.online(30u) }.getOrDefault(false)
         }
+    }
+
+    /** Who needs iroh now: open send sheets and downloads through it. */
+    private var bridgeDemand = 0
+
+    /** A send sheet opened: iroh starts, so that it can be offered. */
+    fun needBridge() {
+        bridgeDemand++
+        applyIroh()
+    }
+
+    /** The sheet closed: iroh stops unless something is still offered. */
+    fun releaseBridge() {
+        bridgeDemand = maxOf(0, bridgeDemand - 1)
+        applyIroh()
     }
 
     /** Connects to Tor and publishes our onion service, or stops Tor, as the settings say. */
@@ -1614,7 +1636,8 @@ class AppModel(val app: Application) {
 
     /** The providers of an announcement we would try, in order: iroh (when on), then Tor. */
     fun fetchRoute(providers: List<Provider>): List<Provider> = listOfNotNull(
-        providers.firstOrNull { it.transport.toInt() == 1 }?.takeIf { irohEnabled && bridgeOnline },
+        // iroh starts for the download when it is not running (SR-29).
+        providers.firstOrNull { it.transport.toInt() == 1 }?.takeIf { irohEnabled },
         providers.firstOrNull { it.transport.toInt() == 2 },
     )
 
@@ -1635,10 +1658,15 @@ class AppModel(val app: Application) {
         fetchErrors.remove(h)
         fetchJobs[h] = scope.launch {
             var failure = res.getString(R.string.download_failed)
+            bridgeDemand++
             try {
                 for (p in route) {
                     fetching[h] = p.transport.toInt()
                     try {
+                        if (p.transport.toInt() == 1 && b.endpointId() == null) {
+                            b.startIroh(relayOnly)
+                            bridgeOnline = runCatching { b.online(30u) }.getOrDefault(false)
+                        }
                         if (p.transport.toInt() == 2) {
                             b.startTor(folder("tor-state").path, folder("tor-cache").path, false, 180u)
                         }
@@ -1660,6 +1688,7 @@ class AppModel(val app: Application) {
             } finally {
                 fetching.remove(h)
                 fetchJobs.remove(h)
+                releaseBridge()
             }
         }
     }

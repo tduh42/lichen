@@ -212,6 +212,8 @@ final class AppModel {
         }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
+        // Invitations not answered yet are stored: back after a restart (§10.1).
+        invitations = core.groupInvitations()
         channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
@@ -312,6 +314,8 @@ final class AppModel {
         if !core.storageOk() { identityProblem = .storage }
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
+        // Invitations not answered yet are stored: back after a restart (§10.1).
+        invitations = core.groupInvitations()
         channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
@@ -1504,18 +1508,39 @@ final class AppModel {
     }
 
     /// Starts or stops iroh as the settings say; `bridgeOnline` once a relay answers.
+    ///
+    /// iroh runs only while it is needed: something we offer is still served (7 days), a send
+    /// sheet is open, or a download goes through it. Otherwise its relays would see the phone's
+    /// address and its lasting endpoint id at every launch, and anyone who once got an
+    /// announcement could see whether it is online (review of 2026-11-15, SR-29).
     private func applyIroh(restart: Bool = false) {
         guard let bridge else { return }
-        let (on, relayOnly) = (irohEnabled, relayOnly)
+        let wanted = irohEnabled && (bridgeDemand > 0 || bridge.hasOffers())
+        let relayOnly = relayOnly
         Task {
-            if !on || restart {
+            if !wanted || restart {
                 await bridge.stopIroh()
                 bridgeOnline = false
             }
-            guard on else { return }
+            guard wanted else { return }
             if bridge.endpointId() == nil { _ = try? await bridge.startIroh(relayOnly: relayOnly) }
             bridgeOnline = await bridge.online(limitS: 30)
         }
+    }
+
+    /// Who needs iroh now: open send sheets and downloads through it.
+    @ObservationIgnored private var bridgeDemand = 0
+
+    /// A send sheet opened: iroh starts, so that it can be offered.
+    func needBridge() {
+        bridgeDemand += 1
+        applyIroh()
+    }
+
+    /// The sheet closed: iroh stops unless something is still offered.
+    func releaseBridge() {
+        bridgeDemand = max(0, bridgeDemand - 1)
+        applyIroh()
     }
 
     private static var torDirs: (String, String) {
@@ -1613,7 +1638,8 @@ final class AppModel {
 
     /// The providers of an announcement we would try, in order: iroh (when on), then Tor.
     func fetchRoute(_ providers: [Provider]) -> [Provider] {
-        let iroh = irohEnabled && bridgeOnline ? providers.first { $0.transport == 1 } : nil
+        // iroh starts for the download when it is not running (SR-29).
+        let iroh = irohEnabled ? providers.first { $0.transport == 1 } : nil
         let tor = providers.first { $0.transport == 2 }
         return [iroh, tor].compactMap { $0 }
     }
@@ -1637,9 +1663,15 @@ final class AppModel {
                 fetchTasks[hash] = nil
             }
             var failure = String(localized: "Download failed.")
+            bridgeDemand += 1
+            defer { releaseBridge() }
             for p in route {
                 fetching[hash] = p.transport
                 do {
+                    if p.transport == 1, bridge.endpointId() == nil {
+                        _ = try await bridge.startIroh(relayOnly: relayOnly)
+                        bridgeOnline = await bridge.online(limitS: 30)
+                    }
                     if p.transport == 2 {
                         let (state, cache) = Self.torDirs
                         _ = try await bridge.startTor(stateDir: state, cacheDir: cache, publish: false, limitS: 180)

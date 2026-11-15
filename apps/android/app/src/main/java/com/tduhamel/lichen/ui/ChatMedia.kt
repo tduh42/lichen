@@ -49,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -488,6 +489,11 @@ private enum class PhotoMode { LORA, IROH, TOR }
 @Composable
 fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original: ByteArray, done: (String?) -> Unit) {
     val t = lichen
+    // iroh runs while the sheet is open (SR-29).
+    DisposableEffect(Unit) {
+        model.needBridge()
+        onDispose { model.releaseBridge() }
+    }
     val context = LocalContext.current
     val res = LocalResources.current
     var mode by remember { mutableStateOf<PhotoMode?>(null) }

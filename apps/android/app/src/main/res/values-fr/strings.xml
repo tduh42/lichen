@@ -791,4 +791,5 @@
     <string name="invitation_nobody_else">Personne d\'autre pour l\'instant. %1$s</string>
     <string name="invitation_with">Avec %1$s. %2$s</string>
     <string name="decline">Refuser</string>
+    <string name="iroh_on_demand">Démarre quand tu envoies ou télécharges</string>
 </resources>

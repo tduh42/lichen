@@ -133,6 +133,12 @@ impl LichenBridge {
         self.bridge.stop_iroh().await;
     }
 
+    /// Whether we still offer content (7 days after offering it): iroh only needs to run then,
+    /// or while the user sends or fetches. Expired offers are removed on the way.
+    pub fn has_offers(&self) -> bool {
+        self.bridge.has_offers()
+    }
+
     /// Our iroh endpoint id, while iroh runs.
     pub fn endpoint_id(&self) -> Option<Vec<u8>> {
         self.bridge.iroh_id().map(|id| id.to_vec())

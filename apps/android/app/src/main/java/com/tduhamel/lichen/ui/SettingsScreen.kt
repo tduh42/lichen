@@ -137,7 +137,7 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 val irohLine = when {
                     !model.irohEnabled -> stringResource(R.string.off)
-                    !model.bridgeOnline -> stringResource(R.string.connecting)
+                    !model.bridgeOnline -> stringResource(R.string.iroh_on_demand)
                     model.relayOnly -> stringResource(R.string.online_relays)
                     else -> stringResource(R.string.fast_ip_visible)
                 }

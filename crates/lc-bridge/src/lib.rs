@@ -139,6 +139,28 @@ impl Offers {
         h
     }
 
+    /// Whether any offer is still served. Expired ones on disk are removed on the way: nothing
+    /// is served, or kept, past its week (§14.2).
+    fn any_fresh(&self) -> bool {
+        let mem = self.mem.lock().is_ok_and(|mut m| {
+            m.retain(|_, o| fresh(o.at));
+            !m.is_empty()
+        });
+        let mut disk = false;
+        if let Some(d) = &self.dir
+            && let Ok(entries) = std::fs::read_dir(d)
+        {
+            for e in entries.flatten() {
+                if e.metadata().and_then(|m| m.modified()).is_ok_and(fresh) {
+                    disk = true;
+                } else {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+        }
+        mem || disk
+    }
+
     fn get(&self, h: &Hash) -> Option<Arc<Vec<u8>>> {
         if let Ok(mut m) = self.mem.lock() {
             match m.get(h) {
@@ -181,6 +203,36 @@ mod offers {
         assert!(o.get(&h).is_none());
         assert_eq!(o.put(b"photo".to_vec()), h);
         assert!(o.get(&h).is_some());
+    }
+
+    /// Whether anything is still offered decides whether iroh runs (SR-29); expired offers on
+    /// disk are removed when asked.
+    #[test]
+    fn live_offers_and_the_sweep() {
+        let dir = std::env::temp_dir().join(format!("lichen-offers-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let o = Offers {
+            dir: Some(dir.clone()),
+            mem: Mutex::default(),
+        };
+        assert!(!o.any_fresh());
+        let h = o.put(b"track".to_vec());
+        assert!(o.any_fresh());
+        // A week later: gone from memory, and its file is removed.
+        if let Ok(mut m) = o.mem.lock() {
+            m.clear();
+        }
+        let old = SystemTime::now() - Duration::from_secs(OFFER_DAYS * 86_400 + 60);
+        std::fs::File::options()
+            .write(true)
+            .open(o.path(&h).unwrap())
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert!(!o.any_fresh());
+        assert!(!o.path(&h).unwrap().exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
@@ -348,6 +400,12 @@ impl Bridge {
         if let Some(r) = router {
             let _ = r.shutdown().await;
         }
+    }
+
+    /// Whether we still offer something: the apps keep iroh running only then, or while the
+    /// user sends or fetches (review of 2026-11-15, SR-29).
+    pub fn has_offers(&self) -> bool {
+        self.offers.any_fresh()
     }
 
     /// Our endpoint id: the `key` of the iroh transport in announcements.

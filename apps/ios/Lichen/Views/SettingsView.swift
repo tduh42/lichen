@@ -253,7 +253,7 @@ struct SettingsView: View {
 
     private var irohLine: String {
         guard model.irohEnabled else { return String(localized: "Off") }
-        if !model.bridgeOnline { return String(localized: "Connecting…") }
+        if !model.bridgeOnline { return String(localized: "Starts when you send or download") }
         return model.relayOnly ? String(localized: "Online, through relays") : String(localized: "Fast; the peer sees your IP")
     }
 

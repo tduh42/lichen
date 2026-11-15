@@ -784,4 +784,5 @@
     <string name="invitation_nobody_else">Nobody else yet. %1$s</string>
     <string name="invitation_with">With %1$s. %2$s</string>
     <string name="decline">Decline</string>
+    <string name="iroh_on_demand">Starts when you send or download</string>
 </resources>

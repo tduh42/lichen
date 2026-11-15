@@ -1661,16 +1661,6 @@
         }
       }
     },
-    "Connecting…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connexion…"
-          }
-        }
-      }
-    },
     "Contact · %lld hops": {
       "localizations": {
         "en": {
@@ -5697,6 +5687,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Démarrage"
+          }
+        }
+      }
+    },
+    "Starts when you send or download": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarre quand tu envoies ou télécharges"
           }
         }
       }

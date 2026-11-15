@@ -1704,6 +1704,9 @@ private struct SendPhotoSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(nil) } }
             }
         }
+        // iroh runs while the sheet is open (SR-29).
+        .onAppear { model.needBridge() }
+        .onDisappear { model.releaseBridge() }
     }
 
     private var estimate: Estimate? { model.estimate(chat, datagramLen: imageDatagramLen(image: image)) }
@@ -1932,6 +1935,9 @@ private struct SendFileSheet: View {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { done(nil) } }
             }
         }
+        // iroh runs while the sheet is open (SR-29).
+        .onAppear { model.needBridge() }
+        .onDisappear { model.releaseBridge() }
     }
 
     private func option(title: String, detail: String, badge: String, kind: TransportBadge.Kind,
