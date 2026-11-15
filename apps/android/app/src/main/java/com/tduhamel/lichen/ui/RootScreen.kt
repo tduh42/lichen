@@ -87,12 +87,13 @@ fun RootScreen(model: AppModel) {
         contentWindowInsets = WindowInsets(0),
         bottomBar = { if (onTab) TabBar(model, nav, route) },
     ) { padding ->
-        // Someone sent an SOS: a full-screen alert, wherever we are.
+        // Someone sent an SOS: a full-screen alert, wherever we are, once the app lock lets it
+        // show (the lock's cover says an SOS came in meanwhile).
         fun tab(r: String) = nav.navigate(r) {
             popUpTo(nav.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
         }
-        model.sosAlert?.let { from ->
+        model.sosAlert?.takeIf { !model.lock.locked }?.let { from ->
             SosReceivedDialog(
                 model, from,
                 search = { tab("search") },

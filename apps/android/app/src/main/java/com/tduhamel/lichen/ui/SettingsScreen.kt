@@ -21,8 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.SettingsInputAntenna
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.BuildConfig
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.model.AppLock
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.Appearance
 import com.tduhamel.lichen.model.bandwidth
@@ -66,7 +71,8 @@ fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean
     )
 }
 
-/** Settings (mockup `reglages`): the radio, transports, position, appearance, demo, about. */
+/** Settings (mockup `reglages`): the radio, transports, position, appearance, privacy, demo,
+ * about. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
@@ -224,6 +230,11 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
                     }
                 }
             }
+            item { SectionLabel(stringResource(R.string.privacy), Modifier.padding(top = 10.dp)) }
+            item { PrivacyCard(model) }
+            item {
+                Text(stringResource(R.string.lock_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+            }
             if (Build.VERSION.SDK_INT >= 33) {
                 item { SectionLabel(stringResource(R.string.language), Modifier.padding(top = 10.dp)) }
                 item { LanguagePicker() }
@@ -299,6 +310,64 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
         )
     }
 }
+
+/** The app lock ([com.tduhamel.lichen.model.AppLock]): on after one successful authentication,
+ * off by default. */
+@Composable
+private fun PrivacyCard(model: AppModel) {
+    val t = lichen
+    val lock = model.lock
+    val prompt = LocalLockPrompt.current
+    var choosing by remember { mutableStateOf(false) }
+    CardList {
+        CardRow(stringResource(R.string.lock_lichen), stringResource(R.string.lock_lichen_note)) {
+            LichenSwitch(
+                lock.enabled,
+                { if (it) prompt(AppLock.Purpose.ENABLE) else lock.disable() },
+                enabled = lock.pending == null,
+            )
+        }
+        CardDivider()
+        Box(Modifier.alpha(if (lock.enabled) 1f else 0.5f).clickable(enabled = lock.enabled) { choosing = true }) {
+            CardRow(stringResource(R.string.lock_after)) {
+                Box {
+                    Text(lockDelayLabel(lock.delay), fontSize = 15.sp, color = t.tx2)
+                    DropdownMenu(choosing, { choosing = false }, containerColor = t.s1) {
+                        AppLock.DELAYS.forEach { s ->
+                            DropdownMenuItem(
+                                text = { Text(lockDelayLabel(s), color = t.tx) },
+                                trailingIcon = { if (s == lock.delay) Icon(Icons.Outlined.Check, null, tint = t.tx) },
+                                onClick = {
+                                    choosing = false
+                                    lock.chooseDelay(s)
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (lock.problem) {
+        AlertDialog(
+            onDismissRequest = { lock.problem = false },
+            title = { Text(stringResource(R.string.lock_stays_off)) },
+            text = { Text(stringResource(R.string.no_screen_lock)) },
+            confirmButton = { TextButton(onClick = { lock.problem = false }) { Text(stringResource(R.string.ok), color = t.tx) } },
+            containerColor = t.s1,
+        )
+    }
+}
+
+@Composable
+private fun lockDelayLabel(seconds: Int): String = stringResource(
+    when (seconds) {
+        0 -> R.string.lock_immediately
+        60 -> R.string.lock_1_minute
+        900 -> R.string.lock_15_minutes
+        else -> R.string.lock_1_hour
+    },
+)
 
 /** The radio, its link and the airtime left; pairing when none is connected. */
 @Composable
