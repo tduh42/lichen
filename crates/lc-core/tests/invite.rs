@@ -410,6 +410,10 @@ fn a_member_who_missed_a_rotation_asks_and_reads() {
     // Longer than the quick resends of the new state and keys (1 to 16 minutes apart): only
     // the hourly ones are left.
     net.run_until(net.now + 35 * MIN, |_| false);
+    // The admin sees who the change did not reach.
+    let dave_node = net.key(dave);
+    let unreached = |net: &Net| net.with_core_ref(alice, |c| c.unreached(&gid)).unwrap();
+    assert_eq!(unreached(&net), vec![dave_node]);
     away.store(false, Ordering::Relaxed);
     for &x in &everyone {
         net.take_events(x);
@@ -425,4 +429,6 @@ fn a_member_who_missed_a_rotation_asks_and_reads() {
     });
     assert!(got, "dave still cannot read bob");
     println!("read {} s after the post", (net.now - start) / 1000);
+    // His request answered, nothing waits for him any more.
+    assert!(net.run_until(net.now + 5 * MIN, |n| unreached(n).is_empty()));
 }

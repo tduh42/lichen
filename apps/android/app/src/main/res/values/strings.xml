@@ -672,6 +672,9 @@
     <string name="notice_you_renamed">You renamed the group “%1$s”</string>
     <string name="notice_renamed">%1$s renamed the group “%2$s”</string>
     <string name="notice_you_left">You left the group</string>
+    <string name="not_reached_yet">Not reached yet</string>
+    <string name="not_reached_yet_names">Not reached yet: %s</string>
+    <string name="not_reached_note">The latest changes to the group have not reached them. lichen tries again every hour for a day, and at once when they ask for the keys.</string>
     <string name="disappearing_messages">Disappearing messages</string>
     <string name="disappearing_off">Disappearing messages: off</string>
     <string name="disappearing_on">Disappearing messages: %s</string>

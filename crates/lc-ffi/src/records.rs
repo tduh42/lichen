@@ -68,6 +68,9 @@ pub struct GroupInfo {
     pub members: Vec<ContactInfo>,
     /// Members whose sender key we hold (out of `members.len() - 1`).
     pub keys_known: u32,
+    /// Members (nodes) our latest state or keys have not reached yet: tried, failed, tried
+    /// again every hour for a day (review of 2026-11-15, SR-12).
+    pub unreached: Vec<Vec<u8>>,
 }
 
 /// An invitation to show as a QR code (protocol.md §10.5).

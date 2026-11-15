@@ -19,6 +19,7 @@ struct GroupView: View {
         ScrollView {
             if let g = group {
                 VStack(alignment: .leading, spacing: 8) {
+                    unreachedBanner(g)
                     keysBanner(g)
                     SectionLabel("Members").padding(.top, 6)
                     CardList {
@@ -173,6 +174,16 @@ struct GroupView: View {
 
     private var isAdmin: Bool { group?.admin == model.nodeKey }
 
+    /// Members our latest changes have not reached yet (SR-12).
+    @ViewBuilder private func unreachedBanner(_ g: GroupInfo) -> some View {
+        let names = g.members.filter { m in g.unreached.contains(m.key) }.map(\.name)
+        if !names.isEmpty {
+            Banner(kind: .warn,
+                   title: String(localized: "Not reached yet: \(ListFormatter.localizedString(byJoining: names))"),
+                   message: String(localized: "The latest changes to the group have not reached them. lichen tries again every hour for a day, and at once when they ask for the keys."))
+        }
+    }
+
     @ViewBuilder private func keysBanner(_ g: GroupInfo) -> some View {
         let others = max(g.members.count - 1, 0)
         // Alone in it (a group just created, to invite in person): no keys to wait for.
@@ -196,6 +207,9 @@ struct GroupView: View {
                 Text(me ? String(localized: "You") : m.name).font(.system(.callout))
                 Text(admin ? String(localized: "Admin") : String(localized: "Member"))
                     .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                if g.unreached.contains(m.key) {
+                    Text("Not reached yet").font(.system(.footnote)).foregroundStyle(Theme.warn)
+                }
             }
             Spacer()
             if !me {

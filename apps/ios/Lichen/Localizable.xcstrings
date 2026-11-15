@@ -4351,6 +4351,26 @@
         }
       }
     },
+    "Not reached yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore atteint"
+          }
+        }
+      }
+    },
+    "Not reached yet: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore atteints : %@"
+          }
+        }
+      }
+    },
     "Not sent": {
       "localizations": {
         "fr": {
@@ -6117,6 +6137,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "L’identité n’a pas pu être enregistrée sur ce téléphone. Réessaie."
+          }
+        }
+      }
+    },
+    "The latest changes to the group have not reached them. lichen tries again every hour for a day, and at once when they ask for the keys.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les derniers changements du groupe ne leur sont pas parvenus. lichen réessaie toutes les heures pendant une journée, et tout de suite quand ils demandent les clés."
           }
         }
       }

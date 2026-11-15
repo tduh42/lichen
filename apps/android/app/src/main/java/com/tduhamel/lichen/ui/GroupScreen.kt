@@ -103,6 +103,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            item { UnreachedBanner(g) }
             item { KeysBanner(g) }
             item { SectionLabel(stringResource(R.string.members), Modifier.padding(top = 6.dp)) }
             item {
@@ -242,6 +243,18 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     }
 }
 
+/** Members our latest changes have not reached yet (SR-12). */
+@Composable
+private fun UnreachedBanner(g: GroupInfo) {
+    val names = g.members.filter { m -> g.unreached.any { it.contentEquals(m.key) } }.map { it.name }
+    if (names.isEmpty()) return
+    Banner(
+        BannerKind.WARN,
+        stringResource(R.string.not_reached_yet_names, names.joinToString(", ")),
+        stringResource(R.string.not_reached_note),
+    )
+}
+
 @Composable
 private fun KeysBanner(g: GroupInfo) {
     val others = maxOf(g.members.size - 1, 0)
@@ -287,6 +300,9 @@ private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: 
         Column(Modifier.weight(1f)) {
             Text(name, fontSize = 16.sp, color = t.tx)
             Text(stringResource(if (admin) R.string.admin else R.string.member), fontSize = 13.sp, color = t.tx2)
+            if (g.unreached.any { it.contentEquals(m.key) }) {
+                Text(stringResource(R.string.not_reached_yet), fontSize = 13.sp, color = t.warn)
+            }
         }
         if (!me) {
             if (m.verified) {

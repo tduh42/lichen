@@ -111,6 +111,12 @@ impl LichenCore {
                     })
                     .collect(),
                 keys_known: g.keys_known() as u32,
+                unreached: i
+                    .core
+                    .unreached(&g.gid)
+                    .iter()
+                    .map(|k| k.to_vec())
+                    .collect(),
             })
             .collect();
         v.sort_by(|a, b| a.name.cmp(&b.name));

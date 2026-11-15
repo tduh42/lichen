@@ -1287,6 +1287,41 @@ impl Core {
         self.enqueue_internal(to, datagram);
     }
 
+    /// Members of group `gid` (their nodes) that our latest state or keys have not reached: a
+    /// datagram for them failed at least once and still waits (review of 2026-11-15, SR-12).
+    pub fn unreached(&self, gid: &crate::GroupId) -> Vec<PubKey> {
+        let Some(g) = self.groups.get(gid) else {
+            return Vec::new();
+        };
+        g.members
+            .iter()
+            .filter(|m| Some(m.key) != self.key)
+            .filter(|m| {
+                self.peers.get(&m.node).is_some_and(|p| {
+                    p.queue
+                        .iter()
+                        .chain(p.in_flight.as_ref().map(|f| &f.msg))
+                        .any(|o| {
+                            o.internal
+                                && o.tries > 0
+                                && crate::group::membership_of(&o.datagram) == Some(*gid)
+                        })
+                })
+            })
+            .map(|m| m.node)
+            .collect()
+    }
+
+    /// Forgets the membership datagrams for group `gid` still waiting for node `k` and not
+    /// started: a newer state and every current key are on their way to it (§10.7).
+    pub(crate) fn drop_membership(&mut self, k: &PubKey, gid: &crate::GroupId) {
+        if let Some(p) = self.peers.get_mut(k) {
+            p.queue.retain(|o| {
+                !(o.internal && crate::group::membership_of(&o.datagram) == Some(*gid))
+            });
+        }
+    }
+
     /// Node `k` just reached us: what the core keeps for it goes now rather than at its next
     /// try, an hour away perhaps (a member asking for the keys, §10.7).
     pub(crate) fn hurry_internal(&mut self, k: &PubKey, now: Millis) {

@@ -877,6 +877,17 @@ impl Control {
     }
 }
 
+/// The group of a membership datagram (GROUP_STATE, SENDER_KEY, SENDER_KEYS): what the admin
+/// still owes a member (SR-12).
+pub(crate) fn membership_of(datagram: &[u8]) -> Option<GroupId> {
+    match datagram.first()? {
+        &content::GROUP_STATE | &content::SENDER_KEY | &content::SENDER_KEYS => {
+            datagram.get(1..17)?.try_into().ok()
+        }
+        _ => None,
+    }
+}
+
 /// GROUP_SYNC (§10.7): `gid ‖ epoch u32`, exactly 21 bytes.
 fn decode_sync(datagram: &[u8]) -> Option<(GroupId, u32)> {
     let b = datagram.strip_prefix(&[content::GROUP_SYNC])?;
@@ -1619,6 +1630,13 @@ impl Core {
             .retain(|_, t| *t + SYNC_EVERY_MS > now);
         g.recovery.syncs_answered.insert(*from, now);
         let node = g.members.iter().find(|m| m.key == *from).map(|m| m.node);
+        // What still waits for it is older than what follows.
+        if let Some(node) = node {
+            self.drop_membership(&node, &gid);
+        }
+        let Some(g) = self.groups.get(&gid) else {
+            return;
+        };
         if held < g.epoch
             && let Some(node) = node
         {

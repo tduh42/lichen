@@ -679,6 +679,9 @@
     <string name="notice_you_renamed">Tu as renommé le groupe « %1$s »</string>
     <string name="notice_renamed">%1$s a renommé le groupe « %2$s »</string>
     <string name="notice_you_left">Tu as quitté le groupe</string>
+    <string name="not_reached_yet">Pas encore atteint</string>
+    <string name="not_reached_yet_names">Pas encore atteints : %s</string>
+    <string name="not_reached_note">Les derniers changements du groupe ne leur sont pas parvenus. lichen réessaie toutes les heures pendant une journée, et tout de suite quand ils demandent les clés.</string>
     <string name="disappearing_messages">Messages éphémères</string>
     <string name="disappearing_off">Messages éphémères : désactivés</string>
     <string name="disappearing_on">Messages éphémères : %s</string>
