@@ -1638,10 +1638,10 @@ final class AppModel {
         return try? core.contactCard(name: name)
     }
 
-    /// Adds the contact of a scanned card (verified: scanned in person).
-    func addCard(_ text: String) -> Result<ContactInfo, LichenError> {
+    /// Adds the contact of a card: verified when scanned in person, not when pasted (§4.7).
+    func addCard(_ text: String, scanned: Bool) -> Result<ContactInfo, LichenError> {
         do {
-            let c = try core.addContactCard(card: text)
+            let c = try core.addContactCard(card: text, scanned: scanned)
             contacts = core.contacts().filter(\.person)
             pump()
             return .success(c)

@@ -38,7 +38,7 @@ struct AddContactView: View {
             } else if tab == .myCode {
                 myCode
             } else {
-                ScanPanel { text in scanned(text) }
+                ScanPanel { text, inPerson in scanned(text, inPerson: inPerson) }
             }
             if let error {
                 Banner(kind: .sos, title: error)
@@ -58,14 +58,15 @@ struct AddContactView: View {
             if let text = model.debugInvite {
                 model.debugInvite = nil
                 tab = .scan
-                scanned(text)
+                scanned(text, inPerson: true)
             }
             #endif
         }
     }
 
-    /// A contact card adds the contact; a group invitation asks to join (§10.5).
-    private func scanned(_ text: String) {
+    /// A contact card adds the contact (verified only when scanned in person); a group
+    /// invitation asks to join (§10.5).
+    private func scanned(_ text: String, inPerson: Bool) {
         error = nil
         if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lichen:1:g:") {
             switch model.parseInvite(text) {
@@ -75,7 +76,7 @@ struct AddContactView: View {
             }
             return
         }
-        switch model.addCard(text) {
+        switch model.addCard(text, scanned: inPerson) {
         case let .success(c): added = c
         case let .failure(e): error = e.display
         }
@@ -311,14 +312,15 @@ struct VerifySheet: View {
 
 /// Scans a contact code with the camera; without one (simulator), a field to paste it.
 private struct ScanPanel: View {
-    let found: (String) -> Void
+    /// The code, and whether the camera read it (in person) rather than a paste.
+    let found: (String, Bool) -> Void
     @State private var pasted = ""
     @State private var cameraOK = AVCaptureDevice.default(for: .video) != nil
 
     var body: some View {
         VStack(spacing: 12) {
             if cameraOK {
-                QRScanner { code in found(code) }
+                QRScanner { code in found(code, true) }
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
@@ -333,7 +335,7 @@ private struct ScanPanel: View {
                     .font(.system(.subheadline, design: .monospaced))
                     .padding(10)
                     .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
-                Button("Add") { found(pasted) }
+                Button("Add") { found(pasted, false) }
                     .disabled(!pasted.hasPrefix("lichen:"))
             }
         }

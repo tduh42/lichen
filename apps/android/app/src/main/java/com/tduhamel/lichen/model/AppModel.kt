@@ -1726,9 +1726,10 @@ class AppModel(val app: Application) {
     /** Our contact card for the QR code; null until the radio is connected. */
     fun myCard(): String? = runCatching { core.contactCard(myName.ifEmpty { nodeName }) }.getOrNull()
 
-    /** Adds the contact of a scanned card (verified: scanned in person); or an error to show. */
-    fun addCard(text: String): Pair<ContactInfo?, String?> = try {
-        val c = core.addContactCard(text.trim())
+    /** Adds the contact of a card: verified when scanned in person, not when pasted (§4.7); or
+     * an error to show. */
+    fun addCard(text: String, scanned: Boolean): Pair<ContactInfo?, String?> = try {
+        val c = core.addContactCard(text.trim(), scanned)
         contacts = people()
         pump()
         c to null

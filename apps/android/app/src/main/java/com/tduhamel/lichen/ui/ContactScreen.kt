@@ -65,8 +65,9 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
     var added by remember { mutableStateOf<ContactInfo?>(null) }
     var invite by remember { mutableStateOf<Pair<String, InviteInfo>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    // A contact card adds the contact; a group invitation asks to join (§10.5).
-    fun scanned(text: String) {
+    // A contact card adds the contact (verified only when scanned in person); a group
+    // invitation asks to join (§10.5).
+    fun scanned(text: String, inPerson: Boolean) {
         error = null
         if (text.trim().startsWith("lichen:1:g:")) {
             val (info, e) = model.parseInvite(text)
@@ -74,7 +75,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
             error = e
             return
         }
-        val (contact, e) = model.addCard(text)
+        val (contact, e) = model.addCard(text, inPerson)
         added = contact
         error = e
     }
@@ -83,7 +84,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         model.debugInvite?.let {
             model.debugInvite = null
             scanning = true
-            scanned(it)
+            scanned(it, true)
         }
     }
     Column(Modifier.fillMaxSize().background(t.bg)) {
@@ -123,7 +124,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
                     }
                 }
                 if (scanning) {
-                    ScanPanel { text -> scanned(text) }
+                    ScanPanel { text, inPerson -> scanned(text, inPerson) }
                 } else {
                     MyCode(model)
                 }
@@ -220,14 +221,14 @@ private fun MyCode(model: AppModel) {
     }
 }
 
-/** Scans a contact code with the camera, or takes it pasted. */
+/** Scans a contact code with the camera, or takes it pasted; `found` says which (in person). */
 @Composable
-private fun ScanPanel(found: (String) -> Unit) {
+private fun ScanPanel(found: (String, Boolean) -> Unit) {
     val t = lichen
     var pasted by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         QrScanner(
-            found,
+            { found(it, true) },
             Modifier
                 .fillMaxWidth()
                 .height(300.dp)
@@ -246,7 +247,7 @@ private fun ScanPanel(found: (String) -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors(),
             )
-            TextButton(onClick = { found(pasted) }, enabled = pasted.trim().startsWith("lichen:")) {
+            TextButton(onClick = { found(pasted, false) }, enabled = pasted.trim().startsWith("lichen:")) {
                 Text(stringResource(R.string.add), fontWeight = FontWeight.SemiBold, color = t.tx)
             }
         }

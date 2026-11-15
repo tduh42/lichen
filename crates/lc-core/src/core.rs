@@ -750,7 +750,15 @@ impl Core {
         }
     }
 
-    /// The new identity a verified contact presented, waiting for the user (§4.6).
+    /// An identity for contact `node` from outside the radio (a contact card, §4.7), held to
+    /// the same rule as one learned on the air (§4.6): adopted when the contact has none, kept
+    /// when it is the same, waiting for the user when it differs. True when it is now the
+    /// contact's identity.
+    pub fn present_identity(&mut self, node: &PubKey, identity: PubKey) -> bool {
+        self.learn_identity(node, identity)
+    }
+
+    /// The new identity a contact presented, waiting for the user (§4.6).
     pub fn pending_identity(&self, node: &PubKey) -> Option<&PubKey> {
         self.pending_identities.get(node)
     }

@@ -190,7 +190,7 @@ K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
 
 - **Fingerprint** of an identity: the first 12 bytes of `SHA-256("lichen/1 fingerprint" ‖ id)`, shown as 6 groups of 4 hexadecimal digits.
 - **Safety number** of two identities `a < b` (lexicographic): `h = SHA-512("lichen/1 safety" ‖ a ‖ b)`; group `i` (0..5) is the big-endian integer of `h[5i..5i+5]` modulo 100,000, shown with 5 digits. Both phones show the same 30 digits.
-- **Contact card** (QR code): `lichen:1:` followed by the unpadded base64url of `id (32) ‖ node (32) ‖ name (UTF-8, ≤ 32 bytes)`. Scanning it in person adds the contact **verified**; comparing safety numbers aloud verifies it too.
+- **Contact card** (QR code): `lichen:1:` followed by the unpadded base64url of `id (32) ‖ node (32) ‖ name (UTF-8, ≤ 32 bytes)`. Scanning it in person adds the contact **verified**, and replaces an identity the contact no longer has; comparing safety numbers aloud verifies it too. A card pasted, or received any other way, proves nothing about who sent it: it adds the contact **unverified**, and an identity different from the one known waits for the user as in §4.6 (review of 2026-11-15, SR-23).
 
 ## 5. Nonces and AAD (ADR-0003)
 

@@ -624,3 +624,56 @@ mod file_names {
         assert!(accents.len() <= 32 && accents.ends_with(".txt"));
     }
 }
+
+/// Review of 2026-11-15, SR-23: a contact card proves who someone is only when it is scanned
+/// in person. A pasted one adds an unverified contact, and never replaces an identity already
+/// known: that one waits for the user.
+#[cfg(test)]
+mod cards {
+    use super::*;
+
+    fn core() -> std::sync::Arc<LichenCore> {
+        LichenCore::new("t".into(), vec![1; 32], vec![101; 32], None).unwrap()
+    }
+
+    fn card(identity: u8, node: u8) -> String {
+        lc_core::identity::Card {
+            identity: [identity; 32],
+            node: [node; 32],
+            name: "Camille".into(),
+        }
+        .encode()
+    }
+
+    fn state(c: &LichenCore, node: u8) -> (Option<Vec<u8>>, bool) {
+        let k = c
+            .contacts()
+            .into_iter()
+            .find(|k| k.key == vec![node; 32])
+            .unwrap();
+        (k.identity, k.verified)
+    }
+
+    #[test]
+    fn a_pasted_card_does_not_verify() {
+        let c = core();
+        c.add_contact_card(card(7, 70), false).unwrap();
+        assert_eq!(state(&c, 70), (Some(vec![7; 32]), false));
+        // Scanning the same card in person then verifies it.
+        c.add_contact_card(card(7, 70), true).unwrap();
+        assert_eq!(state(&c, 70), (Some(vec![7; 32]), true));
+    }
+
+    #[test]
+    fn a_pasted_card_does_not_replace_an_identity() {
+        let c = core();
+        c.add_contact_card(card(7, 70), true).unwrap();
+        c.add_contact_card(card(8, 70), false).unwrap();
+        assert_eq!(state(&c, 70), (Some(vec![7; 32]), true));
+        assert_eq!(c.pending_identity(vec![70; 32]).unwrap(), Some(vec![8; 32]));
+        // Scanned in person, the new card is the contact, verified.
+        c.add_contact_card(card(8, 70), true).unwrap();
+        assert_eq!(state(&c, 70), (Some(vec![8; 32]), true));
+        assert_eq!(c.pending_identity(vec![70; 32]).unwrap(), None);
+    }
+}

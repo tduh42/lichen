@@ -42,8 +42,16 @@ impl LichenCore {
         .encode())
     }
 
-    /// Adds (or updates) the contact of a scanned card, verified: it was scanned in person.
-    pub fn add_contact_card(&self, card: String) -> Result<ContactInfo, LichenError> {
+    /// Adds (or updates) the contact of a contact card (§4.7). Scanned in person (`scanned`),
+    /// the card verifies the contact, and replaces an identity it no longer has. Pasted or
+    /// received some other way, it proves nothing: a new contact is added unverified, and an
+    /// identity different from the one known waits for the user like any identity change
+    /// (§4.6; review of 2026-11-15, SR-23).
+    pub fn add_contact_card(
+        &self,
+        card: String,
+        scanned: bool,
+    ) -> Result<ContactInfo, LichenError> {
         let c = lc_core::identity::Card::decode(&card).ok_or(LichenError::BadCode)?;
         let mut i = self.lock();
         if i.core.key() == Some(&c.identity) {
@@ -60,7 +68,11 @@ impl LichenCore {
             .find(|k| k.key == c.node)
             .and_then(|k| k.out_path.clone());
         i.core.add_contact(c.node, &name, path);
-        i.core.set_identity(&c.node, c.identity, true);
+        let adopted = i.core.present_identity(&c.node, c.identity)
+            || (scanned && i.core.accept_identity(&c.node, &c.identity, true));
+        if adopted && scanned {
+            i.core.set_verified(&c.node, &c.identity, true);
+        }
         i.save_contacts();
         let out = i
             .core
