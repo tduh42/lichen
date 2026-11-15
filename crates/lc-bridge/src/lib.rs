@@ -85,6 +85,15 @@ impl std::error::Error for FetchError {}
 
 /// Most bytes of offers kept in memory; older ones are read from disk when there is a directory.
 const MEM_MAX: usize = 128 << 20;
+/// Requests served at once, all transports together: one more is closed at once (review of
+/// 2026-11-15, SR-33).
+const SERVING_MAX: usize = 8;
+/// A request (33 bytes) must arrive within this.
+const REQUEST_LIMIT: Duration = Duration::from_secs(30);
+/// A whole answer must go within this.
+pub(crate) const SERVE_LIMIT: Duration = Duration::from_secs(600);
+/// Bytes read at a time from a provider.
+const CHUNK: usize = 64 << 10;
 
 /// An offer: its content and when it was (last) offered.
 #[derive(Debug)]
@@ -96,10 +105,22 @@ struct Offered {
 /// Blobs we offer: in memory, and on disk when a directory is given (they survive restarts).
 /// Both expire after [`OFFER_DAYS`] (§14.2, recheck R11); offering the same content again
 /// renews it.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Offers {
     dir: Option<PathBuf>,
     mem: Mutex<HashMap<Hash, Offered>>,
+    /// Requests being served ([`SERVING_MAX`]).
+    serving: tokio::sync::Semaphore,
+}
+
+impl Default for Offers {
+    fn default() -> Self {
+        Self {
+            dir: None,
+            mem: Mutex::default(),
+            serving: tokio::sync::Semaphore::new(SERVING_MAX),
+        }
+    }
 }
 
 /// Offered at `at` and not expired yet (a clock set back counts as fresh).
@@ -199,6 +220,62 @@ impl Offers {
 mod offers {
     use super::*;
 
+    /// Review of 2026-11-15, SR-33: a provider that announces 64 MiB and sends ten bytes is
+    /// refused without the 64 MiB being set aside, and what arrives is hashed on the way.
+    #[tokio::test]
+    async fn a_provider_cannot_make_us_reserve_what_it_does_not_send() {
+        let (mut ours, mut theirs) = tokio::io::duplex(1 << 16);
+        let mut head = vec![0u8];
+        head.extend_from_slice(&MAX_SIZE.to_le_bytes());
+        head.extend_from_slice(b"ten bytes!");
+        theirs.write_all(&head).await.unwrap();
+        drop(theirs);
+        let r = read_response(&mut ours, &[7; 32], MAX_SIZE).await;
+        assert!(matches!(r, Err(FetchError::Protocol(_))), "{r:?}");
+        // Honest bytes in several chunks: accepted.
+        let blob: Vec<u8> = (0..(3 * CHUNK + 5)).map(|i| (i % 251) as u8).collect();
+        let (mut ours, mut theirs) = tokio::io::duplex(1 << 16);
+        let mut head = vec![0u8];
+        head.extend_from_slice(&(blob.len() as u64).to_le_bytes());
+        let send = blob.clone();
+        let writer = tokio::spawn(async move {
+            theirs.write_all(&head).await.unwrap();
+            theirs.write_all(&send).await.unwrap();
+        });
+        let got = read_response(&mut ours, &hash(&blob), MAX_SIZE).await.unwrap();
+        writer.await.unwrap();
+        assert_eq!(got, blob);
+    }
+
+    /// SR-33: eight requests at once at most; one more is closed at once, and a request that
+    /// never arrives is given up.
+    #[tokio::test(start_paused = true)]
+    async fn serving_is_limited() {
+        let offers = Arc::new(Offers::default());
+        let mut silent = Vec::new();
+        let mut tasks = Vec::new();
+        for _ in 0..SERVING_MAX {
+            let (a, b) = tokio::io::duplex(64);
+            silent.push(a);
+            let o = offers.clone();
+            tasks.push(tokio::spawn(async move {
+                let (mut r, mut w) = tokio::io::split(b);
+                serve(&o, &mut r, &mut w).await
+            }));
+        }
+        tokio::task::yield_now().await;
+        let (_x, b) = tokio::io::duplex(64);
+        let (mut r, mut w) = tokio::io::split(b);
+        let one_more = serve(&offers, &mut r, &mut w).await;
+        assert_eq!(one_more.unwrap_err().kind(), std::io::ErrorKind::QuotaExceeded);
+        // The silent ones are given up after the request limit.
+        tokio::time::advance(REQUEST_LIMIT + Duration::from_secs(1)).await;
+        for t in tasks {
+            assert_eq!(t.await.unwrap().unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+        }
+        assert_eq!(offers.serving.available_permits(), SERVING_MAX);
+    }
+
     /// An offer expires after 7 days in memory too (recheck R11); offered again, it is back.
     #[test]
     fn offers_expire_in_memory() {
@@ -224,7 +301,7 @@ mod offers {
         std::fs::create_dir_all(&dir).unwrap();
         let o = Offers {
             dir: Some(dir.clone()),
-            mem: Mutex::default(),
+            ..Offers::default()
         };
         assert!(!o.any_fresh());
         let h = o.put(b"track".to_vec());
@@ -247,14 +324,30 @@ mod offers {
 }
 
 /// The provider side of `lichen/blob/1` (§14.2), on any byte stream: reads one request,
-/// answers it.
+/// answers it. At most [`SERVING_MAX`] at once; the request within [`REQUEST_LIMIT`], the
+/// whole answer within [`SERVE_LIMIT`].
 async fn serve<R, W>(offers: &Offers, r: &mut R, w: &mut W) -> std::io::Result<()>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
+    let Ok(_serving) = offers.serving.try_acquire() else {
+        return Err(std::io::ErrorKind::QuotaExceeded.into());
+    };
+    tokio::time::timeout(SERVE_LIMIT, answer(offers, r, w))
+        .await
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))?
+}
+
+async fn answer<R, W>(offers: &Offers, r: &mut R, w: &mut W) -> std::io::Result<()>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
     let mut req = [0u8; 33];
-    r.read_exact(&mut req).await?;
+    tokio::time::timeout(REQUEST_LIMIT, r.read_exact(&mut req))
+        .await
+        .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))??;
     let (op, h) = req.split_at(1);
     let found = match (op, <Hash>::try_from(h)) {
         ([1], Ok(h)) => offers.get(&h),
@@ -298,9 +391,25 @@ async fn read_response<R: AsyncRead + Unpin>(
     if size > max.min(MAX_SIZE) {
         return Err(FetchError::TooLarge);
     }
-    let mut bytes = vec![0u8; size as usize];
-    r.read_exact(&mut bytes).await.map_err(protocol)?;
-    if crate::hash(&bytes) != *hash {
+    // Read as it comes, hashed on the way: nothing is set aside for what a provider only
+    // claims it will send (SR-33).
+    let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0).min(CHUNK));
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; CHUNK];
+    let mut left = size;
+    while left > 0 {
+        let want = usize::try_from(left).unwrap_or(CHUNK).min(CHUNK);
+        let chunk = buf.get_mut(..want).ok_or_else(|| protocol("buffer"))?;
+        let n = r.read(chunk).await.map_err(protocol)?;
+        if n == 0 {
+            return Err(protocol("cut short"));
+        }
+        let got = chunk.get(..n).ok_or_else(|| protocol("buffer"))?;
+        hasher.update(got);
+        bytes.extend_from_slice(got);
+        left -= n as u64;
+    }
+    if *hasher.finalize().as_bytes() != *hash {
         return Err(FetchError::Mismatch);
     }
     Ok(bytes)
@@ -352,7 +461,7 @@ impl Bridge {
         Ok(Self {
             offers: Arc::new(Offers {
                 dir,
-                mem: Mutex::default(),
+                ..Offers::default()
             }),
             iroh: Mutex::new(None),
             tor: tokio::sync::Mutex::new(None),

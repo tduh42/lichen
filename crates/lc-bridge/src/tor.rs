@@ -29,8 +29,6 @@ use crate::{FetchError, Hash, Offers, read_response, serve, write_request};
 pub const ONION_PORT: u16 = 1;
 /// Longest fetch over Tor: building circuits to an onion service takes tens of seconds.
 pub(crate) const FETCH_LIMIT: Duration = Duration::from_secs(180);
-/// Longest time to serve one request.
-const SERVE_LIMIT: Duration = Duration::from_secs(600);
 
 /// Our onion service, as far as we know.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,8 +145,7 @@ impl Tor {
                     }
                     if let Ok(stream) = req.accept(Connected::new_empty()).await {
                         let (mut r, mut w) = tokio::io::split(stream);
-                        let _ =
-                            tokio::time::timeout(SERVE_LIMIT, serve(&offers, &mut r, &mut w)).await;
+                        let _ = serve(&offers, &mut r, &mut w).await;
                     }
                 });
             }
