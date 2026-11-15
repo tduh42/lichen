@@ -108,7 +108,7 @@ K_ha   = HKDF(salt_R, S ‖ es ‖ ee ‖ se, "lichen/2 hello-ack" ‖ h1, 32)
 AAD    = header (7) ‖ salt_R ‖ e_R
 ```
 
-R keeps `(h, salt_I) → (salt_R, e_R)` while the handshake is recent (10 min): a resent HELLO gets the same answer, with the new `attempt`.
+R keeps `(h, salt_I) → (salt_R, e_R)` for the last HELLO it answered from that peer: a resent HELLO gets the same answer, with the new `attempt`. A replay after a newer handshake is not fresh any more (§4.4) and gets none.
 
 ### 4.3 Session keys
 
@@ -130,7 +130,7 @@ Each side encrypts with its own direction's key and decrypts with the other. `ta
 - **Crossing**: if I receives a HELLO from R while its own is waiting for an answer, the handshake of the smaller public key (lexicographic order) wins. The losing side drops its own and answers the other.
 - **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key; the HELLO's return path and the session's age (for renewal) take effect then too. Until then it keeps the previous session and path if there are any. A replayed HELLO therefore cannot break a running session.
 - **No persistence** (ADR-0003): sessions live in memory. After a restart, the first send runs a new handshake.
-- **Renewal**: new handshake before the send `tag` reaches `0xFF00`, after 24 h or after 4 MB sent (configurable). The old receive key stays valid for 10 min.
+- **Renewal**: new handshake before the send `tag` reaches `0xFF00`, after 24 h or after 4 MB sent (configurable). The old session is dropped when the new one is adopted; a datagram still in flight under it goes again under the new one (§7.1). (Earlier versions of this text kept the old receive key 10 minutes; the code never did, review of 2026-11-15, SR-10.)
 
 ### 4.5 Path discovery (ADR-0008)
 
@@ -385,7 +385,7 @@ G   (reassembly, receiver)      = last_received + (missing_after_highest + 2) ×
 
 Per session and receive direction:
 - `H` = highest `tag` seen (with at least one valid fragment); window of 64 `tag`s below `H` with a bitmap of completed datagrams.
-- Accepted: `tag > H`, or `H − 64 < tag ≤ H` and not completed. A `tag ≤ H − 64` is ignored.
+- Accepted: `tag > H`, or `H − 64 < tag ≤ H` and not completed. A `tag ≤ H − 64` is ignored. In practice a session receives one datagram at a time (§7.1 step 8), so a `tag` below the one being reassembled is a finished or abandoned datagram: the receiver answers a completed one with `COMPLETE` and ignores the rest.
 - The sender starts at `tag = 0` and never goes back; it renews the session before `0xFF00` (§4.4).
 
 ## 9. Airtime and budget
@@ -669,7 +669,7 @@ The iroh key is `HKDF(seed, "lichen/1 iroh")` (§2): stable for a phone, so conn
 
 ## 15. MeshCore chats (ADR-0026)
 
-lichen also exchanges **plain MeshCore text** with people who use a stock MeshCore client: direct messages with any node the companion knows, and posts on the companion's channels. MeshCore encrypts and acknowledges these itself; lichen only drives the companion. They are **separate conversations**: a MeshCore chat never carries lichen content (no session, reply, reaction, media or edit), and a lichen chat never falls back to plain text. The two kinds of chat with the same person are never merged.
+lichen also exchanges **plain MeshCore text** with people who use a stock MeshCore client: direct messages with any node the companion knows, and posts on the companion's channels. MeshCore encrypts and acknowledges these itself; lichen only drives the companion. They are **separate conversations**: a MeshCore chat never carries lichen content (no session, reply, reaction, media or edit), and a lichen chat never falls back to plain text. The user can still forward a text into a MeshCore chat, as they could paste it: it then leaves lichen's encryption, and the apps say so on the chat (review of 2026-11-15, SR-39). The two kinds of chat with the same person are never merged.
 
 ### 15.1 Receiving
 
