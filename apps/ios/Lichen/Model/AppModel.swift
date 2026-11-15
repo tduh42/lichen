@@ -703,11 +703,14 @@ final class AppModel {
                 notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
             }
         case let .plainReceived(chat, label, text):
-            // A MeshCore message (§15.1): "Marc", or "Lucie · Public" on a channel.
+            // A MeshCore message (§15.1): "Marc · MeshCore", or "Lucie · Public" on a channel.
+            // Never like a lichen chat's: a node can send plain text under any name, and its
+            // notification must not pass for the encrypted conversation (review of
+            // 2026-11-15, SR-30).
             if !isMuted(chat) {
                 let title: String = switch chat {
                 case .channel: [label, self.title(of: chat)].compactMap { $0 }.joined(separator: " · ")
-                default: label ?? self.title(of: chat)
+                default: "\(label ?? self.title(of: chat)) · MeshCore"
                 }
                 notifier.message(chat, title: title, body: text)
             }

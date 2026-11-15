@@ -724,3 +724,31 @@ mod edit_window {
         assert!(!h[0].edited);
     }
 }
+
+/// Review of 2026-11-15, SR-30: a verified contact's node renames itself; the app keeps the
+/// name it had when the user verified it.
+#[cfg(test)]
+mod names {
+    use super::*;
+
+    #[test]
+    fn a_verified_contact_keeps_its_name() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![144; 32], None).unwrap();
+        let card = lc_core::identity::Card {
+            identity: [7; 32],
+            node: [70; 32],
+            name: "Camille".into(),
+        }
+        .encode();
+        core.add_contact_card(card, true).unwrap();
+        // Her node now advertises another name.
+        core.lock().core.add_contact([70; 32], "Julien", None);
+        let c = core
+            .contacts()
+            .into_iter()
+            .find(|c| c.key == vec![70; 32])
+            .unwrap();
+        assert_eq!((c.name.as_str(), c.verified), ("Camille", true));
+        assert_eq!(c.node_name, "Julien");
+    }
+}

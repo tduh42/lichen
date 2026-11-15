@@ -708,3 +708,4 @@ The apps show the estimate before sending, as for lichen messages.
   - **a channel** is readable by everyone who has its secret, and Public by anyone in range.
 - The composer is text only and counts bytes.
 - A channel joined from lichen starts muted.
+- A MeshCore direct message notifies as "Name · MeshCore", never under the bare name a lichen conversation uses: a node can send plain text under any name (review of 2026-11-15, SR-30).

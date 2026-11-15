@@ -72,6 +72,7 @@ impl LichenCore {
             || (scanned && i.core.accept_identity(&c.node, &c.identity, true));
         if adopted && scanned {
             i.core.set_verified(&c.node, &c.identity, true);
+            i.pin_name(&c.node);
         }
         i.save_contacts();
         let out = i
@@ -117,6 +118,9 @@ impl LichenCore {
         let (k, e) = (key(&node)?, key(&expected)?);
         let mut i = self.lock();
         let done = i.core.accept_identity(&k, &e, verify);
+        if done && verify {
+            i.pin_name(&k);
+        }
         i.save_contacts();
         Ok(done)
     }
@@ -148,6 +152,9 @@ impl LichenCore {
         let (k, id) = (key(&node)?, key(&identity)?);
         let mut i = self.lock();
         let done = i.core.set_verified(&k, &id, verified);
+        if done && verified {
+            i.pin_name(&k);
+        }
         i.save_contacts();
         Ok(done)
     }

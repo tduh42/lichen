@@ -47,6 +47,29 @@ pub(crate) struct Pending {
 }
 
 impl Inner {
+    /// Verified contact `node` keeps the name it had when verified: a node's advertised name
+    /// is its owner's to change, and a verified contact renamed by its node would keep its
+    /// badge under any name (review of 2026-11-15, SR-30). Kept as the contact's nickname,
+    /// which the user can still change; nothing changes when they gave one.
+    pub(crate) fn pin_name(&mut self, node: &PubKey) {
+        if self.nicknames.contains_key(node) {
+            return;
+        }
+        let Some(name) = self
+            .core
+            .contacts()
+            .find(|c| c.key == *node && c.verified)
+            .map(|c| c.name.clone())
+            .filter(|n| !n.trim().is_empty())
+        else {
+            return;
+        };
+        if let Some(s) = &self.store {
+            let _ = s.set_nickname(node, Some(&name));
+        }
+        self.nicknames.insert(*node, name);
+    }
+
     /// Opens the database of our identity (or one in memory) and restores contacts, groups
     /// and shares.
     pub(crate) fn open_store(&mut self, identity: &PubKey) {

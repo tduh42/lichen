@@ -889,11 +889,14 @@ class AppModel(val app: Application) {
             // lc-ffi keeps the power to restore; we show it while it is lowered.
             is LichenEvent.TxPower -> loweredPower = if (e.previous == null) null else e.dbm
             is LichenEvent.PlainReceived -> {
-                // A MeshCore message (§15.1): "Marc", or "Lucie · Public" on a channel.
+                // A MeshCore message (§15.1): "Marc · MeshCore", or "Lucie · Public" on a
+                // channel. Never like a lichen chat's: a node can send plain text under any
+                // name, and its notification must not pass for the encrypted conversation
+                // (review of 2026-11-15, SR-30).
                 val chat = ChatId.of(e.chat)
                 if (!isMuted(chat)) {
                     val title = if (chat.channel) listOfNotNull(e.label, title(chat)).joinToString(" · ")
-                    else e.label ?: title(chat)
+                    else "${e.label ?: title(chat)} · MeshCore"
                     notify(chat, title, e.text)
                 }
                 if (chat.kind == ChatId.Kind.MESH) {
