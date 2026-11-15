@@ -32,7 +32,7 @@ struct AddContactView: View {
                 VerifyPanel(node: added.key) {
                     // Their conversation opens, ready for the first message (the list shows
                     // contacts once there is a message).
-                    if next == nil { model.debugOpen = .contact(key: added.key) }
+                    if next == nil { model.openRequest = .contact(key: added.key) }
                     finish()
                 }
             } else if tab == .myCode {
@@ -144,7 +144,7 @@ private struct JoinPanel: View {
                 // -joinNow YES: the group opens once joined (screenshots).
                 Color.clear.frame(height: 0).onAppear {
                     if UserDefaults.standard.bool(forKey: "joinNow") {
-                        model.debugOpen = .group(gid: gid)
+                        model.openRequest = .group(gid: gid)
                         done()
                     }
                 }
@@ -152,7 +152,7 @@ private struct JoinPanel: View {
                 Banner(kind: .ok, title: String(localized: "You joined \(name)"),
                        message: String(localized: "\(admin) added you. The other members' keys arrive over the next minutes."))
                 Button("Open the group") {
-                    model.debugOpen = .group(gid: gid)
+                    model.openRequest = .group(gid: gid)
                     done()
                 }
                 .buttonStyle(.primary)

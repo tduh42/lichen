@@ -124,8 +124,16 @@ final class AppModel {
     var isDemo = false
     /// The demo's simulated radio is switched off (Settings), to see messages wait (§6.1).
     var demoRadioOff = false
-    /// A chat to open (debug launch argument `-open <name>`, for screenshots).
-    var debugOpen: ChatID?
+    /// A conversation to open once: a notification tapped, a contact just added, a group just
+    /// joined, an SOS answered, or the debug launch argument `-open <name>`. The conversation
+    /// list opens it and clears it.
+    var openRequest: ChatID?
+    #if DEBUG
+    /// `-open <name>` chose this node's MeshCore chat before its lichen identity arrived.
+    @ObservationIgnored var debugOpenedMesh: Data?
+    /// `-open <name>` was resolved: once per launch.
+    @ObservationIgnored var debugOpened = false
+    #endif
     /// Invitations we accepted, by admin node: the group's name, until it arrives (§10.5).
     var joining: [Data: String] = [:]
     /// Groups that arrived after we accepted their invitation, by admin node.
@@ -251,7 +259,7 @@ final class AppModel {
                 return
             }
             tab = .messages
-            debugOpen = chat
+            openRequest = chat
         }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
@@ -611,18 +619,23 @@ final class AppModel {
             contacts = core.contacts().filter(\.person)
             #if DEBUG
             // -open <name>: opened before their identity arrived, as a MeshCore chat; now that
-            // they turn out to have lichen, their conversation.
-            if debugOpen == .mesh(key: node) { debugOpen = .contact(key: node) }
+            // they turn out to have lichen, their conversation. Only for the launch argument.
+            if debugOpenedMesh == node {
+                debugOpenedMesh = nil
+                openRequest = .contact(key: node)
+            }
             #endif
         case let .identityConflict(node, identity):
             conflicts[node] = identity
         case .contactsUpdated:
             contacts = core.contacts().filter(\.person)
             #if DEBUG
-            if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
+            if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
                 // Someone without lichen (the demo's Marc): their MeshCore chat (§15).
-                debugOpen = c.identity == nil ? .mesh(key: c.key) : .contact(key: c.key)
+                openRequest = c.identity == nil ? .mesh(key: c.key) : .contact(key: c.key)
+                debugOpened = true
+                if c.identity == nil { debugOpenedMesh = c.key }
             }
             // -fill N: N older messages with Camille (paging checks), once.
             if isDemo, !debugFilled, UserDefaults.standard.integer(forKey: "fill") > 0,
@@ -644,7 +657,7 @@ final class AppModel {
                let gid = try? core.createGroup(name: String(localized: "Sunday hike"), members: [], nowMs: now()) {
                 debugInviteMade = true
                 groups = core.groups()
-                debugOpen = .group(gid: gid)
+                openRequest = .group(gid: gid)
             }
             // -screen join: Camille shows an invitation to a group of hers, and you scan it.
             if isDemo, debugScreen == "join", !debugInviteMade,
@@ -768,9 +781,10 @@ final class AppModel {
             refreshPrefs()
             #if DEBUG
             // -open Public: a MeshCore channel.
-            if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
+            if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
                let c = channels.first(where: { $0.name == name }) {
-                debugOpen = .channel(id: c.id)
+                openRequest = .channel(id: c.id)
+                debugOpened = true
             }
             #endif
         case let .messageChanged(m):
@@ -1320,9 +1334,10 @@ final class AppModel {
         invitations = core.groupInvitations()
         contacts = core.contacts().filter(\.person)
         #if DEBUG
-        if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),
+        if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
            let g = groups.first(where: { $0.name == name }) {
-            debugOpen = .group(gid: g.gid)
+            openRequest = .group(gid: g.gid)
+            debugOpened = true
         }
         #endif
     }

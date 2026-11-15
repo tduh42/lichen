@@ -91,8 +91,13 @@ struct ConversationsView: View {
                     path = [chat]
                 }
             }
-            .onChange(of: model.debugOpen) {
-                if let chat = model.debugOpen { path = [chat] }
+            // A conversation asked for elsewhere: opened once, then the request is gone, so that
+            // coming back to this list stays here.
+            .onChange(of: model.openRequest) {
+                if let chat = model.openRequest {
+                    path = [chat]
+                    model.openRequest = nil
+                }
             }
             #if DEBUG
             // -screen join: the scanner opens on the demo's invitation.
@@ -100,7 +105,10 @@ struct ConversationsView: View {
             #endif
             .onAppear {
                 // A chat asked for before this list appeared (SOS reply, debug `-open`).
-                if let chat = model.debugOpen, path.isEmpty { path = [chat] }
+                if let chat = model.openRequest {
+                    path = [chat]
+                    model.openRequest = nil
+                }
                 #if DEBUG
                 if model.debugScreen == "contact" { addingContact = true }
                 // -screen searchMessages -query <text>: the search sheet, filled in.
@@ -410,7 +418,7 @@ struct StatusBanners: View {
                     title: String(localized: "\(names) is searching for you"),
                     message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm for the search, then goes back.") }
                         ?? String(localized: "Your phone answers their pings: SOS, or you let the group locate you."),
-                    action: (String(localized: "Open"), { model.debugOpen = .group(gid: first.gid) })
+                    action: (String(localized: "Open"), { model.openRequest = .group(gid: first.gid) })
                 )
             }
             if model.isConnected && model.airtimeLeftMs < 10_000 {

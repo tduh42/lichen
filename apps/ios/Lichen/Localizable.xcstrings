@@ -2411,6 +2411,16 @@
         }
       }
     },
+    "End of conversation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fin de la conversation"
+          }
+        }
+      }
+    },
     "End-to-end encrypted": {
       "localizations": {
         "fr": {

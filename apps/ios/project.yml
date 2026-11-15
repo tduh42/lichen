@@ -71,3 +71,27 @@ targets:
         ENABLE_PREVIEWS: YES
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
+  # UI tests on the demo network (`-demo YES`): navigation and scrolling as a user does them.
+  LichenUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LichenUITests
+    dependencies:
+      - target: Lichen
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tduhamel.lichen.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Lichen
+        "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
+schemes:
+  Lichen:
+    build:
+      targets:
+        Lichen: all
+        LichenUITests: [test]
+    test:
+      targets:
+        - LichenUITests
+

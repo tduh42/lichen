@@ -34,6 +34,9 @@ struct ChatView: View {
     @State private var editing: StoredMessage?
     /// A quoted original to go to.
     @State private var jumpTo: Int64?
+    /// The view stays on the last message while the content grows (photos, stickers and GIFs
+    /// laid out after the first pass): from opening at the end until the user scrolls away.
+    @State private var pinned = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,7 +92,11 @@ struct ChatView: View {
                             FailureBanner(message: failed) { error = model.retry(failed) }
                                 .padding(.top, 4)
                         }
-                        Color.clear.frame(height: 1).id(Self.bottom)
+                        Color.clear.frame(height: 1)
+                            .accessibilityElement()
+                            .accessibilityLabel("End of conversation")
+                            .accessibilityIdentifier("chat.end")
+                            .id(Self.bottom)
                     }
                     .scrollTargetLayout()
                     .padding(.horizontal, 14)
@@ -97,6 +104,7 @@ struct ChatView: View {
                 }
                 .scrollPosition(id: $bottomVisible, anchor: .bottom)
                 .defaultScrollAnchor(.bottom)
+                .modifier(FollowBottom(pinned: $pinned) { proxy.scrollTo(Self.bottom, anchor: .bottom) })
                 .overlay(alignment: .bottom) {
                     if unseen > 0 {
                         Button {
@@ -117,6 +125,7 @@ struct ChatView: View {
                 // once images are laid out; later ones scroll into view.
                 // On a message from a search, or on the unread divider, else at the end.
                 .task(id: chat) {
+                    pinned = highlight == nil && dividerBefore == nil
                     await Task.yield()
                     scrollToStart(proxy)
                     try? await Task.sleep(for: .milliseconds(250))
@@ -1207,6 +1216,7 @@ private struct Composer: View {
                     .accessibilityLabel("Attach")
                     }
                     TextField("Message", text: $draft, axis: .vertical)
+                        .accessibilityIdentifier("composer")
                         .lineLimit(1...5)
                         .font(.system(.callout))
                         .padding(.horizontal, 14)
@@ -2183,5 +2193,34 @@ private struct SelectableText: UIViewRepresentable {
 
     func updateUIView(_ v: UITextView, context: Context) {
         v.text = text
+    }
+}
+
+/// Keeps a scroll view on its last row while its content grows, as long as `pinned`; a scroll
+/// by the user decides `pinned` again: at the end, or not. Before iOS 18, the scrolls at
+/// opening only.
+private struct FollowBottom: ViewModifier {
+    @Binding var pinned: Bool
+    let toBottom: () -> Void
+
+    private struct Geometry: Equatable {
+        var content: CGFloat
+        var visibleEnd: CGFloat
+    }
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onScrollGeometryChange(for: Geometry.self) {
+                Geometry(content: $0.contentSize.height, visibleEnd: $0.visibleRect.maxY)
+            } action: { old, new in
+                if new.content != old.content {
+                    if pinned { toBottom() }
+                } else {
+                    pinned = new.visibleEnd >= new.content - 32
+                }
+            }
+        } else {
+            content
+        }
     }
 }

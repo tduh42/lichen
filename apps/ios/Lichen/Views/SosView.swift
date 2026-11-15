@@ -204,7 +204,7 @@ struct SosReceivedView: View {
                 HStack(spacing: 8) {
                     Button("Reply") {
                         model.tab = .messages
-                        model.debugOpen = .contact(key: from)
+                        model.openRequest = .contact(key: from)
                         model.sosAlert = nil
                     }
                     .buttonStyle(.secondary)
