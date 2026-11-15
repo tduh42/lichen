@@ -1,0 +1,208 @@
+# Security review — 2026-11-15
+
+Three independent read-only reviews of the tree at `2961a89`, one per area, each by a reviewer that had not seen the others' work or the earlier reviews until it had its own list:
+
+- **Core:** the pairwise cryptography (spec §1–§9, `lc-proto`, sessions and paths in `lc-core`).
+- **Groups:** groups, content semantics and insiders (spec §6, §10–§12).
+- **Edges:** the bridge, media, parsers, storage, both apps, dependencies (spec §13–§15).
+
+Nothing was built or run by the reviewers. "Verified" below means the maintainer then read the cited code and found it as described; "reported" means not yet checked. **A finding counts as confirmed only once a test reproduces it** (the response table at the end records that).
+
+No third party has audited lichen. This review does not replace one.
+
+## Summary
+
+- **The ciphers and their use were found sound.** ChaCha20-Poly1305 assembled as in RFC 8439 with the tag truncated to 8 bytes, X25519, Ed25519 (`verify_strict`), HKDF, BLAKE3 for blobs. No (key, nonce) repeat was found; nothing a passive listener can read; no key recovery.
+- **No Critical finding.**
+- **Seven High findings**, all in how trust and state are handled around the ciphers: SR-01, SR-02, SR-11, SR-12, SR-13, SR-22, SR-23.
+- **Fourteen Medium**, twelve Low, six informational.
+
+## Findings
+
+Severity: High, Medium, Low, Info. "Wire" says whether the fix changes what travels on the air or how keys are derived. Line numbers are those of `2961a89`.
+
+### Core
+
+**SR-01 (High, verified). Contacts not verified in person are not pinned.**
+- Where: §4.6; `crates/lc-core/src/core.rs` `learn_identity` (2002–2028), `on_intro` (2289–2364), `on_intro_fin` (2429–2473).
+- An unverified contact's identity is replaced by any new one (`c.identity = Some(identity)`, line 2019). INTRO names its sender by one hash byte. Anyone sends INTRO with Bob's byte, then INTRO_FIN with their own identity: Alice's later messages to "Bob" go to the attacker, in the same conversation. Against a verified contact the same frames set a pending identity and block sending until the user rejects it.
+- Fix: pin at first use for every contact; a change waits for consent while traffic continues to the pinned identity; an INTRO from an unknown identity becomes a request. Wire: no.
+
+**SR-02 (High, verified). Paths are stored from unauthenticated frames and never rediscovered.**
+- Where: §4.5; `core.rs` `on_probe` (2195–2240, the path is stored at 2239 after a probe keyed only by public node keys), `on_intro` (2361), `on_hello` (2574); the only reset is at 1139.
+- Anyone who knows two node keys (adverts are public) floods one anonymous probe with a bogus path; frames to that contact then go nowhere until the peer writes or the app restarts. A malicious repeater can insert itself instead. §4.5's "fails and probes again" is not implemented.
+- Fix: answer such frames but never store their path; adopt a path only after an authenticated frame arrives over it; clear and probe again after a handshake failure. Wire: no (binding INTRO's return path into its keys changes derivation, see SR-06).
+
+**SR-03 (Medium, reported). A HELLO has no freshness and changes state before the initiator is confirmed.**
+- Where: §4.1, §4.4; `core.rs` 2529–2604, 541–554, 524–529.
+- A recorded HELLO stays valid. Replaying it overwrites the path, can cancel the victim's own handshake, can drop a confirmed session while a datagram is "suspect", and resets the session's age and byte counters so the 24 h / 4 MB renewal never fires. A cheap, selective denial of service; no plaintext.
+- Fix: a HELLO only creates a receive-only pending session; everything else changes when a valid frame confirms it. Wire: no.
+
+**SR-04 (Medium, reported). Transmissions an attacker triggers bypass the airtime budget.**
+- Where: §9, ADR-0014; `core.rs` 1848–1856, 2237, 2359, 2602, 2511–2526.
+- A forged INTRO draws an INTRO_ACK, a forged anonymous probe a PATH_REPLY, a replayed HELLO a HELLO_ACK, a HELLO with a bad tag up to 8 INTROs. All are counted in the budget but only DATA is gated: a few hundred frames an hour exhaust it and push the victim past the duty cycle. ADR-0014's "failures cost nothing" is wrong here.
+- Fix: rate-limit unauthenticated replies per peer and globally; no INTRO on a failed tag. Wire: no.
+
+**SR-05 (Medium, verified). The safety number gives about 50 bits against a man in the middle.**
+- Where: §4.7; `crates/lc-core/src/identity.rs` 41–56.
+- One 30-digit number hashes both identities. An attacker replacing both sides looks for M1, M2 with SN(A, M1) = SN(B, M2): a birthday search of about 2^50 key generations per side, offline.
+- Fix: 60 digits, one 30-digit half per identity. Wire: no, but both phones must update.
+
+**SR-06 (Medium, reported). HELLO authenticates with static-static Diffie-Hellman only.**
+- Where: §4.1–§4.3; `crates/lc-proto/src/handshake.rs` 52–64, 240–272.
+- The pattern is NNpsk0 with the static-static secret as the key. Whoever learns Alice's seed can impersonate any contact to Alice and read past HELLO bodies; data keeps forward secrecy (ephemeral-ephemeral). There is no transcript hash: ephemerals, flags and the return path are not bound into the session keys.
+- Fix: mix the ephemeral-static terms and a transcript hash; bind INTRO's return path. Wire: key derivation changes, no extra bytes.
+
+**SR-07 (Low, reported). One random generator for the whole process, never erased.**
+- Where: `core.rs` 668, 2087–2090; no zeroize anywhere; `Config`, `Initiating`, `Answer` derive `Debug` over secrets.
+- A memory image of a running app yields every ephemeral since launch.
+- Fix: fresh OS randomness for ephemerals (or re-key after each handshake), zeroize, redact `Debug`. Wire: no.
+
+**SR-08 (Low, reported). Leaks understated in the documents.**
+- Flooded probes show source and destination hash bytes network-wide; an anonymous probe's MAC lets anyone confirm the exact pair (`crates/lc-proto/src/discovery.rs` 53–60). INTRO_ACK gives the responder's identity to any active sender: ADR-0013's "a listener cannot link" holds for passive listeners only.
+- Fix: say so in §4.5, §4.6, ADR-0013.
+
+**SR-09 (Info). The truncated-tag bound.** 2^-64 per attempt is heuristic; the simple provable bound for a 64-bit truncation is about ⌈ℓ/16⌉·2^-39. The attempt count (about 12,700 an hour) is right; comparison is constant time; no oracle. Fix: state both in ADR-0014.
+
+**SR-10 (Info). Spec and code disagree.** The 10-minute old receive key of §4.4 is not implemented (the session is dropped, `core.rs` 1806–1813); answered-HELLO memory never expires (§4.2); crossing compares node keys, not identity keys; the replay window accepts only the current tag (`lc-proto/src/session.rs` 288), stricter than §8; INTRO-responder sessions never set their start time (`core.rs` 2464); `design.md`'s nonce and replay rows are stale; `LichenCore::new` does not validate its seed.
+
+### Groups
+
+**SR-11 (High, verified). Group authorship follows the admin-supplied node, not the signed identity.**
+- Where: §6.2, §6.4, §10.1; `crates/lc-ffi/src/lib.rs` 2145–2176, 2229–2250; `crates/lc-core/src/store.rs` 1040–1078; `crates/lc-core/src/group.rs` 595–603 (only identities must be distinct), 2119–2124.
+- The core verifies the signature against the identity, then reports the member's node; the binding layer keys rows, reactions, the edit/delete author check and positions on that node. A malicious admin lists (E's identity, Camille's node): E's posts show as Camille's, and E's EDIT or DELETE of Camille's message passes the author check on every phone. Probably reachable by a QR-token holder too, through SR-01.
+- Fix: key everything by identity; reject duplicate nodes in a state; refuse a join whose contact identity just changed. Wire: no (store migration).
+
+**SR-12 (High, verified). Removal and key rotation are best effort.**
+- Where: §10.1–§10.2; `core.rs` `fail_message` (1630–1642: internal datagrams are dropped after 5 tries, 31 minutes); `group.rs` 1324–1376, 2050–2061.
+- A member out of reach when Bob is removed keeps Bob listed, never rotates, and sends Bob its new key at its next restart: Bob keeps reading that member. A missed rotated key silently loses that sender; nothing carries the group epoch, so nobody notices.
+- Fix: never give up on GROUP_STATE and SENDER_KEY (capped backoff, resend on reconnect and restart, the admin sees who was not reached); a sync request (`gid ‖ epoch held`) for members holding envelopes they cannot open. Wire: the sync request is a new datagram.
+
+**SR-13 (High, verified). Joining needs no consent; SOS trusts every group.**
+- Where: §10.1, §11, §12.2; `group.rs` `on_group_state` (1610–1656; members are learned at 1622 before the admin and epoch checks of an existing group); `location.rs` 541–565; `search.rs` 629–631, 865–874, 928–941.
+- Any contact with a known identity sends a GROUP_STATE listing the victim: the phone joins, answers with a key and imports up to 30 contacts with names the sender chose. In SOS the exact position goes to every group, and PING and POWER are obeyed from any member: the attacker gets the location, can hold TX power at −9 dBm, and can force a BEACON every 20 s. Junk groups also queue ahead of real SOS frames.
+- Fix: an invitation waits for the user; a cap on groups; SOS and search only for accepted groups; a floor or a confirmation for POWER. Wire: no.
+
+**SR-14 (Medium, reported). GROUP_MISSING is an unmetered amplifier.**
+- Where: `group.rs` 1428–1483, 1098–1125, 1213–1229; `core.rs` 2703–2717.
+- An 83-byte request from any member returns up to 16 payloads, repeatably: about 15 an hour exhaust the victim's budget. A token holder repeating GROUP_JOIN gets the state re-sent each time. GROUP_LEAVE's epoch is never checked.
+- Fix: answer each (asker, counter) once, a cap per asker, the duplicate filter on control datagrams, check the leave epoch. Wire: no.
+
+**SR-15 (Medium, verified). The 24-hour edit window is the author's word.**
+- Where: `store.rs` 1040–1078 (`a.ts − sent_at ≤ 86,400`, both chosen by the author); `crates/lc-core/src/content.rs` 536.
+- A modified client rewrites its own messages months later. Rows for unknown targets are never purged; EDIT text has no cap. (A far-future timestamp cannot beat another member: rows are per author.)
+- Fix: also require the receiver's clock (target arrival + 24 h + slack); purge orphans; cap the text. Wire: no.
+
+**SR-16 (Medium, reported). Search counts unauthenticated direct copies.**
+- Where: §11.2; `search.rs` 636–696; `core.rs` 2184–2190.
+- Any zero-hop frame carrying a message's clear header counts as a reception of the target, and the best SNR is shared. An outsider near a searcher re-emits the header and falsifies ranging during a rescue.
+- Fix: count a copy only if its tag verifies, and only the first per copy bit. Wire: no.
+
+**SR-17 (Medium, reported). Two-fragment reassembly can be poisoned by an insider.**
+- Where: `group.rs` 2162–2203.
+- A fragment valid under B's key is stored before any signature check; B's real fragment is then dropped as "another copy" and the message fails. Two timed injections censor B's messages over 70 bytes, recovery included.
+- Fix: keep several candidates per index and try the combinations. Wire: no.
+
+**SR-18 (Low, reported). Relayed keys and replay.**
+- Where: `group.rs` 487–489, 1832–1860, 155–160.
+- A malicious admin can walk a member's key epoch in one SENDER_KEYS and reinstall the real key with a fresh window: authentic old packets (positions, POWER) then replay. Counters ≥ 2^31 have no floor: an outsider can replay recorded positions and search packets to a newcomer.
+- Fix: one entry per owner, small forward steps, retired epochs remembered; a floor for the second counter range (wire), which the planned key step on join must also cover.
+
+**SR-19 (Low, reported). Invitations.** Accepting an invitation overwrites an existing contact's identity, even a verified one, as verified, with no conflict prompt (`group.rs` 1163–1186, `core.rs` 738–750). One photographed token admits up to 31 identities. Fix: the conflict flow; a cap per token. Wire: no.
+
+**SR-20 (Low, reported). Spec and code disagree (groups).** A same-epoch SENDER_KEY from its owner is ignored (`group.rs` 1847) where the spec says adopted; a re-admitted restored phone gets only the admin's key and its own is not forwarded (mute and deaf); `held` is 16 entries globally and can be filled by an outsider who knows `gid_hash` and a sender byte (`group.rs` 2131–2145); references are computed on re-encoded content (`lc-ffi/src/lib.rs` 2203, 2232), not on the bytes as sent.
+
+**SR-21 (Info).** The clear counter range and `key_epoch` reveal position or SOS activity, restarts and removals. No forward secrecy inside a key epoch. "Arrived late, sent at" shows a time the author claims. With 8-byte references an author can collide two of its own messages (about 2^32 work); this gives no cross-author edit or delete.
+
+### Edges
+
+**SR-22 (High, verified). iOS backups carry the history and the group sender keys.**
+- Where: `apps/ios/Lichen/Model/AppModel.swift` 321–330; ADR-0010. Nothing sets `isExcludedFromBackup`.
+- iCloud and Finder backups copy the database (messages, sender keys, channel secrets), `offers/`, `downloads/` and the drafts in UserDefaults. Android excludes everything.
+- Fix: exclude lichen's folder from backups; move drafts into it.
+
+**SR-23 (High, verified). A pasted contact code is marked verified.**
+- Where: `lc-ffi/src/lib.rs` `add_contact_card` (2675–2692: `set_identity(…, true)` for any card); paste fields in `AddContactView.swift` 329 and `ContactScreen.kt` 240. Spec §4.7 says "scanning in person".
+- A code received or altered by mail or SMS gets the verified badge, or silently replaces a verified contact's identity.
+- Fix: a pasted code is added unverified; a changed identity goes through the conflict flow.
+
+**SR-24 (Medium, verified). Android: a crafted file name crashes the app after download.**
+- Where: `apps/android/…/model/AppModel.kt` 1535–1540, 1610.
+- A file announced as `a.b/c` keeps `/` in its extension: the write throws, only `BridgeException` is caught, and each tap on Download crashes again.
+- Fix: alphanumeric extensions only; catch IO errors.
+
+**SR-25 (Medium, verified). Android: any installed app can crash lichen.**
+- Where: `MainActivity.kt` 79–81; `model/Ids.kt` (`fromRoute`, `unhex`).
+- The exported activity takes the `chat` and `sos` extras unvalidated; a non-hex value throws when the chat opens, which also stops reception.
+- Fix: validate the kind and the hex length before navigating.
+
+**SR-26 (Medium, verified). GIFs bypass Tor while Tor is on but not ready.**
+- Where: `AppModel.swift` 972 (`viaTor: torStatus == .ready`), `AppModel.kt` 1153. §6.3 says through Tor when Tor is on.
+- "Ready" needs the onion service published, up to eight minutes per start, or never if publishing fails. Until then a GIF loads directly and GIPHY sees the address.
+- Fix: through Tor whenever the setting is on; wait for the client; never fall back.
+
+**SR-27 (Medium, reported). Received images are decoded unbounded on the main thread.**
+- Where: `ChatView.swift` 944, 952; `ChatMedia.kt` 205, 270; `content.rs` 788 (the 160 × 120 limit is never checked).
+- A 450-byte AVIF declaring huge dimensions, or a bridge image up to 64 MiB, can get the app killed and the chat unopenable. Needs a test on each platform's decoder.
+- Fix: read the header first, cap dimensions, decode downsampled off the main thread (imports too).
+
+**SR-28 (Medium, verified in part). Deleting a message does not delete its media.**
+- Where: `crates/lc-bridge/src/lib.rs` 112–164; `store.rs` 402 (no `secure_delete`).
+- After "delete for everyone" the original stays in `offers/` and `downloads/` and is served for seven days to anyone with the hash; deleted rows stay in free pages. §6.4 says media are dropped.
+- Fix: revoke the offer, sweep at start, delete downloads with their message, `secure_delete` on.
+
+**SR-29 (Medium, verified in part). iroh is on by default and serves any caller.**
+- Where: `AppModel.swift` 37, `AppModel.kt` 295, `lc-bridge/src/lib.rs` 257–266.
+- The relays see the phone's address and a stable endpoint id at every launch, before any media is sent; a former contact can probe presence and probably the current address.
+- Fix: start iroh at first use; accept only current contacts' endpoint ids.
+
+**SR-30 (Medium, reported). Names are not pinned; MeshCore notifications look like lichen's.**
+- Where: `core.rs` 1432–1450; `AppModel.swift` 675–683.
+- A verified contact's name follows its node's advert: Julien renames his node "Camille" and keeps his badge. A plain message from Camille's node notifies as "Camille", like her encrypted chat.
+- Fix: pin the name at verification, show renames, label plain notifications "MeshCore".
+
+**SR-31 (Low, reported). The Android TCP radio link is clear and unauthenticated** (`TcpCompanion.kt` 28–45). Someone on the Wi-Fi can become the radio: read and forge plain chats, contacts, channel secrets; lichen content stays sealed. Fix: say so on the pairing screen.
+
+**SR-32 (Low, reported). A hostile radio is trusted too far** (`core.rs` 1399–1527; `crates/lc-core/src/plain.rs` 591, 597). Replies are not matched to the pending command; contacts and held plain messages are unbounded; a slot counter can overflow; the channel scan can loop; neither app checks that the BLE link is bonded. Fix: match replies, bound the lists, cap the scan.
+
+**SR-33 (Low, reported). Bridge robustness** (`lc-bridge/src/lib.rs` 239, 258). A fetch allocates up to 64 MiB from the peer's header and copies it across the FFI; the server has no timeout or concurrency cap. Fix: stream to a file with incremental hashing; caps.
+
+**SR-34 (Low, reported). Secret hygiene.** No zeroize; `Config` (`core.rs` 349) and `LichenBridge` (`lc-ffi/src/bridge.rs` 92) derive `Debug` over keys; the CLI writes its seed before `chmod` (`crates/lc-cli/src/device.rs` 133).
+
+**SR-35 (Low, reported). File names keep bidirectional control characters** (`lc-ffi/src/lib.rs` 4283), which allows extension spoofing; Android takes the MIME type from the raw name.
+
+**SR-36 (Low, reported). GIPHY and maps.** The fixed User-Agent "lichen" marks the app, over Tor too; auto-load may give a sender a read receipt through a unique GIF's view counter (to test); map tiles ignore the Tor setting.
+
+**SR-37 (Info). Fuzzing gaps.** No target drives a hostile companion through `Core`, the blob protocol or store snapshots; `group_open` has no corpus; a `session_peer` crash artifact from 6 November had not been replayed.
+
+**SR-38 (Info). Dependencies.** No pre-releases. Arti is pinned at `=0.48.0`; `rsa 0.9.10` has RUSTSEC-2023-0071; no dependency had ever been checked against the advisory database; no Gradle dependency verification.
+
+**SR-39 (Info). Spec and code disagree (edges).** ADR-0010 names the database `node-….sqlite`, the code `id-…`; forwarding a text into a MeshCore chat contradicts §15's "never carries lichen content".
+
+## Checked and found sound
+
+- **AEAD and nonces:** the RFC 8439 assembly, tested against the `chacha20poly1305` crate; tags capped at 0xFF00; every resend bumps the round; one reassembly per tag; directions and kinds separated; the PR-01 fix holds.
+- **Handshake:** mutual authentication and forward secrecy for data; all-zero Diffie-Hellman results and non-decompressing keys rejected; reflection and label separation hold; the header is fully in the AAD; memory per peer is fixed.
+- **Groups:** sender keys from the OS-seeded generator, fresh at restart and rotation, never stored; nonce `counter ‖ epoch ‖ frag` unique; the Ed25519 signature over `gid ‖ key_epoch ‖ counter ‖ content` checked before the window moves, before storage and delivery, for recovered envelopes too; only the admin's session changes membership; epochs strictly increase; another member cannot edit or delete by a reference collision; history is ordered by arrival.
+- **Bridge and media:** blobs checked against BLAKE3, sizes capped, providers authenticated; the GIF host and path fixed, rustls with webpki roots, no redirects, 8 MiB cap; DEFLATE bounded at 64 KiB; file opening contained to its own folder; the C voice decoder gets fixed 4-byte frames and all modes are fuzzed.
+- **Plain chats:** separate kinds in the store and the UI, labelled in the list, the header and the info sheet; the node's private key is never exported.
+- **Secrets on the phone:** the seed in the Keychain (after first unlock, this device only) and behind Android Keystore AES-GCM; the phrase never reaches the clipboard or logs; debug arguments are compiled out of release builds; no URL schemes, no WebViews, no other exported components.
+- **Randomness:** the apps seed from `SecRandomCopyBytes` / `SecureRandom`, the CLI from `getrandom`; seeded generators stay in the fake network, the demo bots and the solver.
+- **Crashes:** no `unwrap`, `expect` or `panic` on network data in the code reviewed.
+
+## Not determined
+
+- Real replay rates on air (they depend on the companion's duplicate filter): a hardware test.
+- What iroh's default relays publish, and whether a stranger who connects learns the address: a two-endpoint test.
+- How ImageIO and ImageDecoder behave on image bombs: test files.
+- Whether QuickLook runs scripts in HTML or SVG files; whether GIPHY counts media-host loads as views; whether stock MeshCore v1.18 always requires BLE pairing.
+- The SR-11 token-holder path, the SR-13 queueing effect, the SR-17 timing: fake-network tests.
+
+## Response
+
+Each finding gets a test that fails before its fix and passes after, then the fix, then the spec and ADR text. This table is filled as that happens.
+
+| ID | Verdict | Fix | Test |
+|---|---|---|---|
+| SR-37, stale `session_peer` crash artifact | **Not reproduced.** Replayed on 2026-11-15: the crash input and both slow units run clean on the current tree. | New targets still to add. | `cargo +nightly fuzz run session_peer <artifact>` |
+| SR-38, dependencies | **Confirmed, gate added.** `cargo deny check` (advisories, licences, sources) runs in `scripts/check.sh` and CI. Two advisories reach the build and are ignored with their reasons in `deny.toml`: RUSTSEC-2023-0071 (`rsa`, with Arti; lichen holds no RSA private key) and RUSTSEC-2026-0459 (bundled SQLite and crafted `-wal` files; lichen opens only databases it created; the fixed `rusqlite` is not accepted by Arti 0.48). A third, in `crypto-bigint`, is only in the lock file, not in the build. | Upgrade both with the next Arti release. | `cargo deny check` |
