@@ -42,6 +42,9 @@ const AUX: u32 = 1 << 31;
 const HELD_MS: Millis = 600_000;
 /// And at most this many.
 const HELD_MAX: usize = 16;
+/// Fragments kept per two-fragment message, both indices together: the sender's own, and a
+/// few that open under its key but may come from another member (SR-17).
+const PARTIAL_CANDIDATES: usize = 6;
 /// Group messages each member keeps to resend (§10.6), and for how long.
 const KEPT_MAX: usize = 64;
 const KEPT_MS: Millis = 3_600_000;
@@ -2339,41 +2342,60 @@ impl Core {
                     let message = if hdr.total == 1 {
                         Some((plain.to_vec(), vec![payload.to_vec()]))
                     } else {
-                        let pos = g.partials.iter().position(|p| {
+                        // Every member holds this sender key: a fragment that opens may still
+                        // not be the sender's. Fragments of each index are kept side by side,
+                        // and the pair whose signature verifies is the message, so a fragment
+                        // injected first does not shut out the sender's own (review of
+                        // 2026-11-15, SR-17).
+                        let this = |p: &Partial| {
                             p.member == member
                                 && p.epoch == hdr.key_epoch
                                 && p.counter == hdr.counter
-                        });
-                        match pos {
-                            None => {
-                                g.partials.push(Partial {
-                                    member,
-                                    epoch: hdr.key_epoch,
-                                    counter: hdr.counter,
-                                    index: hdr.index,
-                                    data: plain.to_vec(),
-                                    payload: payload.to_vec(),
-                                    at: now,
-                                });
-                                None
-                            }
-                            Some(i) if g.partials[i].index != hdr.index => {
-                                let p = g.partials.swap_remove(i);
-                                let (first, second) = if p.index == 0 {
-                                    (p.data.as_slice(), plain)
+                        };
+                        let (epoch_b, counter_b) = ([hdr.key_epoch], hdr.counter.to_le_bytes());
+                        let found = g
+                            .partials
+                            .iter()
+                            .filter(|p| this(p) && p.index != hdr.index)
+                            .find_map(|p| {
+                                let (whole, payloads) = if p.index == 0 {
+                                    (
+                                        [p.data.as_slice(), plain].concat(),
+                                        vec![p.payload.clone(), payload.to_vec()],
+                                    )
                                 } else {
-                                    (plain, p.data.as_slice())
+                                    (
+                                        [plain, p.data.as_slice()].concat(),
+                                        vec![payload.to_vec(), p.payload.clone()],
+                                    )
                                 };
-                                let payloads = if p.index == 0 {
-                                    vec![p.payload.clone(), payload.to_vec()]
-                                } else {
-                                    vec![payload.to_vec(), p.payload.clone()]
-                                };
-                                Some(([first, second].concat(), payloads))
-                            }
-                            // Another copy of a fragment we already hold.
-                            Some(_) => None,
+                                let (body, sig) = whole.split_last_chunk::<SIGNATURE_LEN>()?;
+                                verify(
+                                    &member,
+                                    &signed_parts(&gid, &epoch_b, &counter_b, body),
+                                    sig,
+                                )
+                                .then(|| (whole.clone(), payloads))
+                            });
+                        if found.is_some() {
+                            g.partials.retain(|p| !this(p));
+                        } else if !g
+                            .partials
+                            .iter()
+                            .any(|p| this(p) && p.index == hdr.index && p.data.as_slice() == plain)
+                            && g.partials.iter().filter(|p| this(p)).count() < PARTIAL_CANDIDATES
+                        {
+                            g.partials.push(Partial {
+                                member,
+                                epoch: hdr.key_epoch,
+                                counter: hdr.counter,
+                                index: hdr.index,
+                                data: plain.to_vec(),
+                                payload: payload.to_vec(),
+                                at: now,
+                            });
                         }
+                        found
                     };
                     let Some((message, payloads)) = message else {
                         return;
@@ -2847,6 +2869,78 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// The two flooded payloads of a long text from `sender` at `counter`, signed by `signer`.
+    fn two_fragments(
+        sender: &PubKey,
+        key: &[u8; 32],
+        counter: u32,
+        signer: &[u8; 64],
+        text: &str,
+    ) -> [Vec<u8>; 2] {
+        let body = Content::Text {
+            sent_at: 1,
+            text: text.into(),
+        }
+        .encode();
+        let (epoch_b, counter_b) = ([0u8], counter.to_le_bytes());
+        let sig = sign(signer, &signed_parts(&GID, &epoch_b, &counter_b, &body)).unwrap();
+        let mut plain = body;
+        plain.extend_from_slice(&sig);
+        let (a, b) = plain.split_at(group::FRAGMENT_PLAIN_MAX);
+        [(0, a), (1, b)].map(|(index, part)| {
+            let header = GroupHeader {
+                gid_hash: gid_hash(&GID),
+                sender: sender[0],
+                key_epoch: 0,
+                counter,
+                index,
+                total: 2,
+                copy: 0,
+            };
+            let mut out = [0u8; group::PAYLOAD_MAX];
+            let n = group::seal(key, &header, part, &mut out).unwrap();
+            out[..n].to_vec()
+        })
+    }
+
+    /// Review of 2026-11-15, SR-17: Carol holds Bob's sender key, as every member does. She
+    /// floods a first fragment of her own under Bob's next counter before Bob's message: his
+    /// two real fragments still make his message.
+    #[test]
+    fn an_injected_fragment_does_not_shut_out_the_real_one() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let mut core = core_with_group(&[(bob, [10; 32], 0)]);
+        let long = "Refuge de la Pra: on part à 7 h par le sentier nord, rendez-vous au col \
+                    vers 10 h, prévoir de l'eau.";
+        let [first, second] = two_fragments(&bob, &[10; 32], 0, &bob_prv, long);
+        // Carol's fragment: Bob's key, Bob's counter, her bytes.
+        let forged = {
+            let header = GroupHeader {
+                gid_hash: gid_hash(&GID),
+                sender: bob[0],
+                key_epoch: 0,
+                counter: 0,
+                index: 0,
+                total: 2,
+                copy: 1,
+            };
+            let mut out = [0u8; group::PAYLOAD_MAX];
+            let n = group::seal(
+                &[10; 32],
+                &header,
+                &[0x55; group::FRAGMENT_PLAIN_MAX],
+                &mut out,
+            )
+            .unwrap();
+            out[..n].to_vec()
+        };
+        core.on_group_envelope(&forged, 0, 0, 0);
+        core.on_group_envelope(&first, 0, 0, 1_000);
+        core.on_group_envelope(&second, 0, 0, 2_000);
+        assert_eq!(texts(&mut core), vec![long.to_owned()]);
     }
 
     /// Review of 2026-11-15, SR-16: search counts a direct copy as a reception of its
