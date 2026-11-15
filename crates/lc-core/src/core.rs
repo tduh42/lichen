@@ -451,6 +451,9 @@ struct Fin {
 struct AnsweredIntro {
     tag: u16,
     answer: Answer,
+    /// Where the INTRO said to answer: adopted as the peer's path once INTRO_FIN proves who
+    /// sent it (SR-02).
+    path: OwnedPath,
     at: Millis,
     /// INTRO_FIN received: the session is set up.
     done: bool,
@@ -1733,6 +1736,8 @@ impl Core {
                 // It may have a new identity: introduce again next time (§4.6). When one
                 // already waits for the user, that is why nothing answered.
                 peer.intro_needed = true;
+                // Nor did the path work: the next attempt finds one again (§4.5, SR-02).
+                peer.path = None;
                 let reason = if self.pending_identities.contains_key(k) {
                     FailReason::IdentityChanged
                 } else {
@@ -1755,6 +1760,7 @@ impl Core {
         {
             if intro.attempt + 1 >= HELLO_TRIES {
                 peer.introducing = None;
+                peer.path = None;
                 if std::mem::take(&mut peer.suspect) {
                     peer.session = None;
                     peer.pending = None;
@@ -2255,6 +2261,7 @@ impl Core {
             // Fresh for every reply: a probe answered twice never reuses a key (§4.5).
             let mut r = [0u8; 8];
             self.rng.fill_bytes(&mut r);
+            let anonymous = keying.anonymous;
             if let Ok(n) = discovery::seal_path_reply(
                 &keying,
                 node[0],
@@ -2268,7 +2275,11 @@ impl Core {
                 let frame = buf.get(..n).unwrap_or(&[]).to_vec();
                 self.send_raw(&back, &frame, now);
             }
-            self.peers.entry(c).or_default().path = Some(back);
+            // An anonymous probe is keyed by public node keys: anyone can send one. It is
+            // answered along its path, but that path does not replace ours (SR-02).
+            if !anonymous {
+                self.peers.entry(c).or_default().path = Some(back);
+            }
             return;
         }
     }
@@ -2371,6 +2382,7 @@ impl Core {
                         salt_r,
                         eph_secret,
                     },
+                    path: path.clone(),
                     at: now,
                     done: false,
                 }
@@ -2390,7 +2402,10 @@ impl Core {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&path, &frame, now);
         }
-        peer.path = Some(path);
+        // Anyone can send an INTRO under a contact's hash byte: its return path is only
+        // adopted with INTRO_FIN (SR-02).
+        let mut answered = answered;
+        answered.path = path;
         peer.answered_intro = Some(answered);
         self.peers.insert(c, peer);
     }
@@ -2489,10 +2504,8 @@ impl Core {
             let Some(mut peer) = self.peers.remove(&c) else {
                 return;
             };
-            let Some(path) = self.path_for(&c, &peer) else {
-                self.peers.insert(c, peer);
-                return;
-            };
+            let path = answered.path.clone();
+            peer.path = Some(path.clone());
             peer.replace_pending(Session::new(keys, node[0], c[0], self.timing_for(&path)));
             peer.intro_needed = false;
             if let Some(a) = peer.answered_intro.as_mut() {
