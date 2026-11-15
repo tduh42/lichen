@@ -1196,8 +1196,14 @@ mod tests {
                 _ => None,
             })
             .collect();
-        let gif = order.iter().position(|o| *o == ("gif", false)).unwrap();
-        let mist = order.iter().position(|o| *o == ("mist", true)).unwrap();
+        let gif = order
+            .iter()
+            .position(|o| *o == ("gif", false))
+            .unwrap_or_else(|| panic!("no GIF: {order:?}"));
+        let mist = order
+            .iter()
+            .position(|o| *o == ("mist", true))
+            .unwrap_or_else(|| panic!("no late Mist: {order:?}"));
         assert!(gif < mist, "{order:?}");
         let leaving = order.iter().position(|o| o.0 == "leaving").unwrap();
         assert!(leaving < gif || order[leaving].1, "{order:?}");
