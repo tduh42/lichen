@@ -203,6 +203,7 @@ impl Bot {
             Content::Reaction { .. }
             | Content::Edit { .. }
             | Content::Delete { .. }
+            | Content::Timer { .. }
             | Content::Deleted { .. }
             | Content::Notice(_)
             | Content::Sticker { .. }

@@ -814,3 +814,131 @@ mod bidi_names {
         assert_eq!(fit_file_name(spoofed.into(), 64), "photogpj.exe");
     }
 }
+
+mod timers {
+    use super::*;
+
+    /// The timer notices of `chat`: the seconds, and whether Bob set them.
+    fn notices(core: &LichenCore, chat: &ChatRef) -> Vec<(String, bool)> {
+        core.history(chat.clone(), None, 50)
+            .unwrap()
+            .into_iter()
+            .filter_map(|m| match m.message {
+                Message::Notice {
+                    kind: 11,
+                    text,
+                    actor,
+                    ..
+                } => Some((text, actor == [9; 32])),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Disappearing messages (§6.5): the newest setting holds, each change is noted, and
+    /// messages stored under a timer go when it runs out, with an event for the app.
+    #[test]
+    fn a_timer_from_the_contact_and_the_sweep() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![145; 32], None).unwrap();
+        let chat = ChatRef::Contact { key: vec![9; 32] };
+        let now = u32::try_from(unix_ms() / 1000).unwrap();
+        let mut i = core.lock();
+        i.core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        let timer = |seconds: u32, sent_at: u32| Event::Received {
+            from: [9; 32],
+            content: Content::Timer { sent_at, seconds },
+            snr4: 0,
+            rssi: 0,
+        };
+        assert!(!i.on_event(&timer(300, now)), "not a message");
+        assert!(!i.on_event(&timer(60, now - 10)), "older: ignored");
+        assert!(!i.on_event(&timer(300, now)), "a resend: no second notice");
+        drop(i);
+        assert_eq!(core.disappearing(chat.clone()).unwrap(), 300);
+        assert_eq!(notices(&core, &chat), vec![("300".into(), true)]);
+        // A message stored under the timer, long ago: the next sweep takes it.
+        let mut i = core.lock();
+        assert!(i.on_event(&Event::Received {
+            from: [9; 32],
+            content: Content::Text {
+                sent_at: now,
+                text: "burn after reading".into(),
+            },
+            snr4: 0,
+            rssi: 0,
+        }));
+        assert!(i.next_vanish().is_some());
+        // One stored under the same timer six minutes ago: its time is up.
+        let old = i
+            .store
+            .as_ref()
+            .unwrap()
+            .insert(&store::Message {
+                id: 0,
+                chat: Chat::Contact([9; 32]),
+                outgoing: false,
+                author: None,
+                content: Content::Text {
+                    sent_at: now - 360,
+                    text: "earlier".into(),
+                },
+                at_ms: unix_ms() - 360_000,
+                status: Status::Received,
+                fragments: 1,
+                airtime_ms: 0,
+                snr4: None,
+                read: true,
+                msg_ref: None,
+            })
+            .unwrap();
+        let id = old.id;
+        i.extra.clear();
+        i.vanish();
+        assert!(i.extra.iter().any(
+            |e| matches!(e, LichenEvent::MessageRemoved { id: x, chat: c } if *x == id && *c == chat)
+        ));
+        drop(i);
+        let h = core.history(chat.clone(), None, 10).unwrap();
+        assert!(h.iter().all(|m| m.id != id), "gone");
+        assert!(
+            h.iter().any(
+                |m| matches!(&m.message, Message::Text { text, .. } if text == "burn after reading")
+            ),
+            "its five minutes are not over"
+        );
+        assert_eq!(notices(&core, &chat).len(), 1, "the notice stays");
+    }
+
+    /// Ours: a lichen conversation is told and our setting is kept until it goes; a MeshCore
+    /// chat keeps it here; more than four weeks is refused.
+    #[test]
+    fn our_timer() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![146; 32], None).unwrap();
+        let bob = ChatRef::Contact { key: vec![9; 32] };
+        let plain = ChatRef::Mesh { key: vec![9; 32] };
+        core.set_disappearing(bob.clone(), 3_600).unwrap();
+        core.set_disappearing(bob.clone(), 3_600).unwrap();
+        assert_eq!(core.disappearing(bob.clone()).unwrap(), 3_600);
+        assert_eq!(notices(&core, &bob), vec![("3600".into(), false)]);
+        {
+            let i = core.lock();
+            let pending = i.store.as_ref().unwrap().pending_timers().unwrap();
+            assert_eq!(pending.len(), 1, "kept until it reaches Bob");
+        }
+        core.set_disappearing(plain.clone(), 300).unwrap();
+        {
+            let i = core.lock();
+            let pending = i.store.as_ref().unwrap().pending_timers().unwrap();
+            assert_eq!(pending.len(), 1, "nothing to tell a MeshCore chat");
+        }
+        assert_eq!(core.disappearing(plain).unwrap(), 300);
+        assert!(core.set_disappearing(bob, 29 * 86_400).is_err());
+    }
+}

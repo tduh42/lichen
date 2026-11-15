@@ -37,6 +37,7 @@ impl LichenCore {
             clock_offset: None,
             reaction_inflight: HashMap::new(),
             amend_inflight: HashMap::new(),
+            timer_inflight: HashMap::new(),
         };
         // The history is available before the node connects.
         if let Some(id) = inner.core.key().copied() {
@@ -209,10 +210,8 @@ impl LichenCore {
             .filter(|&e| e > now_unix)
             .min()
             .map(|e| u64::try_from(e - offset).unwrap_or(0));
-        match (core, expiry) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        // And the next message whose time is up (§6.5).
+        [core, expiry, i.next_vanish()].into_iter().flatten().min()
     }
 
     /// The next event. History changes come as `MessageChanged` right after the event that

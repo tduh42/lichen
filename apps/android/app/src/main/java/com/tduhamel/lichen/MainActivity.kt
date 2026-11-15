@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
             sosDemo = e.getBoolean("sosdemo"),
             sosDemo2 = e.getBoolean("sosdemo2"),
             fill = e.getInt("fill"),
+            timer = e.getInt("timer"),
             identityProblem = e.getString("identityProblem"),
             offline = e.getInt("offline"),
             online = e.getInt("online"),

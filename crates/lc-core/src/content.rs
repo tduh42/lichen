@@ -155,6 +155,9 @@ pub enum Content {
     },
     /// The sender takes its message `target` back (§6.4).
     Delete { sent_at: u32, target: MessageRef },
+    /// From now on, the conversation's messages disappear `seconds` after each phone stored
+    /// them; 0: they stay (§6.5, ADR-0030).
+    Timer { sent_at: u32, seconds: u32 },
     /// A membership notice this phone records in a group's conversation (§6, 0xE0, local:
     /// never on the air).
     Notice(Notice),
@@ -173,6 +176,8 @@ pub const DELETED: u8 = 0xE1;
 
 /// How long after its own timestamp a message can still be edited or deleted (§6.4), seconds.
 pub const EDIT_WINDOW_S: u32 = 86_400;
+/// The longest disappearing-message timer (§6.5): four weeks.
+pub const TIMER_MAX_S: u32 = 28 * 86_400;
 
 /// What changed in a group, as the conversation shows it (ADR-0021).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,6 +215,8 @@ pub mod notice {
     pub const RENAMED: u8 = 9;
     /// We left the group.
     pub const WE_LEFT: u8 = 10;
+    /// The actor set messages to disappear after `text` seconds ("0": they stay), §6.5.
+    pub const TIMER: u8 = 11;
 }
 
 fn put_short(v: &mut Vec<u8>, s: &str) {
@@ -445,6 +452,13 @@ impl Content {
                 v.extend_from_slice(target);
                 v
             }
+            Content::Timer { sent_at, seconds } => {
+                let mut v = Vec::with_capacity(9);
+                v.push(content::TIMER);
+                v.extend_from_slice(&sent_at.to_le_bytes());
+                v.extend_from_slice(&seconds.to_le_bytes());
+                v
+            }
             Content::Notice(n) => {
                 let mut v = vec![NOTICE];
                 n.encode_body(&mut v);
@@ -551,6 +565,13 @@ impl Content {
                 sent_at: u32::from_le_bytes(*ts),
                 target,
             })
+        } else if content_type == content::TIMER {
+            let (ts, rest) = body.split_first_chunk::<4>()?;
+            let seconds = u32::from_le_bytes(rest.try_into().ok()?);
+            (seconds <= TIMER_MAX_S).then_some(Content::Timer {
+                sent_at: u32::from_le_bytes(*ts),
+                seconds,
+            })
         } else if content_type == NOTICE {
             Notice::decode_body(body).map(Content::Notice)
         } else if content_type == DELETED {
@@ -578,6 +599,7 @@ impl Content {
             | Content::Gif { sent_at, .. }
             | Content::Edit { sent_at, .. }
             | Content::Delete { sent_at, .. }
+            | Content::Timer { sent_at, .. }
             | Content::Deleted { sent_at } => Some(*sent_at),
             Content::Announce(a) => Some(a.sent_at),
             Content::Location(_)

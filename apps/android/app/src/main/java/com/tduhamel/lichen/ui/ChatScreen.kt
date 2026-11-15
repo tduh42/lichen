@@ -111,6 +111,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.model.noticeText
+import com.tduhamel.lichen.model.timerLabel
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material.icons.outlined.GppMaybe
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
@@ -260,6 +266,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
             },
             actions = {
+                TimerMenu(model, chat) { error = it }
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
                 } else if (chat.plain) {
@@ -333,6 +340,12 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 val notice = m.message as? Message.Notice
                 if (notice != null) {
                     item(key = m.id) { NoticeLine(model, notice) }
+                    return@forEachIndexed
+                }
+                // Shown inside its LoRa preview's card: an empty row keeps its place (rowOf).
+                val announce = m.message as? Message.Announce
+                if (announce != null && model.preview(announce.mediaId, chat) != null) {
+                    item(key = m.id) {}
                     return@forEachIndexed
                 }
                 item(key = m.id) {
@@ -1196,4 +1209,46 @@ private fun NoticeLine(model: AppModel, n: Message.Notice) {
         color = lichen.tx2,
         textAlign = TextAlign.Center,
     )
+}
+
+/** Disappearing messages (§6.5): the choices, and what the timer cannot do. */
+@Composable
+private fun TimerMenu(model: AppModel, chat: ChatId, failed: (String) -> Unit) {
+    val t = lichen
+    var open by remember { mutableStateOf(false) }
+    val current = model.timers[chat] ?: 0u
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                if (current == 0u) Icons.Outlined.Timer else Icons.Filled.Timer,
+                if (current == 0u) stringResource(R.string.disappearing_off)
+                else stringResource(R.string.disappearing_on, timerLabel(LocalContext.current.resources, current)),
+                tint = if (current == 0u) t.tx2 else t.tx,
+            )
+        }
+        DropdownMenu(open, onDismissRequest = { open = false }, containerColor = t.s1) {
+            Text(
+                stringResource(R.string.disappearing_messages),
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = t.tx2,
+            )
+            val res = LocalContext.current.resources
+            AppModel.TIMER_CHOICES.forEach { s ->
+                DropdownMenuItem(
+                    text = { Text(if (s == 0u) stringResource(R.string.off) else timerLabel(res, s), color = t.tx) },
+                    onClick = {
+                        open = false
+                        model.setTimer(chat, s)?.let(failed)
+                    },
+                    trailingIcon = { if (s == current) Icon(Icons.Filled.Check, null, tint = t.tx) },
+                )
+            }
+            HorizontalDivider(color = t.line)
+            Text(
+                stringResource(if (chat.plain) R.string.timer_note_plain else R.string.timer_note),
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp).widthIn(max = 280.dp),
+                fontSize = 13.sp, color = t.tx2,
+            )
+        }
+    }
 }

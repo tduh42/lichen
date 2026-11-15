@@ -70,6 +70,38 @@ impl Inner {
                 self.on_reaction(Chat::Group(*gid), *target, *from, from, emoji, *sent_at);
                 return false;
             }
+            // Timers are state too (§6.5).
+            Event::Received {
+                from,
+                content: Content::Timer { sent_at, seconds },
+                ..
+            } => {
+                self.on_timer(Chat::Contact(*from), from, *seconds, *sent_at);
+                return false;
+            }
+            Event::GroupMessage {
+                gid,
+                from,
+                content: Content::Timer { sent_at, seconds },
+                ..
+            } => {
+                self.on_timer(Chat::Group(*gid), from, *seconds, *sent_at);
+                return false;
+            }
+            Event::Delivered { id } | Event::GroupSent { id }
+                if self.timer_inflight.contains_key(id) =>
+            {
+                if let (Some((chat, ts)), Some(st)) = (self.timer_inflight.remove(id), &self.store)
+                {
+                    let _ = st.timer_sent(&chat, ts);
+                }
+                return false;
+            }
+            // A timer that failed stays pending: it goes again at the next start.
+            Event::Failed { id, .. } if self.timer_inflight.contains_key(id) => {
+                self.timer_inflight.remove(id);
+                return false;
+            }
             // Edits and deletes are state, like reactions (§6.4).
             Event::Received {
                 from,

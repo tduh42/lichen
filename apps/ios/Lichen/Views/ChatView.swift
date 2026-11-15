@@ -69,6 +69,10 @@ struct ChatView: View {
                             }
                             if case .notice = m.message {
                                 NoticeLine(message: m.message).id(m.id)
+                            } else if case let .announce(_, mediaId, _, _, _, _, _) = m.message,
+                                      model.preview(for: mediaId, in: chat) != nil {
+                                // Shown inside its LoRa preview's card: only its place here.
+                                Color.clear.frame(height: 0).id(m.id)
                             } else {
                                 MessageView(message: m, isGroup: isGroup || isChannel, error: $error, highlighted: highlight == m.id,
                                             reply: { replyTo = m; editing = nil },
@@ -210,6 +214,7 @@ struct ChatView: View {
                                             : String(localized: "About MeshCore chats"))
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) { timerMenu }
         }
         .sheet(isPresented: $plainInfo) { PlainInfoSheet(chat: chat) }
         .navigationDestination(isPresented: $showingGroup) {
@@ -235,6 +240,9 @@ struct ChatView: View {
             model.notifier.clear(chat)
             #if DEBUG
             if model.debugScreen == "group" || model.debugScreen == "invite", isGroup { showingGroup = true }
+            // -timer N: this conversation's messages disappear after N seconds (§6.5).
+            let timer = UserDefaults.standard.integer(forKey: "timer")
+            if timer > 0, model.timers[chat] != UInt32(timer) { _ = model.setTimer(chat, UInt32(timer)) }
             #endif
         }
         .onAppear { if draft.isEmpty { draft = model.draft(chat) } }
@@ -352,6 +360,28 @@ struct ChatView: View {
                 .labelStyle(TintedIconLabel(tint: Theme.ok))
                 .padding(.top, 4)
         }
+    }
+
+    /// Disappearing messages (§6.5): the choices, and what the timer cannot do.
+    private var timerMenu: some View {
+        let current = model.timers[chat] ?? 0
+        return Menu {
+            Picker("Disappearing messages", selection: Binding(get: { current }, set: { error = model.setTimer(chat, $0) })) {
+                ForEach(AppModel.timerChoices, id: \.self) { s in
+                    Text(s == 0 ? String(localized: "Off") : timerLabel(s)).tag(s)
+                }
+            }
+            Section {
+                Text(chat.isPlain
+                     ? String(localized: "On this phone only: MeshCore apps keep their copy. Screenshots can keep messages too.")
+                     : String(localized: "New messages disappear on every phone that gets the setting. Screenshots and modified apps can still keep them."))
+            }
+        } label: {
+            Image(systemName: current == 0 ? "timer" : "timer.circle.fill")
+                .foregroundStyle(current == 0 ? Theme.tx2 : Theme.tx)
+        }
+        .accessibilityLabel(current == 0 ? String(localized: "Disappearing messages: off")
+                            : String(localized: "Disappearing messages: \(timerLabel(current))"))
     }
 
     private var subtitle: String {

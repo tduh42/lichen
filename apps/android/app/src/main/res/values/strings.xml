@@ -656,6 +656,15 @@
     <string name="notice_you_renamed">You renamed the group “%1$s”</string>
     <string name="notice_renamed">%1$s renamed the group “%2$s”</string>
     <string name="notice_you_left">You left the group</string>
+    <string name="disappearing_messages">Disappearing messages</string>
+    <string name="disappearing_off">Disappearing messages: off</string>
+    <string name="disappearing_on">Disappearing messages: %s</string>
+    <string name="timer_note">New messages disappear on every phone that gets the setting. Screenshots and modified apps can still keep them.</string>
+    <string name="timer_note_plain">On this phone only: MeshCore apps keep their copy. Screenshots can keep messages too.</string>
+    <string name="notice_you_timer">You set messages to disappear after %s</string>
+    <string name="notice_timer">%1$s set messages to disappear after %2$s</string>
+    <string name="notice_you_timer_off">You turned off disappearing messages</string>
+    <string name="notice_timer_off">%s turned off disappearing messages</string>
     <string name="notice_changed">The group changed</string>
     <string name="group_name_label">Name</string>
     <string name="rename_group">Rename the group</string>

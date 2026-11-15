@@ -96,6 +96,22 @@ fn edits_and_deletes() {
     }
 }
 
+/// TIMER (§6.5, ADR-0030).
+#[test]
+fn timers() {
+    let t = load();
+    let timers = entries(&t, "timer");
+    assert_eq!(timers.len(), 4);
+    for v in timers {
+        let c = Content::Timer {
+            sent_at: ts(v),
+            seconds: u32::try_from(v["seconds"].as_integer().unwrap()).unwrap(),
+        };
+        assert_eq!(c.encode(), h(v, "datagram"), "{}", s(v, "name"));
+        assert_eq!(Content::decode(&h(v, "datagram")), Some(c));
+    }
+}
+
 #[test]
 fn malformed() {
     let t = load();

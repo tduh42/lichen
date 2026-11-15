@@ -81,6 +81,30 @@ ts = 1793000500
 target = "3abf2693286fac44"
 datagram = "0d3404df6a3abf2693286fac44"
 
+[[timer]]
+name = "timer off"
+ts = 1793000600
+seconds = 0
+datagram = "0e9804df6a00000000"
+
+[[timer]]
+name = "timer 5 minutes"
+ts = 1793000600
+seconds = 300
+datagram = "0e9804df6a2c010000"
+
+[[timer]]
+name = "timer 1 day"
+ts = 1793000600
+seconds = 86400
+datagram = "0e9804df6a80510100"
+
+[[timer]]
+name = "timer 4 weeks"
+ts = 1793000600
+seconds = 2419200
+datagram = "0e9804df6a00ea2400"
+
 [[malformed]]
 name = "reply without text"
 datagram = "086c03df6a3abf2693286fac44"
@@ -120,6 +144,18 @@ datagram = "0d6c03df6a3abf2693286fac"
 [[malformed]]
 name = "delete with trailing bytes"
 datagram = "0d6c03df6a3abf2693286fac4400"
+
+[[malformed]]
+name = "timer cut"
+datagram = "0e9804df6a2c0100"
+
+[[malformed]]
+name = "timer with trailing bytes"
+datagram = "0e9804df6a2c01000000"
+
+[[malformed]]
+name = "timer over four weeks"
+datagram = "0e9804df6a01ea2400"
 
 [[invite]]
 name = "rando vercors"

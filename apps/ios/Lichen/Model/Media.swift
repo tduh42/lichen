@@ -235,6 +235,15 @@ func clock(_ seconds: TimeInterval) -> String {
     return String(format: "%d:%02d", s / 60, s % 60)
 }
 
+/// A disappearing-message timer in words: "5 minutes", "1 week" (§6.5).
+func timerLabel(_ seconds: UInt32) -> String {
+    let f = DateComponentsFormatter()
+    f.unitsStyle = .full
+    f.maximumUnitCount = 1
+    f.allowedUnits = [.minute, .hour, .day, .weekOfMonth]
+    return f.string(from: TimeInterval(seconds)) ?? "\(seconds) s"
+}
+
 /// "3 fragments", "1 fragment".
 func fragmentsText(_ n: UInt8) -> String {
     String(localized: "\(Int(n)) fragments")

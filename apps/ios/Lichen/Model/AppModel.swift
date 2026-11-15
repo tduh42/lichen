@@ -79,6 +79,24 @@ final class AppModel {
     var invitations: [GroupInvitation] = []
     /// Contacts whose phone speaks a newer protocol version (ADR-0029).
     var newerPeers: Set<Data> = []
+    /// Each open conversation's disappearing-message timer, seconds; 0: off (§6.5).
+    var timers: [ChatID: UInt32] = [:]
+    /// What the timer menu offers: off, 5 minutes, 1 hour, 8 hours, 1 day, 1 week.
+    static let timerChoices: [UInt32] = [0, 300, 3_600, 28_800, 86_400, 604_800]
+
+    /// Messages of `chat` stored from now on disappear after `seconds` (0: they stay). A lichen
+    /// conversation gets the same setting; a MeshCore chat keeps it on this phone.
+    func setTimer(_ chat: ChatID, _ seconds: UInt32) -> String? {
+        do {
+            try core.setDisappearing(chat: chat, seconds: seconds)
+            timers[chat] = seconds
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not change the timer.")
+        }
+    }
 
     /// Joins the group of an invitation; it then appears with the others.
     func acceptGroup(_ gid: Data) {
@@ -589,8 +607,13 @@ final class AppModel {
             nodeName = name
             self.radio = radio
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
-        case .identityLearned:
+        case let .identityLearned(node, _, _):
             contacts = core.contacts().filter(\.person)
+            #if DEBUG
+            // -open <name>: opened before their identity arrived, as a MeshCore chat; now that
+            // they turn out to have lichen, their conversation.
+            if debugOpen == .mesh(key: node) { debugOpen = .contact(key: node) }
+            #endif
         case let .identityConflict(node, identity):
             conflicts[node] = identity
         case .contactsUpdated:
@@ -687,6 +710,11 @@ final class AppModel {
             }
         case let .newerVersion(node, _):
             newerPeers.insert(node)
+        case let .messageRemoved(id, chat):
+            // Its time was up (§6.5): off the screen, and off the lock screen.
+            chats[chat]?.removeAll { $0.id == id }
+            conversations = core.conversations()
+            notifier.clear(chat)
         case let .mediaGone(hash):
             // A deleted message's content: no longer offered, no longer kept (§6.4, SR-28).
             try? bridge?.revoke(hash: hash)
@@ -748,6 +776,8 @@ final class AppModel {
         case let .messageChanged(m):
             upsert(m)
             conversations = core.conversations()
+            // A timer changed, by us or by them (§6.5).
+            if case let .notice(11, _, _, _, text) = m.message, let s = UInt32(text) { timers[m.chat] = s }
             // Taken back by its author (§6.4): its notification goes too.
             if case .deleted = m.message, !m.outgoing { notifier.clear(m.chat) }
             #if DEBUG
@@ -823,6 +853,7 @@ final class AppModel {
     func load(_ chat: ChatID) {
         do {
             let page = try core.history(chat: chat, beforeId: nil, limit: Self.historyPage)
+            timers[chat] = (try? core.disappearing(chat: chat)) ?? 0
             chats[chat] = page
             olderAvailable[chat] = page.count == Int(Self.historyPage)
             historyError[chat] = nil
@@ -1980,6 +2011,15 @@ extension Message {
         case 8: return mine ? String(localized: "You closed the group") : String(localized: "\(who) closed the group")
         case 9: return mine ? String(localized: "You renamed the group “\(text)”") : String(localized: "\(who) renamed the group “\(text)”")
         case 10: return String(localized: "You left the group")
+        case 11:
+            let seconds = UInt32(text) ?? 0
+            if seconds == 0 {
+                return mine ? String(localized: "You turned off disappearing messages")
+                    : String(localized: "\(who) turned off disappearing messages")
+            }
+            let after = timerLabel(seconds)
+            return mine ? String(localized: "You set messages to disappear after \(after)")
+                : String(localized: "\(who) set messages to disappear after \(after)")
         default: return String(localized: "The group changed")
         }
     }

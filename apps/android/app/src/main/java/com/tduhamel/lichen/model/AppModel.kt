@@ -118,6 +118,8 @@ class AppModel(val app: Application) {
         val inviteDemo: Boolean = false,
         /** A scanned invitation is joined at once, as if "Join" were tapped. */
         val joinNow: Boolean = false,
+        /** The chat opened with `open` gets this disappearing-message timer, seconds (§6.5). */
+        val timer: Int = 0,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -160,6 +162,21 @@ class AppModel(val app: Application) {
 
     /** Contacts whose phone speaks a newer protocol version (ADR-0029), by hex node key. */
     var newerPeers by mutableStateOf(setOf<String>())
+
+    /** Each open conversation's disappearing-message timer, seconds; 0: off (§6.5). */
+    val timers = mutableStateMapOf<ChatId, UInt>()
+
+    /**
+     * Messages of `chat` stored from now on disappear after `seconds` (0: they stay). A lichen
+     * conversation gets the same setting; a MeshCore chat keeps it on this phone.
+     */
+    fun setTimer(chat: ChatId, seconds: UInt): String? = try {
+        core.setDisappearing(chat.ref, seconds)
+        timers[chat] = seconds
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
 
     /** Joins the group of an invitation; it then appears with the others. */
     fun acceptGroup(gid: ByteArray) {
@@ -797,7 +814,17 @@ class AppModel(val app: Application) {
                 // The ongoing notification names the node, not the link's address.
                 if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
-            is LichenEvent.IdentityLearned -> contacts = people()
+            is LichenEvent.IdentityLearned -> {
+                contacts = people()
+                // Debug extra `open`: opened before their identity arrived, as a MeshCore chat;
+                // now that they turn out to have lichen, their conversation.
+                if (debugMesh == e.node.hex()) {
+                    debugMesh = null
+                    val chat = ChatId.contact(e.node)
+                    if (debug.timer > 0) setTimer(chat, debug.timer.toUInt())
+                    openChat = chat
+                }
+            }
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
@@ -829,6 +856,13 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.NewerVersion -> newerPeers = newerPeers + e.node.hex()
+            // Its time was up (§6.5): off the screen, and out of the notifications.
+            is LichenEvent.MessageRemoved -> {
+                val chat = ChatId.of(e.chat)
+                chats[chat]?.let { list -> chats[chat] = list.filter { it.id != e.id } }
+                conversations = core.conversations()
+                Notifications.clear(app, chat)
+            }
             // A deleted message's content: no longer offered, no longer kept (§6.4, SR-28).
             is LichenEvent.MediaGone -> {
                 runCatching { bridge?.revoke(e.hash) }
@@ -863,6 +897,10 @@ class AppModel(val app: Application) {
             is LichenEvent.MessageChanged -> {
                 upsert(e.message)
                 conversations = core.conversations()
+                // A timer changed, by us or by them (§6.5).
+                (e.message.message as? Message.Notice)?.takeIf { it.kind.toInt() == 11 }?.text?.toUIntOrNull()?.let {
+                    timers[ChatId.of(e.message.chat)] = it
+                }
                 // Taken back by its author (§6.4): its notification goes too.
                 if (e.message.message is Message.Deleted && !e.message.outgoing) {
                     Notifications.clear(app, ChatId.of(e.message.chat))
@@ -987,6 +1025,9 @@ class AppModel(val app: Application) {
         }
     }
 
+    /** The MeshCore chat the debug extra `open` chose, by hex node key, while it may change. */
+    private var debugMesh: String? = null
+
     private fun debugOpen() {
         val name = debug.open ?: return
         // Someone without lichen (the demo's Marc): their MeshCore chat (§15).
@@ -996,6 +1037,8 @@ class AppModel(val app: Application) {
             ?: channels.firstOrNull { it.name == name }?.let { ChatId.channel(it.id) }
             ?: return
         debug = debug.copy(open = null)
+        if (chat.plain && !chat.channel) debugMesh = chat.hex
+        if (debug.timer > 0) setTimer(chat, debug.timer.toUInt())
         openChat = chat
     }
 
@@ -1030,6 +1073,7 @@ class AppModel(val app: Application) {
     fun load(chat: ChatId) {
         try {
             val page = core.history(chat.ref, null, HISTORY_PAGE)
+            timers[chat] = runCatching { core.disappearing(chat.ref) }.getOrDefault(0u)
             chats[chat] = page
             olderAvailable[chat] = page.size == HISTORY_PAGE.toInt()
             historyError.remove(chat)
@@ -1960,5 +2004,8 @@ class AppModel(val app: Application) {
         /** Drafts by identity; the older ones (`lichen.draft.<route>`) are left unread. */
         private const val DRAFT = "lichen.draftById."
         private const val HISTORY_PAGE = 100u
+
+        /** What the timer menu offers: off, 5 minutes, 1 hour, 8 hours, 1 day, 1 week. */
+        val TIMER_CHOICES = listOf(0u, 300u, 3_600u, 28_800u, 86_400u, 604_800u)
     }
 }

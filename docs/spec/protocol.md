@@ -241,6 +241,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x0B | GIF | §6.3 | ADR-0025 |
 | 0x0C | EDIT | `ts u32 ‖ ref (8) ‖ UTF-8 text (≥ 1 byte)`, §6.4 | ADR-0027 |
 | 0x0D | DELETE | `ts u32 ‖ ref (8)`, §6.4 | ADR-0027 |
+| 0x0E | TIMER | `ts u32 ‖ seconds u32`, §6.5 | ADR-0030 |
 | 0x10 | SENDER_KEY | §10.2 | L3 |
 | 0x11 | GROUP_STATE | §10.1 | L3 |
 | 0x12 | GROUP_LEAVE | §10.4 | L3 (ADR-0017) |
@@ -325,6 +326,23 @@ Deleting a message **for oneself** sends nothing: the phone removes it, its medi
 **Older clients** show EDIT and DELETE as unsupported content.
 
 Vectors: `testdata/lichen/content.toml` (`[[edit]]`, `[[delete]]`, `[[malformed]]`).
+
+### 6.5 Disappearing messages (ADR-0030)
+
+A conversation can have a **timer**: each phone removes a message of that conversation a fixed time after storing it. It is a setting of the conversation, shared by its phones, not a property of each message.
+
+**TIMER (0x0E)**: `ts u32 ‖ seconds u32`, exactly 8 bytes: from now on, messages of this conversation go `seconds` after they are stored; `0` turns the timer off. `seconds` above 2,419,200 (28 days), or any other length, is dropped. The apps offer off, 5 minutes, 1 hour, 8 hours, 1 day and 1 week.
+
+1. **Who.** Either side of a direct conversation; any member of a group.
+2. **State.** Per conversation, the TIMER with the greatest `ts` holds; equal `ts`, the greater `seconds`. Repeats and any order of arrival converge. A sender gives each change a greater `ts` than the setting it holds, within the same second too. Not a message of the history: a change records a local notice (§6, kind 11, the seconds as text), and a repeat records nothing.
+3. **What goes.** A message stored while the timer is on, sent or received, of any type, goes when its time is up, counted from the moment this phone stored it: with its media, reactions and edits, as a delete for oneself (§6.4). A message stored before the timer was set stays. Notices stay. The app is told, and removes it from the screen.
+4. **Delivery.** The sender keeps its own setting until it is delivered, or sent to the group (§10.3), and submits it again at each start until then. In a group a TIMER is recoverable (§10.6) and fits one fragment.
+5. **MeshCore chats** (§15) keep a timer on this phone only: stock MeshCore has nothing to carry it.
+6. **What it cannot do.** It removes messages from the phones that hold the setting. A phone that never received it keeps its messages; a screenshot, a copy or a modified app keeps anything. The apps say so where the timer is set.
+
+**Older clients** show TIMER as unsupported content.
+
+Vectors: `testdata/lichen/content.toml` (`[[timer]]`, `[[malformed]]`).
 
 ## 7. Fragmentation (ACK-on-Error, after RFC 8724)
 
@@ -490,7 +508,7 @@ Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[grou
 
 Group messages are flooded twice and never acknowledged (§10.3): when both copies collide at a busy repeater, the message is lost for every member behind it. A member that notices a gap asks for it over a pairwise session. An envelope is encrypted under its author's sender key and **signed** by the author, so any member who holds it can hand it on: the receiver authenticates it exactly as if heard on the air.
 
-**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER, GIF, EDIT and DELETE are kept; positions and search packets go stale, are not worth resending, and do not use message counters anyway.
+**Keeping.** Every member keeps in memory, never on disk, the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included: one payload per fragment. Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER, GIF, EDIT, DELETE and TIMER are kept; positions and search packets go stale, are not worth resending, and do not use message counters anyway.
 
 **Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. For the first message received under a key, they start at the key's `next_counter` (§10.2): what its owner sent from there on was sent after the key reached us, by the owner itself or relayed by the admin with the counter it expected next. Nothing before that is missing: it may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed only when that member sends another message.
 

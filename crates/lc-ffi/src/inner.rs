@@ -27,6 +27,8 @@ pub(crate) struct Inner {
     pub(crate) reaction_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
     /// Our edits and deletes on their way (§6.4), like reactions.
     pub(crate) amend_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
+    /// Our disappearing-message timers on their way (§6.5): core id → chat and timestamp.
+    pub(crate) timer_inflight: HashMap<u64, (Chat, u32)>,
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
@@ -124,10 +126,13 @@ impl Inner {
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
         self.store = Some(store);
+        // What ran out while the app was stopped goes before anything is shown (§6.5).
+        self.vanish();
         self.backfill_refs();
         self.resume_outbox();
         self.resume_reactions();
         self.resume_amendments();
+        self.resume_timers();
     }
 
     /// Texts unfinished when the app stopped are submitted again with their stored plaintext;

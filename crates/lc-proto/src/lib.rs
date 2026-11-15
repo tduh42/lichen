@@ -81,6 +81,7 @@ pub mod content {
     pub const GIF: u8 = 0x0B;
     pub const EDIT: u8 = 0x0C;
     pub const DELETE: u8 = 0x0D;
+    pub const TIMER: u8 = 0x0E;
     pub const SENDER_KEY: u8 = 0x10;
     pub const GROUP_STATE: u8 = 0x11;
     pub const GROUP_LEAVE: u8 = 0x12;

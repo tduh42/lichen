@@ -40,7 +40,7 @@ pub use rusqlite::Error;
 /// 10: MeshCore chats (ADR-0026): chat kinds 2 (a node, plain) and 3 (a channel), and
 /// `channels` (table added, nothing migrated).
 /// 11: edits and deletes (ADR-0027): `amendments` (table added, nothing migrated).
-const VERSION: i32 = 11;
+const VERSION: i32 = 12;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -206,6 +206,14 @@ CREATE TABLE IF NOT EXISTS groups (
     gid BLOB PRIMARY KEY,
     snapshot BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS timers (
+    chat_kind INTEGER NOT NULL,
+    chat BLOB NOT NULL,
+    seconds INTEGER NOT NULL,
+    ts INTEGER NOT NULL,
+    pending INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (chat_kind, chat)
+);
 CREATE TABLE IF NOT EXISTS invitations (
     gid BLOB PRIMARY KEY,
     snapshot BLOB NOT NULL
@@ -227,7 +235,8 @@ CREATE TABLE IF NOT EXISTS messages (
     read INTEGER NOT NULL,
     media_id BLOB,
     expires_ms INTEGER,
-    ref BLOB
+    ref BLOB,
+    vanish_ms INTEGER
 );
 CREATE INDEX IF NOT EXISTS messages_by_chat ON messages (chat_kind, chat, id);
 CREATE TABLE IF NOT EXISTS media (
@@ -445,6 +454,17 @@ impl Store {
         if !has_ref {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN ref BLOB")?;
         }
+        // Version 12: disappearing messages (§6.5).
+        let has_vanish = conn
+            .prepare("SELECT 1 FROM pragma_table_info('messages') WHERE name = 'vanish_ms'")?
+            .exists([])?;
+        if !has_vanish {
+            conn.execute_batch("ALTER TABLE messages ADD COLUMN vanish_ms INTEGER")?;
+        }
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS messages_by_vanish ON messages (vanish_ms)
+             WHERE vanish_ms IS NOT NULL",
+        )?;
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS messages_by_ref ON messages (chat_kind, chat, ref)",
         )?;
@@ -800,6 +820,18 @@ impl Store {
         )?;
         let mut out = m.clone();
         out.id = self.conn.last_insert_rowid();
+        // The conversation's timer when it was stored decides when it goes (§6.5). Notices
+        // stay: they say who changed what, the timer included.
+        if matches!(m.content, Content::Notice(_)) {
+            return Ok(out);
+        }
+        self.conn.execute(
+            "UPDATE messages SET vanish_ms = at_ms + 1000 * (
+                 SELECT seconds FROM timers WHERE chat_kind = ?2 AND chat = ?3)
+             WHERE id = ?1 AND EXISTS (
+                 SELECT 1 FROM timers WHERE chat_kind = ?2 AND chat = ?3 AND seconds > 0)",
+            params![out.id, m.chat.kind(), m.chat.bytes()],
+        )?;
         Ok(out)
     }
 
@@ -1006,8 +1038,91 @@ impl Store {
         Ok(())
     }
 
-    /// Deletes a conversation: its messages and the media we kept for it. Location shares
-    /// and positions are separate (the map).
+    // ----- disappearing messages (§6.5, ADR-0030) ------------------------------------------
+
+    /// `chat`'s timer: seconds (0: messages stay) and the timestamp of the setting.
+    pub fn timer(&self, chat: &Chat) -> Result<(u32, u32), Error> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT seconds, ts FROM timers WHERE chat_kind = ?1 AND chat = ?2",
+                params![chat.kind(), chat.bytes()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((0, 0)))
+    }
+
+    /// Sets `chat`'s timer to `seconds` if `ts` is newer than the one held (equal: the greater
+    /// `seconds`); `pending`: ours, still to send. True when it changed.
+    pub fn set_timer(
+        &self,
+        chat: &Chat,
+        seconds: u32,
+        ts: u32,
+        pending: bool,
+    ) -> Result<bool, Error> {
+        let n = self.conn.execute(
+            "INSERT INTO timers (chat_kind, chat, seconds, ts, pending) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT (chat_kind, chat) DO UPDATE
+             SET seconds = excluded.seconds, ts = excluded.ts, pending = excluded.pending
+             WHERE excluded.ts > timers.ts
+                OR (excluded.ts = timers.ts AND excluded.seconds > timers.seconds)",
+            params![chat.kind(), chat.bytes(), seconds, ts, pending],
+        )?;
+        Ok(n > 0)
+    }
+
+    /// Our timers still to send: (chat, seconds, ts).
+    pub fn pending_timers(&self) -> Result<Vec<(Chat, u32, u32)>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT chat_kind, chat, seconds, ts FROM timers WHERE pending = 1")?;
+        let rows = st.query_map([], |r| {
+            let bytes: Vec<u8> = r.get(1)?;
+            Ok(Chat::from_row(r.get(0)?, &bytes)
+                .map(|c| (c, r.get(2).unwrap_or(0), r.get(3).unwrap_or(0))))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Our timer of `ts` reached the conversation.
+    pub fn timer_sent(&self, chat: &Chat, ts: u32) -> Result<(), Error> {
+        self.conn.execute(
+            "UPDATE timers SET pending = 0 WHERE chat_kind = ?1 AND chat = ?2 AND ts = ?3",
+            params![chat.kind(), chat.bytes(), ts],
+        )?;
+        Ok(())
+    }
+
+    /// The messages whose time is up at `now_ms` (Unix ms), removed with their reactions,
+    /// edits and media, as `delete_for_me` does. Returned, for the app.
+    pub fn vanish(&self, now_ms: i64) -> Result<Vec<Message>, Error> {
+        let ids: Vec<i64> = {
+            let mut st = self.conn.prepare(
+                "SELECT id FROM messages WHERE vanish_ms IS NOT NULL AND vanish_ms <= ?1",
+            )?;
+            let rows = st.query_map(params![now_ms], |r| r.get(0))?;
+            rows.filter_map(Result::ok).collect()
+        };
+        let mut gone = Vec::with_capacity(ids.len());
+        for id in ids {
+            if let Some(m) = self.delete_for_me(id)? {
+                gone.push(m);
+            }
+        }
+        Ok(gone)
+    }
+
+    /// When the next message disappears, Unix ms.
+    pub fn next_vanish(&self) -> Result<Option<i64>, Error> {
+        self.conn.query_row(
+            "SELECT MIN(vanish_ms) FROM messages WHERE vanish_ms IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+    }
+
     /// The content hashes announced in `chat` (§14.1): what to stop offering, or to remove
     /// from downloads, when the conversation is deleted.
     pub fn announced_hashes(&self, chat: &Chat) -> Result<Vec<[u8; 32]>, Error> {
@@ -1026,6 +1141,8 @@ impl Store {
             .collect())
     }
 
+    /// Deletes a conversation: its messages, the media we kept for it and its timer. Location
+    /// shares and positions are separate (the map).
     pub fn delete_chat(&self, chat: &Chat) -> Result<usize, Error> {
         let n = self.conn.execute(
             "DELETE FROM messages WHERE chat_kind = ?1 AND chat = ?2",
@@ -1035,7 +1152,7 @@ impl Store {
             "DELETE FROM media WHERE chat_kind = ?1 AND chat = ?2",
             params![chat.kind(), chat.bytes()],
         )?;
-        for table in ["reactions", "amendments"] {
+        for table in ["reactions", "amendments", "timers"] {
             self.conn.execute(
                 &format!("DELETE FROM {table} WHERE chat_kind = ?1 AND chat = ?2"),
                 params![chat.kind(), chat.bytes()],
@@ -1464,6 +1581,49 @@ mod tests {
             read: outgoing,
             msg_ref: None,
         }
+    }
+
+    /// Disappearing messages (§6.5): the timer in force when a message is stored decides
+    /// when it goes; the newest setting holds.
+    #[test]
+    fn timers_and_vanishing() {
+        let s = Store::in_memory().unwrap();
+        let chat = Chat::Contact([4; 32]);
+        let before = s.insert(&text(chat, false, "stays", 1_000)).unwrap();
+        assert!(s.set_timer(&chat, 300, 10, true).unwrap());
+        assert!(!s.set_timer(&chat, 60, 9, false).unwrap(), "older setting");
+        assert_eq!(s.timer(&chat).unwrap(), (300, 10));
+        assert_eq!(s.pending_timers().unwrap(), vec![(chat, 300, 10)]);
+        s.timer_sent(&chat, 10).unwrap();
+        assert!(s.pending_timers().unwrap().is_empty());
+        let goes = s.insert(&text(chat, true, "goes", 2_000)).unwrap();
+        assert_eq!(s.next_vanish().unwrap(), Some(2_000 + 300_000));
+        assert!(s.vanish(2_000 + 299_999).unwrap().is_empty());
+        let gone = s.vanish(2_000 + 300_000).unwrap();
+        assert_eq!(gone.iter().map(|m| m.id).collect::<Vec<_>>(), vec![goes.id]);
+        assert!(s.get(goes.id).unwrap().is_none());
+        assert!(
+            s.get(before.id).unwrap().is_some(),
+            "stored before the timer"
+        );
+        assert_eq!(s.next_vanish().unwrap(), None);
+        // Notices stay.
+        let notice = Message {
+            content: Content::Notice(crate::content::Notice {
+                kind: crate::content::notice::TIMER,
+                actor: [4; 32],
+                actor_name: String::new(),
+                subjects: Vec::new(),
+                text: "300".into(),
+            }),
+            ..text(chat, false, "", 2_500)
+        };
+        s.insert(&notice).unwrap();
+        assert_eq!(s.next_vanish().unwrap(), None);
+        // Turned off: new messages stay.
+        assert!(s.set_timer(&chat, 0, 11, false).unwrap());
+        s.insert(&text(chat, false, "stays too", 3_000)).unwrap();
+        assert_eq!(s.next_vanish().unwrap(), None);
     }
 
     /// Review of 2026-11-15, SR-28: a deleted message leaves nothing to read back in the file.

@@ -81,7 +81,9 @@ struct ConversationsView: View {
             .scrollContentBackground(.hidden)
             .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
-            .navigationDestination(for: ChatID.self) { ChatView(chat: $0) }
+            // One view per conversation: a path that switches chats (a notification, a debug
+            // retarget) starts the new one afresh, with its own history, draft and state.
+            .navigationDestination(for: ChatID.self) { ChatView(chat: $0).id($0) }
             .sheet(isPresented: $searching) {
                 SearchMessagesView { chat, id in
                     searching = false

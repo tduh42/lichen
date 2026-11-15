@@ -232,6 +232,7 @@ fn describe(core: &Core, e: &Event) -> String {
                     format!("edits {} to \"{text}\"", hex::encode(target))
                 }
                 Content::Delete { target, .. } => format!("deletes {}", hex::encode(target)),
+                Content::Timer { seconds, .. } => format!("messages disappear after {seconds} s"),
                 Content::Deleted { .. } => "a deleted message".into(),
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),
@@ -325,6 +326,7 @@ fn describe(core: &Core, e: &Event) -> String {
                     format!("edits {} to \"{text}\"", hex::encode(target))
                 }
                 Content::Delete { target, .. } => format!("deletes {}", hex::encode(target)),
+                Content::Timer { seconds, .. } => format!("messages disappear after {seconds} s"),
                 Content::Deleted { .. } => "a deleted message".into(),
                 Content::Location(p) => describe_position(p),
                 Content::Notice(n) => format!("notice {}", n.kind),

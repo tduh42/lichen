@@ -1,6 +1,9 @@
 package com.tduhamel.lichen.model
 
 import android.content.res.Resources
+import android.icu.text.MeasureFormat
+import android.icu.util.Measure
+import android.icu.util.MeasureUnit
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.FailReason
@@ -105,8 +108,29 @@ fun Message.Notice.noticeText(res: Resources, me: ByteArray?, name: (ByteArray, 
         8 -> if (mine) res.getString(R.string.notice_you_closed) else res.getString(R.string.notice_closed, who)
         9 -> if (mine) res.getString(R.string.notice_you_renamed, text) else res.getString(R.string.notice_renamed, who, text)
         10 -> res.getString(R.string.notice_you_left)
+        11 -> {
+            val seconds = text.toUIntOrNull() ?: 0u
+            when {
+                seconds == 0u && mine -> res.getString(R.string.notice_you_timer_off)
+                seconds == 0u -> res.getString(R.string.notice_timer_off, who)
+                mine -> res.getString(R.string.notice_you_timer, timerLabel(res, seconds))
+                else -> res.getString(R.string.notice_timer, who, timerLabel(res, seconds))
+            }
+        }
         else -> res.getString(R.string.notice_changed)
     }
+}
+
+/** A disappearing-message timer in words: "5 minutes", "1 week" (§6.5). */
+fun timerLabel(res: Resources, seconds: UInt): String {
+    val s = seconds.toLong()
+    val (n, unit) = when {
+        s >= 604_800 && s % 604_800 == 0L -> s / 604_800 to MeasureUnit.WEEK
+        s >= 86_400 && s % 86_400 == 0L -> s / 86_400 to MeasureUnit.DAY
+        s >= 3_600 && s % 3_600 == 0L -> s / 3_600 to MeasureUnit.HOUR
+        else -> (s + 59) / 60 to MeasureUnit.MINUTE
+    }
+    return MeasureFormat.getInstance(res.configuration.locales[0], MeasureFormat.FormatWidth.WIDE).format(Measure(n, unit))
 }
 
 /** "LoRa", "LoRa · direct", "LoRa · 2 hops". */

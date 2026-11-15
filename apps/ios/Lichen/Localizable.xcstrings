@@ -231,6 +231,26 @@
         }
       }
     },
+    "%@ set messages to disappear after %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ a réglé les messages pour disparaître après %2$@"
+          }
+        }
+      }
+    },
+    "%@ turned off disappearing messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a désactivé les messages éphémères"
+          }
+        }
+      }
+    },
     "%@ · %lld°": {
       "localizations": {
         "fr": {
@@ -1831,6 +1851,16 @@
         }
       }
     },
+    "Could not change the timer.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de changer la durée."
+          }
+        }
+      }
+    },
     "Could not create the group.": {
       "localizations": {
         "fr": {
@@ -2117,6 +2147,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Antenne directionnelle"
+          }
+        }
+      }
+    },
+    "Disappearing messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages éphémères"
+          }
+        }
+      }
+    },
+    "Disappearing messages: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages éphémères : %@"
+          }
+        }
+      }
+    },
+    "Disappearing messages: off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages éphémères : désactivés"
           }
         }
       }
@@ -3911,6 +3971,16 @@
         }
       }
     },
+    "New messages disappear on every phone that gets the setting. Screenshots and modified apps can still keep them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux messages disparaissent sur chaque téléphone qui reçoit le réglage. Une capture d’écran ou une appli modifiée peut encore les garder."
+          }
+        }
+      }
+    },
     "No GPS position": {
       "localizations": {
         "fr": {
@@ -4307,6 +4377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "J'arrive, radio éteinte pour l'instant"
+          }
+        }
+      }
+    },
+    "On this phone only: MeshCore apps keep their copy. Screenshots can keep messages too.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sur ce téléphone seulement : les applis MeshCore gardent leur copie. Une capture d’écran peut aussi garder les messages."
           }
         }
       }
@@ -7031,12 +7111,32 @@
         }
       }
     },
+    "You set messages to disappear after %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as réglé les messages pour disparaître après %@"
+          }
+        }
+      }
+    },
     "You stop receiving its messages and your location shares with it stop. What you received stays on this phone.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Tu ne reçois plus ses messages et tes partages de position avec lui s’arrêtent. Ce que tu as reçu reste sur ce téléphone."
+          }
+        }
+      }
+    },
+    "You turned off disappearing messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as désactivé les messages éphémères"
           }
         }
       }

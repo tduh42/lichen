@@ -4,6 +4,22 @@ use super::*;
 
 #[uniffi::export]
 impl LichenCore {
+    /// Messages of `chat` disappear `seconds` after they are stored, from now on; 0: they stay
+    /// (§6.5). The other side of a lichen conversation, or the group, gets the same timer; a
+    /// MeshCore chat keeps it on this phone.
+    pub fn set_disappearing(&self, chat: ChatRef, seconds: u32) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        self.lock().set_timer(c, seconds)
+    }
+
+    /// `chat`'s timer, seconds (0: messages stay).
+    pub fn disappearing(&self, chat: ChatRef) -> Result<u32, LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        Ok(st.timer(&c).map_err(|_| LichenError::Storage)?.0)
+    }
+
     /// Up to `limit` messages of `chat` before message `before_id`, oldest first.
     /// The messages from `from_id` (included) to `before_id` (excluded), oldest first: to show a
     /// search result or a quoted message older than what is loaded, in one read (recheck R08).

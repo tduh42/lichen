@@ -63,7 +63,8 @@ pub enum Message {
     },
     /// A membership change in a group, recorded by this phone (ADR-0021): `kind` is one of
     /// `lc_core::content::notice` (1 created, 2 added us, 3 joined, 4 left, 5 removed, 6 no
-    /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left).
+    /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left), or a
+    /// disappearing-message timer set to `text` seconds, "0" for off (11, §6.5).
     Notice {
         kind: u8,
         /// Who did it (a node, ours when we did), and their name then.
@@ -122,8 +123,12 @@ impl From<Content> for Message {
             Content::Text { sent_at, text } | Content::Reply { sent_at, text, .. } => {
                 Self::Text { sent_at, text }
             }
-            // Reactions, edits and deletes are state, never shown as messages.
-            c @ (Content::Reaction { .. } | Content::Edit { .. } | Content::Delete { .. }) => {
+            // Reactions, edits, deletes and timers are state, never shown as messages (a
+            // timer shows as its notice).
+            c @ (Content::Reaction { .. }
+            | Content::Edit { .. }
+            | Content::Delete { .. }
+            | Content::Timer { .. }) => {
                 let mut body = c.encode();
                 let content_type = body.remove(0);
                 Self::Other { content_type, body }

@@ -105,6 +105,7 @@ impl Inner {
     /// Saves the groups that changed, and follows the outbox.
     pub(crate) fn persist(&mut self) {
         self.refresh_outbox();
+        self.vanish();
         let dirty = self.core.take_dirty_groups();
         let Some(st) = &self.store else {
             return;

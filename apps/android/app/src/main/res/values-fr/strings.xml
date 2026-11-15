@@ -663,6 +663,15 @@
     <string name="notice_you_renamed">Tu as renommé le groupe « %1$s »</string>
     <string name="notice_renamed">%1$s a renommé le groupe « %2$s »</string>
     <string name="notice_you_left">Tu as quitté le groupe</string>
+    <string name="disappearing_messages">Messages éphémères</string>
+    <string name="disappearing_off">Messages éphémères : désactivés</string>
+    <string name="disappearing_on">Messages éphémères : %s</string>
+    <string name="timer_note">Les nouveaux messages disparaissent sur chaque téléphone qui reçoit le réglage. Une capture d’écran ou une appli modifiée peut encore les garder.</string>
+    <string name="timer_note_plain">Sur ce téléphone seulement : les applis MeshCore gardent leur copie. Une capture d’écran peut aussi garder les messages.</string>
+    <string name="notice_you_timer">Tu as réglé les messages pour disparaître après %s</string>
+    <string name="notice_timer">%1$s a réglé les messages pour disparaître après %2$s</string>
+    <string name="notice_you_timer_off">Tu as désactivé les messages éphémères</string>
+    <string name="notice_timer_off">%s a désactivé les messages éphémères</string>
     <string name="notice_changed">Le groupe a changé</string>
     <string name="group_name_label">Nom</string>
     <string name="rename_group">Renommer le groupe</string>

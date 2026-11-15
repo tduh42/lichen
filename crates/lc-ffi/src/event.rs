@@ -86,6 +86,11 @@ pub enum LichenEvent {
         emoji: String,
         target: Option<StoredMessage>,
     },
+    /// Message `id` of `chat` disappeared: its timer ran out (§6.5).
+    MessageRemoved {
+        id: i64,
+        chat: ChatRef,
+    },
     /// An announced content's message was deleted (§6.4): stop offering it, and remove its
     /// download (review of 2026-11-15, SR-28).
     MediaGone {

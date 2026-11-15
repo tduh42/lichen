@@ -15,7 +15,7 @@ import zlib
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 GROUP_MISSING, GROUP_RESEND = 0x15, 0x16
 STICKER, GIF = 0x0A, 0x0B
-EDIT, DELETE = 0x0C, 0x0D
+EDIT, DELETE, TIMER = 0x0C, 0x0D, 0x0E
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -40,6 +40,10 @@ def edit(ts: int, target: bytes, s: str) -> bytes:
 
 def delete(ts: int, target: bytes) -> bytes:
     return bytes([DELETE]) + struct.pack("<I", ts) + target
+
+
+def timer(ts: int, seconds: int) -> bytes:
+    return bytes([TIMER]) + struct.pack("<II", ts, seconds)
 
 
 camille = hashlib.sha256(b"camille").digest()
@@ -112,6 +116,14 @@ print(f'target = "{target.hex()}"')
 print(f'datagram = "{delete(1_793_000_500, target).hex()}"')
 print()
 
+for name, secs in (("timer off", 0), ("timer 5 minutes", 300), ("timer 1 day", 86_400), ("timer 4 weeks", 28 * 86_400)):
+    print("[[timer]]")
+    print(f'name = "{name}"')
+    print("ts = 1793000600")
+    print(f"seconds = {secs}")
+    print(f'datagram = "{timer(1_793_000_600, secs).hex()}"')
+    print()
+
 head = bytes([REACTION]) + struct.pack("<I", 1_793_000_300) + target
 rhead = bytes([REPLY]) + struct.pack("<I", 1_793_000_300) + target
 ehead = bytes([EDIT]) + struct.pack("<I", 1_793_000_300) + target
@@ -127,6 +139,9 @@ malformed = [
     ("edit cut in its reference", ehead[:9]),
     ("delete cut in its reference", dgram[:12]),
     ("delete with trailing bytes", dgram + b"\x00"),
+    ("timer cut", timer(1_793_000_600, 300)[:8]),
+    ("timer with trailing bytes", timer(1_793_000_600, 300) + b"\x00"),
+    ("timer over four weeks", timer(1_793_000_600, 28 * 86_400 + 1)),
 ]
 for name, d in malformed:
     print("[[malformed]]")
