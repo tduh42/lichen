@@ -5,11 +5,12 @@
 Off-grid encrypted messaging.
 <br clear="left">
 
-Encrypted messaging on top of the **stock MeshCore** network: long fragmented messages, ChaCha20-Poly1305 with forward secrecy, private groups, media, location sharing and a search mode. No firmware is modified: the app talks to the MeshCore companion (Bluetooth or USB) and carries its frames in `RAW_CUSTOM` and `GRP_DATA` packets.
+Encrypted messaging on top of the **stock MeshCore** network: long fragmented messages, ChaCha20-Poly1305 with forward secrecy, private groups, media, location sharing and a search mode, and plain chats with people who use the stock MeshCore apps. No firmware is modified: the app talks to the MeshCore companion (Bluetooth or USB) and carries its frames in `RAW_CUSTOM` and `GRP_DATA` packets.
 
 - Normative spec: [`docs/spec/protocol.md`](docs/spec/protocol.md); original design: [`docs/spec/design.md`](docs/spec/design.md) (French original: [`design.fr.md`](docs/spec/design.fr.md)).
 - Decisions: [`docs/decisions/`](docs/decisions/). Mockups: [`docs/maquettes/`](docs/maquettes/). Logo and palette: [`docs/brand/`](docs/brand/).
 - Shared Rust core; an iOS app (SwiftUI) and an Android app (Jetpack Compose).
+- Security: an internal review of 2026-11-15 and what changed after it, [`docs/security-review-2026-11-15.md`](docs/security-review-2026-11-15.md). No third party has audited lichen.
 
 | Crate | Role |
 |---|---|
@@ -75,9 +76,11 @@ A datagram is cut into fragments sent in rounds (ACK-on-Error, after RFC 8724). 
 
 Chatting off-grid comes first. A message is accepted while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves; the phone keeps the intent (chat, text, expiry), never a session, key, nonce or ciphertext. Replies and reactions name their message by an 8-byte reference both phones compute. Stickers are animated emoji every phone already has, and a GIF travels as its GIPHY id only: one packet each, no API key. Group changes appear as lines in the conversation ("Léa joined", "Camille removed Bob").
 
-| 24 h | 8 B | 2.1 s |
+Your own messages can be edited or taken back for everyone for 24 hours, and anything can be forwarded. A conversation can make its messages disappear after 5 minutes to a week: the setting travels to the other phones, and each removes a message that long after storing it. People on the stock MeshCore apps get a plain chat, and MeshCore channels such as Public show next to your conversations; both are marked as not lichen-encrypted.
+
+| 24 h | 8 B | 2.2 s |
 |---|---|---|
-| a waiting message's life | reference a reply or reaction carries | a 👍 one hop away, every frame counted (fake network) |
+| a waiting message's life; edits and deletes | reference a reply, reaction, edit or delete carries | a 👍 one hop away, every frame counted (fake network) |
 
 ### Who you are, and how strangers meet
 
@@ -86,9 +89,9 @@ Chatting off-grid comes first. A message is accepted while the radio is away, su
   <img alt="INTRO, INTRO_ACK and INTRO_FIN between two phones, then a session" src="docs/readme/introduction-light.svg" width="760">
 </picture>
 
-Your identity is a key made on your phone from a seed in the Keychain or Keystore, backed up as 24 words; the radio's key only routes. Strangers meet with a three-frame introduction on the Noise XX pattern; later sessions use HELLO / HELLO_ACK with fresh ephemeral keys. Comparing the 60-digit safety number, one tap from every conversation's header, or scanning a `lichen:1:` card in person marks a contact verified; a verified contact that suddenly shows another key is not adopted until you accept it.
+Your identity is a key made on your phone from a seed in the Keychain or Keystore, backed up as 24 words; the radio's key only routes. Strangers meet with a three-frame introduction on the Noise XX pattern; later sessions use HELLO / HELLO_ACK with fresh ephemeral keys, bound to everything both sides said, so even a stolen seed does not let someone answer as your contacts (ADR-0029). Comparing the 60-digit safety number, one tap from every conversation's header, or scanning a `lichen:1:` card in person marks a contact verified; a contact that suddenly shows another key is not adopted until you accept it.
 
-| 1.8 s | 1.1 s | 6 × 5 | 24 |
+| 1.9 s | 1.2 s | 12 × 5 | 24 |
 |---|---|---|---|
 | a first meeting, one hop | a later session | safety number digits | recovery words |
 
@@ -99,7 +102,7 @@ Your identity is a key made on your phone from a seed in the Keychain or Keystor
   <img alt="Three members around a repeater; a post flooded twice; Léa scans the admin's QR code, sends GROUP_JOIN, gets every key in one bundle" src="docs/readme/groups-light.svg" width="760">
 </picture>
 
-A post is encrypted once with the sender's key, signed with the sender's identity, and flooded twice. Keys travel over pairwise sessions; when people join, the admin relays every key, so strangers never need a session with each other. People next to you join by scanning a QR code that holds the admin's public card and a 10-minute token, never a key. When someone leaves or is removed, everyone draws a new key. Members keep the last hour of posts: one who misses a post asks the author or the admin for it, and gets the original signed envelope back, shown as "arrived late".
+A post is encrypted once with the sender's key, signed with the sender's identity, and flooded twice. Keys travel over pairwise sessions; when people join, the admin relays every key, so strangers never need a session with each other. People next to you join by scanning a QR code that holds the admin's public card and a 10-minute token, never a key. Nobody else can put you in a group: an invitation from someone you have not verified waits for your answer. When someone leaves or is removed, everyone draws a new key, and the admin keeps sending the change for a day to whoever has not received it. Members keep the last hour of posts: one who misses a post asks the author or the admin for it, and gets the original signed envelope back, shown as "arrived late".
 
 | 100 % | 130 s | 237 s | 1–32 |
 |---|---|---|---|

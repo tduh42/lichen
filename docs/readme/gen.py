@@ -174,8 +174,8 @@ def introduction(c):
     s.rect(570, 18, 150, 44); s.text(645, 45, "Bob's phone")
     s.line(115, 62, 115, 285); s.line(645, 62, 645, 285)
     rows = [(88, 1, "INTRO · 57 B", "salt, ephemeral key, return path: nothing secret"),
-            (148, -1, "INTRO_ACK · 104 B", "Bob's identity, sealed; a tag only his key can make"),
-            (208, 1, "INTRO_FIN · 56 B", "Alice's identity, sealed; her proof")]
+            (148, -1, "INTRO_ACK · 120 B", "Bob's identity, sealed; a tag only his key can make"),
+            (208, 1, "INTRO_FIN · 72 B", "Alice's identity, sealed; her proof")]
     for y, d, name, what in rows:
         if d > 0:
             s.arrow(115, y, 639, y + 18, "lora", 2)

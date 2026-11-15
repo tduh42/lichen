@@ -26,3 +26,19 @@ Each starts with its own plan; the protocol ones with the spec and an ADR.
 Group messages are flooded twice and never acknowledged (§10.3). When a unicast transfer crosses the same repeater (a photo, a voice note), it keeps that repeater busy about half the time, and nodes behind it cannot hear each other: both copies of a fragment can collide there, and a two-fragment message then has roughly even odds of being lost. In the demo app, Julien's first post ("Leaving the col…") was lost that way while Camille's photo went to the app; the members only notice the silence. A receiver sees a gap in a member's counters once a later message (or position) from that member arrives: asking the sender, or the admin, for the missing counter would recover it. That needs a spec section and an ADR (request format, who answers, how long messages are kept, airtime), and is the next candidate for the messaging work.
 
 **Done** (§10.6, ADR-0024): members keep the last hour of message envelopes in memory; a member that sees a gap among a member's message counters asks the author or the admin 20–40 s later, and the original signed envelopes come back through the normal receiver, marked "arrived late". Positions and search packets moved to their own counter range, so a gap is always a lost message. A member asked for a message it lost too hands it on once it recovers it. A member's first messages are recoverable too (gaps count from the key's next counter). On the fake network with 10 % loss per link, delivery goes from 96.0 % to 100 % for 80 % more frames; at 20 %, from 87.5 % to 93.1 % for eleven times the frames (`docs/measurements.md`). Still lost: the last message of a burst until its author sends again.
+
+## Since then (2026-11-15)
+
+Both apps, with the spec and an ADR for each protocol change:
+
+| Feature | Where |
+|---|---|
+| Stickers (animated emoji every phone ships) and GIFs by GIPHY id, one packet each | §6.3, ADR-0025 |
+| Plain chats with people on the stock MeshCore apps, and MeshCore channels such as Public, marked as not lichen-encrypted | §15, ADR-0026 |
+| Edit and delete for everyone within 24 hours, delete for me, forward | §6.4, ADR-0027 |
+| Disappearing messages: off, 5 min, 1 h, 8 h, 1 day, 1 week, shared with the conversation, MeshCore chats local only | §6.5, ADR-0030 |
+| Group invitations that wait for an answer unless the admin is verified or the code was scanned; identities pinned at first use; names pinned at verification; notifications labelled "· MeshCore" | review of 2026-11-15 |
+
+In progress: an optional app lock (Face ID / fingerprint, hidden notifications, SOS excepted).
+
+Still missing, in the roadmap's order (M7, "Everyday messaging"): tappable links and "Show on the map" for coordinates; reply and mark as read from a notification; sharing into lichen from other apps; a media gallery per chat and storage per chat; block and archive; voice notes in groups; a pending reply kept with the draft.

@@ -350,6 +350,9 @@ Each suite was run twice the same day, on the commit before the change (8-byte t
 | 10 s of Codec2 1200 voice, one hop, CR 4/5 (`--test media`) | 10 fragments, 10.7 s | 11 fragments, 11.4 s |
 | 15 s voice messages that fit the hour's budget | 22 | 21 |
 | INTRO_ACK / INTRO_FIN, one hop, CR 4/5 (`--test identity`) | 104 B, 754 ms / 56 B, 508 ms | 120 B, 836 ms / 72 B, 590 ms |
+| HELLO / HELLO_ACK, the same (with ADR-0029's handshake) | 66 B / 64 B, 1.1 s together | 74 B, 590 ms / 72 B, 590 ms |
+| text / reply / 👍 one hop, every frame counted (`--test groups -- --ignored reply_and_reaction_costs`) | 2.17 / 2.25 / 2.09 s | 2.25 / 2.33 / 2.17 s |
+| the same in a group of 5, two copies | 3.06 / 3.22 / 2.89 s | 3.22 / 3.39 / 3.06 s |
 
 **A full datagram on a lossy chain** (`--test fakenet -- --ignored`, 50 runs per row, 64 fragments: 9,800 bytes with 8-byte tags, 9,400 with 16):
 

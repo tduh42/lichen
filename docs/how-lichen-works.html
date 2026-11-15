@@ -289,11 +289,12 @@ footer p { max-width: 75ch; }
 
   <!-- 3b. Messenger -->
   <section class="sec" id="messenger">
-    <div class="eyebrow">§6.1 and §6.2 · Outbox, replies, reactions</div>
+    <div class="eyebrow">§6.1 to §6.5 · Outbox, replies, reactions, edits, disappearing messages</div>
     <h2>A messenger first</h2>
     <div class="prose">
       <p class="lede">Chatting off-grid comes first. A message is accepted even while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves.</p>
       <p>What the phone keeps is the <b>intent</b> (the chat, the text, its expiry), never a session, a key, a nonce or a ciphertext: after a restart it is encrypted again under a fresh session, and the receiver drops a copy it already has. It expires after 24 hours. <b>Replies and reactions</b> name the message they answer by an 8-byte reference both phones compute from its author and its bytes, so nothing else travels; a reaction costs about what a short text does. <b>Stickers</b> are animated emoji both phones already ship, and a <b>GIF</b> travels as its GIPHY id only, the receiver building the address itself: one packet each, and no API key. Each phone also records group changes as lines in the conversation: who joined, who left, who removed whom, the new name.</p>
+      <p>Your own messages can be <b>edited</b> or <b>taken back</b> for everyone for 24 hours; only their author's change applies, checked twice. Anything can be <b>forwarded</b>, as a new message of yours. A conversation can make its messages <b>disappear</b> after 5 minutes to a week: the setting travels once to the other phones, and each removes a message that long after storing it, so no clocks are compared. And people on the stock MeshCore apps are not left out: they get a <b>plain chat</b>, and channels such as Public show next to your conversations, both marked as not lichen-encrypted.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -311,7 +312,7 @@ footer p { max-width: 75ch; }
     <div class="facts">
       <div class="fact"><span class="v">24 h</span><span class="k">a waiting message's life; cancel until its first frame leaves</span></div>
       <div class="fact"><span class="v">8 B</span><span class="k">reference of the message a reply or a reaction answers</span></div>
-      <div class="fact"><span class="v lora">2.1 s</span><span class="k">a 👍 to a contact one hop away, all frames counted (2.9 s in a group of 5, fake network)</span></div>
+      <div class="fact"><span class="v lora">2.2 s</span><span class="k">a 👍 to a contact one hop away, all frames counted (3.1 s in a group of 5, fake network)</span></div>
     </div>
   </section>
 
@@ -321,7 +322,7 @@ footer p { max-width: 75ch; }
     <h2>Who you are, and how strangers meet</h2>
     <div class="prose">
       <p class="lede">Your lichen identity is a key made on your phone, from a 32-byte seed kept in the Keychain. Its backup is 24 words. The radio's own key only routes: it never encrypts anything of yours.</p>
-      <p>Two people who have never talked meet with an <b>introduction</b> in three frames, on the Noise XX pattern: identities travel encrypted under ephemeral keys, and each side proves it holds its identity key. Later sessions start with HELLO / HELLO_ACK, with fresh ephemeral keys every time (forward secrecy). Comparing the <b>safety number</b>, 60 digits that are the same on both phones, or scanning a <code>lichen:1:</code> card in person, marks a contact verified. A verified contact who suddenly shows another identity is not adopted: nothing goes to the new key until you accept it. The key's state sits in every conversation's header, one tap from the safety number.</p>
+      <p>Two people who have never talked meet with an <b>introduction</b> in three frames, on the Noise XX pattern: identities travel encrypted under ephemeral keys, and each side proves it holds its identity key. Later sessions start with HELLO / HELLO_ACK, with fresh ephemeral keys every time (forward secrecy), and the keys are bound to everything both sides said: a stolen seed is not enough to answer as one of your contacts (ADR-0029). Comparing the <b>safety number</b>, 60 digits that are the same on both phones, or scanning a <code>lichen:1:</code> card in person, marks a contact verified. A contact who suddenly shows another identity is not adopted: nothing goes to the new key until you accept it. The key's state sits in every conversation's header, one tap from the safety number.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -339,9 +340,9 @@ footer p { max-width: 75ch; }
       <div class="caption" id="iCap" aria-live="polite"></div>
     </figure>
     <div class="facts">
-      <div class="fact"><span class="v">1.8 s</span><span class="k">airtime of a first meeting (57 + 104 + 56 bytes, one hop)</span></div>
-      <div class="fact"><span class="v">1.1 s</span><span class="k">a later session: HELLO 66 B, HELLO_ACK 64 B</span></div>
-      <div class="fact"><span class="v">6 × 5</span><span class="k">safety number digits, the same on both phones</span></div>
+      <div class="fact"><span class="v">1.9 s</span><span class="k">airtime of a first meeting (57 + 120 + 72 bytes, one hop)</span></div>
+      <div class="fact"><span class="v">1.2 s</span><span class="k">a later session: HELLO 74 B, HELLO_ACK 72 B</span></div>
+      <div class="fact"><span class="v">12 × 5</span><span class="k">safety number digits, the same on both phones</span></div>
       <div class="fact"><span class="v">24</span><span class="k">words in the recovery phrase (BIP-39)</span></div>
     </div>
   </section>
@@ -353,7 +354,7 @@ footer p { max-width: 75ch; }
     <div class="prose">
       <p class="lede">Each member draws a sender key for the group. Keys travel over pairwise sessions, which are authenticated and forward-secret; when people join, <b>the admin relays every key</b>, so newcomers and members never need a session with each other.</p>
       <p>A post is encrypted once with the sender's key, <b>signed</b> with the sender's identity, and flooded as GRP_DATA. Holding someone's sender key is not enough to speak for them: the signature is checked before anything moves, which is also why relaying keys through the admin gives it nothing new. When someone leaves, every remaining member draws a new key and sends it only to the others. Every post is flooded twice, because a flood lost at its first hop is lost for everyone. When both copies still collide, <b>members recover it from each other</b>: everyone keeps the last hour of posts, a member that sees a gap in someone's counters asks the author or the admin, and gets the original signed envelope back, checked like any other and shown as "arrived late". A member asked for a post it lost too hands it on once it gets it back itself (every post delivered at 10 % loss per link, 96.0 % without, fake network).</p>
-      <p>People next to you join <b>by scanning a QR code</b>: it carries the admin's public contact card and a random 16-byte token, valid 10 minutes and revoked when the screen closes, never a key or a group id. A group can start with the admin alone, be renamed, and shows who joined, left or was removed.</p>
+      <p>People next to you join <b>by scanning a QR code</b>: it carries the admin's public contact card and a random 16-byte token, valid 10 minutes and revoked when the screen closes, never a key or a group id. A group can start with the admin alone, be renamed, and shows who joined, left or was removed. Nobody else can put you in a group: an invitation from someone you have not verified waits for your answer.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -557,8 +558,8 @@ footer p { max-width: 75ch; }
   </section>
 
   <footer>
-    <p>Every figure on this page comes from lichen's own documents: the normative spec (<code>docs/spec/protocol.md</code>), the decisions (ADR-0002 to ADR-0025) and the measurement log (<code>docs/measurements.md</code>), dated 2026-11-09. Fake-network and simulator figures are labelled as such; on-air tests between real radios (an iPhone on a ThinkNode M5 against a stock Heltec V4) are under way.</p>
-    <p>Milestones L0 to L9 are done: protocol, direct messages, groups, the iOS app, location, media, the Internet bridge over iroh and Tor, the search mode, the Android app. Then the messaging work: a dependable outbox, chat essentials, replies and reactions, voice review and the photo viewer, invitations by QR code, groups the admin keeps in sync, files.</p>
+    <p>Every figure on this page comes from lichen's own documents: the normative spec (<code>docs/spec/protocol.md</code>), the decisions (ADR-0002 to ADR-0030) and the measurement log (<code>docs/measurements.md</code>), up to 2026-11-15. Fake-network and simulator figures are labelled as such; on-air tests between real radios (an iPhone on a ThinkNode M5 against a stock Heltec V4) are under way.</p>
+    <p>Milestones L0 to L9 are done: protocol, direct messages, groups, the iOS app, location, media, the Internet bridge over iroh and Tor, the search mode, the Android app. Then the messaging work: a dependable outbox, chat essentials, replies and reactions, voice review and the photo viewer, invitations by QR code, groups the admin keeps in sync, files, stickers and GIFs, plain chats with MeshCore users, edits, deletes, forwarding and disappearing messages. A security review on 2026-11-15 led to full 16-byte tags, a handshake bound to its transcript and stricter trust rules (ADR-0028, ADR-0029).</p>
   </footer>
 </main>
 
@@ -874,8 +875,8 @@ footer p { max-width: 75ch; }
     const g = $('iMsgs'), cap = $('iCap');
     const msgs = [
       { y: 90, dir: 1, name: 'INTRO', bytes: '57 B · 508 ms', what: 'salt, ephemeral key, return path: all in clear, nothing secret', text: "Alice doesn't know Bob's identity yet. INTRO carries only a salt, a fresh ephemeral key and the way back to her." },
-      { y: 165, dir: -1, name: 'INTRO_ACK', bytes: '104 B · 754 ms', what: "Bob's identity, sealed under ee; a second tag only his identity key can make", text: "Bob answers with his own ephemeral key and his identity, encrypted. A second tag proves he holds that identity's key." },
-      { y: 240, dir: 1, name: 'INTRO_FIN', bytes: '56 B · 508 ms', what: "Alice's identity, sealed; her proof under ee ‖ es ‖ se", text: 'Alice checks the proof, then sends her identity and her own proof. Both now hold session keys from ee ‖ es ‖ se.' },
+      { y: 165, dir: -1, name: 'INTRO_ACK', bytes: '120 B · 836 ms', what: "Bob's identity, sealed under ee; a second tag only his identity key can make", text: "Bob answers with his own ephemeral key and his identity, encrypted. A second tag proves he holds that identity's key." },
+      { y: 240, dir: 1, name: 'INTRO_FIN', bytes: '72 B · 590 ms', what: "Alice's identity, sealed; her proof under ee ‖ es ‖ se", text: 'Alice checks the proof, then sends her identity and her own proof. Both now hold session keys from ee ‖ es ‖ se.' },
     ];
     const draw = (k) => {
       g.innerHTML = '';
@@ -902,7 +903,7 @@ footer p { max-width: 75ch; }
         cap.innerHTML = `${msgs[k - 1].text}<small>${msgs[k - 1].name} · ${msgs[k - 1].bytes} on one hop.</small>`;
         await sleep(2400);
       }
-      cap.innerHTML = "Introduced. The identities are new to each other, so both are marked <b>to verify</b> until the safety numbers are compared.<small>Next time: HELLO / HELLO_ACK, about 1.1 s of airtime.</small>";
+      cap.innerHTML = "Introduced. The identities are new to each other, so both are marked <b>to verify</b> until the safety numbers are compared.<small>Next time: HELLO / HELLO_ACK, about 1.2 s of airtime.</small>";
       busy = false;
     };
   })();
