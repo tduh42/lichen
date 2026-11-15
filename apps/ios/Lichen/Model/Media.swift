@@ -1,5 +1,6 @@
 import AVFoundation
 import Observation
+import ImageIO
 import UIKit
 
 /// Records a voice message: 8 kHz mono 16-bit, what Codec2 takes, 15 seconds at most.
@@ -168,6 +169,39 @@ final class VoicePlayer: NSObject, AVAudioPlayerDelegate {
         d.append(contentsOf: Array("data".utf8)); u32(bytes)
         pcm.withUnsafeBytes { d.append(contentsOf: $0) }
         return d
+    }
+}
+
+
+/// An image decoded no larger than `maxPixel` on its longer side, its header read first: one
+/// that declares more than 16,384 pixels on a side, or 64 million in all, is refused instead
+/// of decoded whole. A received image is a few hundred bytes that can declare any size
+/// (review of 2026-11-15, SR-27).
+enum BoundedImage {
+    static func from(data: Data, maxPixel: Int) -> UIImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return make(src, maxPixel)
+    }
+
+    static func from(url: URL, maxPixel: Int) -> UIImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return make(src, maxPixel)
+    }
+
+    private static func make(_ src: CGImageSource, _ maxPixel: Int) -> UIImage? {
+        guard let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int,
+              let h = props[kCGImagePropertyPixelHeight] as? Int,
+              w > 0, h > 0, w <= 16_384, h <= 16_384, w * h <= 64_000_000
+        else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg)
     }
 }
 

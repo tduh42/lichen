@@ -941,7 +941,7 @@ private struct ImageCard: View {
             let fetched = announce.flatMap { a -> UIImage? in
                 guard case let .announce(_, _, _, hash, _, _, _) = a.message,
                       let url = model.downloads[hash] else { return nil }
-                return UIImage(contentsOfFile: url.path)
+                return BoundedImage.from(url: url, maxPixel: 2048)
             }
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
@@ -949,7 +949,7 @@ private struct ImageCard: View {
                         Image(uiImage: fetched)
                             .resizable()
                             .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                    } else if let ui = UIImage(data: data) {
+                    } else if let ui = BoundedImage.from(data: data, maxPixel: 480) {
                         Image(uiImage: ui)
                             .resizable()
                             .interpolation(.medium)
@@ -1256,7 +1256,7 @@ private struct Composer: View {
             Task {
                 defer { preparing = false }
                 guard let data = try? await item.loadTransferable(type: Data.self),
-                      let ui = UIImage(data: data), let (rgba, w, h) = ui.rgba()
+                      let ui = BoundedImage.from(data: data, maxPixel: 2048), let (rgba, w, h) = ui.rgba()
                 else {
                     error = LichenError.BadImage.display
                     return
@@ -1644,7 +1644,7 @@ private struct SendPhotoSheet: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 230)
                         .overlay {
-                            if let ui = UIImage(data: image.full) {
+                            if let ui = BoundedImage.from(data: image.full, maxPixel: 480) {
                                 Image(uiImage: ui).resizable().interpolation(.medium).scaledToFill()
                             }
                         }
@@ -2026,7 +2026,7 @@ private struct BridgeSection: View {
                         .contentShape(Rectangle())
                         .onTapGesture { if let file { opened = model.openable(name: name, file: file) } }
                         .quickLookPreview($opened)
-                } else if standalone, let file, let ui = UIImage(contentsOfFile: file.path) {
+                } else if standalone, let file, let ui = BoundedImage.from(url: file, maxPixel: 2048) {
                     Image(uiImage: ui).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .onTapGesture { viewing = true }

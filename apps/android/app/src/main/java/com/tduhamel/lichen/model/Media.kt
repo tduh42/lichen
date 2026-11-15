@@ -225,6 +225,8 @@ class PickedPhoto(val original: ByteArray, val rgba: ByteArray, val width: Int, 
 fun pickPhoto(resolver: ContentResolver, uri: Uri, maxSide: Int = 640): PickedPhoto? = runCatching {
     val original = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
     val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(original))) { d, info, _ ->
+        // A picked photo is read header first, like a received one (SR-27).
+        require(info.size.width in 1..16_384 && info.size.height in 1..16_384)
         val scale = minOf(1.0, maxSide.toDouble() / max(info.size.width, info.size.height))
         d.setTargetSize(
             max(1, (info.size.width * scale).roundToInt()),
@@ -238,9 +240,18 @@ fun pickPhoto(resolver: ContentResolver, uri: Uri, maxSide: Int = 640): PickedPh
     PickedPhoto(original, buf.array(), bitmap.width, bitmap.height)
 }.getOrNull()
 
-/** Decodes an image (AVIF thumbnails from Android 12, JPEG, PNG, HEIC…), or null. */
-fun decodeImage(bytes: ByteArray): Bitmap? =
-    runCatching { ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) }.getOrNull()
+/** Decodes an image (AVIF thumbnails from Android 12, JPEG, PNG, HEIC…) at most `maxSide` on
+ * its longer side, or null. Its header is read first: one that declares more than 16,384
+ * pixels on a side, or 64 million in all, is refused instead of decoded whole. A received
+ * image is a few hundred bytes that can declare any size (review of 2026-11-15, SR-27). */
+fun decodeImage(bytes: ByteArray, maxSide: Int = 2048): Bitmap? = runCatching {
+    ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { d, info, _ ->
+        val (w, h) = info.size.width to info.size.height
+        require(w in 1..16_384 && h in 1..16_384 && w.toLong() * h <= 64_000_000L)
+        val scale = minOf(1.0, maxSide.toDouble() / max(w, h))
+        d.setTargetSize(max(1, (w * scale).roundToInt()), max(1, (h * scale).roundToInt()))
+    }
+}.getOrNull()
 
 /** A file name from the image's format, as the iOS app names them. */
 fun photoName(data: ByteArray, nowMs: Long = System.currentTimeMillis()): String {
