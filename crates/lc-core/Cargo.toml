@@ -11,6 +11,7 @@ lc-meshcore.workspace = true
 lc-proto.workspace = true
 rand_core.workspace = true
 rand_chacha.workspace = true
+zeroize.workspace = true
 serde.workspace = true
 sha2.workspace = true
 rusqlite.workspace = true

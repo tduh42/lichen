@@ -33,6 +33,7 @@ ed25519-dalek = { version = "3.0", default-features = false, features = ["hazmat
 
 # std only (application core, CLI, tests)
 rand_core = { version = "0.10", default-features = false }
+zeroize = { version = "1.9", default-features = false }
 rand_chacha = { version = "0.10", default-features = false, features = ["std"] }
 proptest = "1.12"
 serde = { version = "1.0", features = ["derive"] }

@@ -27,6 +27,9 @@ use lc_proto::{
 };
 use rand_chacha::ChaCha20Rng;
 use rand_core::{Rng, SeedableRng};
+use zeroize::Zeroize;
+
+use crate::secret::Secret;
 use sha2::{Digest, Sha256};
 
 use crate::budget::{Budget, EU868};
@@ -458,7 +461,7 @@ struct Outgoing {
 struct Initiating {
     tag: u16,
     salt: [u8; SALT_LEN],
-    eph_secret: [u8; 32],
+    eph_secret: Secret,
     attempt: u8,
     next_retry: Millis,
     path: OwnedPath,
@@ -469,7 +472,7 @@ struct Initiating {
 struct Introducing {
     tag: u16,
     salt: [u8; SALT_LEN],
-    eph_secret: [u8; 32],
+    eph_secret: Secret,
     attempt: u8,
     next_retry: Millis,
     path: OwnedPath,
@@ -493,7 +496,7 @@ struct Fin {
     salt_i: [u8; SALT_LEN],
     /// The INTRO's hash, bound into the introduction's keys (ADR-0029).
     intro_hash: [u8; 32],
-    eph_secret: [u8; 32],
+    eph_secret: Secret,
     ack: IntroAck,
     attempt: u8,
     next_retry: Millis,
@@ -530,7 +533,7 @@ struct Answered {
     salt_r: [u8; SALT_LEN],
     eph_public: [u8; 32],
     /// To seal the same answer again for a resent HELLO (ADR-0029).
-    eph_secret: [u8; 32],
+    eph_secret: Secret,
 }
 
 /// The datagram being sent to a peer.
@@ -1248,6 +1251,17 @@ impl Core {
     }
 
     /// Random bytes from the core's generator (media ids).
+    /// 32 secret bytes (an ephemeral key, a sender key), wiped when dropped (review of
+    /// 2026-11-15, SR-07). Re-keying the generator after each draw is not done yet: it made the
+    /// demo's group set-up stall, a cause still to find.
+    pub(crate) fn draw_secret(&mut self) -> Secret {
+        let mut out = [0u8; 32];
+        self.rng.fill_bytes(&mut out);
+        let s = Secret(out);
+        out.zeroize();
+        s
+    }
+
     pub fn random_id(&mut self) -> crate::content::MediaId {
         let mut id = [0u8; 8];
         self.rng.fill_bytes(&mut id);
@@ -2061,8 +2075,7 @@ impl Core {
     fn start_intro(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
         let mut salt = [0u8; SALT_LEN];
         self.rng.fill_bytes(&mut salt);
-        let mut eph_secret = [0u8; 32];
-        self.rng.fill_bytes(&mut eph_secret);
+        let eph_secret = self.draw_secret();
         let intro = Introducing {
             tag: self.rng.next_u32() as u16,
             salt,
@@ -2209,8 +2222,7 @@ impl Core {
             .and_then(|t| u32::try_from(t).ok())
             .unwrap_or(0);
         let salt = handshake::hello_salt(t, &random);
-        let mut eph_secret = [0u8; 32];
-        self.rng.fill_bytes(&mut eph_secret);
+        let eph_secret = self.draw_secret();
         let tag = self.rng.next_u32() as u16;
         let next_retry = now + self.hello_backoff(&path);
         let init = Initiating {
@@ -2487,15 +2499,14 @@ impl Core {
             _ => {
                 let mut salt_r = [0u8; SALT_LEN];
                 self.rng.fill_bytes(&mut salt_r);
-                let mut eph_secret = [0u8; 32];
-                self.rng.fill_bytes(&mut eph_secret);
+                let eph_secret = self.draw_secret();
                 AnsweredIntro {
                     tag: msg.tag,
                     answer: Answer {
                         salt_i: msg.salt,
                         e_i: msg.ephemeral,
                         salt_r,
-                        eph_secret,
+                        eph_secret: *eph_secret,
                         intro_hash: intro::intro_hash(&msg),
                     },
                     path: path.clone(),
@@ -2735,8 +2746,7 @@ impl Core {
         let (answered, fresh) = match &peer.answered {
             Some(a) if a.tag == hello.tag && a.salt_i == hello.salt => (a.clone(), false),
             _ => {
-                let mut eph_secret = [0u8; 32];
-                self.rng.fill_bytes(&mut eph_secret);
+                let eph_secret = self.draw_secret();
                 let mut salt_r = [0u8; SALT_LEN];
                 self.rng.fill_bytes(&mut salt_r);
                 let a = Answered {

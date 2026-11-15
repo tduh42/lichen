@@ -15,6 +15,15 @@ pub struct SessionKeys {
     pub recv: Key,
 }
 
+/// Wiped when dropped (review of 2026-11-15, SR-07).
+impl Drop for SessionKeys {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.send.zeroize();
+        self.recv.zeroize();
+    }
+}
+
 impl core::fmt::Debug for SessionKeys {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("SessionKeys { .. }")

@@ -49,8 +49,9 @@ pub struct IntroAck {
     pub version: u8,
 }
 
-/// The responder's side of an introduction it answered.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The responder's side of an introduction it answered. Its ephemeral secret is never printed
+/// and is wiped when dropped (review of 2026-11-15, SR-07).
+#[derive(Clone, PartialEq, Eq)]
 pub struct Answer {
     pub salt_i: [u8; SALT_LEN],
     pub e_i: [u8; EPH],
@@ -58,6 +59,23 @@ pub struct Answer {
     pub eph_secret: [u8; 32],
     /// [`intro_hash`] of the INTRO answered: its return path is bound into every key.
     pub intro_hash: [u8; 32],
+}
+
+impl core::fmt::Debug for Answer {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Answer")
+            .field("salt_i", &self.salt_i)
+            .field("e_i", &self.e_i)
+            .field("salt_r", &self.salt_r)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Drop for Answer {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.eph_secret.zeroize();
+    }
 }
 
 /// The hash of an INTRO as both sides bind it into the introduction's keys (ADR-0029): its

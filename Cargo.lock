@@ -3297,6 +3297,7 @@ dependencies = [
  "sha2 0.11.1",
  "toml 1.2.1+spec-1.1.0",
  "unicode-normalization",
+ "zeroize",
 ]
 
 [[package]]
@@ -3351,6 +3352,7 @@ dependencies = [
  "rand_chacha 0.10.0",
  "rand_core 0.10.1",
  "sha2 0.11.1",
+ "zeroize",
 ]
 
 [[package]]

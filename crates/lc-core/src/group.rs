@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use crate::content::{Content, Notice, notice};
 use crate::core::{Core, Error, Event, MsgId, PubKey};
 use crate::identity::Invite;
+use crate::secret::Secret;
 
 pub type GroupId = [u8; 16];
 
@@ -110,7 +111,7 @@ pub struct Member {
 #[derive(Clone, Debug)]
 struct KeyState {
     epoch: u8,
-    key: [u8; 32],
+    key: Secret,
     /// Message counters below this were never used under this key.
     floor: u32,
     highest: Option<u32>,
@@ -155,7 +156,7 @@ impl KeyState {
     fn new(epoch: u8, key: [u8; 32], floor: u32) -> Self {
         Self {
             epoch,
-            key,
+            key: Secret(key),
             floor,
             highest: None,
             seen: 0,
@@ -328,7 +329,7 @@ pub struct Group {
     pub admin: PubKey,
     pub epoch: u32,
     pub members: Vec<Member>,
-    my_key: [u8; 32],
+    my_key: Secret,
     my_epoch: u8,
     my_counter: u32,
     /// The next counter for what the core sends by itself (from [`AUX`]).
@@ -372,7 +373,7 @@ impl Group {
                     Some(ks) => {
                         v.push(1);
                         v.push(ks.epoch);
-                        v.extend_from_slice(&ks.key);
+                        v.extend_from_slice(&ks.key[..]);
                         v.extend_from_slice(&ks.floor.to_le_bytes());
                         v.extend_from_slice(&ks.highest.map_or(u64::MAX, u64::from).to_le_bytes());
                         v.extend_from_slice(&ks.seen.to_le_bytes());
@@ -389,7 +390,7 @@ impl Group {
 
     /// Rebuilds a group from [`Group::snapshot`], with a new sender key of ours under the next
     /// epoch.
-    fn from_snapshot(b: &[u8], my_key: [u8; 32]) -> Option<Self> {
+    fn from_snapshot(b: &[u8], my_key: Secret) -> Option<Self> {
         let (&version, mut b) = b.split_first()?;
         // Version 2 had no window for the core's own traffic (§10.3).
         if version != SNAPSHOT_VERSION && version != 2 {
@@ -434,7 +435,7 @@ impl Group {
                     };
                     *slot = Some(KeyState {
                         epoch,
-                        key,
+                        key: Secret(key),
                         floor,
                         highest: u32::try_from(highest).ok(),
                         seen,
@@ -563,7 +564,7 @@ pub(crate) struct PendingKey {
     via: Option<PubKey>,
     gid: GroupId,
     epoch: u8,
-    key: [u8; 32],
+    key: Secret,
     next_counter: u32,
     at: Millis,
 }
@@ -1035,10 +1036,8 @@ impl Core {
         self.groups.values()
     }
 
-    fn fresh_key(&mut self) -> [u8; 32] {
-        let mut k = [0u8; 32];
-        self.rng.fill_bytes(&mut k);
-        k
+    fn fresh_key(&mut self) -> Secret {
+        self.draw_secret()
     }
 
     /// Creates a group with us as admin and `members` (contacts, possibly none) as the other
@@ -1850,9 +1849,11 @@ impl Core {
         for p in pending {
             if p.gid == *gid {
                 match p.via {
-                    None => self.on_sender_key(&p.from, p.gid, p.epoch, p.key, p.next_counter, now),
+                    None => {
+                        self.on_sender_key(&p.from, p.gid, p.epoch, *p.key, p.next_counter, now)
+                    }
                     Some(via) => {
-                        let entry = (p.from, p.epoch, p.key, p.next_counter);
+                        let entry = (p.from, p.epoch, *p.key, p.next_counter);
                         self.on_sender_keys(&via, *gid, vec![entry], now);
                     }
                 }
@@ -2022,7 +2023,7 @@ impl Core {
             v.push(u8::from(k.via.is_some()));
             v.extend_from_slice(&k.via.unwrap_or([0; 32]));
             v.push(k.epoch);
-            v.extend_from_slice(&k.key);
+            v.extend_from_slice(&k.key[..]);
             v.extend_from_slice(&k.next_counter.to_le_bytes());
         }
         Some(v)
@@ -2072,7 +2073,7 @@ impl Core {
                 via: (k.get(32) == Some(&1)).then_some(via),
                 gid,
                 epoch: k.get(65).copied().unwrap_or(0),
-                key,
+                key: Secret(key),
                 next_counter: u32::from_le_bytes(next),
                 at: now,
             });
@@ -2139,7 +2140,7 @@ impl Core {
                     via: None,
                     gid,
                     epoch,
-                    key,
+                    key: Secret(key),
                     next_counter: next,
                     at: now,
                 });
@@ -2219,7 +2220,7 @@ impl Core {
                         via: Some(*from),
                         gid,
                         epoch,
-                        key,
+                        key: Secret(key),
                         next_counter: next,
                         at: now,
                     });
@@ -2299,13 +2300,13 @@ impl Core {
             let Some(node) = g.members.iter().find(|m| m.key == *id).map(|m| m.node) else {
                 continue;
             };
-            let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, g.my_key, g.my_counter)];
+            let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, *g.my_key, g.my_counter)];
             for m in &g.members {
                 if m.key == me || (m.key == *id && !own) {
                     continue;
                 }
                 if let Some(c) = g.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
-                    entries.push((m.key, c.epoch, c.key, c.expected()));
+                    entries.push((m.key, c.epoch, *c.key, c.expected()));
                 }
             }
             out.push((node, encode_sender_keys(gid, &entries)));
@@ -2394,7 +2395,7 @@ impl Core {
         } else {
             g.my_aux = g.my_aux.checked_add(1).ok_or(Error::TooLarge)?;
         }
-        let (key, epoch, gh) = (g.my_key, g.my_epoch, g.gid_hash());
+        let (key, epoch, gh) = (g.my_key.clone(), g.my_epoch, g.gid_hash());
         // Each frame waits until the repeaters have re-flooded the previous one, with jitter.
         let spacing = 10 * self.radio.airtime_us(group::PAYLOAD_MAX + 6) / 1000;
         let mut due = now;
@@ -2932,7 +2933,7 @@ mod tests {
                 admin: me,
                 epoch: 1,
                 members: list,
-                my_key: [0; 32],
+                my_key: Secret([0; 32]),
                 my_epoch: 0,
                 my_counter: 0,
                 my_aux: AUX,
@@ -3127,7 +3128,7 @@ mod tests {
         );
         core.on_sender_key(&a, GID, 0, [2; 32], 0, 2_000);
         let mk = &core.groups[&GID].keys[&a];
-        assert_eq!(mk.current.as_ref().map(|k| k.key), Some([2; 32]));
+        assert_eq!(mk.current.as_ref().map(|k| *k.key), Some([2; 32]));
     }
 
     /// §10.5, SR-20: a member restored from its phrase asks to join again. The admin sends it
@@ -3232,7 +3233,7 @@ mod tests {
             core.groups[&GID].keys[&owner]
                 .current
                 .as_ref()
-                .map(|k| (k.epoch, k.key))
+                .map(|k| (k.epoch, *k.key))
         };
         // From a member who is not the admin: ignored.
         core.on_sender_keys(&owner, GID, vec![(admin, 5, [5; 32], 0)], 0);

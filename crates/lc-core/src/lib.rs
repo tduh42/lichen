@@ -14,6 +14,7 @@ pub mod identity;
 pub mod location;
 pub mod plain;
 pub mod search;
+mod secret;
 pub mod solver;
 pub mod store;
 
