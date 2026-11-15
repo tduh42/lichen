@@ -95,6 +95,7 @@ impl Bot {
                 content,
                 snr4,
                 rssi,
+                ..
             } => {
                 self.last_from = Some(*from);
                 let radio = format!("SNR {:.1} dB, RSSI {rssi} dBm", f32::from(*snr4) / 4.0);

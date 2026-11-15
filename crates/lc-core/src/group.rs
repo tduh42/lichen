@@ -40,8 +40,11 @@ const SNAPSHOT_VERSION: u8 = 3;
 const AUX: u32 = 1 << 31;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
-/// And at most this many.
-const HELD_MAX: usize = 16;
+/// And at most this many in all…
+const HELD_MAX: usize = 64;
+/// …and per group hash and sender byte: garbage under one member's byte, which nothing can
+/// check before the key comes, cannot push out the others' (review of 2026-11-15, SR-20).
+const HELD_PER_SENDER: usize = 8;
 /// Fragments kept per two-fragment message, both indices together: the sender's own, and a
 /// few that open under its key but may come from another member (SR-17).
 const PARTIAL_CANDIDATES: usize = 6;
@@ -84,6 +87,9 @@ pub(crate) struct GroupFrame {
 #[derive(Clone, Debug)]
 pub(crate) struct Held {
     payload: Vec<u8>,
+    /// Its group hash and sender byte, from the clear header: each sender gets a share.
+    gid_hash: u16,
+    sender: u8,
     snr4: i8,
     rssi: i8,
     at: Millis,
@@ -247,7 +253,8 @@ struct Owed {
     until: Millis,
 }
 
-/// What a member keeps and misses, to recover lost messages (§10.6, ADR-0024). Memory only.
+/// What a member keeps and misses, to recover lost messages (§10.6, ADR-0024), and what the
+/// admin remembers of recent admissions. Memory only.
 #[derive(Clone, Debug, Default)]
 struct Recovery {
     kept: VecDeque<Kept>,
@@ -259,6 +266,13 @@ struct Recovery {
     answered: VecDeque<(PubKey, PubKey, u8, u32)>,
     /// When we saw each member added: nobody gets back what was sent before it joined.
     since: HashMap<PubKey, Millis>,
+    /// As admin, the state that last added each member: a GROUP_LEAVE naming an earlier one
+    /// was sent before it came back (review of 2026-11-15, SR-14). Memory only: after a
+    /// restart, any state up to the current one is accepted.
+    added_in: HashMap<PubKey, u32>,
+    /// As admin, when listed members asked to join again (a phone restored from its phrase):
+    /// for [`ADMITTED_MS`] their keys go to everyone, as a first key does (§10.5, SR-20).
+    rejoined: HashMap<PubKey, Millis>,
 }
 
 impl Recovery {
@@ -1108,16 +1122,17 @@ impl Core {
         let ids: Vec<PubKey> = added.iter().map(|m| m.key).collect();
         let subjects = added.iter().map(|m| (m.node, m.name.clone())).collect();
         g.members.extend(added);
+        g.epoch += 1;
         for id in &ids {
             g.recovery.since.insert(*id, now);
+            g.recovery.added_in.insert(*id, g.epoch);
         }
-        g.epoch += 1;
         self.dirty_groups.insert(*gid);
         self.broadcast_state(gid, &[], None);
         let actor = self.me_as_actor();
         self.changed(*gid, notice::JOINED, actor, subjects, String::new());
         // The newcomers get every key from us, after the state (§10.2).
-        self.send_bundle(gid, &ids);
+        self.send_bundle(gid, &ids, false);
         self.admitted.retain(|(_, _, at)| at + ADMITTED_MS > now);
         self.admitted.extend(ids.iter().map(|id| (*gid, *id, now)));
         self.events.push_back(Event::GroupUpdated { gid: *gid });
@@ -1169,6 +1184,18 @@ impl Core {
             return;
         };
         if g.admin != me || *from == me || !g.is_member(from) {
+            return;
+        }
+        // The state the leaver held: not one that does not exist yet, nor one from before we
+        // last added it (§10.4).
+        let Some(held) = datagram
+            .get(17..21)
+            .and_then(|e| <[u8; 4]>::try_from(e).ok())
+            .map(u32::from_le_bytes)
+        else {
+            return;
+        };
+        if held > g.epoch || g.recovery.added_in.get(from).is_some_and(|&e| held < e) {
             return;
         }
         let leaver = g.members.iter().find(|m| m.key == *from).cloned();
@@ -1285,7 +1312,8 @@ impl Core {
         }
         if g.is_member(&id) {
             // Asked again: it lost the group (a phone restored from its phrase). The state and
-            // our key again, to it alone.
+            // every key we hold, its own last one included so it moves past that epoch; then we
+            // forget its key, and relay its next ones to everyone for a while (§10.5, SR-20).
             let state = State {
                 gid,
                 epoch: g.epoch,
@@ -1296,7 +1324,13 @@ impl Core {
             }
             .encode();
             self.enqueue_internal(node, state);
-            self.send_my_key(&gid, Some(&[id]));
+            self.send_bundle(&gid, &[id], true);
+            if let Some(g) = self.groups.get_mut(&gid) {
+                g.keys.remove(&id);
+                g.recovery.rejoined.retain(|_, at| *at + ADMITTED_MS > now);
+                g.recovery.rejoined.insert(id, now);
+            }
+            self.dirty_groups.insert(gid);
             self.tick(now);
             return;
         }
@@ -1439,6 +1473,19 @@ impl Core {
         for k in targets {
             self.enqueue_internal(&k, datagram.clone());
         }
+    }
+
+    /// The group knew us up to key epoch `epoch` (we lost our state since): a new key past it,
+    /// sent to the members. An epoch already behind ours changes nothing.
+    fn move_past(&mut self, gid: &GroupId, epoch: u8) {
+        let Some(g) = self.groups.get_mut(gid) else {
+            return;
+        };
+        if epoch != g.my_epoch && !newer(epoch, g.my_epoch) {
+            return;
+        }
+        g.my_epoch = epoch;
+        self.rotate_my_key(gid);
     }
 
     fn rotate_my_key(&mut self, gid: &GroupId) {
@@ -2088,12 +2135,17 @@ impl Core {
         if !g.is_member(from) {
             return;
         }
-        let first = g.keys.get(from).is_none_or(|mk| mk.current.is_none());
+        let first = g.keys.get(from).is_none_or(|mk| mk.current.is_none())
+            || g.recovery
+                .rejoined
+                .get(from)
+                .is_some_and(|&at| at + ADMITTED_MS > now);
         if !self.adopt_key(gid, from, epoch, key, next, false, now) {
             return;
         }
-        // The admin forwards it (§10.2): to everyone for a member's first key, else to the
-        // members it admitted lately (a key in flight during their admission).
+        // The admin forwards it (§10.2): to everyone for a member's first key (or a member that
+        // joined again lately, §10.5), else to the members it admitted lately (a key in flight
+        // during their admission).
         let me = self.key;
         let Some(g) = self.groups.get(&gid) else {
             return;
@@ -2131,6 +2183,9 @@ impl Core {
         }
         for (owner, epoch, key, next) in entries {
             if Some(owner) == me {
+                // Our own last key, from before we lost the group: our next one goes past it,
+                // so the others take it as newer (§10.5, SR-20).
+                self.move_past(&gid, epoch);
                 continue;
             }
             let listed = self.groups.get(&gid).is_some_and(|g| g.is_member(&owner));
@@ -2174,7 +2229,9 @@ impl Core {
         };
         let mk = g.keys.entry(*owner).or_default();
         match mk.current.as_ref() {
-            Some(c) if c.epoch == epoch => return false,
+            // The same key again; or a relayed one at the epoch we hold. From its owner, another
+            // key at that epoch replaces ours: the owner lost its state (§10.2, SR-20).
+            Some(c) if c.epoch == epoch && (relayed || c.key == key) => return false,
             Some(c) if relayed && !newer(epoch, c.epoch) => return false,
             _ => {}
         }
@@ -2190,8 +2247,9 @@ impl Core {
     }
 
     /// One SENDER_KEYS to each newcomer (identities) with every current key we hold, ours
-    /// included (§10.2).
-    fn send_bundle(&mut self, gid: &GroupId, newcomers: &[PubKey]) {
+    /// included (§10.2); with `own`, the newcomer's own last key too (a member that lost the
+    /// group, §10.5).
+    fn send_bundle(&mut self, gid: &GroupId, newcomers: &[PubKey], own: bool) {
         let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
             return;
         };
@@ -2202,7 +2260,7 @@ impl Core {
             };
             let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, g.my_key, g.my_counter)];
             for m in &g.members {
-                if m.key == me || m.key == *id {
+                if m.key == me || (m.key == *id && !own) {
                     continue;
                 }
                 if let Some(c) = g.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
@@ -2459,13 +2517,26 @@ impl Core {
                         .any(|k| k.as_ref().is_some_and(|k| k.epoch == h.key_epoch))
                 });
                 if !has_key {
-                    // The key may still be on its way (pairwise, several hops): keep the envelope.
-                    if !self.held.iter().any(|x| x.payload == payload) {
-                        if self.held.len() >= HELD_MAX {
+                    // The key may still be on its way (pairwise, several hops): keep the envelope,
+                    // if its epoch can still come (none held yet, or newer than the one held).
+                    let can_come = g
+                        .keys
+                        .get(&member)
+                        .and_then(|mk| mk.current.as_ref())
+                        .is_none_or(|c| newer(h.key_epoch, c.epoch));
+                    if can_come && !self.held.iter().any(|x| x.payload == payload) {
+                        let same = |x: &Held| x.gid_hash == h.gid_hash && x.sender == h.sender;
+                        if self.held.iter().filter(|x| same(x)).count() >= HELD_PER_SENDER {
+                            if let Some(i) = self.held.iter().position(same) {
+                                self.held.remove(i);
+                            }
+                        } else if self.held.len() >= HELD_MAX {
                             self.held.pop_front();
                         }
                         self.held.push_back(Held {
                             payload: payload.to_vec(),
+                            gid_hash: h.gid_hash,
+                            sender: h.sender,
                             snr4,
                             rssi,
                             at: now,
@@ -2676,6 +2747,7 @@ impl Core {
                 from: member_node,
                 author: member,
                 content,
+                plaintext: body,
                 snr4,
                 rssi,
                 late,
@@ -2725,6 +2797,44 @@ mod tests {
                 gid,
                 node: joiner[0]
             }));
+    }
+
+    /// Review of 2026-11-15, SR-14: GROUP_LEAVE's epoch is checked. A leave from before the
+    /// member was added again (one resent after a new handshake) does not remove it, nor does
+    /// one naming a state that does not exist yet.
+    #[test]
+    fn a_stale_leave_does_not_remove_a_returning_member() {
+        let mut core = Core::new(Config::new("t", [200; 32], [1; 32]));
+        core.node = Some([0xEE; 32]);
+        core.set_clock(1_793_000_000_000, 0);
+        let bob = [1u8; 32];
+        let bob_id = [101u8; 32];
+        core.add_contact(bob, "bob", None);
+        core.set_identity(&bob, bob_id, false);
+        let gid = core.create_group("g", &[bob], 0).unwrap();
+        let leave = |epoch: u32| {
+            let mut v = vec![content::GROUP_LEAVE];
+            v.extend_from_slice(&gid);
+            v.extend_from_slice(&epoch.to_le_bytes());
+            v
+        };
+        let held = core.groups[&gid].epoch;
+        core.on_group_control(&bob, &leave(held + 5), 1_000);
+        assert!(
+            core.groups[&gid].is_member(&bob_id),
+            "a state that does not exist"
+        );
+        core.on_group_control(&bob, &leave(held), 2_000);
+        assert!(!core.groups[&gid].is_member(&bob_id), "left");
+        core.add_members(&gid, &[bob], 3_000).unwrap();
+        core.on_group_control(&bob, &leave(held), 4_000);
+        assert!(
+            core.groups[&gid].is_member(&bob_id),
+            "from before Bob came back"
+        );
+        let now_held = core.groups[&gid].epoch;
+        core.on_group_control(&bob, &leave(now_held), 5_000);
+        assert!(!core.groups[&gid].is_member(&bob_id), "left again");
     }
 
     /// Two identities whose public keys share their first byte (the sender byte of envelopes):
@@ -2827,6 +2937,38 @@ mod tests {
         out[..n].to_vec()
     }
 
+    /// Review of 2026-11-15, SR-20: envelopes wait for their key in a buffer an outsider could
+    /// fill with garbage under one member's byte. A real envelope from another member,
+    /// waiting for its key, stays and is read once the key comes.
+    #[test]
+    fn an_outsider_cannot_flush_held_envelopes() {
+        let a_prv = expand_seed(&[0x41; 32]);
+        let b_prv = expand_seed(&[0x42; 32]);
+        let (a, b) = (public_key(&a_prv), public_key(&b_prv));
+        assert_ne!(a[0], b[0]);
+        let mut core = core_with_group(&[(a, [1; 32], 0), (b, [2; 32], 0)]);
+        core.groups.get_mut(&GID).unwrap().keys.remove(&b);
+        let real = envelope(&b, &[2; 32], 0, &b_prv, "the real one");
+        core.on_group_envelope(&real, 0, 0, 1_000);
+        // Garbage under a's byte, for a's next key epoch: it cannot be checked yet.
+        for i in 0..20u32 {
+            let header = GroupHeader {
+                gid_hash: gid_hash(&GID),
+                sender: a[0],
+                key_epoch: 1,
+                counter: i,
+                index: 0,
+                total: 1,
+                copy: 0,
+            };
+            let mut out = [0u8; group::PAYLOAD_MAX];
+            let n = group::seal(&[0x66; 32], &header, b"garbage", &mut out).unwrap();
+            core.on_group_envelope(&out[..n], 0, 0, 2_000 + u64::from(i));
+        }
+        core.on_sender_key(&b, GID, 0, [2; 32], 0, 3_000);
+        assert!(texts(&mut core).contains(&"the real one".to_owned()));
+    }
+
     fn texts(core: &mut Core) -> Vec<String> {
         let mut v = Vec::new();
         while let Some(e) = core.poll_event() {
@@ -2882,6 +3024,78 @@ mod tests {
         core.on_sender_key(&n_id, GID, 0, [7; 32], 0, 3_000);
         assert!(relayed_to(&core, &a_node).contains(&(n_id, 0)));
         assert!(relayed_to(&core, &[2; 32]).contains(&(n_id, 0)));
+    }
+
+    /// §10.2: a SENDER_KEY from its owner is adopted, also at the epoch we hold when the key
+    /// is another (its owner lost its state); the same key again changes nothing (review of
+    /// 2026-11-15, SR-20).
+    #[test]
+    fn an_owners_key_at_the_same_epoch_is_adopted() {
+        let a = [0xA1; 32];
+        let mut core = core_with_group(&[(a, [1; 32], 0)]);
+        core.on_sender_key(&a, GID, 0, [1; 32], 0, 1_000);
+        assert_eq!(
+            core.groups[&GID].keys[&a]
+                .previous
+                .as_ref()
+                .map(|k| k.epoch),
+            None
+        );
+        core.on_sender_key(&a, GID, 0, [2; 32], 0, 2_000);
+        let mk = &core.groups[&GID].keys[&a];
+        assert_eq!(mk.current.as_ref().map(|k| k.key), Some([2; 32]));
+    }
+
+    /// §10.5, SR-20: a member restored from its phrase asks to join again. The admin sends it
+    /// every key it holds, the member's own last one included, and forgets that one, so the
+    /// member's next key goes to everyone as a first key.
+    #[test]
+    fn a_restored_member_gets_every_key_and_is_heard_again() {
+        let (a, b) = ([0xA1; 32], [0xB1; 32]);
+        let mut core = core_with_group(&[(a, [1; 32], 0), (b, [2; 32], 0)]);
+        core.set_clock(1_793_000_000_000, 0);
+        let me = *core.key().unwrap();
+        let (a_node, b_node) = ([1; 32], [2; 32]);
+        core.on_sender_key(&b, GID, 3, [3; 32], 0, 500);
+        let invite = core.create_invite(&GID, 0).unwrap();
+        let mut join = vec![content::GROUP_JOIN];
+        join.extend_from_slice(&invite.token);
+        core.on_group_control(&b_node, &join, 1_000);
+        let mut got = relayed_to(&core, &b_node);
+        got.sort_unstable();
+        let mut want = vec![(a, 0), (b, 3), (me, 0)];
+        want.sort_unstable();
+        assert_eq!(got, want, "every key, its own last one included");
+        assert!(
+            core.groups[&GID]
+                .keys
+                .get(&b)
+                .is_none_or(|k| k.current.is_none())
+        );
+        // Its new key, one epoch past the last, reaches the others through us.
+        core.on_sender_key(&b, GID, 4, [4; 32], 0, 2_000);
+        assert!(relayed_to(&core, &a_node).contains(&(b, 4)));
+    }
+
+    /// The restored member's side: its own identity in SENDER_KEYS moves its key epoch past
+    /// that entry, so the others take its new key as newer (SR-20).
+    #[test]
+    fn our_own_entry_moves_our_epoch_past_it() {
+        let a = [0xA1; 32];
+        let mut core = core_with_group(&[(a, [1; 32], 0)]);
+        let me = *core.key().unwrap();
+        // `a` administers the group; we restored our phone.
+        core.groups.get_mut(&GID).unwrap().admin = a;
+        let bundle = encode_sender_keys(&GID, &[(me, 7, [7; 32], 12), (a, 0, [1; 32], 0)]);
+        core.on_group_control(&[1; 32], &bundle, 1_000);
+        let g = &core.groups[&GID];
+        assert_eq!(g.my_epoch, 8);
+        assert_ne!(g.my_key, [7; 32]);
+        assert!(
+            core.queued(&[1; 32])
+                .iter()
+                .any(|d| { decode_sender_key(d).is_some_and(|(_, epoch, _, _)| epoch == 8) })
+        );
     }
 
     /// Waiting states merge: the newer replaces the older and keeps why members went
@@ -3231,7 +3445,7 @@ mod tests {
         for c in 0..3 {
             core.on_group_envelope(&envelope(&bob, &[10; 32], c, &bob_prv, "x"), 0, 0, 0);
         }
-        core.send_bundle(&GID, &[carol]);
+        core.send_bundle(&GID, &[carol], false);
         let relayed: Vec<_> = core
             .queued(&[2; 32])
             .iter()

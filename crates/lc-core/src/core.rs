@@ -217,6 +217,9 @@ pub enum Event {
     Received {
         from: PubKey,
         content: Content,
+        /// The datagram's plaintext as received (`content_type ‖ body`): what the message's
+        /// reference is computed from (§6.2), not a re-encoding of `content`.
+        plaintext: Vec<u8>,
         snr4: i8,
         rssi: i8,
     },
@@ -289,6 +292,9 @@ pub enum Event {
         /// (§6.2).
         author: PubKey,
         content: Content,
+        /// The plaintext as received, without the signature (§10.3): what the message's
+        /// reference is computed from (§6.2).
+        plaintext: Vec<u8>,
         snr4: i8,
         rssi: i8,
         /// Recovered from a member after it was lost on the air (§10.6): shown as late.
@@ -2923,6 +2929,7 @@ impl Core {
                     self.events.push_back(Event::Received {
                         from: c,
                         content,
+                        plaintext: datagram,
                         snr4,
                         rssi,
                     });

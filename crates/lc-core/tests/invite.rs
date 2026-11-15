@@ -322,3 +322,50 @@ fn join_timings() {
         );
     }
 }
+
+/// Review of 2026-11-15, SR-20: bob restores his phone from its phrase (same identity, nothing
+/// stored) and scans the invitation again. He gets every key, and his new key reaches the
+/// others through the admin: he reads them and they read him.
+#[test]
+fn a_restored_phone_joins_again_and_is_heard() {
+    let (mut net, m, _, gid) = setup(23, 0);
+    let (alice, bob, carol) = (m[0], m[1], m[2]);
+    let inv = invite(&mut net, alice, &gid);
+    net.attach_app(bob, 2);
+    net.connect(bob);
+    assert!(net.run_until(net.now + 20_000, |n| {
+        n.nodes[bob].core.as_ref().is_some_and(|c| c.ready())
+    }));
+    net.with_core(bob, |c, now| c.set_clock(UNIX0 + now, now));
+    net.with_core(bob, |c, now| c.join(&inv, now))
+        .unwrap()
+        .unwrap();
+    assert!(
+        net.run_until(net.now + 30 * MIN, |n| complete(n, &m, &gid, 3)),
+        "bob did not get every key back"
+    );
+    for &x in &m {
+        net.take_events(x);
+    }
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "back again", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 3 * MIN, |_| false);
+    net.with_core(carol, |c, now| {
+        c.send_group_text(&gid, "welcome back", 2, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 3 * MIN, |_| false);
+    // A flood lost at the hub comes back with the next post (§10.6).
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "thanks", 3, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    for &x in &[alice, carol] {
+        let got = group_texts(&net.take_events(x));
+        assert!(got.contains(&"back again".to_owned()), "node {x}: {got:?}");
+    }
+    let got = group_texts(&net.take_events(bob));
+    assert!(got.contains(&"welcome back".to_owned()), "bob: {got:?}");
+}

@@ -216,6 +216,7 @@ fn describe(core: &Core, e: &Event) -> String {
             content,
             snr4,
             rssi,
+            ..
         } => {
             let body = match content {
                 Content::Text { text, .. } => format!("\"{text}\""),

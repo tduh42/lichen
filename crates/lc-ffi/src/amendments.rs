@@ -112,7 +112,9 @@ impl Inner {
             return;
         }
         let changed = self.store.as_ref().is_some_and(|s| {
-            s.amend(&chat, &target, Some(by), text, ts, false, None)
+            // Kept two days if its target is not here (SR-15).
+            let keep = Some(unix_ms() + store::ORPHAN_KEEP_MS);
+            s.amend(&chat, &target, Some(by), text, ts, false, keep)
                 .unwrap_or(false)
         });
         if !changed {
@@ -183,8 +185,16 @@ impl Inner {
         ts: u32,
     ) {
         let applied = self.store.as_ref().is_some_and(|s| {
-            s.upsert_reaction(&chat, &target, &by, emoji, ts, false, None)
-                .unwrap_or(false)
+            s.upsert_reaction(
+                &chat,
+                &target,
+                &by,
+                emoji,
+                ts,
+                false,
+                Some(unix_ms() + store::ORPHAN_KEEP_MS),
+            )
+            .unwrap_or(false)
         });
         if !applied {
             return;

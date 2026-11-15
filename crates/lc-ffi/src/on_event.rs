@@ -139,6 +139,7 @@ impl Inner {
             Event::Received {
                 from,
                 content,
+                plaintext,
                 snr4,
                 ..
             } => {
@@ -146,7 +147,8 @@ impl Inner {
                 if self.is_resend(&chat, None, content) {
                     return false;
                 }
-                let msg_ref = self.reference(&chat, false, None, &content.encode());
+                // From the bytes as sent: a re-encoding may differ (§6.2, SR-20).
+                let msg_ref = self.reference(&chat, false, None, plaintext);
                 self.record(store::Message {
                     id: 0,
                     chat,
@@ -167,6 +169,7 @@ impl Inner {
                 from,
                 author,
                 content,
+                plaintext,
                 snr4,
                 late,
                 ..
@@ -175,7 +178,7 @@ impl Inner {
                 if self.is_resend(&chat, Some(from), content) {
                     return false;
                 }
-                let msg_ref = self.reference(&chat, false, Some(*author), &content.encode());
+                let msg_ref = self.reference(&chat, false, Some(*author), plaintext);
                 self.record(store::Message {
                     id: 0,
                     chat,

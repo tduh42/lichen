@@ -2,6 +2,39 @@
 
 use super::*;
 
+/// A direct message as the core reports it, with its plaintext as sent.
+#[cfg(test)]
+fn received(from: [u8; 32], content: Content) -> Event {
+    Event::Received {
+        from,
+        plaintext: content.encode(),
+        content,
+        snr4: 0,
+        rssi: 0,
+    }
+}
+
+/// A group message as the core reports it, with its plaintext as sent.
+#[cfg(test)]
+fn group_message(
+    gid: [u8; 16],
+    from: [u8; 32],
+    author: [u8; 32],
+    content: Content,
+    late: bool,
+) -> Event {
+    Event::GroupMessage {
+        gid,
+        from,
+        author,
+        plaintext: content.encode(),
+        content,
+        snr4: 0,
+        rssi: 0,
+        late,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,25 +221,18 @@ mod reactions {
             text: "hi".into(),
         };
         let target = message_ref(&[7; 32], &text.encode());
-        let reaction = Event::Received {
-            from: [9; 32],
-            content: Content::Reaction {
+        let reaction = received(
+            [9; 32],
+            Content::Reaction {
                 sent_at: 6,
                 target,
                 emoji: "👍".into(),
             },
-            snr4: 0,
-            rssi: 0,
-        };
+        );
         assert!(!i.on_event(&reaction), "not a message");
         assert!(i.extra.iter().any(|e| matches!(e,
             LichenEvent::Reacted { emoji, target: None, .. } if emoji == "👍")));
-        assert!(i.on_event(&Event::Received {
-            from: [9; 32],
-            content: text,
-            snr4: 0,
-            rssi: 0,
-        }));
+        assert!(i.on_event(&received([9; 32], text)));
         drop(i);
         let h = core
             .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
@@ -223,6 +249,49 @@ mod reactions {
         );
     }
 
+    /// A reference is computed on the bytes as sent (§6.2): a text whose bytes decode lossily
+    /// (an invalid UTF-8 byte) still gets the reaction its author's phone aimed at it
+    /// (review of 2026-11-15, SR-20).
+    #[test]
+    fn a_reference_uses_the_bytes_as_sent() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![147; 32], None).unwrap();
+        let mut i = core.lock();
+        i.core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        let mut raw = vec![lc_proto::content::TEXT];
+        raw.extend_from_slice(&5u32.to_le_bytes());
+        raw.extend_from_slice(b"caf\xe9");
+        let content = Content::decode(&raw).unwrap();
+        assert_ne!(content.encode(), raw, "decodes lossily");
+        assert!(i.on_event(&Event::Received {
+            from: [9; 32],
+            content,
+            plaintext: raw.clone(),
+            snr4: 0,
+            rssi: 0,
+        }));
+        let target = message_ref(&[7; 32], &raw);
+        assert!(!i.on_event(&received(
+            [9; 32],
+            Content::Reaction {
+                sent_at: 6,
+                target,
+                emoji: "👍".into(),
+            },
+        )));
+        drop(i);
+        let h = core
+            .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
+            .unwrap();
+        assert_eq!(h[0].reactions.len(), 1, "the reaction found its message");
+    }
+
     /// Edits and deletes (§6.4): only the author's apply, the latest edit shows, a delete
     /// takes the message back, also when it arrives first.
     #[test]
@@ -235,14 +304,8 @@ mod reactions {
             sent_at: now,
             text: t.into(),
         };
-        let group = |from: u8, content: Content| Event::GroupMessage {
-            gid,
-            from: [from; 32],
-            author: [from + 100; 32],
-            content,
-            snr4: 0,
-            rssi: 0,
-            late: false,
+        let group = |from: u8, content: Content| {
+            group_message(gid, [from; 32], [from + 100; 32], content, false)
         };
         let first = text("at the col at 9");
         let target = message_ref(&[109; 32], &first.encode());
@@ -320,15 +383,7 @@ mod reactions {
             text: "trail closed".into(),
         };
         let target = message_ref(&[110; 32], &text.encode());
-        let group = |content: Content| Event::GroupMessage {
-            gid,
-            from: [10; 32],
-            author: [110; 32],
-            content,
-            snr4: 0,
-            rssi: 0,
-            late: false,
-        };
+        let group = |content: Content| group_message(gid, [10; 32], [110; 32], content, false);
         assert!(i.on_event(&group(text)));
         assert!(!i.on_event(&group(Content::Edit {
             sent_at: now + 1,
@@ -428,15 +483,7 @@ mod reactions {
             sent_at: 5,
             text: "hi".into(),
         };
-        assert!(i.on_event(&Event::GroupMessage {
-            gid,
-            from: [9; 32],
-            author: [7; 32],
-            content: text.clone(),
-            snr4: 0,
-            rssi: 0,
-            late: false,
-        }));
+        assert!(i.on_event(&group_message(gid, [9; 32], [7; 32], text.clone(), false)));
         let by_identity = message_ref(&[7; 32], &text.encode());
         let st = i.store.as_ref().unwrap();
         assert!(
@@ -445,19 +492,17 @@ mod reactions {
                 .is_some()
         );
         // The author's own reaction, computed on its phone, attaches to it.
-        assert!(!i.on_event(&Event::GroupMessage {
+        assert!(!i.on_event(&group_message(
             gid,
-            from: [9; 32],
-            author: [7; 32],
-            content: Content::Reaction {
+            [9; 32],
+            [7; 32],
+            Content::Reaction {
                 sent_at: 6,
                 target: by_identity,
                 emoji: "👍".into(),
             },
-            snr4: 0,
-            rssi: 0,
-            late: false,
-        }));
+            false
+        )));
         drop(i);
         let h = core
             .history(ChatRef::Group { gid: vec![3; 16] }, None, 10)
@@ -479,36 +524,21 @@ mod receiver {
             text: t.into(),
         };
         let mut i = core.lock();
-        let direct = Event::Received {
-            from: [9; 32],
-            content: text("hi"),
-            snr4: 0,
-            rssi: 0,
-        };
+        let direct = received([9; 32], text("hi"));
         assert!(i.on_event(&direct));
         assert!(!i.on_event(&direct));
-        let group = |from: u8| Event::GroupMessage {
-            late: false,
-            gid: [3; 16],
-            from: [from; 32],
-            author: [from; 32],
-            content: text("hi"),
-            snr4: 0,
-            rssi: 0,
-        };
+        let group = |from: u8| group_message([3; 16], [from; 32], [from; 32], text("hi"), false);
         assert!(i.on_event(&group(1)));
         assert!(!i.on_event(&group(1)));
         // Another member's identical text, or another second, is another message.
         assert!(i.on_event(&group(2)));
-        assert!(i.on_event(&Event::Received {
-            from: [9; 32],
-            content: Content::Text {
+        assert!(i.on_event(&received(
+            [9; 32],
+            Content::Text {
                 sent_at: 6,
                 text: "hi".into()
-            },
-            snr4: 0,
-            rssi: 0,
-        }));
+            }
+        )));
         drop(i);
         let h = core
             .history(ChatRef::Contact { key: vec![9; 32] }, None, 10)
@@ -851,12 +881,8 @@ mod timers {
             verified: false,
             kind: lc_core::contact_kind::CHAT,
         });
-        let timer = |seconds: u32, sent_at: u32| Event::Received {
-            from: [9; 32],
-            content: Content::Timer { sent_at, seconds },
-            snr4: 0,
-            rssi: 0,
-        };
+        let timer =
+            |seconds: u32, sent_at: u32| received([9; 32], Content::Timer { sent_at, seconds });
         assert!(!i.on_event(&timer(300, now)), "not a message");
         assert!(!i.on_event(&timer(60, now - 10)), "older: ignored");
         assert!(!i.on_event(&timer(300, now)), "a resend: no second notice");
@@ -865,15 +891,13 @@ mod timers {
         assert_eq!(notices(&core, &chat), vec![("300".into(), true)]);
         // A message stored under the timer, long ago: the next sweep takes it.
         let mut i = core.lock();
-        assert!(i.on_event(&Event::Received {
-            from: [9; 32],
-            content: Content::Text {
+        assert!(i.on_event(&received(
+            [9; 32],
+            Content::Text {
                 sent_at: now,
                 text: "burn after reading".into(),
-            },
-            snr4: 0,
-            rssi: 0,
-        }));
+            }
+        )));
         assert!(i.next_vanish().is_some());
         // One stored under the same timer six minutes ago: its time is up.
         let old = i

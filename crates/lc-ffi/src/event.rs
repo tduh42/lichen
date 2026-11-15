@@ -233,6 +233,7 @@ impl LichenEvent {
                 content,
                 snr4,
                 rssi,
+                ..
             } => Self::Received {
                 from: from.to_vec(),
                 message: content.into(),

@@ -183,6 +183,11 @@ pub struct Message {
     pub msg_ref: Option<MessageRef>,
 }
 
+/// How long a received reaction, edit or delete waits for a message that is not here: its
+/// target was sent at most 24 hours before it (§6.4) and arrives within the outbox's 24 hours
+/// (§6.1), so after two days it never will (review of 2026-11-15, SR-15).
+pub const ORPHAN_KEEP_MS: i64 = 48 * 3_600_000;
+
 /// The SQLite store.
 #[derive(Debug)]
 pub struct Store {
@@ -606,6 +611,24 @@ impl Store {
             })())
         })?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Forgets the received reactions, edits and deletes whose target never came, once their
+    /// [`ORPHAN_KEEP_MS`] are over (§6.2, §6.4). Ours wait for their delivery instead.
+    pub fn purge_orphans(&self, now_ms: i64) -> Result<usize, Error> {
+        let mut n = 0;
+        for table in ["amendments", "reactions"] {
+            n += self.conn.execute(
+                &format!(
+                    "DELETE FROM {table} WHERE pending = 0 AND expires_ms IS NOT NULL
+                       AND expires_ms <= ?1
+                       AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.chat_kind = {table}.chat_kind
+                                       AND m.chat = {table}.chat AND m.ref = {table}.target)"
+                ),
+                params![now_ms],
+            )?;
+        }
+        Ok(n)
     }
 
     /// Forgets positions older than `before` (Unix seconds).
@@ -1624,6 +1647,36 @@ mod tests {
         assert!(s.set_timer(&chat, 0, 11, false).unwrap());
         s.insert(&text(chat, false, "stays too", 3_000)).unwrap();
         assert_eq!(s.next_vanish().unwrap(), None);
+    }
+
+    /// Review of 2026-11-15, SR-15: a reaction or an edit whose target never comes is not kept
+    /// forever; one whose target is here stays.
+    #[test]
+    fn orphans_are_purged() {
+        let s = Store::in_memory().unwrap();
+        let chat = Chat::Contact([4; 32]);
+        let here = s
+            .insert(&Message {
+                msg_ref: Some([1; 8]),
+                ..text(chat, false, "here", 1_000)
+            })
+            .unwrap();
+        let bob = [4u8; 32];
+        let keep = Some(1_000 + ORPHAN_KEEP_MS);
+        for target in [[1u8; 8], [2; 8]] {
+            s.upsert_reaction(&chat, &target, &bob, "👍", 5, false, keep)
+                .unwrap();
+            s.amend(&chat, &target, Some(&bob), Some("edited"), 5, false, keep)
+                .unwrap();
+        }
+        // Ours, still on its way: never purged here.
+        s.amend(&chat, &[3; 8], None, None, 6, true, Some(0))
+            .unwrap();
+        assert_eq!(s.purge_orphans(1_000 + ORPHAN_KEEP_MS - 1).unwrap(), 0);
+        assert_eq!(s.purge_orphans(1_000 + ORPHAN_KEEP_MS).unwrap(), 2);
+        assert!(s.amendment_for(&here).unwrap().is_some());
+        assert_eq!(s.reactions_for(&chat, &[1; 8]).unwrap().len(), 1);
+        assert_eq!(s.pending_amendments().unwrap().len(), 1);
     }
 
     /// Review of 2026-11-15, SR-28: a deleted message leaves nothing to read back in the file.

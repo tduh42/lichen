@@ -125,6 +125,7 @@ impl Inner {
         }
         let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
+        let _ = store.purge_orphans(unix_ms());
         self.store = Some(store);
         // What ran out while the app was stopped goes before anything is shown (§6.5).
         self.vanish();
