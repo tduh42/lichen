@@ -593,12 +593,15 @@ impl State {
             });
         }
         let distinct: HashSet<&PubKey> = members.iter().map(|m| &m.key).collect();
+        // Each node belongs to one member: two identities on one node would let one sign
+        // what the app shows as the other's (review of 2026-11-15, SR-11).
+        let nodes: HashSet<&PubKey> = members.iter().map(|m| &m.node).collect();
         let cause = match b {
             [] => None,
             [c] => Some(*c),
             _ => return None,
         };
-        if distinct.len() != n || !distinct.contains(&admin) {
+        if distinct.len() != n || nodes.len() != n || !distinct.contains(&admin) {
             return None;
         }
         Some(Self {
@@ -922,9 +925,9 @@ impl Core {
             if !self.contacts.contains_key(&m.node) {
                 self.add_contact(m.node, &m.name, None);
             }
-            if self.identity_of(&m.node).is_none() {
-                self.learn_identity(&m.node, m.key);
-            }
+            // The first identity seen for a node is kept; another one waits for the user
+            // (§4.6), and that member's messages are not shown meanwhile (SR-11).
+            self.learn_identity(&m.node, m.key);
         }
     }
 
@@ -2287,6 +2290,14 @@ impl Core {
         if Content::is_local(&body) {
             return;
         }
+        // The app shows a member by the node it is listed with, and checks edits, deletes and
+        // reactions against it: that node must be known under this member's identity. A state
+        // that lists someone with another person's node, or a node whose identity waits for
+        // the user, shows nothing of theirs (§10.1, review of 2026-11-15, SR-11). The message
+        // is still kept above for members who ask for it.
+        if self.identity_of(&member_node) != Some(member) {
+            return;
+        }
         // Its direct copies were receptions of that member (search, §11.2); a payload handed
         // on by a member was not heard.
         if !late {
@@ -2399,9 +2410,12 @@ mod tests {
         }];
         let mut keys = HashMap::new();
         for (i, &(id, key, floor)) in members.iter().enumerate() {
+            let node = [i as u8 + 1; 32];
+            core.add_contact(node, &format!("m{i}"), None);
+            core.set_identity(&node, id, false);
             list.push(Member {
                 key: id,
-                node: [i as u8 + 1; 32],
+                node,
                 name: format!("m{i}"),
             });
             keys.insert(
@@ -2863,6 +2877,70 @@ mod tests {
 
     /// Two members whose identities share the sender byte, with different replay histories:
     /// each one's messages arrive, in either order.
+    #[test]
+    fn a_node_belongs_to_one_member() {
+        let (camille, eve) = ([0x21u8; 32], [0x31u8; 32]);
+        let state = |second_node: PubKey| State {
+            gid: GID,
+            epoch: 2,
+            admin: camille,
+            name: "g".into(),
+            members: vec![
+                Member {
+                    key: camille,
+                    node: [1; 32],
+                    name: "Camille".into(),
+                },
+                Member {
+                    key: eve,
+                    node: second_node,
+                    name: "Camille".into(),
+                },
+            ],
+            cause: None,
+        };
+        assert!(State::decode(&state([2; 32]).encode()).is_some());
+        assert!(State::decode(&state([1; 32]).encode()).is_none());
+    }
+
+    /// Review of 2026-11-15, SR-11: a state lists Eve with Camille's node. Eve's own posts,
+    /// validly signed, must not be shown as Camille's, nor her edits pass Camille's author
+    /// check: nothing of hers is shown until the node's identity is settled.
+    #[test]
+    fn a_member_on_someone_elses_node_is_not_shown() {
+        let camille_prv = expand_seed(&[0x21; 32]);
+        let eve_prv = expand_seed(&[0x31; 32]);
+        let (camille, eve) = (public_key(&camille_prv), public_key(&eve_prv));
+        let mut core = core_with_group(&[(camille, [30; 32], 0)]);
+        let camille_node = [1u8; 32];
+        // What a state listing Eve with Camille's node leaves behind (decoding refuses such
+        // a state; this is the core's last line).
+        let g = core.groups.get_mut(&GID).unwrap();
+        g.members.push(Member {
+            key: eve,
+            node: camille_node,
+            name: "Camille".into(),
+        });
+        g.keys.insert(
+            eve,
+            MemberKeys {
+                current: Some(KeyState::new(0, [50; 32], 0)),
+                previous: None,
+            },
+        );
+        core.learn_members(&core.groups[&GID].members.clone());
+        assert_eq!(core.identity_of(&camille_node), Some(camille));
+        assert_eq!(core.pending_identity(&camille_node), Some(&eve));
+        while core.poll_event().is_some() {}
+
+        let from_eve = envelope(&eve, &[50; 32], 0, &eve_prv, "it's Camille");
+        core.on_group_envelope(&from_eve, 0, 0, 0);
+        assert!(texts(&mut core).is_empty());
+        let from_camille = envelope(&camille, &[30; 32], 0, &camille_prv, "the real one");
+        core.on_group_envelope(&from_camille, 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["the real one"]);
+    }
+
     #[test]
     fn colliding_senders_are_both_heard() {
         // A has already received counters up to 100; B starts at 0.
