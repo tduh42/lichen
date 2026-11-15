@@ -115,6 +115,12 @@ impl Inner {
                 None => st.delete_group(&g),
             };
         }
+        for g in self.core.take_dirty_invitations() {
+            let _ = match self.core.invitation_snapshot(&g) {
+                Some(snap) => st.put_invitation(&g, &snap),
+                None => st.delete_invitation(&g),
+            };
+        }
     }
 
     /// Stores a message we just queued and tracks its delivery. A text (`outbox`) waits in

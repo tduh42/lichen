@@ -643,6 +643,8 @@ pub struct Core {
     pub(crate) invites: HashMap<[u8; 16], (GroupId, Millis)>,
     /// Groups that listed us and wait for the user's answer (§10.1, SR-13). In memory only.
     pub(crate) invitations: Vec<crate::group::Invitation>,
+    /// Invitations to store again or delete (SR-13: they survive restarts).
+    pub(crate) dirty_invitations: HashSet<GroupId>,
     /// Admins we asked to join with a scanned invitation (§10.5), with when: their state is
     /// the answer, joined without asking again.
     pub(crate) joining: Vec<(PubKey, Millis)>,
@@ -731,6 +733,7 @@ impl Core {
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
             invitations: Vec::new(),
+            dirty_invitations: HashSet::new(),
             joining: Vec::new(),
             group_consent: true,
             admitted: Vec::new(),

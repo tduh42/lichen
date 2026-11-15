@@ -480,6 +480,8 @@ pub fn gid_hash(gid: &GroupId) -> u16 {
 pub struct Invitation {
     pub(crate) state: State,
     pub(crate) at: Millis,
+    /// When it came, Unix seconds, when the clock was known: kept across restarts.
+    pub(crate) at_unix: Option<u64>,
 }
 
 impl Invitation {
@@ -514,6 +516,10 @@ const MAX_INVITATIONS: usize = 8;
 const INVITATION_MS: Millis = 7 * 24 * 3_600_000;
 /// How long a scanned invitation waits for the admin's state (§10.5).
 const JOINING_MS: Millis = 3_600_000;
+/// Invitation snapshot version (what the app stores, so that a restart loses nothing).
+const INVITATION_SNAPSHOT: u8 = 1;
+/// A sender key in an invitation snapshot: owner, relayed or not, by whom, epoch, key, next.
+const KEY_ENTRY_LEN: usize = 32 + 1 + 32 + 1 + 32 + 4;
 
 /// A key that arrived before its group state.
 #[derive(Clone, Debug)]
@@ -1787,7 +1793,7 @@ impl Core {
     /// held one; one that no longer lists us withdraws it.
     fn invitation(&mut self, state: State, listed: bool, now: Millis) {
         let gid = state.gid;
-        self.invitations.retain(|i| i.at + INVITATION_MS > now);
+        self.expire_invitations(now);
         self.joining.retain(|(_, at)| at + JOINING_MS > now);
         if let Some(pos) = self.invitations.iter().position(|i| i.state.gid == gid) {
             let held = &self.invitations[pos].state;
@@ -1796,9 +1802,11 @@ impl Core {
             }
             if !listed {
                 self.invitations.remove(pos);
+                self.dirty_invitations.insert(gid);
                 return;
             }
             self.invitations[pos].state = state;
+            self.dirty_invitations.insert(gid);
             return;
         }
         if !listed || self.groups.len() >= MAX_GROUPS {
@@ -1817,7 +1825,8 @@ impl Core {
             return;
         }
         if self.invitations.len() >= MAX_INVITATIONS {
-            self.invitations.remove(0);
+            let old = self.invitations.remove(0);
+            self.dirty_invitations.insert(old.state.gid);
         }
         self.events.push_back(Event::GroupInvited {
             gid,
@@ -1825,7 +1834,13 @@ impl Core {
             admin: state.admin,
             members: state.members.len(),
         });
-        self.invitations.push(Invitation { state, at: now });
+        let at_unix = self.unix_s(now);
+        self.invitations.push(Invitation {
+            state,
+            at: now,
+            at_unix,
+        });
+        self.dirty_invitations.insert(gid);
     }
 
     /// Becomes a member of the group of `state` (§10.1): its members become contacts, our
@@ -1883,6 +1898,117 @@ impl Core {
             .any(|k| group::open(&k.key, &mut payload.to_vec()).is_ok())
     }
 
+    /// Invitations older than a week go, by the clock of this run or, across restarts, by
+    /// the wall clock.
+    fn expire_invitations(&mut self, now: Millis) {
+        let wall = self.unix_s(now);
+        let before = self.invitations.len();
+        let gone: Vec<GroupId> = self
+            .invitations
+            .iter()
+            .filter(|i| {
+                i.at + INVITATION_MS <= now
+                    || wall
+                        .zip(i.at_unix)
+                        .is_some_and(|(w, a)| w > a + INVITATION_MS / 1000)
+            })
+            .map(|i| i.state.gid)
+            .collect();
+        if gone.is_empty() || before == 0 {
+            return;
+        }
+        self.invitations.retain(|i| !gone.contains(&i.state.gid));
+        self.pending_keys.retain(|p| !gone.contains(&p.gid));
+        self.dirty_invitations.extend(gone);
+    }
+
+    /// Invitations that changed since the app last stored them (added, answered, or with new
+    /// keys): store [`Core::invitation_snapshot`], or delete it when there is none.
+    pub fn take_dirty_invitations(&mut self) -> Vec<GroupId> {
+        self.dirty_invitations.drain().collect()
+    }
+
+    /// What the app stores for invitation `gid`, so that it survives a restart until the user
+    /// answers: `1 ‖ at_unix u64 (0 unknown) ‖ state_len u16 ‖ GROUP_STATE ‖ n u8 ‖ n × key`
+    /// (the sender keys that came with it). Holds keys: it is stored like a group.
+    pub fn invitation_snapshot(&self, gid: &GroupId) -> Option<Vec<u8>> {
+        let inv = self.invitations.iter().find(|i| i.state.gid == *gid)?;
+        let state = inv.state.encode();
+        let keys: Vec<&PendingKey> = self.pending_keys.iter().filter(|p| p.gid == *gid).collect();
+        let mut v = vec![INVITATION_SNAPSHOT];
+        v.extend_from_slice(&inv.at_unix.unwrap_or(0).to_le_bytes());
+        v.extend_from_slice(&u16::try_from(state.len()).ok()?.to_le_bytes());
+        v.extend_from_slice(&state);
+        v.push(u8::try_from(keys.len()).ok()?);
+        for k in keys {
+            v.extend_from_slice(&k.from);
+            v.push(u8::from(k.via.is_some()));
+            v.extend_from_slice(&k.via.unwrap_or([0; 32]));
+            v.push(k.epoch);
+            v.extend_from_slice(&k.key);
+            v.extend_from_slice(&k.next_counter.to_le_bytes());
+        }
+        Some(v)
+    }
+
+    /// An invitation the app stored, back after a restart. False when it does not decode, or
+    /// we joined that group meanwhile.
+    pub fn restore_invitation(&mut self, snapshot: &[u8], now: Millis) -> bool {
+        let Some((&INVITATION_SNAPSHOT, rest)) = snapshot.split_first() else {
+            return false;
+        };
+        let Some((at, rest)) = rest.split_first_chunk::<8>() else {
+            return false;
+        };
+        let Some((len, rest)) = rest.split_first_chunk::<2>() else {
+            return false;
+        };
+        let len = usize::from(u16::from_le_bytes(*len));
+        let (Some(state), Some(rest)) = (rest.get(..len), rest.get(len..)) else {
+            return false;
+        };
+        let Some(state) = State::decode(state) else {
+            return false;
+        };
+        let Some((&n, keys)) = rest.split_first() else {
+            return false;
+        };
+        if keys.len() != usize::from(n) * KEY_ENTRY_LEN
+            || self.groups.contains_key(&state.gid)
+            || self.invitations.iter().any(|i| i.state.gid == state.gid)
+        {
+            return false;
+        }
+        let gid = state.gid;
+        for k in keys.as_chunks::<KEY_ENTRY_LEN>().0 {
+            let field = |a: usize, b: usize| k.get(a..b).unwrap_or(&[]);
+            let (Ok(from), Ok(via), Ok(key), Ok(next)) = (
+                <[u8; 32]>::try_from(field(0, 32)),
+                <[u8; 32]>::try_from(field(33, 65)),
+                <[u8; 32]>::try_from(field(66, 98)),
+                <[u8; 4]>::try_from(field(98, 102)),
+            ) else {
+                return false;
+            };
+            self.pending_keys.push(PendingKey {
+                from,
+                via: (k.get(32) == Some(&1)).then_some(via),
+                gid,
+                epoch: k.get(65).copied().unwrap_or(0),
+                key,
+                next_counter: u32::from_le_bytes(next),
+                at: now,
+            });
+        }
+        let at_unix = u64::from_le_bytes(*at);
+        self.invitations.push(Invitation {
+            state,
+            at: now,
+            at_unix: (at_unix != 0).then_some(at_unix),
+        });
+        true
+    }
+
     /// Groups that listed us and wait for the user (§10.1).
     pub fn invitations(&self) -> &[Invitation] {
         &self.invitations
@@ -1899,6 +2025,7 @@ impl Core {
             return Err(Error::NotAllowed);
         }
         let inv = self.invitations.remove(pos);
+        self.dirty_invitations.insert(*gid);
         self.join_group(inv.state, now);
         Ok(())
     }
@@ -1908,6 +2035,7 @@ impl Core {
     pub fn decline_group(&mut self, gid: &GroupId) {
         self.invitations.retain(|i| i.state.gid != *gid);
         self.pending_keys.retain(|p| p.gid != *gid);
+        self.dirty_invitations.insert(*gid);
     }
 
     /// Joins at once when listed (test nodes and bots), or waits for the user (the apps).
@@ -1925,6 +2053,9 @@ impl Core {
         now: Millis,
     ) {
         let Some(g) = self.groups.get_mut(&gid) else {
+            if self.invitations.iter().any(|i| i.state.gid == gid) {
+                self.dirty_invitations.insert(gid);
+            }
             if self.pending_keys.len() < 32 {
                 self.pending_keys.push(PendingKey {
                     from: *from,
@@ -1989,6 +2120,9 @@ impl Core {
             let listed = self.groups.get(&gid).is_some_and(|g| g.is_member(&owner));
             if !listed {
                 // A group or an owner whose state has not reached us yet.
+                if self.invitations.iter().any(|i| i.state.gid == gid) {
+                    self.dirty_invitations.insert(gid);
+                }
                 if self.pending_keys.len() < 32 {
                     self.pending_keys.push(PendingKey {
                         from: owner,
@@ -2869,6 +3003,66 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// An invitation, and a key that came with it, survive a restart until the user answers
+    /// (the user's point of 2026-11-15: an invitation lost at a restart is not friendly).
+    #[test]
+    fn an_invitation_survives_a_restart() {
+        let fresh = || {
+            let mut c = Core::new(Config::new("t", [200; 32], [1; 32]));
+            c.node = Some([0xEE; 32]);
+            c.set_clock(1_793_000_000_000, 0);
+            c
+        };
+        let mut core = fresh();
+        let me = *core.key().unwrap();
+        let (admin, other) = ([0x21u8; 32], [0x31u8; 32]);
+        let gid = [9u8; 16];
+        let state = State {
+            gid,
+            epoch: 1,
+            admin,
+            name: "Refuge".into(),
+            members: vec![
+                Member {
+                    key: admin,
+                    node: [1; 32],
+                    name: "Camille".into(),
+                },
+                Member {
+                    key: other,
+                    node: [2; 32],
+                    name: "Julien".into(),
+                },
+                Member {
+                    key: me,
+                    node: [0xEE; 32],
+                    name: "me".into(),
+                },
+            ],
+            cause: None,
+        };
+        core.on_group_state(&admin, state, 1_000);
+        assert_eq!(core.invitations().len(), 1);
+        // Julien's key, relayed by the admin, comes before the user answers.
+        core.on_sender_keys(&admin, gid, vec![(other, 0, [7; 32], 0)], 2_000);
+        let dirty = core.take_dirty_invitations();
+        assert_eq!(dirty, vec![gid]);
+        let snap = core.invitation_snapshot(&gid).unwrap();
+
+        // The app restarts.
+        let mut core = fresh();
+        assert!(core.restore_invitation(&snap, 0));
+        assert_eq!(core.invitations().len(), 1);
+        assert_eq!(core.invitations()[0].name(), "Refuge");
+        core.accept_group(&gid, 5_000).unwrap();
+        let g = &core.groups[&gid];
+        assert_eq!(g.members.len(), 3);
+        assert!(g.keys.get(&other).is_some_and(|k| k.current.is_some()));
+        // Answered: the stored invitation goes.
+        assert!(core.take_dirty_invitations().contains(&gid));
+        assert!(core.invitation_snapshot(&gid).is_none());
     }
 
     /// The two flooded payloads of a long text from `sender` at `counter`, signed by `signer`.

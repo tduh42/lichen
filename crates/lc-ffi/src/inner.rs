@@ -95,6 +95,10 @@ impl Inner {
         for snap in store.groups().unwrap_or_default() {
             self.core.restore_group(&snap);
         }
+        // Invitations not answered yet (§10.1): they wait for the user across restarts.
+        for snap in store.invitations().unwrap_or_default() {
+            self.core.restore_invitation(&snap, self.last_now);
+        }
         for (chat, precision, until) in store.shares().unwrap_or_default() {
             let _ = self.core.restore_share(chat, precision, until);
         }

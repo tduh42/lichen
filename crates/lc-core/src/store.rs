@@ -206,6 +206,10 @@ CREATE TABLE IF NOT EXISTS groups (
     gid BLOB PRIMARY KEY,
     snapshot BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS invitations (
+    gid BLOB PRIMARY KEY,
+    snapshot BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_kind INTEGER NOT NULL,
@@ -735,6 +739,30 @@ impl Store {
         self.conn
             .execute("DELETE FROM groups WHERE gid = ?1", params![gid.as_slice()])?;
         Ok(())
+    }
+
+    /// A group invitation waiting for the user (`Core::invitation_snapshot`).
+    pub fn put_invitation(&self, gid: &GroupId, snapshot: &[u8]) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO invitations (gid, snapshot) VALUES (?1, ?2)
+             ON CONFLICT (gid) DO UPDATE SET snapshot = ?2",
+            params![gid.as_slice(), snapshot],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_invitation(&self, gid: &GroupId) -> Result<(), Error> {
+        self.conn.execute(
+            "DELETE FROM invitations WHERE gid = ?1",
+            params![gid.as_slice()],
+        )?;
+        Ok(())
+    }
+
+    pub fn invitations(&self) -> Result<Vec<Vec<u8>>, Error> {
+        let mut st = self.conn.prepare("SELECT snapshot FROM invitations")?;
+        let rows = st.query_map([], |r| r.get(0))?;
+        Ok(rows.filter_map(Result::ok).collect())
     }
 
     pub fn groups(&self) -> Result<Vec<Vec<u8>>, Error> {
