@@ -1251,12 +1251,16 @@ impl Core {
     }
 
     /// Random bytes from the core's generator (media ids).
-    /// 32 secret bytes (an ephemeral key, a sender key), wiped when dropped (review of
-    /// 2026-11-15, SR-07). Re-keying the generator after each draw is not done yet: it made the
-    /// demo's group set-up stall, a cause still to find.
+    /// 32 secret bytes (an ephemeral key, a sender key), wiped when dropped. The generator is
+    /// then re-keyed from its own output, so that its state in memory no longer yields them
+    /// (review of 2026-11-15, SR-07).
     pub(crate) fn draw_secret(&mut self) -> Secret {
         let mut out = [0u8; 32];
         self.rng.fill_bytes(&mut out);
+        let mut next = [0u8; 32];
+        self.rng.fill_bytes(&mut next);
+        self.rng = ChaCha20Rng::from_seed(next);
+        next.zeroize();
         let s = Secret(out);
         out.zeroize();
         s
@@ -2981,5 +2985,38 @@ fn received_data(r: Received<'_>) -> Option<Vec<u8>> {
     match r {
         Received::Datagram { data, .. } => Some(data.to_vec()),
         Received::Nothing => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Review of 2026-11-15, SR-07: after a secret is drawn, the generator is a new one, keyed
+    /// from its own output: its state is not the old stream continued, so a memory image taken
+    /// later does not give back the secrets drawn before.
+    #[test]
+    fn the_generator_is_rekeyed_after_a_secret() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        let mut before = core.rng.clone();
+        let secret = core.draw_secret();
+        let mut drawn = [0u8; 32];
+        before.fill_bytes(&mut drawn);
+        assert!(secret == drawn, "the secret is the stream's next 32 bytes");
+        // The old stream would go on with the new key's seed, then more; the new generator
+        // starts elsewhere.
+        let mut seed = [0u8; 32];
+        before.fill_bytes(&mut seed);
+        let mut continued = [0u8; 32];
+        before.fill_bytes(&mut continued);
+        let mut now = [0u8; 32];
+        core.rng.fill_bytes(&mut now);
+        assert_ne!(now, continued);
+        assert_eq!(now, {
+            let mut fresh = ChaCha20Rng::from_seed(seed);
+            let mut b = [0u8; 32];
+            fresh.fill_bytes(&mut b);
+            b
+        });
     }
 }

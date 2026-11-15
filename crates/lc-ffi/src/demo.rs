@@ -259,6 +259,9 @@ impl std::fmt::Debug for DemoNetwork {
 
 const SEC: u64 = 1_000;
 
+/// Julien's first post, not before (demo time): after Camille's photo transfer.
+const JULIEN_POSTS_FROM: u64 = 210 * SEC;
+
 impl Demo {
     /// The bots' wall clock, Unix seconds.
     const fn unix_s(&self) -> u64 {
@@ -643,8 +646,11 @@ impl Demo {
                 }
             }
         }
-        // Julien posts once every member holds the keys.
+        // Julien posts once every member holds the keys, after Camille's photo has gone (the
+        // script below counts on it: his first post may still be lost at the hub, the second
+        // is lost on purpose, the GIF reveals the gap).
         if !self.julien_posted
+            && now >= JULIEN_POSTS_FROM
             && let Some(gid) = self.group
             && self
                 .net
