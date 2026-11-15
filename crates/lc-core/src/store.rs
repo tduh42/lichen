@@ -401,6 +401,10 @@ impl Store {
 
     fn init(conn: Connection) -> Result<Self, Error> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
+        // Deleted rows are overwritten, not left in free pages: "delete for me", a delete for
+        // everyone and disappearing messages leave nothing to read back (review of
+        // 2026-11-15, SR-28).
+        conn.pragma_update(None, "secure_delete", "ON")?;
         let version: i32 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version > VERSION {
             return Err(Error::InvalidQuery);
@@ -1414,6 +1418,36 @@ mod tests {
             read: outgoing,
             msg_ref: None,
         }
+    }
+
+    /// Review of 2026-11-15, SR-28: a deleted message leaves nothing to read back in the file.
+    #[test]
+    fn deleted_text_is_overwritten() {
+        let dir = std::env::temp_dir().join(format!("lichen-store-sd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("db.sqlite");
+        let secret = "the key is under the third stone";
+        {
+            let s = Store::open(&path).unwrap();
+            let m = s
+                .insert(&text(Chat::Contact([3; 32]), false, secret, 1))
+                .unwrap();
+            s.delete_message(m.id).unwrap();
+            // Everything into the main file, as at a checkpoint.
+            s.conn
+                .execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")
+                .unwrap();
+        }
+        let mut bytes = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            bytes.extend(std::fs::read(entry.unwrap().path()).unwrap());
+        }
+        assert!(
+            !bytes.windows(secret.len()).any(|w| w == secret.as_bytes()),
+            "the deleted text is still in the files"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
