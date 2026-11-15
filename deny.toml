@@ -1,0 +1,52 @@
+# cargo-deny: advisories and licences of every dependency actually built.
+# Run by scripts/check.sh and CI: `cargo deny check`.
+
+[graph]
+all-features = true
+
+[advisories]
+# Each ignored advisory says why it does not reach lichen and when to look again.
+ignore = [
+    { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin attack, timing of private-key operations) comes with Arti 0.48 for Tor's legacy relay identities; lichen only verifies such signatures and holds no RSA private key. No fixed rsa release is accepted by Arti yet: look again at each Arti update." },
+    { id = "RUSTSEC-2026-0459", reason = "Bundled SQLite before 3.54 can return stale memory when it opens a database with a crafted -wal file. lichen only opens databases it created in its own private directory. The fix needs rusqlite >= 0.41, which Arti 0.48 (tor-dirmgr: rusqlite < 0.41) does not accept: upgrade with the next Arti release, and never open a database file that came from outside." },
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained (no known flaw); a compile-time macro pulled by dependencies." },
+    { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained (no known flaw); pulled by dependencies, lichen's config uses toml." },
+]
+
+[licenses]
+# lichen is GPL-3.0-or-later: every licence here can be combined into a GPLv3 work.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-1-Clause",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "NCSA",
+    "CDLA-Permissive-2.0",
+    "LGPL-2.1-only",
+    "LGPL-2.1-or-later",
+]
+confidence-threshold = 0.8
+
+[licenses.private]
+# The workspace's own crates (publish = false) get their licence field with the LICENSE file.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

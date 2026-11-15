@@ -3239,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "lc-bridge"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "arti-client",
  "blake3",
@@ -3269,7 +3269,7 @@ dependencies = [
 
 [[package]]
 name = "lc-cli"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "clap",
  "getrandom 0.4.3",
@@ -3284,7 +3284,7 @@ dependencies = [
 
 [[package]]
 name = "lc-core"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "bip39",
  "hex",
@@ -3302,7 +3302,7 @@ dependencies = [
 
 [[package]]
 name = "lc-ffi"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "lc-bridge",
  "lc-core",
@@ -3316,7 +3316,7 @@ dependencies = [
 
 [[package]]
 name = "lc-media"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "cc",
  "codec2",
@@ -3325,7 +3325,7 @@ dependencies = [
 
 [[package]]
 name = "lc-meshcore"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
@@ -3339,7 +3339,7 @@ dependencies = [
 
 [[package]]
 name = "lc-proto"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "chacha20",
  "chacha20poly1305",

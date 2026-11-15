@@ -21,6 +21,7 @@ cargo build -q -p lc-ffi --release
 
 out="$main/java"
 rm -rf "$out/com/tduhamel/lichen/core" "$main/generated"
+case "$(uname -s)" in Darwin) host=dylib ;; *) host=so ;; esac
 cargo run -q -p lc-ffi --release --features cli --bin uniffi-bindgen -- \
-  generate --library target/release/liblc_ffi.dylib --language kotlin --no-format --out-dir "$out"
+  generate --library "target/release/liblc_ffi.$host" --language kotlin --no-format --out-dir "$out"
 echo "$main/jniLibs/arm64-v8a/liblc_ffi.so and $out/com/tduhamel/lichen/core are ready"

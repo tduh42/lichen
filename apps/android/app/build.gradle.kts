@@ -6,6 +6,9 @@ plugins {
 // The host build of the core (scripts/build-android-core.sh), loaded by the JVM unit tests.
 val hostCore: String = rootDir.resolve("../../target/release").canonicalPath
 
+// One version for the core and both apps: the repository's VERSION file.
+val lichenVersion: String = rootDir.resolve("../../VERSION").readText().trim()
+
 android {
     namespace = "com.tduhamel.lichen"
     compileSdk = 37
@@ -20,7 +23,7 @@ android {
         minSdk = 31
         targetSdk = 37
         versionCode = 1
-        versionName = "0.9"
+        versionName = lichenVersion
         ndk { abiFilters += "arm64-v8a" }
     }
 

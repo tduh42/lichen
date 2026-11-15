@@ -1,0 +1,63 @@
+# Every push to main and every pull request: the same checks as scripts/check.sh, plus the
+# Android build. Linux runners only; the iOS build stays local for now.
+# Actions are pinned by commit; the tag is in the comment.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, tests, advisories, licences)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # rust-toolchain.toml names the toolchain; the no_std build needs a bare-metal target.
+      - run: rustup show && rustup target add thumbv7em-none-eabihf
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-deny
+      - run: CHECK_SKIP_FUZZ=1 scripts/check.sh
+
+  android:
+    name: Android (core, lint, unit tests, debug APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # The core is built twice (device and host): on main only, to spare runner minutes.
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup show && rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: android
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-ndk
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358" > /dev/null
+      - run: ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.2.13676358" scripts/build-android-core.sh
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - run: ./gradlew lintDebug testDebugUnitTest assembleDebug
+        working-directory: apps/android

@@ -18,7 +18,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.9.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
   Lichen:
@@ -44,6 +44,9 @@ targets:
     info:
       path: Lichen/Info.plist
       properties:
+        # The version comes from the build settings above (the repository\'s VERSION file).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         CFBundleDisplayName: lichen
         CFBundleDevelopmentRegion: en
         CFBundleLocalizations: [en, fr]
