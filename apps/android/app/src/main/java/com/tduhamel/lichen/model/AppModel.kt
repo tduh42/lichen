@@ -1174,11 +1174,13 @@ class AppModel(val app: Application) {
         return File(gifFolder, "$id.gif").takeIf { it.isFile }?.readBytes()
     }
 
-    /** GIPHY GIF `id`, through Tor when it is ready, directly otherwise; kept in the cache. */
+    /** GIPHY GIF `id`, through Tor when Tor is on, directly otherwise; kept in the cache. With
+     * Tor on it never goes direct, also while Tor starts (then it fails, and loads once Tor is
+     * up): GIPHY never sees the address (§6.3, review of 2026-11-15, SR-26). */
     suspend fun loadGif(id: String): ByteArray? {
         cachedGif(id)?.let { return it }
         val b = bridge ?: return null
-        val data = runCatching { b.gif(id, torStatus == TorStatus.READY) }.getOrNull() ?: return null
+        val data = runCatching { b.gif(id, torEnabled) }.getOrNull() ?: return null
         withContext(Dispatchers.IO) {
             runCatching {
                 File(gifFolder, "$id.gif").writeBytes(data)

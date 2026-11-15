@@ -1022,10 +1022,12 @@ final class AppModel {
         return try? Data(contentsOf: dir.appendingPathComponent(id + ".gif"))
     }
 
-    /// GIPHY GIF `id`, through Tor when it is ready, directly otherwise; kept in the caches.
+    /// GIPHY GIF `id`, through Tor when Tor is on, directly otherwise; kept in the caches.
     func loadGif(_ id: String) async -> Data? {
         if let data = cachedGif(id) { return data }
-        guard let bridge, let data = try? await bridge.gif(id: id, viaTor: torStatus == .ready) else { return nil }
+        // With Tor on, through Tor only, also while it starts (then it fails, and loads once
+        // Tor is up): GIPHY never sees the address (§6.3, review of 2026-11-15, SR-26).
+        guard let bridge, let data = try? await bridge.gif(id: id, viaTor: torEnabled) else { return nil }
         if let dir = Self.gifFolder {
             try? data.write(to: dir.appendingPathComponent(id + ".gif"))
             Self.trimGifs(dir)
