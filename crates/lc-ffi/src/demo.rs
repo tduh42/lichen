@@ -2217,7 +2217,15 @@ mod meshcore {
                 330_000,
             )
             .unwrap();
-        let events = run(&demo, &core, 330_000, 420_000);
+        let mut events = run(&demo, &core, 330_000, 420_000);
+        let h = core.history(mesh.clone(), None, 10).unwrap();
+        let ours = h.iter().find(|m| m.id == mine.id).unwrap();
+        // Its three attempts can all collide at the hub with the demo's other traffic: then
+        // the user retries, as the app offers.
+        if matches!(ours.status, MessageStatus::Failed { .. }) {
+            core.retry_message(mine.id, 420_000).unwrap();
+            events.extend(run(&demo, &core, 420_000, 520_000));
+        }
         let h = core.history(mesh.clone(), None, 10).unwrap();
         let ours = h.iter().find(|m| m.id == mine.id).unwrap();
         assert_eq!(ours.status, MessageStatus::Delivered, "{events:?}");

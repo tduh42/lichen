@@ -86,7 +86,7 @@ Chatting off-grid comes first. A message is accepted while the radio is away, su
   <img alt="INTRO, INTRO_ACK and INTRO_FIN between two phones, then a session" src="docs/readme/introduction-light.svg" width="760">
 </picture>
 
-Your identity is a key made on your phone from a seed in the Keychain or Keystore, backed up as 24 words; the radio's key only routes. Strangers meet with a three-frame introduction on the Noise XX pattern; later sessions use HELLO / HELLO_ACK with fresh ephemeral keys. Comparing the 30-digit safety number, one tap from every conversation's header, or scanning a `lichen:1:` card in person marks a contact verified; a verified contact that suddenly shows another key is not adopted until you accept it.
+Your identity is a key made on your phone from a seed in the Keychain or Keystore, backed up as 24 words; the radio's key only routes. Strangers meet with a three-frame introduction on the Noise XX pattern; later sessions use HELLO / HELLO_ACK with fresh ephemeral keys. Comparing the 60-digit safety number, one tap from every conversation's header, or scanning a `lichen:1:` card in person marks a contact verified; a verified contact that suddenly shows another key is not adopted until you accept it.
 
 | 1.8 s | 1.1 s | 6 × 5 | 24 |
 |---|---|---|---|

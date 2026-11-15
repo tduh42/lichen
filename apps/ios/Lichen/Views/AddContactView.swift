@@ -198,7 +198,7 @@ private struct JoinPanel: View {
     }
 }
 
-/// The safety number with a contact (§4.7): the same 30 digits on both phones. Approving
+/// The safety number with a contact (§4.7): the same 60 digits on both phones. Approving
 /// names the identity whose number was shown, so a key that changes meanwhile is never
 /// approved unseen (review PR-07).
 struct VerifyPanel: View {

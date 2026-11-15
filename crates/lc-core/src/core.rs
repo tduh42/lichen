@@ -50,6 +50,8 @@ const PROBE_WAIT_MS: Millis = 20_000;
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
 /// A HELLO we cannot open triggers our own introduction at most this often (§4.6).
 const INTRO_POKE_MS: Millis = 600_000;
+/// A HELLO more than this far from our clock is not answered (§4.4, SR-03).
+const HELLO_FRESH_S: u64 = 600;
 /// Answers to frames anyone can send (INTRO_ACK, PATH_REPLY, HELLO_ACK, the INTRO that a HELLO
 /// we cannot open prompts): at most this many per node in ten minutes, and this many in all
 /// in an hour (§9, review of 2026-11-15, SR-04). Data waits for the budget; these did not,
@@ -238,6 +240,12 @@ pub enum Event {
     PlainReceived(crate::plain::PlainMessage),
     /// The companion's channel list changed, or was read (§15.3).
     ChannelsUpdated,
+    /// Node `node`'s phone speaks a newer protocol version than ours (ADR-0029): some of what
+    /// it sends may show as unsupported until lichen is updated. Once per node and run.
+    NewerVersion {
+        node: PubKey,
+        version: u8,
+    },
     /// A group that lists us waits for the user to join it or not (§10.1, SR-13):
     /// [`Core::accept_group`], [`Core::decline_group`].
     GroupInvited {
@@ -451,10 +459,24 @@ struct Introducing {
     path: OwnedPath,
 }
 
+/// The INTRO of an introduction in progress, with its return path `back`.
+fn intro_message<'a>(intro: &Introducing, back: &'a OwnedPath) -> Intro<'a> {
+    Intro {
+        tag: intro.tag,
+        attempt: intro.attempt,
+        salt: intro.salt,
+        ephemeral: x25519_public(&intro.eph_secret),
+        return_path_len: back.len_byte,
+        return_path: &back.bytes,
+    }
+}
+
 /// INTRO_FIN resent until the responder answers under the new session (§4.6).
 #[derive(Clone, Debug)]
 struct Fin {
     salt_i: [u8; SALT_LEN],
+    /// The INTRO's hash, bound into the introduction's keys (ADR-0029).
+    intro_hash: [u8; 32],
     eph_secret: [u8; 32],
     ack: IntroAck,
     attempt: u8,
@@ -491,6 +513,8 @@ struct Answered {
     salt_i: [u8; SALT_LEN],
     salt_r: [u8; SALT_LEN],
     eph_public: [u8; 32],
+    /// To seal the same answer again for a resent HELLO (ADR-0029).
+    eph_secret: [u8; 32],
 }
 
 /// The datagram being sent to a peer.
@@ -626,6 +650,8 @@ pub struct Core {
     seen_probes: VecDeque<ProbeId>,
     /// Answers sent to frames anyone can send, by node, for their limits (SR-04).
     unprompted: VecDeque<(PubKey, Millis)>,
+    /// Nodes already reported as speaking a newer version.
+    newer: HashSet<PubKey>,
     /// Groups we belong to (§10).
     pub(crate) groups: HashMap<GroupId, Group>,
     /// Sender keys that came before their group state.
@@ -725,6 +751,7 @@ impl Core {
             scope: None,
             seen_probes: VecDeque::new(),
             unprompted: VecDeque::new(),
+            newer: HashSet::new(),
             groups: HashMap::new(),
             pending_keys: Vec::new(),
             held: VecDeque::new(),
@@ -2029,14 +2056,7 @@ impl Core {
             return;
         };
         let back = intro.path.reversed();
-        let msg = Intro {
-            tag: intro.tag,
-            attempt: intro.attempt,
-            salt: intro.salt,
-            ephemeral: x25519_public(&intro.eph_secret),
-            return_path_len: back.len_byte,
-            return_path: &back.bytes,
-        };
+        let msg = intro_message(intro, &back);
         let mut buf = [0u8; FRAME_MAX];
         if let Ok(n) = intro::seal_intro(node[0], k[0], &msg, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
@@ -2057,6 +2077,7 @@ impl Core {
             &me,
             &fin.eph_secret,
             &fin.salt_i,
+            &fin.intro_hash,
             &fin.ack,
             fin.attempt,
             &mut buf,
@@ -2155,8 +2176,14 @@ impl Core {
     }
 
     fn start_handshake(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
-        let mut salt = [0u8; SALT_LEN];
-        self.rng.fill_bytes(&mut salt);
+        // The salt starts with our Unix time: the responder answers only a fresh HELLO (§4.4).
+        let mut random = [0u8; 12];
+        self.rng.fill_bytes(&mut random);
+        let t = self
+            .unix_s(now)
+            .and_then(|t| u32::try_from(t).ok())
+            .unwrap_or(0);
+        let salt = handshake::hello_salt(t, &random);
         let mut eph_secret = [0u8; 32];
         self.rng.fill_bytes(&mut eph_secret);
         let tag = self.rng.next_u32() as u16;
@@ -2191,11 +2218,12 @@ impl Core {
             attempt: init.attempt,
             salt: init.salt,
             ephemeral: x25519_public(&init.eph_secret),
+            version: handshake::VERSION,
             return_path_len: back.len_byte,
             return_path: &back.bytes,
         };
         let mut buf = [0u8; FRAME_MAX];
-        if let Ok(n) = handshake::seal_hello(&s, &ends, &hello, &mut buf) {
+        if let Ok(n) = handshake::seal_hello(&s, &ends, &init.eph_secret, &hello, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&init.path, &frame, now);
             self.expect_answer(&init.path);
@@ -2222,6 +2250,16 @@ impl Core {
             (Kind::Control, 4) => self.on_intro_ack(&h, payload, now),
             (Kind::Control, _) => self.on_intro_fin(&h, payload, now),
             _ => self.on_session_frame(&h, payload, snr4, rssi, now),
+        }
+    }
+
+    /// A peer's handshake showed its protocol version (ADR-0029): a newer one is reported once.
+    fn peer_version(&mut self, node: &PubKey, version: u8) {
+        if version > handshake::VERSION && self.newer.insert(*node) {
+            self.events.push_back(Event::NewerVersion {
+                node: *node,
+                version,
+            });
         }
     }
 
@@ -2433,6 +2471,7 @@ impl Core {
                         e_i: msg.ephemeral,
                         salt_r,
                         eph_secret,
+                        intro_hash: intro::intro_hash(&msg),
                     },
                     path: path.clone(),
                     at: now,
@@ -2480,15 +2519,25 @@ impl Core {
             else {
                 continue;
             };
-            let Ok(ack) =
-                intro::open_intro_ack(node[0], c[0], &intro.eph_secret, &intro.salt, payload)
-            else {
+            // The INTRO we sent, as the responder hashed it (ADR-0029).
+            let back = intro.path.reversed();
+            let hash = intro::intro_hash(&intro_message(&intro, &back));
+            let Ok(ack) = intro::open_intro_ack(
+                node[0],
+                c[0],
+                &intro.eph_secret,
+                &intro.salt,
+                &hash,
+                payload,
+            ) else {
                 continue;
             };
-            let Some(keys) = intro::initiator_keys(&prv, &me, &intro.eph_secret, &intro.salt, &ack)
+            let Some(keys) =
+                intro::initiator_keys(&prv, &me, &intro.eph_secret, &intro.salt, &hash, &ack)
             else {
                 return;
             };
+            self.peer_version(&c, ack.version);
             if !self.learn_identity(&c, ack.identity) {
                 // The contact is known under another identity: no session with this one (§4.6).
                 if let Some(mut p) = self.peers.remove(&c) {
@@ -2501,6 +2550,7 @@ impl Core {
             let session = Session::new(keys, node[0], c[0], self.timing_for(&intro.path));
             let fin = Fin {
                 salt_i: intro.salt,
+                intro_hash: hash,
                 eph_secret: intro.eph_secret,
                 ack,
                 attempt: 0,
@@ -2574,7 +2624,7 @@ impl Core {
     }
 
     fn on_hello(&mut self, h: &Header, payload: &[u8], now: Millis) {
-        let (Some(me), Some(node)) = (self.key, self.node) else {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
             return;
         };
         for c in self.candidates(h.src) {
@@ -2588,24 +2638,23 @@ impl Core {
                 peer_node: c[0],
             };
             let mut buf = payload.to_vec();
-            let Ok(hello) = handshake::open_hello(&s, &ends, &mut buf) else {
+            let Ok(hello) = handshake::open_hello(&s, &ends, &prv, &mut buf) else {
                 continue;
             };
-            let return_path = (hello.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
-                len_byte: hello.return_path_len,
-                bytes: hello.return_path.to_vec(),
-            });
-            let (tag, attempt, salt_i, eph_i) =
-                (hello.tag, hello.attempt, hello.salt, hello.ephemeral);
+            // Freshness (§4.4, review of 2026-11-15, SR-03): a HELLO carries its sender's
+            // time. One more than ten minutes away from ours is a replay, or a clock gone
+            // wrong, and gets no answer. Its resends within those minutes get the same one.
+            let t = u64::from(handshake::salt_time(&hello.salt));
+            if t != 0
+                && self
+                    .unix_s(now)
+                    .is_some_and(|ours| ours.abs_diff(t) > HELLO_FRESH_S)
+            {
+                return;
+            }
+            self.peer_version(&c, hello.version);
             let mut peer = self.peers.remove(&c).unwrap_or_default();
-            self.answer_hello(
-                &c,
-                &mut peer,
-                &s,
-                (tag, attempt, salt_i, eph_i),
-                return_path,
-                now,
-            );
+            self.answer_hello(&c, &mut peer, &s, &hello, now);
             self.peers.insert(c, peer);
             return;
         }
@@ -2632,11 +2681,12 @@ impl Core {
         c: &PubKey,
         peer: &mut Peer,
         s: &[u8; 32],
-        (tag, attempt, salt_i, eph_i): (u16, u8, [u8; SALT_LEN], [u8; 32]),
-        return_path: Option<OwnedPath>,
+        hello: &Hello<'_>,
         now: Millis,
     ) {
-        let (Some(me), Some(node), Some(pid)) = (self.key, self.node, self.identity_of(c)) else {
+        let (Some(me), Some(node), Some(pid), Some(prv)) =
+            (self.key, self.node, self.identity_of(c), self.prv)
+        else {
             return;
         };
         // Crossing HELLOs: the smaller node key's handshake wins (§4.4).
@@ -2646,70 +2696,69 @@ impl Core {
             }
             peer.initiating = None;
         }
+        let return_path = (hello.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
+            len_byte: hello.return_path_len,
+            bytes: hello.return_path.to_vec(),
+        });
         let Some(path) = return_path.or_else(|| self.path_for(c, peer)) else {
             return;
         };
-        let answered = match &peer.answered {
-            Some(a) if a.tag == tag && a.salt_i == salt_i => a.clone(),
+        // A recorded HELLO can be replayed by anyone: its answers are limited too (SR-04).
+        if !self.unprompted(c, now) {
+            return;
+        }
+        let (answered, fresh) = match &peer.answered {
+            Some(a) if a.tag == hello.tag && a.salt_i == hello.salt => (a.clone(), false),
             _ => {
                 let mut eph_secret = [0u8; 32];
                 self.rng.fill_bytes(&mut eph_secret);
                 let mut salt_r = [0u8; SALT_LEN];
                 self.rng.fill_bytes(&mut salt_r);
-                let Some(keys) = handshake::session_keys(
-                    s,
-                    &eph_secret,
-                    &eph_i,
-                    &salt_i,
-                    &salt_r,
-                    &pid,
-                    &me,
-                    false,
-                ) else {
-                    return;
-                };
-                let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
-                peer.replace_pending(session);
-                peer.session_since = now;
-                peer.session_bytes = 0;
-                peer.path = Some(path.clone());
-                // We know each other: our own introduction is no longer needed (§4.6).
-                peer.introducing = None;
                 let a = Answered {
-                    tag,
-                    salt_i,
+                    tag: hello.tag,
+                    salt_i: hello.salt,
                     salt_r,
                     eph_public: x25519_public(&eph_secret),
+                    eph_secret,
                 };
-                peer.answered = Some(a.clone());
-                a
+                (a, true)
             }
         };
         let ack = HelloAck {
-            tag,
-            attempt,
+            tag: hello.tag,
+            attempt: hello.attempt,
             salt: answered.salt_r,
             ephemeral: answered.eph_public,
+            version: handshake::VERSION,
         };
-        let mut buf = [0u8; FRAME_MAX];
         let ends = Ends {
             me: &me,
             peer: &pid,
             me_node: node[0],
             peer_node: c[0],
         };
-        // A recorded HELLO can be replayed by anyone: its answers are limited too (SR-04).
-        if !self.unprompted(c, now) {
+        let mut buf = [0u8; FRAME_MAX];
+        let Ok((n, keys)) =
+            handshake::seal_hello_ack(s, &ends, &prv, &answered.eph_secret, hello, &ack, &mut buf)
+        else {
             return;
+        };
+        if fresh {
+            let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
+            peer.replace_pending(session);
+            peer.session_since = now;
+            peer.session_bytes = 0;
+            peer.path = Some(path.clone());
+            // We know each other: our own introduction is no longer needed (§4.6).
+            peer.introducing = None;
+            peer.answered = Some(answered);
         }
-        if let Ok(n) = handshake::seal_hello_ack(s, &ends, &salt_i, &ack, &mut buf) {
-            let frame = buf.get(..n).unwrap_or(&[]).to_vec();
-            self.send_raw(&path, &frame, now);
-        }
+        let frame = buf.get(..n).unwrap_or(&[]).to_vec();
+        self.send_raw(&path, &frame, now);
     }
 
     fn on_hello_ack(&mut self, h: &Header, payload: &[u8], now: Millis) {
-        let (Some(me), Some(node)) = (self.key, self.node) else {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
             return;
         };
         for c in self.candidates(h.src) {
@@ -2731,21 +2780,23 @@ impl Core {
                 peer_node: c[0],
             };
             let mut buf = payload.to_vec();
-            let Ok(ack) = handshake::open_hello_ack(&s, &ends, &init.salt, &mut buf) else {
+            // The HELLO we sent, as the responder's transcript has it (§4.3).
+            let back = init.path.reversed();
+            let sent = Hello {
+                tag: init.tag,
+                attempt: init.attempt,
+                salt: init.salt,
+                ephemeral: x25519_public(&init.eph_secret),
+                version: handshake::VERSION,
+                return_path_len: back.len_byte,
+                return_path: &back.bytes,
+            };
+            let Ok((ack, keys)) =
+                handshake::open_hello_ack(&s, &ends, &prv, &init.eph_secret, &sent, &mut buf)
+            else {
                 continue;
             };
-            let Some(keys) = handshake::session_keys(
-                &s,
-                &init.eph_secret,
-                &ack.ephemeral,
-                &init.salt,
-                &ack.salt,
-                &me,
-                &pid,
-                true,
-            ) else {
-                return;
-            };
+            self.peer_version(&c, ack.version);
             let session = Session::new(keys, node[0], c[0], self.timing_for(&init.path));
             if let Some(p) = self.peers.get_mut(&c) {
                 p.requeue_in_flight();

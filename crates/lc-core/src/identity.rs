@@ -37,13 +37,27 @@ pub fn fingerprint(id: &PubKey) -> [String; 6] {
     })
 }
 
-/// The safety number of two identities: 6 groups of 5 digits, the same on both phones.
-pub fn safety_number(a: &PubKey, b: &PubKey) -> [String; 6] {
+/// The safety number of two identities (§4.7, ADR-0029): 12 groups of 5 digits, the same on
+/// both phones. Each identity has its own 30 digits, the lower identity's first: a man in the
+/// middle must match each half with a key of his own (about 2^100 tries each). With one number
+/// hashing both identities, as before, two numbers that collide were enough: about 2^50 (review
+/// of 2026-11-15, SR-05).
+pub fn safety_number(a: &PubKey, b: &PubKey) -> [String; 12] {
     let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    let (x, y) = (safety_half(lo), safety_half(hi));
+    std::array::from_fn(|i| {
+        x.get(i)
+            .or_else(|| y.get(i.wrapping_sub(6)))
+            .cloned()
+            .unwrap_or_default()
+    })
+}
+
+/// One identity's 30 digits of a safety number.
+fn safety_half(id: &PubKey) -> [String; 6] {
     let h = Sha512::new()
-        .chain_update(b"lichen/1 safety")
-        .chain_update(lo)
-        .chain_update(hi)
+        .chain_update(b"lichen/2 safety")
+        .chain_update(id)
         .finalize();
     std::array::from_fn(|i| {
         let v = h
@@ -253,6 +267,10 @@ mod tests {
                 .all(|g| g.len() == 5 && g.chars().all(|c| c.is_ascii_digit()))
         );
         assert_ne!(s, safety_number(&a, &[3; 32]));
+        // One half per identity (SR-05): a's half is the same with any other identity.
+        let t = safety_number(&a, &[3; 32]);
+        assert_eq!(s[..6], t[..6]);
+        assert_ne!(s[6..], t[6..]);
     }
 
     #[test]

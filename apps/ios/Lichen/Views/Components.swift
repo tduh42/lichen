@@ -282,7 +282,7 @@ struct KeyFingerprint: View {
     }
 }
 
-/// A safety number: 6 groups of 5 digits, 3 per line.
+/// A safety number: 12 groups of 5 digits, 3 per line (ADR-0029).
 struct SafetyNumber: View {
     let groups: [String]
 

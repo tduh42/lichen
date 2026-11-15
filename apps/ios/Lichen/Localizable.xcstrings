@@ -951,6 +951,16 @@
         }
       }
     },
+    "A newer version is in use by %@. Some of what they send may not show.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une version plus récente est utilisée par %@. Une partie de ce qu'ils envoient peut ne pas s'afficher."
+          }
+        }
+      }
+    },
     "A password-protected file: coming later": {
       "localizations": {
         "fr": {
@@ -6597,6 +6607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mettre à jour"
+          }
+        }
+      }
+    },
+    "Update lichen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mets lichen à jour"
           }
         }
       }

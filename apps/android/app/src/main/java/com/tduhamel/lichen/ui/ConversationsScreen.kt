@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.unhex
 import com.tduhamel.lichen.core.GroupInvitation
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
@@ -466,6 +467,11 @@ fun StatusBanners(model: AppModel, pair: () -> Unit) {
                 ),
                 stringResource(R.string.connect) to pair,
             )
+        }
+        // A contact speaks a newer protocol version (ADR-0029).
+        if (model.newerPeers.isNotEmpty()) {
+            val names = model.newerPeers.map { model.name(it.unhex()) }.sorted().joinToString(", ")
+            Banner(BannerKind.WARN, stringResource(R.string.update_lichen), stringResource(R.string.newer_version_in_use, names))
         }
         // Someone is searching for us (protocol.md §11): our phone answers their pings.
         if (model.searchedBy.isNotEmpty()) {

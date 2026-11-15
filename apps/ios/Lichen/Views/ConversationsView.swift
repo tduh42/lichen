@@ -394,6 +394,12 @@ struct StatusBanners: View {
                     action: (String(localized: "Retry"), { model.companion.scan() })
                 )
             }
+            // A contact speaks a newer protocol version (ADR-0029).
+            if !model.newerPeers.isEmpty {
+                let names = ListFormatter.localizedString(byJoining: model.newerPeers.map { model.name(of: $0) }.sorted())
+                Banner(kind: .warn, title: String(localized: "Update lichen"),
+                       message: String(localized: "A newer version is in use by \(names). Some of what they send may not show."))
+            }
             // Someone is searching for us (protocol.md §11): our phone answers their pings.
             if let first = model.searchedBy.first {
                 let names = ListFormatter.localizedString(byJoining: Array(Set(model.searchedBy.map { model.name(of: $0.by) })).sorted())

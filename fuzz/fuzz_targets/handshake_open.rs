@@ -1,21 +1,32 @@
 //! HELLO and HELLO_ACK openers on arbitrary frames: never panic, never accept a forgery.
 #![no_main]
-use lc_proto::handshake::{Ends, open_hello, open_hello_ack};
+use lc_meshcore::ecdh::{expand_seed, public_key};
+use lc_proto::handshake::{Ends, Hello, VERSION, open_hello, open_hello_ack};
 use libfuzzer_sys::fuzz_target;
 
 const S: [u8; 32] = [7; 32];
-const ME: [u8; 32] = [0xB2; 32];
-const PEER: [u8; 32] = [0xA1; 32];
 
 fuzz_target!(|data: &[u8]| {
+    let prv = expand_seed(&[2; 32]);
+    let me = public_key(&prv);
+    let peer = public_key(&expand_seed(&[1; 32]));
     let ends = Ends {
-        me: &ME,
-        peer: &PEER,
-        me_node: 0xB2,
-        peer_node: 0xA1,
+        me: &me,
+        peer: &peer,
+        me_node: me[0],
+        peer_node: peer[0],
     };
     let mut a = data.to_vec();
-    assert!(open_hello(&S, &ends, &mut a).is_err());
+    assert!(open_hello(&S, &ends, &prv, &mut a).is_err());
+    let sent = Hello {
+        tag: 1,
+        attempt: 0,
+        salt: [3; 16],
+        ephemeral: [9; 32],
+        version: VERSION,
+        return_path_len: 0xFF,
+        return_path: &[],
+    };
     let mut b = data.to_vec();
-    assert!(open_hello_ack(&S, &ends, &[3; 16], &mut b).is_err());
+    assert!(open_hello_ack(&S, &ends, &prv, &[5; 32], &sent, &mut b).is_err());
 });

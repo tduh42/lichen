@@ -6,12 +6,13 @@
 //! `id_I`, proof). Both sides then hold the session keys. Which introduction is pending and
 //! the retries are the caller's business (`lc-core`).
 
-use crate::handshake::{SALT_LEN, control_header, valid_return_path};
+use crate::handshake::{SALT_LEN, VERSION, control_header, valid_return_path};
 use crate::header::{FrameError, Header, Kind};
 use crate::kdf::{hkdf, x25519, x25519_public};
 use crate::session::SessionKeys;
 use crate::{HEADER_LEN, Key, TAG_LEN, aead};
 use lc_meshcore::ecdh::{montgomery, x25519_secret};
+use sha2::{Digest, Sha256};
 
 const EPH: usize = 32;
 const ID: usize = 32;
@@ -44,6 +45,8 @@ pub struct IntroAck {
     pub ephemeral: [u8; EPH],
     /// The responder's identity, proven.
     pub identity: [u8; ID],
+    /// The responder's protocol version (ADR-0029).
+    pub version: u8,
 }
 
 /// The responder's side of an introduction it answered.
@@ -53,6 +56,22 @@ pub struct Answer {
     pub e_i: [u8; EPH],
     pub salt_r: [u8; SALT_LEN],
     pub eph_secret: [u8; 32],
+    /// [`intro_hash`] of the INTRO answered: its return path is bound into every key.
+    pub intro_hash: [u8; 32],
+}
+
+/// The hash of an INTRO as both sides bind it into the introduction's keys (ADR-0029): its
+/// salt, ephemeral and return path. A return path changed on the way gives other keys, and the
+/// introduction fails instead of leading the answer astray.
+pub fn intro_hash(intro: &Intro<'_>) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(b"lichen/2 intro")
+        .chain_update(intro.salt)
+        .chain_update(intro.ephemeral)
+        .chain_update([intro.return_path_len])
+        .chain_update(intro.return_path)
+        .finalize()
+        .into()
 }
 
 fn salts(salt_i: &[u8; SALT_LEN], salt_r: &[u8; SALT_LEN]) -> [u8; 2 * SALT_LEN] {
@@ -73,6 +92,18 @@ struct Chain {
     e_i: [u8; EPH],
     e_r: [u8; EPH],
     ee: [u8; 32],
+    /// The INTRO and the responder's ephemeral: bound into every key.
+    h: [u8; 32],
+}
+
+/// `SHA-256(intro_hash ‖ salt_R ‖ e_R)`.
+fn chain_hash(intro_hash: &[u8; 32], salt_r: &[u8; SALT_LEN], e_r: &[u8; EPH]) -> [u8; 32] {
+    Sha256::new()
+        .chain_update(intro_hash)
+        .chain_update(salt_r)
+        .chain_update(e_r)
+        .finalize()
+        .into()
 }
 
 impl Chain {
@@ -80,7 +111,7 @@ impl Chain {
         hkdf(
             &self.salt,
             &self.ee,
-            &[b"lichen/1 intro r", &self.e_i, &self.e_r],
+            &[b"lichen/2 intro r", &self.e_i, &self.e_r, &self.h],
         )
     }
 
@@ -109,7 +140,7 @@ impl Chain {
         hkdf(
             &self.salt,
             &self.ikm2(es),
-            &[b"lichen/1 intro r2", &self.e_i, &self.e_r, id_r],
+            &[b"lichen/2 intro r2", &self.e_i, &self.e_r, id_r, &self.h],
         )
     }
 
@@ -117,7 +148,7 @@ impl Chain {
         hkdf(
             &self.salt,
             &self.ikm2(es),
-            &[b"lichen/1 intro i", &self.e_i, &self.e_r, id_r],
+            &[b"lichen/2 intro i", &self.e_i, &self.e_r, id_r, &self.h],
         )
     }
 
@@ -125,7 +156,14 @@ impl Chain {
         hkdf(
             &self.salt,
             &self.ikm3(es, se),
-            &[b"lichen/1 intro i2", &self.e_i, &self.e_r, id_r, id_i],
+            &[
+                b"lichen/2 intro i2",
+                &self.e_i,
+                &self.e_r,
+                id_r,
+                id_i,
+                &self.h,
+            ],
         )
     }
 
@@ -139,8 +177,8 @@ impl Chain {
     ) -> (Key, Key) {
         let ikm = self.ikm3(es, se);
         (
-            hkdf(&self.salt, &ikm, &[b"lichen/1 data", id_i, id_r]),
-            hkdf(&self.salt, &ikm, &[b"lichen/1 data", id_r, id_i]),
+            hkdf(&self.salt, &ikm, &[b"lichen/2 data", id_i, id_r, &self.h]),
+            hkdf(&self.salt, &ikm, &[b"lichen/2 data", id_r, id_i, &self.h]),
         )
     }
 }
@@ -226,6 +264,7 @@ pub fn seal_intro_ack(
         e_i: answer.e_i,
         e_r,
         ee: x25519(&answer.eph_secret, &answer.e_i).ok_or(FrameError::Auth)?,
+        h: chain_hash(&answer.intro_hash, &answer.salt_r, &e_r),
     };
     let es = x25519(&x25519_secret(my_prv), &answer.e_i).ok_or(FrameError::Auth)?;
     let frame = out.get_mut(..INTRO_ACK_LEN).ok_or(FrameError::Overflow)?;
@@ -243,7 +282,7 @@ pub fn seal_intro_ack(
         t.copy_from_slice(&aead::seal(&chain.k1(), &header.nonce(), aad, ct));
     }
     let (ct, t) = second.split_at_mut(1);
-    ct.copy_from_slice(&[0]);
+    ct.copy_from_slice(&[VERSION]);
     t.copy_from_slice(&aead::seal(
         &chain.k2(&es, my_id),
         &header.nonce(),
@@ -254,12 +293,14 @@ pub fn seal_intro_ack(
 }
 
 /// Opens the INTRO_ACK from node `peer_node` answering our INTRO (`salt_i`, ephemeral
-/// secret `my_eph_secret`). The responder's identity is proven on success.
+/// secret `my_eph_secret`, [`intro_hash`] `intro_hash`). The responder's identity is proven
+/// on success.
 pub fn open_intro_ack(
     me_node: u8,
     peer_node: u8,
     my_eph_secret: &[u8; 32],
     salt_i: &[u8; SALT_LEN],
+    intro_hash: &[u8; 32],
     frame: &[u8],
 ) -> Result<IntroAck, FrameError> {
     let (header, _) = Header::decode(frame)?;
@@ -288,6 +329,7 @@ pub fn open_intro_ack(
         e_i: x25519_public(my_eph_secret),
         e_r,
         ee: x25519(my_eph_secret, &e_r).ok_or(FrameError::Auth)?,
+        h: chain_hash(intro_hash, &salt_r, &e_r),
     };
     // Second tag first: it covers the first sealed part as sent.
     let second_aad: [u8; INTRO_HEAD + ID + TAG_LEN] =
@@ -312,12 +354,16 @@ pub fn open_intro_ack(
         t,
     )
     .map_err(|_| FrameError::Auth)?;
+    let [version] = *ct else {
+        return Err(FrameError::Malformed);
+    };
     Ok(IntroAck {
         tag: header.tag,
         attempt: header.attempt,
         salt: salt_r,
         ephemeral: e_r,
         identity,
+        version,
     })
 }
 
@@ -326,6 +372,7 @@ fn initiator_chain(
     my_prv: &[u8; 64],
     my_eph_secret: &[u8; 32],
     salt_i: &[u8; SALT_LEN],
+    intro_hash: &[u8; 32],
     ack: &IntroAck,
 ) -> Option<(Chain, [u8; 32], [u8; 32])> {
     let chain = Chain {
@@ -333,6 +380,7 @@ fn initiator_chain(
         e_i: x25519_public(my_eph_secret),
         e_r: ack.ephemeral,
         ee: x25519(my_eph_secret, &ack.ephemeral)?,
+        h: chain_hash(intro_hash, &ack.salt, &ack.ephemeral),
     };
     let es = x25519(my_eph_secret, &montgomery(&ack.identity)?)?;
     let se = x25519(&x25519_secret(my_prv), &ack.ephemeral)?;
@@ -348,12 +396,13 @@ pub fn seal_intro_fin(
     my_id: &[u8; 32],
     my_eph_secret: &[u8; 32],
     salt_i: &[u8; SALT_LEN],
+    intro_hash: &[u8; 32],
     ack: &IntroAck,
     attempt: u8,
     out: &mut [u8],
 ) -> Result<usize, FrameError> {
     let (chain, es, se) =
-        initiator_chain(my_prv, my_eph_secret, salt_i, ack).ok_or(FrameError::Auth)?;
+        initiator_chain(my_prv, my_eph_secret, salt_i, intro_hash, ack).ok_or(FrameError::Auth)?;
     let frame = out.get_mut(..INTRO_FIN_LEN).ok_or(FrameError::Overflow)?;
     let header = control_header(me_node, peer_node, ack.tag, 5, attempt);
     let (first, second) = frame.split_at_mut(HEADER_LEN + ID + TAG_LEN);
@@ -370,7 +419,7 @@ pub fn seal_intro_fin(
         ));
     }
     let (ct, t) = second.split_at_mut(1);
-    ct.copy_from_slice(&[0]);
+    ct.copy_from_slice(&[VERSION]);
     let k4 = chain.k4(&es, &se, &ack.identity, my_id);
     t.copy_from_slice(&aead::seal(&k4, &header.nonce(), first, ct));
     Ok(INTRO_FIN_LEN)
@@ -378,11 +427,13 @@ pub fn seal_intro_fin(
 
 /// Responder's DH results for an answered INTRO.
 fn responder_chain(my_prv: &[u8; 64], answer: &Answer) -> Option<(Chain, [u8; 32])> {
+    let e_r = x25519_public(&answer.eph_secret);
     let chain = Chain {
         salt: salts(&answer.salt_i, &answer.salt_r),
         e_i: answer.e_i,
-        e_r: x25519_public(&answer.eph_secret),
+        e_r,
         ee: x25519(&answer.eph_secret, &answer.e_i)?,
+        h: chain_hash(&answer.intro_hash, &answer.salt_r, &e_r),
     };
     let es = x25519(&x25519_secret(my_prv), &answer.e_i)?;
     Some((chain, es))
@@ -447,9 +498,10 @@ pub fn initiator_keys(
     my_id: &[u8; 32],
     my_eph_secret: &[u8; 32],
     salt_i: &[u8; SALT_LEN],
+    intro_hash: &[u8; 32],
     ack: &IntroAck,
 ) -> Option<SessionKeys> {
-    let (chain, es, se) = initiator_chain(my_prv, my_eph_secret, salt_i, ack)?;
+    let (chain, es, se) = initiator_chain(my_prv, my_eph_secret, salt_i, intro_hash, ack)?;
     let (ir, ri) = chain.session(&es, &se, my_id, &ack.identity);
     Some(SessionKeys { send: ir, recv: ri })
 }
@@ -471,6 +523,9 @@ pub fn responder_keys(
 mod tests {
     use super::*;
     use lc_meshcore::ecdh::{expand_seed, public_key};
+
+    /// A stand-in INTRO hash, where the INTRO itself does not matter.
+    const H: [u8; 32] = [0x5A; 32];
 
     struct Side {
         prv: [u8; 64],
@@ -509,21 +564,39 @@ mod tests {
             e_i: got.ephemeral,
             salt_r: [13; SALT_LEN],
             eph_secret: [14; 32],
+            intro_hash: intro_hash(&got),
         };
         let n =
             seal_intro_ack(r.node, i.node, &r.prv, &r.id, &answer, got.tag, 0, &mut buf).unwrap();
         assert_eq!(n, INTRO_ACK_LEN);
-        let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &buf[..n]).unwrap();
-        assert_eq!(ack.identity, r.id);
+        let ack = open_intro_ack(
+            i.node,
+            r.node,
+            &eph_i,
+            &salt_i,
+            &intro_hash(&intro),
+            &buf[..n],
+        )
+        .unwrap();
+        assert_eq!((ack.identity, ack.version), (r.id, VERSION));
 
         let n = seal_intro_fin(
-            i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &ack, 0, &mut buf,
+            i.node,
+            r.node,
+            &i.prv,
+            &i.id,
+            &eph_i,
+            &salt_i,
+            &intro_hash(&intro),
+            &ack,
+            0,
+            &mut buf,
         )
         .unwrap();
         let id_i = open_intro_fin(r.node, i.node, &r.prv, &r.id, &answer, &buf[..n]).unwrap();
         assert_eq!(id_i, i.id);
         (
-            initiator_keys(&i.prv, &i.id, &eph_i, &salt_i, &ack).unwrap(),
+            initiator_keys(&i.prv, &i.id, &eph_i, &salt_i, &intro_hash(&intro), &ack).unwrap(),
             responder_keys(&r.prv, &r.id, &answer, &id_i).unwrap(),
         )
     }
@@ -552,13 +625,14 @@ mod tests {
             e_i: x25519_public(&eph_i),
             salt_r: [13; SALT_LEN],
             eph_secret: [14; 32],
+            intro_hash: H,
         };
         let mut buf = [0u8; 200];
         // Mallory claims R's identity with her own key.
         let n =
             seal_intro_ack(r.node, i.node, &mallory.prv, &r.id, &answer, 1, 0, &mut buf).unwrap();
         assert_eq!(
-            open_intro_ack(i.node, r.node, &eph_i, &salt_i, &buf[..n]),
+            open_intro_ack(i.node, r.node, &eph_i, &salt_i, &H, &buf[..n]),
             Err(FrameError::Auth)
         );
     }
@@ -574,10 +648,11 @@ mod tests {
             e_i: x25519_public(&eph_i),
             salt_r: [13; SALT_LEN],
             eph_secret: [14; 32],
+            intro_hash: H,
         };
         let mut buf = [0u8; 200];
         let n = seal_intro_ack(r.node, i.node, &r.prv, &r.id, &answer, 1, 0, &mut buf).unwrap();
-        let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &buf[..n]).unwrap();
+        let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &H, &buf[..n]).unwrap();
         let n = seal_intro_fin(
             i.node,
             r.node,
@@ -585,6 +660,7 @@ mod tests {
             &i.id,
             &eph_i,
             &salt_i,
+            &H,
             &ack,
             0,
             &mut buf,
@@ -605,6 +681,7 @@ mod tests {
             e_i: x25519_public(&eph_i),
             salt_r: [13; SALT_LEN],
             eph_secret: [14; 32],
+            intro_hash: H,
         };
         let mut buf = [0u8; 200];
         let n = seal_intro_ack(r.node, i.node, &r.prv, &r.id, &answer, 1, 0, &mut buf).unwrap();
@@ -613,24 +690,24 @@ mod tests {
             let mut bad = good.clone();
             bad[at] ^= 0x10;
             assert!(
-                open_intro_ack(i.node, r.node, &eph_i, &salt_i, &bad).is_err(),
+                open_intro_ack(i.node, r.node, &eph_i, &salt_i, &H, &bad).is_err(),
                 "byte {at}"
             );
         }
         assert_eq!(
-            open_intro_ack(i.node, r.node, &eph_i, &salt_i, &good[..n - 1]),
+            open_intro_ack(i.node, r.node, &eph_i, &salt_i, &H, &good[..n - 1]),
             Err(FrameError::Length)
         );
-        let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &good).unwrap();
+        let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &H, &good).unwrap();
         // A resent INTRO_FIN (next attempt) has new bytes and still opens.
         let mut a = [0u8; INTRO_FIN_LEN];
         let mut b = [0u8; INTRO_FIN_LEN];
         let na = seal_intro_fin(
-            i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &ack, 0, &mut a,
+            i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &H, &ack, 0, &mut a,
         )
         .unwrap();
         let nb = seal_intro_fin(
-            i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &ack, 1, &mut b,
+            i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &H, &ack, 1, &mut b,
         )
         .unwrap();
         assert_ne!(a[..na], b[..nb]);
@@ -648,6 +725,46 @@ mod tests {
         assert_eq!(
             open_intro(0x77, &a[..na]).map(|_| ()),
             Err(FrameError::Malformed)
+        );
+    }
+
+    /// ADR-0029: the INTRO's return path is bound into the keys. Changed on the way, the
+    /// responder's answer does not open for the initiator.
+    #[test]
+    fn the_return_path_is_bound() {
+        let (i, r) = (side(1, 0xA1), side(2, 0xB2));
+        let (eph_i, salt_i) = ([11u8; 32], [12u8; SALT_LEN]);
+        let sent = Intro {
+            tag: 7,
+            attempt: 0,
+            salt: salt_i,
+            ephemeral: x25519_public(&eph_i),
+            return_path_len: 1,
+            return_path: &[0x42],
+        };
+        let received = Intro {
+            return_path: &[0x99],
+            ..sent
+        };
+        let answer = Answer {
+            salt_i,
+            e_i: sent.ephemeral,
+            salt_r: [13; SALT_LEN],
+            eph_secret: [14; 32],
+            intro_hash: intro_hash(&received),
+        };
+        let mut buf = [0u8; 200];
+        let n = seal_intro_ack(r.node, i.node, &r.prv, &r.id, &answer, 7, 0, &mut buf).unwrap();
+        assert_eq!(
+            open_intro_ack(
+                i.node,
+                r.node,
+                &eph_i,
+                &salt_i,
+                &intro_hash(&sent),
+                &buf[..n]
+            ),
+            Err(FrameError::Auth)
         );
     }
 

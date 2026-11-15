@@ -13,12 +13,13 @@ fuzz_target!(|data: &[u8]| {
     }
     let prv = expand_seed(&[1; 32]);
     let id = public_key(&prv);
-    assert!(open_intro_ack(0xB2, 0xA1, &[5; 32], &[6; 16], data).is_err());
+    assert!(open_intro_ack(0xB2, 0xA1, &[5; 32], &[6; 16], &[3; 32], data).is_err());
     let answer = Answer {
         salt_i: [6; 16],
         e_i: [9; 32],
         salt_r: [7; 16],
         eph_secret: [8; 32],
+        intro_hash: [3; 32],
     };
     assert!(open_intro_fin(0xB2, 0xA1, &prv, &id, &answer, data).is_err());
 });

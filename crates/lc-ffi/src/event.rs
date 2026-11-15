@@ -86,6 +86,12 @@ pub enum LichenEvent {
         emoji: String,
         target: Option<StoredMessage>,
     },
+    /// Contact `node` speaks a newer protocol version (ADR-0029): update lichen to read
+    /// everything it sends.
+    NewerVersion {
+        node: Vec<u8>,
+        version: u8,
+    },
     /// A group that lists us waits for the user (§10.1): `accept_group` or `decline_group`.
     /// `admin` is the admin's node.
     GroupInvited {
@@ -230,6 +236,10 @@ impl LichenEvent {
                 reason: reason.into(),
             },
             Event::GroupSent { id } => Self::GroupSent { id },
+            Event::NewerVersion { node, version } => Self::NewerVersion {
+                node: node.to_vec(),
+                version,
+            },
             Event::GroupInvited {
                 gid,
                 name,

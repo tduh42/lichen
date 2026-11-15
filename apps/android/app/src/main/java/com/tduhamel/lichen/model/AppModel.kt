@@ -158,6 +158,9 @@ class AppModel(val app: Application) {
      * cannot put us in a group. */
     var invitations by mutableStateOf(listOf<GroupInvitation>())
 
+    /** Contacts whose phone speaks a newer protocol version (ADR-0029), by hex node key. */
+    var newerPeers by mutableStateOf(setOf<String>())
+
     /** Joins the group of an invitation; it then appears with the others. */
     fun acceptGroup(gid: ByteArray) {
         runCatching { core.acceptGroup(gid, now()) }
@@ -825,6 +828,7 @@ class AppModel(val app: Application) {
                     notify(chat, title(chat), res.getString(R.string.reacted_to, name(e.by), e.emoji, target.message.display(res)))
                 }
             }
+            is LichenEvent.NewerVersion -> newerPeers = newerPeers + e.node.hex()
             is LichenEvent.GroupInvited -> {
                 invitations = core.groupInvitations()
                 // Tapping it opens the admin's conversation; the invitation waits in Messages.

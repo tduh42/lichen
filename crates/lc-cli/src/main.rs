@@ -277,6 +277,10 @@ fn describe(core: &Core, e: &Event) -> String {
         Event::Progress { sent, total, .. } => {
             format!("fragment {sent} sent ({total} in the datagram)")
         }
+        Event::NewerVersion { node, version } => format!(
+            "{} speaks lichen version {version}, newer than this one: update",
+            name_of(core, node)
+        ),
         Event::GroupInvited {
             gid, name, admin, ..
         } => format!(

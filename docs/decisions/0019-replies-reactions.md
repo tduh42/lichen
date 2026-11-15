@@ -20,5 +20,5 @@ Off-grid chat is the product (`docs/messaging-product-brief-2026-11-08.md` §2):
 - A reference is 8 bytes on every reply or reaction; 64 bits keep collisions negligible within a conversation.
 - A phone that lacks the original shows the reply without its context; carrying an excerpt would cost up to dozens of bytes on every reply.
 - In a group, a reaction costs about one flood of a short text (signature and two copies): measured in `docs/measurements.md`.
-- Older clients show "unsupported content"; the apps are pre-release, so there is no version negotiation.
+- Older clients show "unsupported content"; the apps were pre-release, so there was no version negotiation (since ADR-0029, each side learns the other's version in the handshake, and a newer one is reported).
 - Rejected: local row ids (they differ per phone); an id carried by every message (bytes on every message, for the few that get answers); reactions as ordinary visible messages (noise, and no change or removal); counting reactions at the original's sender and broadcasting totals (extra traffic, a single point of truth that may be offline).

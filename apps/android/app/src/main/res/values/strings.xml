@@ -785,4 +785,6 @@
     <string name="invitation_with">With %1$s. %2$s</string>
     <string name="decline">Decline</string>
     <string name="iroh_on_demand">Starts when you send or download</string>
+    <string name="update_lichen">Update lichen</string>
+    <string name="newer_version_in_use">A newer version is in use by %1$s. Some of what they send may not show.</string>
 </resources>

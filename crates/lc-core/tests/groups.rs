@@ -722,7 +722,17 @@ fn membership_notices() {
     net.with_core(alice, |c, now| c.add_members(&gid, &[keys[3]], now))
         .unwrap()
         .unwrap();
-    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    // Everyone holds the new state (four members) and every key: a member that has not heard
+    // of Dave yet also counts as having its keys complete.
+    assert!(net.run_until(net.now + 60 * MIN, |n| {
+        keys_complete(n, &m[..4], &gid)
+            && m[..4].iter().all(|&i| {
+                n.nodes[i]
+                    .core
+                    .as_ref()
+                    .is_some_and(|c| c.groups().any(|g| g.gid == gid && g.members.len() == 4))
+            })
+    }));
     assert_eq!(
         notices(&mut net, alice),
         vec![(JOINED, "alice".into(), s(&["dave"]), String::new())]

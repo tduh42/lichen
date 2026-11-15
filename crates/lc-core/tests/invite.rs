@@ -173,6 +173,12 @@ fn two_people_join_with_one_invitation() {
         .unwrap()
         .unwrap();
     net.run_until(net.now + 3 * MIN, |_| false);
+    // A flood can be lost to a collision at the hub; the newcomer's next post shows the gap,
+    // and the lost one comes back (§10.6).
+    net.with_core(j[0], |c, now| c.send_group_text(&gid, "thanks", 3, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
     for &x in &everyone {
         let got = group_texts(&net.take_events(x));
         if x != j[0] {

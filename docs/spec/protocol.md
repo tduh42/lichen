@@ -70,34 +70,42 @@ A datagram is at most `64 × chunk` bytes (9,536 bytes up to 2 path bytes). All 
 
 ## 4. Handshake
 
-Every session starts with HELLO → HELLO_ACK. Both messages are encrypted under **single-use** keys derived from the static secret and a random salt; session keys add forward secrecy (ephemeral X25519 on both sides, always).
+Every session starts with HELLO → HELLO_ACK (version 2, ADR-0029). Each side's ephemeral key travels in clear; every Diffie-Hellman term between static and ephemeral keys goes into the keys, with a hash of what both sides said. HELLO is sealed under `S ‖ es`, HELLO_ACK and the session under `S ‖ es ‖ ee ‖ se`: the session has forward secrecy, and a stolen static key of the initiator no longer lets anyone answer as the responder.
 
-Notation: `I` = initiator, `R` = responder; `HKDF(salt, ikm, info, L)` = HKDF-SHA256 (RFC 5869); `info` strings start with the ASCII `"lichen/1 "`. `pub_I`, `pub_R` are the **identity** keys `id_I`, `id_R` (§2). This handshake needs both identities known; a first contact starts with the introduction (§4.6), which ends with a session too.
+Notation: `I` = initiator, `R` = responder; `HKDF(salt, ikm, info, L)` = HKDF-SHA256 (RFC 5869); `info` strings start with the ASCII `"lichen/2 "` (version 1 used `"lichen/1 "`). `id_I`, `id_R` are the **identity** keys (§2), `x_X = clamp(prv_X[0..32])` their X25519 secrets and `u(id)` their Montgomery form; every Diffie-Hellman result that is zero is rejected. This handshake needs both identities known; a first contact starts with the introduction (§4.6), which ends with a session too.
+
+```
+es = X25519(e_I, u(id_R)) = X25519(x_R, e_I)
+ee = X25519(e_I, e_R)
+se = X25519(x_I, e_R)     = X25519(e_R, u(id_I))
+```
 
 ### 4.1 HELLO (I → R)
 
 Header: `kind = 3`, `index = 0`, `total = 1`, `tag = h` (random u16, handshake identifier), `attempt = n` (0, then +1 on each resend).
 
 ```
-body  = salt_I (16, in clear) ‖ ciphertext ‖ tag (16)
-plain = e_I (32, ephemeral X25519 public) ‖ flags (1) ‖ return_path_len (1) ‖ return_path (0..64)
-K_h   = HKDF(salt_I, S, "lichen/1 hello" ‖ pub_I ‖ pub_R, 32)
-AAD   = header (7) ‖ salt_I
+body   = salt_I (16, in clear) ‖ e_I (32, in clear) ‖ ciphertext ‖ tag (16)
+plain  = version (1) ‖ return_path_len (1) ‖ return_path (0..64)
+salt_I = t_I u32 (I's Unix seconds, 0 when unknown) ‖ 12 random bytes
+K_h    = HKDF(salt_I, S ‖ es, "lichen/2 hello" ‖ id_I ‖ id_R ‖ e_I, 32)
+AAD    = header (7) ‖ salt_I ‖ e_I
 ```
 
 - `return_path`: path from R to I in MeshCore encoding (`path_len`: bits 0-5 hop count, bits 6-7 hash size − 1), i.e. the I → R path **reversed**. `0xFF` = unknown (no path bytes). R uses it to answer, since `RAW_DATA` does not tell it where the frame came from.
-- `flags`: all reserved, sent as 0, ignored.
-- Resends keep `h`, `salt_I` and `e_I` and increment `attempt`: the payload changes, the duplicate filter lets it through, and the nonce changes.
+- `version`: I's protocol version, 2.
+- Resends keep `h`, `salt_I`, `e_I` and the return path and increment `attempt`: the payload changes, the duplicate filter lets it through, and the nonce changes.
 
 ### 4.2 HELLO_ACK (R → I)
 
 Header: `kind = 3`, `index = 1`, `total = 1`, `tag = h` (copied from the HELLO), `attempt` = that of the HELLO being answered.
 
 ```
-body   = salt_R (16, in clear) ‖ ciphertext ‖ tag (16)
-plain  = e_R (32) ‖ flags (1)
-K_ha   = HKDF(salt_R, S, "lichen/1 hello-ack" ‖ pub_R ‖ pub_I ‖ salt_I, 32)
-AAD    = header (7) ‖ salt_R
+body   = salt_R (16, in clear) ‖ e_R (32, in clear) ‖ ciphertext ‖ tag (16)
+plain  = version (1)
+h1     = SHA-256("lichen/2 transcript" ‖ id_I ‖ id_R ‖ salt_I ‖ e_I ‖ version_I ‖ return_path_len ‖ return_path ‖ salt_R ‖ e_R)
+K_ha   = HKDF(salt_R, S ‖ es ‖ ee ‖ se, "lichen/2 hello-ack" ‖ h1, 32)
+AAD    = header (7) ‖ salt_R ‖ e_R
 ```
 
 R keeps `(h, salt_I) → (salt_R, e_R)` while the handshake is recent (10 min): a resent HELLO gets the same answer, with the new `attempt`.
@@ -105,17 +113,20 @@ R keeps `(h, salt_I) → (salt_R, e_R)` while the handshake is recent (10 min): 
 ### 4.3 Session keys
 
 ```
-ikm      = S ‖ X25519(e_priv, e_pub_peer)              (an all-zero result is rejected)
+h2       = SHA-256(h1 ‖ version_R)
+ikm      = S ‖ es ‖ ee ‖ se
 salt     = salt_I ‖ salt_R
-K_{I→R}  = HKDF(salt, ikm, "lichen/1 data" ‖ pub_I ‖ pub_R, 32)
-K_{R→I}  = HKDF(salt, ikm, "lichen/1 data" ‖ pub_R ‖ pub_I, 32)
+K_{I→R}  = HKDF(salt, ikm, "lichen/2 data" ‖ id_I ‖ id_R ‖ h2, 32)
+K_{R→I}  = HKDF(salt, ikm, "lichen/2 data" ‖ id_R ‖ id_I ‖ h2, 32)
 ```
 
-Each side encrypts with its own direction's key and decrypts with the other. `tag` counters start at 0 in each direction.
+Each side encrypts with its own direction's key and decrypts with the other. `tag` counters start at 0 in each direction. Everything both sides said (salts, ephemerals, versions, the return path) is in `h2`: changed on the way, the two sides get different keys and nothing opens.
 
 ### 4.4 Rules
 
 - **Retries**: up to 8 HELLOs, each after a random wait uniform in `[W, 2W)` (`W` from §7.4). A handshake nothing answered drops the path it used: the next attempt finds one again (§4.5). Fixed timers keep two nodes that cannot hear each other, and started together, colliding at the repeater between them on every try.
+- **Freshness** (review of 2026-11-15, SR-03): R answers a HELLO whose `t_I` is more than 10 minutes away from its own clock only when either clock is unknown (`t_I = 0`, or R has none). A recorded HELLO replayed later gets no answer; its genuine resends, within the 10 minutes R remembers the handshake, get the same one.
+- **Versions**: each side learns the other's version from HELLO, HELLO_ACK or the introduction. A newer one is reported to the app ("update lichen"); there is no older one to fall back to, since version 1 frames do not open (ADR-0029).
 - **Crossing**: if I receives a HELLO from R while its own is waiting for an answer, the handshake of the smaller public key (lexicographic order) wins. The losing side drops its own and answers the other.
 - **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key. Until then it keeps the previous session if there is one. A replayed HELLO therefore cannot break a running session.
 - **No persistence** (ADR-0003): sessions live in memory. After a restart, the first send runs a new handshake.
@@ -163,22 +174,23 @@ salt   = salt_I ‖ salt_R
 ee     = X25519(e_I, e_R)
 es     = X25519(e_I, u(id_R)) = X25519(x_R, e_I)
 se     = X25519(x_I, e_R)     = X25519(e_R, u(id_I))
-K_1    = HKDF(salt, ee,           "lichen/1 intro r"  ‖ e_I ‖ e_R, 32)
-K_2    = HKDF(salt, ee ‖ es,      "lichen/1 intro r2" ‖ e_I ‖ e_R ‖ id_R, 32)
-K_3    = HKDF(salt, ee ‖ es,      "lichen/1 intro i"  ‖ e_I ‖ e_R ‖ id_R, 32)
-K_4    = HKDF(salt, ee ‖ es ‖ se, "lichen/1 intro i2" ‖ e_I ‖ e_R ‖ id_R ‖ id_I, 32)
-K_{I→R} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_I ‖ id_R, 32)
-K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
+h      = SHA-256(SHA-256("lichen/2 intro" ‖ salt_I ‖ e_I ‖ return_path_len ‖ return_path) ‖ salt_R ‖ e_R)
+K_1    = HKDF(salt, ee,           "lichen/2 intro r"  ‖ e_I ‖ e_R ‖ h, 32)
+K_2    = HKDF(salt, ee ‖ es,      "lichen/2 intro r2" ‖ e_I ‖ e_R ‖ id_R ‖ h, 32)
+K_3    = HKDF(salt, ee ‖ es,      "lichen/2 intro i"  ‖ e_I ‖ e_R ‖ id_R ‖ h, 32)
+K_4    = HKDF(salt, ee ‖ es ‖ se, "lichen/2 intro i2" ‖ e_I ‖ e_R ‖ id_R ‖ id_I ‖ h, 32)
+K_{I→R} = HKDF(salt, ee ‖ es ‖ se, "lichen/2 data" ‖ id_I ‖ id_R ‖ h, 32)
+K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/2 data" ‖ id_R ‖ id_I ‖ h, 32)
 ```
 
 | Message | Header | Body |
 |---|---|---|
 | INTRO (I → R) | `index 3`, `tag = h` (random), `attempt` = try | `salt_I (16) ‖ e_I (32) ‖ return_path_len (1) ‖ return_path (0..64)`, in clear |
-| INTRO_ACK (R → I) | `index 4`, `tag = h`, `attempt` copied | `salt_R (16) ‖ e_R (32) ‖ seal(K_1, id_R) (32 + 16) ‖ seal(K_2, flags (1)) (1 + 16)` |
-| INTRO_FIN (I → R) | `index 5`, `tag = h`, `attempt` = try | `seal(K_3, id_I) (32 + 16) ‖ seal(K_4, flags (1)) (1 + 16)` |
+| INTRO_ACK (R → I) | `index 4`, `tag = h`, `attempt` copied | `salt_R (16) ‖ e_R (32) ‖ seal(K_1, id_R) (32 + 16) ‖ seal(K_2, version (1)) (1 + 16)` |
+| INTRO_FIN (I → R) | `index 5`, `tag = h`, `attempt` = try | `seal(K_3, id_I) (32 + 16) ‖ seal(K_4, version (1)) (1 + 16)` |
 
 - `seal` is the AEAD of §5 with the frame's header nonce, and as AAD the header followed by everything before the sealed part (for INTRO_ACK, `salt_R ‖ e_R`, then also the first sealed part for the second); each key is used once.
-- INTRO carries nothing secret: the return path is public routing information. Anyone can send one; R answers each `(src, h, salt_I)` with the same `(salt_R, e_R)` for 10 minutes, so a resend gets the same answer.
+- INTRO carries nothing secret: the return path is public routing information, but it is in `h`, so a path changed on the way gives other keys and the introduction fails instead of leading the answer astray (ADR-0029). Anyone can send one; R answers each `(src, h, salt_I)` with the same `(salt_R, e_R)` for 10 minutes, so a resend gets the same answer.
 - **Which node sent INTRO.** Its header names I by one hash byte. R takes I among its contacts with that byte that are people (MeshCore types chat or unknown: repeaters, rooms and sensors never run lichen), preferring one whose known path equals the return path, else the first in key order. Nothing in INTRO proves the node, and nothing needs to: the node key only routes (ADR-0013), and the answer goes back by the return path. A wrong pick attaches the identity to the wrong node; with identities pinned (below), that wrong identity only waits for the user. R answers along INTRO's return path, but adopts it as its path to I only once INTRO_FIN proves I's identity (SR-02). Observed in Paris: the phone's node shared its byte with a repeater.
 - I checks INTRO_ACK's second tag, which only the holder of `id_R` could produce, then sends INTRO_FIN and holds the session (`K_{I→R}`, `K_{R→I}`). R checks INTRO_FIN's second tag and holds the session too, pending until I's first message (§4.4): the introduction replaces HELLO / HELLO_ACK for this first session.
 - I resends INTRO until INTRO_ACK (as HELLO, §4.4). Until something from R arrives under the new session, I resends INTRO_FIN (re-sealed with the next `attempt`) whenever its data waits for an acknowledgement. A session set up by HELLO / HELLO_ACK in the meantime cancels a pending introduction to the same peer.
@@ -189,7 +201,7 @@ K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
 ### 4.7 Verification
 
 - **Fingerprint** of an identity: the first 12 bytes of `SHA-256("lichen/1 fingerprint" ‖ id)`, shown as 6 groups of 4 hexadecimal digits.
-- **Safety number** of two identities `a < b` (lexicographic): `h = SHA-512("lichen/1 safety" ‖ a ‖ b)`; group `i` (0..5) is the big-endian integer of `h[5i..5i+5]` modulo 100,000, shown with 5 digits. Both phones show the same 30 digits.
+- **Safety number** of two identities `a < b` (lexicographic), ADR-0029: 60 digits, 30 for each identity, `a`'s first. An identity's half: `h = SHA-512("lichen/2 safety" ‖ id)`; group `i` (0..5) is the big-endian integer of `h[5i..5i+5]` modulo 100,000, shown with 5 digits. Both phones show the same 12 groups. A man in the middle must match each half with a key of his own, about 2^100 tries each; the 30-digit number of version 1 hashed both identities together, and two numbers that collide were enough, about 2^50 (review of 2026-11-15, SR-05).
 - **Contact card** (QR code): `lichen:1:` followed by the unpadded base64url of `id (32) ‖ node (32) ‖ name (UTF-8, ≤ 32 bytes)`. Scanning it in person adds the contact **verified**, and replaces an identity the contact no longer has; comparing safety numbers aloud verifies it too. A card pasted, or received any other way, proves nothing about who sent it: it adds the contact **unverified**, and an identity different from the one known waits for the user as in §4.6 (review of 2026-11-15, SR-23).
 
 ## 5. Nonces and AAD (ADR-0003)

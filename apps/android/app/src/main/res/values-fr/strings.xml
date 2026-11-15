@@ -792,4 +792,6 @@
     <string name="invitation_with">Avec %1$s. %2$s</string>
     <string name="decline">Refuser</string>
     <string name="iroh_on_demand">Démarre quand tu envoies ou télécharges</string>
+    <string name="update_lichen">Mets lichen à jour</string>
+    <string name="newer_version_in_use">Une version plus récente est utilisée par %1$s. Une partie de ce qu\'ils envoient peut ne pas s\'afficher.</string>
 </resources>
