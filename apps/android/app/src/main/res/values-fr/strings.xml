@@ -126,6 +126,22 @@
     <string name="system">Système</string>
     <string name="dark">Sombre</string>
     <string name="light">Claire</string>
+    <!-- The app lock (Settings › Privacy). -->
+    <string name="privacy">Confidentialité</string>
+    <string name="lock_lichen">Verrouiller lichen</string>
+    <string name="lock_lichen_note">Avec ton empreinte, ton visage ou le verrouillage de l’écran</string>
+    <string name="lock_after">Verrouiller après</string>
+    <string name="lock_immediately">Immédiatement</string>
+    <string name="lock_1_minute">1 minute</string>
+    <string name="lock_15_minutes">15 minutes</string>
+    <string name="lock_1_hour">1 heure</string>
+    <string name="lock_note">La radio continue de recevoir pendant que lichen est verrouillé.</string>
+    <string name="lock_stays_off">Le verrouillage reste désactivé</string>
+    <string name="no_screen_lock">Configure d’abord un verrouillage de l’écran sur ce téléphone : lichen se déverrouille avec, ou avec ton empreinte ou ton visage.</string>
+    <string name="unlock">Déverrouiller</string>
+    <string name="unlock_lichen">Déverrouiller lichen</string>
+    <string name="turn_on_app_lock">Activer le verrouillage de l’appli</string>
+    <string name="sos_while_locked">SOS reçu : déverrouille pour le voir</string>
     <string name="demo">Démo</string>
     <string name="demo_network">Réseau de démo</string>
     <string name="demo_network_note">Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l\'app, sans radio.</string>

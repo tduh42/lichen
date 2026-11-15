@@ -177,6 +177,8 @@ final class AppModel {
     var requestedFull: Set<Int64> = []
     let recorder = VoiceRecorder()
     @ObservationIgnored let notifier = Notifier()
+    /// The app lock (Settings › Privacy): app only, the radio goes on behind it.
+    @ObservationIgnored let lock = AppLock()
     /// Codec2 mode of new voice messages (§13.1): 0 = 700C (compact), 2 = 1600 (standard),
     /// 3 = 2400 (clear).
     var voiceMode = UserDefaults.standard.object(forKey: "lichen.voiceMode") as? Int ?? 2 {
@@ -261,6 +263,7 @@ final class AppModel {
             tab = .messages
             openRequest = chat
         }
+        notifier.locked = { [weak self] in self?.lock.locked ?? false }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
         shares = core.shares()
@@ -279,6 +282,7 @@ final class AppModel {
         default: break
         }
         debugScreen = args.string(forKey: "screen")
+        if debugScreen == "privacy" { tab = .settings }
         // -identityProblem unavailable|corrupt|notSaved: the identity failure screen.
         switch args.string(forKey: "identityProblem") {
         case "unavailable": identityProblem = .unavailable

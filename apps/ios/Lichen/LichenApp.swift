@@ -17,6 +17,7 @@ struct LichenApp: App {
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("onboarded") private var onboarded = false
 
     var body: some View {
@@ -39,6 +40,13 @@ struct RootView: View {
         .fullScreenCover(item: $model.sosAlert) { alert in
             SosReceivedView(from: alert.id)
         }
+        // The app lock (Settings › Privacy): its own window covers everything, sheets included,
+        // and shows the SOS alert's line; this one covers the app's window until it is up.
+        .overlay {
+            if model.lock.covered { LockCover() }
+        }
+        .onAppear { model.lock.attach { [model] in AnyView(LockCover().environment(model)) } }
+        .onChange(of: scenePhase, initial: true) { _, phase in model.lock.scene(phase) }
         // Notifications for messages and SOS: asked once the welcome screens are done.
         .task(id: onboarded) { if onboarded { model.notifier.requestAuthorization() } }
         .onAppear {

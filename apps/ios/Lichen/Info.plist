@@ -29,6 +29,8 @@
 	<string>lichen talks to your MeshCore node over Bluetooth.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>lichen scans your contacts' codes to add them, verified, in person.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>lichen asks for Face ID to unlock when the app lock is on.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>lichen sends your position, encrypted, to the people and groups you share it with, and shows you on the map.</string>
 	<key>NSMicrophoneUsageDescription</key>

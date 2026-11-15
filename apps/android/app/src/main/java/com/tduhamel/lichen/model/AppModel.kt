@@ -141,6 +141,9 @@ class AppModel(val app: Application) {
 
     private val res get() = app.resources
     private val prefs = app.getSharedPreferences("lichen", Context.MODE_PRIVATE)
+
+    /** The app lock (Settings › Privacy): app only, the radio goes on behind it. */
+    val lock = AppLock(prefs)
     private val identityStore = IdentityStore(app)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val started = SystemClock.elapsedRealtime()
@@ -963,10 +966,15 @@ class AppModel(val app: Application) {
         }
     }
 
-    /** A notification for a message received while the app is not on screen. */
-    /** A notification for a message, unless its conversation is on screen. */
+    /** A notification for a message, unless its conversation is on screen (not behind the lock's
+     * cover). With the app lock on, it says only "New message": no sender, no group, no text. */
     private fun notify(chat: ChatId, title: String, text: String) {
-        if (!(inForeground && visibleChat == chat)) Notifications.message(app, chat, title, text)
+        if (inForeground && !lock.locked && visibleChat == chat) return
+        if (lock.enabled) {
+            Notifications.message(app, chat, app.getString(R.string.app_name), app.getString(R.string.new_message))
+        } else {
+            Notifications.message(app, chat, title, text)
+        }
     }
 
     /** Debug extra `share`: 100 m with that contact. */

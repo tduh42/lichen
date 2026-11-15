@@ -122,6 +122,22 @@
     <string name="system">System</string>
     <string name="dark">Dark</string>
     <string name="light">Light</string>
+    <!-- The app lock (Settings › Privacy). -->
+    <string name="privacy">Privacy</string>
+    <string name="lock_lichen">Lock lichen</string>
+    <string name="lock_lichen_note">With your fingerprint, face or screen lock</string>
+    <string name="lock_after">Lock after</string>
+    <string name="lock_immediately">Immediately</string>
+    <string name="lock_1_minute">1 minute</string>
+    <string name="lock_15_minutes">15 minutes</string>
+    <string name="lock_1_hour">1 hour</string>
+    <string name="lock_note">The radio keeps receiving while lichen is locked.</string>
+    <string name="lock_stays_off">The lock stays off</string>
+    <string name="no_screen_lock">Set a screen lock on this phone first: lichen unlocks with it, or with your fingerprint or face.</string>
+    <string name="unlock">Unlock</string>
+    <string name="unlock_lichen">Unlock lichen</string>
+    <string name="turn_on_app_lock">Turn on the app lock</string>
+    <string name="sos_while_locked">SOS received: unlock to see it</string>
     <string name="demo">Demo</string>
     <string name="demo_network">Demo network</string>
     <string name="demo_network_note">A simulated MeshCore network with two other users and a group, in real time: the app\'s real core, without a radio.</string>

@@ -731,12 +731,32 @@
         }
       }
     },
+    "1 hour": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 heure"
+          }
+        }
+      }
+    },
     "1 km": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "1 km"
+          }
+        }
+      }
+    },
+    "1 minute": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 minute"
           }
         }
       }
@@ -807,6 +827,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "15 min"
+          }
+        }
+      }
+    },
+    "15 minutes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "15 minutes"
           }
         }
       }
@@ -2991,6 +3021,16 @@
         }
       }
     },
+    "Immediately": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Immédiatement"
+          }
+        }
+      }
+    },
     "In lichen: Add a contact › Scan. They join %@ and you become a verified contact for them.": {
       "localizations": {
         "fr": {
@@ -3517,6 +3557,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Position partagée et mode recherche."
+          }
+        }
+      }
+    },
+    "Lock after": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verrouiller après"
+          }
+        }
+      }
+    },
+    "Lock lichen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verrouiller lichen"
           }
         }
       }
@@ -4811,6 +4871,16 @@
         }
       }
     },
+    "Privacy": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confidentialité"
+          }
+        }
+      }
+    },
     "Private channel": {
       "localizations": {
         "fr": {
@@ -5211,6 +5281,16 @@
         }
       }
     },
+    "SOS received: unlock to see it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SOS reçu : déverrouille pour le voir"
+          }
+        }
+      }
+    },
     "SOS · heard %@%@": {
       "localizations": {
         "fr": {
@@ -5577,6 +5657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyé : les radios autour peuvent ajouter la tienne en contact."
+          }
+        }
+      }
+    },
+    "Set a passcode on this iPhone first: lichen unlocks with it, or with Face ID or Touch ID.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configure d’abord un code sur cet iPhone : lichen se déverrouille avec, ou avec Face ID ou Touch ID."
           }
         }
       }
@@ -6031,6 +6121,16 @@
         }
       }
     },
+    "The lock stays off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le verrouillage reste désactivé"
+          }
+        }
+      }
+    },
     "The message database on this phone could not be opened, often because the phone is full. Nothing was sent or deleted: free some space, then try again.": {
       "localizations": {
         "fr": {
@@ -6107,6 +6207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La radio n'a plus d'emplacement de canal libre."
+          }
+        }
+      }
+    },
+    "The radio keeps receiving while lichen is locked.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio continue de recevoir pendant que lichen est verrouillé."
           }
         }
       }
@@ -6571,6 +6681,16 @@
         }
       }
     },
+    "Turn on the app lock": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activer le verrouillage de l’appli"
+          }
+        }
+      }
+    },
     "Turn your radio on and keep it close to the phone. Stock MeshCore companion firmware: nothing to flash.": {
       "localizations": {
         "fr": {
@@ -6627,6 +6747,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Groupe inconnu."
+          }
+        }
+      }
+    },
+    "Unlock": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déverrouiller"
+          }
+        }
+      }
+    },
+    "Unlock lichen": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déverrouiller lichen"
           }
         }
       }
@@ -6977,6 +7117,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Avec %@. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
+          }
+        }
+      }
+    },
+    "With Face ID or your passcode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec Face ID ou ton code"
+          }
+        }
+      }
+    },
+    "With Touch ID or your passcode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec Touch ID ou ton code"
+          }
+        }
+      }
+    },
+    "With your passcode": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec ton code"
           }
         }
       }
