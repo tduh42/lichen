@@ -107,3 +107,33 @@ fn an_intro_does_not_move_the_path() {
     net.with_core(a, |c, now| c.on_companion_frame(&push, now));
     assert!(still_reaches_bob(&mut net, a, b));
 }
+
+/// Review of 2026-11-15, SR-04: INTRO costs nothing to forge and its answer is 120 bytes.
+/// Answers to frames anyone can send are limited, so a stranger cannot spend the hour's
+/// airtime of the phone.
+#[test]
+fn forged_intros_get_few_answers() {
+    let (mut net, a, b) = talking(24);
+    let (alice, bob) = (net.key(a), net.key(b));
+    let used = |net: &mut Net| net.with_core(a, |c, now| c.budget(now).0).unwrap();
+    let before = used(&mut net);
+    for k in 0..100u16 {
+        let intro = Intro {
+            tag: 0x1000 + k,
+            attempt: 0,
+            salt: [(k % 251) as u8; 16],
+            ephemeral: lc_proto::kdf::x25519_public(&[(k % 250) as u8 + 1; 32]),
+            return_path_len: 0,
+            return_path: &[],
+        };
+        let mut frame = [0u8; 200];
+        let n = seal_intro(bob[0], alice[0], &intro, &mut frame).unwrap();
+        let mut push = vec![0x84, 20, 0xB0, 0xFF];
+        push.extend_from_slice(&frame[..n]);
+        net.with_core(a, |c, now| c.on_companion_frame(&push, now));
+        net.run_until(net.now + 2 * S, |_| false);
+    }
+    let spent = used(&mut net) - before;
+    // An INTRO_ACK is about 0.85 s on air here; eight answers at most for one node.
+    assert!(spent < 8_000, "{spent} ms of airtime for 100 forged INTROs");
+}

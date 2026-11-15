@@ -50,6 +50,14 @@ const PROBE_WAIT_MS: Millis = 20_000;
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
 /// A HELLO we cannot open triggers our own introduction at most this often (§4.6).
 const INTRO_POKE_MS: Millis = 600_000;
+/// Answers to frames anyone can send (INTRO_ACK, PATH_REPLY, HELLO_ACK, the INTRO that a HELLO
+/// we cannot open prompts): at most this many per node in ten minutes, and this many in all
+/// in an hour (§9, review of 2026-11-15, SR-04). Data waits for the budget; these did not,
+/// and a stranger could make the phone spend its hour answering.
+const UNPROMPTED_PER_NODE: usize = 8;
+const UNPROMPTED_PER_NODE_MS: Millis = 600_000;
+const UNPROMPTED_TOTAL: usize = 60;
+const UNPROMPTED_TOTAL_MS: Millis = 3_600_000;
 /// INTRO_FIN resends before giving up (the session stays).
 const FIN_TRIES: u8 = 8;
 /// An answered INTRO is remembered this long (§4.6).
@@ -616,6 +624,8 @@ pub struct Core {
     pub(crate) scope: Option<[u8; 16]>,
     /// Probes already answered (a flood arrives several times, by several paths).
     seen_probes: VecDeque<ProbeId>,
+    /// Answers sent to frames anyone can send, by node, for their limits (SR-04).
+    unprompted: VecDeque<(PubKey, Millis)>,
     /// Groups we belong to (§10).
     pub(crate) groups: HashMap<GroupId, Group>,
     /// Sender keys that came before their group state.
@@ -712,6 +722,7 @@ impl Core {
             recent: HashMap::new(),
             scope: None,
             seen_probes: VecDeque::new(),
+            unprompted: VecDeque::new(),
             groups: HashMap::new(),
             pending_keys: Vec::new(),
             held: VecDeque::new(),
@@ -2211,6 +2222,22 @@ impl Core {
         }
     }
 
+    /// Whether we may answer a frame anyone can send, from `node` (SR-04); counted when so.
+    fn unprompted(&mut self, node: &PubKey, now: Millis) -> bool {
+        self.unprompted
+            .retain(|(_, at)| at + UNPROMPTED_TOTAL_MS > now);
+        let mine = self
+            .unprompted
+            .iter()
+            .filter(|(n, at)| n == node && at + UNPROMPTED_PER_NODE_MS > now)
+            .count();
+        if mine >= UNPROMPTED_PER_NODE || self.unprompted.len() >= UNPROMPTED_TOTAL {
+            return false;
+        }
+        self.unprompted.push_back((*node, now));
+        true
+    }
+
     /// The contacts a frame from hash byte `src` may come from: people only (repeaters, rooms
     /// and sensors never run lichen, §4.6), in key order.
     fn candidates(&self, src: u8) -> Vec<PubKey> {
@@ -2281,6 +2308,9 @@ impl Core {
             let mut r = [0u8; 8];
             self.rng.fill_bytes(&mut r);
             let anonymous = keying.anonymous;
+            if !self.unprompted(&c, now) {
+                return;
+            }
             if let Ok(n) = discovery::seal_path_reply(
                 &keying,
                 node[0],
@@ -2407,6 +2437,10 @@ impl Core {
                 }
             }
         };
+        if !self.unprompted(&c, now) {
+            self.peers.insert(c, peer);
+            return;
+        }
         let mut buf = [0u8; FRAME_MAX];
         if let Ok(n) = intro::seal_intro_ack(
             node[0],
@@ -2580,7 +2614,7 @@ impl Core {
             .find(|c| self.identity_of(c).is_none())
         {
             let mut peer = self.peers.remove(&c).unwrap_or_default();
-            if peer.introducing.is_none() && now >= peer.intro_poke {
+            if peer.introducing.is_none() && now >= peer.intro_poke && self.unprompted(&c, now) {
                 peer.intro_poke = now + INTRO_POKE_MS;
                 if let Some(path) = self.path_for(&c, &peer) {
                     self.start_intro(&c, &mut peer, path, now);
@@ -2661,6 +2695,10 @@ impl Core {
             me_node: node[0],
             peer_node: c[0],
         };
+        // A recorded HELLO can be replayed by anyone: its answers are limited too (SR-04).
+        if !self.unprompted(c, now) {
+            return;
+        }
         if let Ok(n) = handshake::seal_hello_ack(s, &ends, &salt_i, &ack, &mut buf) {
             let frame = buf.get(..n).unwrap_or(&[]).to_vec();
             self.send_raw(&path, &frame, now);

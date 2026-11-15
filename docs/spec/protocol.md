@@ -381,6 +381,7 @@ Per session and receive direction:
 - LoRa airtime (Semtech AN1200.13), explicit header, CRC on, LDRO when a symbol lasts 16 ms or more. MeshCore preamble: 32 symbols when SF ≤ 8, otherwise 16 (A:§6).
 - Example, 869.618 MHz / 62.5 kHz / SF8, 255-byte frame: 1.51 s at CR 4/5; 2.31 s at CR 4/8 (French preset). The original design counted 1.4 s with a short preamble.
 - The budget follows the `config/eu868.toml` rule that contains the frequency (g3: 10 %, i.e. 360 s per sliding hour). The host counts its own transmissions and only refuses or defers costly sends (ADR-0007).
+- **Answers to frames anyone can send** (INTRO_ACK, PATH_REPLY, HELLO_ACK, and the INTRO that a HELLO we cannot open prompts) are not deferred by the budget but limited: at most 8 per node in ten minutes, 60 in all in an hour. Beyond, the frame is dropped unanswered; a genuine peer retries (review of 2026-11-15, SR-04).
 
 ## 10. Groups (ADR-0009)
 
