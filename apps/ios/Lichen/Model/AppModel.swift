@@ -687,6 +687,12 @@ final class AppModel {
             }
         case let .newerVersion(node, _):
             newerPeers.insert(node)
+        case let .mediaGone(hash):
+            // A deleted message's content: no longer offered, no longer kept (§6.4, SR-28).
+            try? bridge?.revoke(hash: hash)
+            if let url = downloads.removeValue(forKey: hash) {
+                try? FileManager.default.removeItem(at: url)
+            }
         case let .groupInvited(_, name, admin, _):
             groupsChanged()
             // Tapping it opens the admin's conversation; the invitation waits in Messages.

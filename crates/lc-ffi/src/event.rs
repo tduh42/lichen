@@ -86,6 +86,11 @@ pub enum LichenEvent {
         emoji: String,
         target: Option<StoredMessage>,
     },
+    /// An announced content's message was deleted (§6.4): stop offering it, and remove its
+    /// download (review of 2026-11-15, SR-28).
+    MediaGone {
+        hash: Vec<u8>,
+    },
     /// Contact `node` speaks a newer protocol version (ADR-0029): update lichen to read
     /// everything it sends.
     NewerVersion {

@@ -752,3 +752,52 @@ mod names {
         assert_eq!(c.node_name, "Julien");
     }
 }
+
+/// Review of 2026-11-15, SR-28: a deleted announcement's offer and download go too. The app
+/// is told which content to drop.
+#[cfg(test)]
+mod media_gone {
+    use super::*;
+    use lc_core::content::Announce;
+
+    #[test]
+    fn deleting_an_announcement_drops_its_content() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![145; 32], None).unwrap();
+        let bob = [9u8; 32];
+        let row = {
+            let mut i = core.lock();
+            i.record(store::Message {
+                id: 0,
+                chat: Chat::Contact(bob),
+                outgoing: false,
+                author: None,
+                content: Content::Announce(Announce {
+                    sent_at: 1,
+                    media_id: [0; 8],
+                    kind: 3,
+                    hash: [0x77; 32],
+                    size: 1_000,
+                    providers: vec![(1, [5; 32])],
+                    name: "track.gpx".into(),
+                }),
+                at_ms: unix_ms(),
+                status: Status::Received,
+                fragments: 0,
+                airtime_ms: 0,
+                snr4: None,
+                read: true,
+                msg_ref: None,
+            })
+            .unwrap()
+        };
+        while core.poll_event().is_some() {}
+        core.delete_for_me(row.id).unwrap();
+        let events: Vec<LichenEvent> = std::iter::from_fn(|| core.poll_event()).collect();
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, LichenEvent::MediaGone { hash } if hash == &vec![0x77; 32])),
+            "{events:?}"
+        );
+    }
+}

@@ -47,6 +47,16 @@ pub(crate) struct Pending {
 }
 
 impl Inner {
+    /// A deleted message was an announcement: its offer and its download go too (§6.4,
+    /// review of 2026-11-15, SR-28).
+    pub(crate) fn media_gone(&mut self, content: &Content) {
+        if let Content::Announce(a) = content {
+            self.extra.push_back(LichenEvent::MediaGone {
+                hash: a.hash.to_vec(),
+            });
+        }
+    }
+
     /// Verified contact `node` keeps the name it had when verified: a node's advertised name
     /// is its owner's to change, and a verified contact renamed by its node would keep its
     /// badge under any name (review of 2026-11-15, SR-30). Kept as the contact's nickname,

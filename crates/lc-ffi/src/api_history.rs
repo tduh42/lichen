@@ -185,8 +185,19 @@ impl LichenCore {
                 i.core.abandon(core_id);
             }
         }
+        let hashes = i
+            .store
+            .as_ref()
+            .and_then(|s| s.announced_hashes(&c).ok())
+            .unwrap_or_default();
         if let Some(s) = i.store.as_ref() {
             let _ = s.delete_chat(&c);
+        }
+        // Its announcements: offers and downloads go too (SR-28).
+        for hash in hashes {
+            i.extra.push_back(LichenEvent::MediaGone {
+                hash: hash.to_vec(),
+            });
         }
         Ok(())
     }

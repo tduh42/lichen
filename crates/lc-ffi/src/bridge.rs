@@ -201,6 +201,12 @@ impl LichenBridge {
             .await
     }
 
+    /// Stops offering content whose message was deleted (SR-28); nothing when not offered.
+    pub fn revoke(&self, hash: Vec<u8>) -> Result<(), BridgeError> {
+        self.bridge.revoke(&bytes32(hash)?);
+        Ok(())
+    }
+
     /// Offers content; returns its hash and size for the announcement.
     pub fn offer(&self, bytes: Vec<u8>) -> Result<Offered, BridgeError> {
         let (hash, size) = self.bridge.offer(bytes)?;

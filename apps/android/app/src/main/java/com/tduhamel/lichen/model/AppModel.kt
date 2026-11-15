@@ -829,6 +829,11 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.NewerVersion -> newerPeers = newerPeers + e.node.hex()
+            // A deleted message's content: no longer offered, no longer kept (§6.4, SR-28).
+            is LichenEvent.MediaGone -> {
+                runCatching { bridge?.revoke(e.hash) }
+                downloads.remove(e.hash.hex())?.delete()
+            }
             is LichenEvent.GroupInvited -> {
                 invitations = core.groupInvitations()
                 // Tapping it opens the admin's conversation; the invitation waits in Messages.

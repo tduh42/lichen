@@ -225,6 +225,7 @@ impl Inner {
             Some(expires),
         )
         .map_err(|_| LichenError::Storage)?;
+        let before = st.get(message_id).ok().flatten().map(|m| m.content);
         let row = if text.is_none() {
             st.tombstone(message_id)
                 .ok()
@@ -236,7 +237,11 @@ impl Inner {
                 .flatten()
                 .ok_or(LichenError::Storage)?
         };
+        let deleted = text.is_none();
         self.submit_amendment(m.chat, target, text, ts);
+        if deleted && let Some(c) = before {
+            self.media_gone(&c);
+        }
         self.persist();
         Ok(self.present(row))
     }

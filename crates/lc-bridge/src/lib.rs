@@ -161,6 +161,16 @@ impl Offers {
         mem || disk
     }
 
+    /// No longer offered: gone from memory and disk.
+    fn remove(&self, h: &Hash) {
+        if let Ok(mut m) = self.mem.lock() {
+            m.remove(h);
+        }
+        if let Some(p) = self.path(h) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
+
     fn get(&self, h: &Hash) -> Option<Arc<Vec<u8>>> {
         if let Ok(mut m) = self.mem.lock() {
             match m.get(h) {
@@ -488,6 +498,11 @@ impl Bridge {
     }
 
     /// Offers `bytes`: returns their hash and size for the announcement.
+    /// Stops offering `hash`: its message was deleted (§6.4, review of 2026-11-15, SR-28).
+    pub fn revoke(&self, hash: &Hash) {
+        self.offers.remove(hash);
+    }
+
     pub fn offer(&self, bytes: Vec<u8>) -> Result<(Hash, u64), FetchError> {
         let size = bytes.len() as u64;
         if size > MAX_SIZE {

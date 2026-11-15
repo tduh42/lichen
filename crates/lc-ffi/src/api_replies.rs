@@ -255,8 +255,12 @@ impl LichenCore {
             drop(i);
             return self.cancel_message(message_id);
         }
-        st.delete_for_me(message_id)
+        let gone = st
+            .delete_for_me(message_id)
             .map_err(|_| LichenError::Storage)?;
+        if let Some(m) = gone {
+            i.media_gone(&m.content);
+        }
         i.persist();
         Ok(())
     }

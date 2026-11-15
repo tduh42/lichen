@@ -139,8 +139,12 @@ impl Inner {
             .flatten()
             .is_some_and(|a| a.deleted);
         let m = if deleted && !matches!(m.content, Content::Deleted { .. }) {
+            let original = m.content.clone();
             match st.tombstone(m.id).ok().flatten() {
-                Some(m) => m,
+                Some(m) => {
+                    self.media_gone(&original);
+                    m
+                }
                 None => return,
             }
         } else {

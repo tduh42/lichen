@@ -1008,6 +1008,24 @@ impl Store {
 
     /// Deletes a conversation: its messages and the media we kept for it. Location shares
     /// and positions are separate (the map).
+    /// The content hashes announced in `chat` (§14.1): what to stop offering, or to remove
+    /// from downloads, when the conversation is deleted.
+    pub fn announced_hashes(&self, chat: &Chat) -> Result<Vec<[u8; 32]>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT content FROM messages WHERE chat_kind = ?1 AND chat = ?2")?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes()], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|c| match Content::decode(&c) {
+                Some(Content::Announce(a)) => Some(a.hash),
+                _ => None,
+            })
+            .collect())
+    }
+
     pub fn delete_chat(&self, chat: &Chat) -> Result<usize, Error> {
         let n = self.conn.execute(
             "DELETE FROM messages WHERE chat_kind = ?1 AND chat = ?2",
