@@ -11,5 +11,9 @@ fi
 for t in "${targets[@]}"; do
   echo "-- $t (${secs} s)"
   mkdir -p "fuzz/corpus/$t"
+  # Real snapshots to start from (a random input is rarely one).
+  if [ "$t" = snapshot_restore ]; then
+    cargo test -q -p lc-core --release --test fuzz_seeds -- --ignored --nocapture | grep seeds || true
+  fi
   (cd fuzz && cargo +nightly fuzz run "$t" "corpus/$t" -- -max_total_time="$secs" -print_final_stats=1)
 done
