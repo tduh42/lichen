@@ -334,3 +334,46 @@ Two refinements since the first version (§10.6), measured one after the other:
 | + gaps before a key's first message count from its next counter | 100 %, 440 s, 313 | 93.1 %, 1540 s, 1795 |
 
 At 10 %, the first cuts the slow tail by 100 s and the second recovers members' first posts, which nothing could bring back before: every post arrives, for 5 % more frames. At 20 %, each extra recovery adds collisions and handshakes that cost more than they bring. An empty answer instead (the asker turning to the author at once) did worse: 90.4 % delivered at 20 % for 1928 frames, against 95.7 % and 1187 for the first rule in the same run (frames counted until the network went quiet), every member opening a session with the author at the same moment.
+
+## 2026-11-15 — Full 16-byte tags (ADR-0028)
+
+Each suite was run twice the same day, on the commit before the change (8-byte tags) and on the commit with it, so the two columns differ by the tag alone. The fake network's absolute times are higher than the 2026-11-06 table above, with either tag: pacing rules added since (§7.3) leave room for answers.
+
+**Sizes and airtime per exchange** (computed from §9's formula, SF8 / 62.5 kHz / CR 4/8, no repeater, the exchange with its two ACK copies): in ADR-0028. At SF8 the 8 bytes are two code blocks on every frame: 65.5 ms at CR 4/8, 41 ms at CR 4/5. The packed ACK keeps a short exchange near +5 %.
+
+**Measured on the fake network:**
+
+| | 8-byte tags | 16-byte tags |
+|---|---|---|
+| 8 KB file, one repeater, CR 4/8 (`lc-cli sim --repeaters 1 --bytes 8211 --cr 8`): fragments | 53 | 56 |
+| the same: sender's airtime / delivered after | 93 s / 5.6 min | 99.0 s / 6.0 min |
+| 10 s of Codec2 1200 voice, one hop, CR 4/5 (`--test media`) | 10 fragments, 10.7 s | 11 fragments, 11.4 s |
+| 15 s voice messages that fit the hour's budget | 22 | 21 |
+| INTRO_ACK / INTRO_FIN, one hop, CR 4/5 (`--test identity`) | 104 B, 754 ms / 56 B, 508 ms | 120 B, 836 ms / 72 B, 590 ms |
+
+**A full datagram on a lossy chain** (`--test fakenet -- --ignored`, 50 runs per row, 64 fragments: 9,800 bytes with 8-byte tags, 9,400 with 16):
+
+| Repeaters | Loss per link | Delivered (8 / 16) | Mean time (8 / 16) | Frames (8 / 16) |
+|---|---|---|---|---|
+| 0 | 0 % | 50 / 50 | 113 s / 115 s | 74 / 75 |
+| 0 | 10 % | 50 / 50 | 136 s / 137 s | 86 / 86 |
+| 0 | 15 % | 50 / 50 | 147 s / 148 s | 91 / 92 |
+| 1 | 0 % | 50 / 50 | 264 s / 270 s | 148 / 150 |
+| 1 | 10 % | 50 / 50 | 354 s / 356 s | 184 / 184 |
+| 1 | 15 % | 50 / 50 | 416 s / 413 s | 207 / 205 |
+| 3 | 0 % | 50 / 50 | 564 s / 576 s | 296 / 300 |
+| 3 | 10 % | 47 / 49 | 955 s / 998 s | 422 / 433 |
+| 3 | 15 % | 40 / 44 | 1314 s / 1293 s | 498 / 478 |
+
+Times grow by 0 to 4 %, as the frames do; delivery is within the spread of 50 runs. On a single lossy link (`lc-proto --test transfer`, 1,000 transfers per row) the figures are identical with either tag: that test counts frames, and a full datagram is 64 fragments either way.
+
+**Group recovery** (`--test groups -- --ignored measure_group_recovery`, the setup of 2026-11-09):
+
+| Loss per link | | Delivered (8 / 16) | Recovered (8 / 16) | Frames per run (8 / 16) |
+|---|---|---|---|---|
+| 10 % | without | 96.0 % / 96.1 % | — | 171 / 171 |
+| 10 % | with recovery | 100 % / 99.98 % | 326 / 300 | 313 / 282 |
+| 20 % | without | 87.5 % / 86.5 % | — | 162 / 162 |
+| 20 % | with recovery | 93.1 % / 92.5 % | 1344 / 1214 | 1795 / 1914 |
+
+Within the spread of 40 seeds: flooded frames are longer, not more numerous, for posts that still fit their fragments.
