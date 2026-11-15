@@ -112,7 +112,7 @@ fn group_of_five_then_removal() {
     // Everyone posts once, spaced out; one of the messages needs two fragments.
     let long = "Refuge de la Pra: on part à 7 h par le sentier nord, rendez-vous au col \
                 vers 10 h, prévoir de l'eau, le ruisseau est à sec depuis une semaine.";
-    assert!(long.len() > 70 && long.len() <= 209);
+    assert!(long.len() > 62 && long.len() <= 193);
     for (i, &node) in m.iter().enumerate() {
         let text = if i == 2 {
             long.to_owned()
@@ -856,4 +856,44 @@ fn notices_are_never_received() {
         e,
         Event::Received { .. } | Event::GroupMessage { .. } | Event::GroupChanged { .. }
     )));
+}
+
+/// Review of 2026-11-15, SR-12: Carol's radio is away for two hours while the admin removes
+/// Bob. The new state must reach her when she is back: before, it was dropped after five tries
+/// (31 minutes), and Carol kept Bob in the group and kept sending him her keys.
+#[test]
+fn a_removal_reaches_a_member_who_was_away() {
+    let (mut net, m) = star(12);
+    let members = &m[..4];
+    let keys: Vec<[u8; 32]> = members.iter().map(|&i| net.key(i)).collect();
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("Bivouac", &keys[1..], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, members, &gid)));
+    settle(&mut net);
+    let bob_id = *net.nodes[m[1]].core.as_ref().unwrap().key().unwrap();
+    let lists_bob = |net: &Net, i: usize| {
+        net.nodes[i]
+            .core
+            .as_ref()
+            .unwrap()
+            .groups()
+            .any(|g| g.gid == gid && g.members.iter().any(|x| x.key == bob_id))
+    };
+    assert!(lists_bob(&net, m[2]));
+
+    net.disconnect(m[2]);
+    net.with_core(m[0], |c, now| c.remove_member(&gid, &keys[1], now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 120 * MIN, |_| false);
+    assert!(lists_bob(&net, m[2]), "Carol was away");
+    assert!(!lists_bob(&net, m[3]));
+
+    net.connect(m[2]);
+    assert!(
+        net.run_until(net.now + 90 * MIN, |n| !lists_bob(n, m[2])),
+        "the removal never reached Carol"
+    );
 }

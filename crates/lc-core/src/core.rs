@@ -14,6 +14,7 @@ use lc_meshcore::command::{Command, raw_payload_max};
 use lc_meshcore::ecdh::{expand_seed, public_key, shared_secret};
 use lc_meshcore::path::{PATH_UNKNOWN, Path};
 use lc_meshcore::response::Response;
+use lc_proto::content as datagram;
 use lc_proto::discovery::{self, Keying, ProbeId};
 use lc_proto::handshake::{self, Ends, Hello, HelloAck, SALT_LEN};
 use lc_proto::header::ACK_FRAME_MAX;
@@ -393,6 +394,10 @@ pub(crate) enum Expect {
     /// `SEND_CHANNEL_TXT_MSG` of this post (§15.3).
     ChannelPost(MsgId),
 }
+
+/// Tries of a membership datagram (GROUP_STATE, SENDER_KEY, SENDER_KEYS): five within half an
+/// hour, then one an hour for a day (§10.1, SR-12).
+const MEMBERSHIP_TRIES: u8 = 5 + 24;
 
 #[derive(Clone, Debug)]
 struct Outgoing {
@@ -1636,15 +1641,26 @@ impl Core {
     }
 
     /// One message failed: report it, or, for an internal one, try again later (1, 2, 4, 8,
-    /// 16 minutes).
+    /// 16 minutes). Membership datagrams then go on every hour for a day: a member who misses
+    /// a state keeps a removed member, one who misses a key loses a sender (review of
+    /// 2026-11-15, SR-12).
     fn fail_message(&mut self, peer: &mut Peer, mut m: Outgoing, reason: FailReason, now: Millis) {
+        let membership = matches!(
+            m.datagram.first(),
+            Some(&(datagram::GROUP_STATE | datagram::SENDER_KEY | datagram::SENDER_KEYS))
+        );
         if !m.internal {
             self.events.push_back(Event::Failed { id: m.id, reason });
         } else if self.is_location(m.id) {
             // A stale position is not worth resending: the share sends a fresh one.
             self.location_done(m.id, true);
-        } else if m.tries < 5 {
-            m.not_before = now + (60_000 << m.tries);
+        } else if m.tries < 5 || (membership && m.tries < MEMBERSHIP_TRIES) {
+            m.not_before = now
+                + if m.tries < 5 {
+                    60_000 << m.tries
+                } else {
+                    3_600_000
+                };
             m.tries += 1;
             m.retried = false;
             peer.queue.push_back(m);

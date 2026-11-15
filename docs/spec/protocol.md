@@ -397,6 +397,7 @@ gid (16, random) ‖ epoch u32 ‖ admin id (32) ‖ name_len (1) ‖ name (UTF-
 
 Members are identities (§2); `node` is where to reach them (MeshCore routing).
 
+- **Delivery**: GROUP_STATE and the sender keys (§10.2) go pairwise like any datagram, but are not given up after five tries: they go again every hour for a day. A member who misses a state keeps a removed member; one who misses a key loses a sender (review of 2026-11-15, SR-12).
 - **One node, one member**: a state whose list names a node twice is dropped. A member's identity is learned for its node by the rule of §4.6: a node already known under another identity keeps it, and the listed one waits for the user. The phones show a member by its node, so a member's messages (and its reactions, edits, deletes and positions) are shown only while that node is known under the member's identity (review of 2026-11-15, SR-11).
 
 - The creator is the **admin**. Only the admin sends GROUP_STATE. A receiver accepts it when it comes from the group's admin with a higher `epoch` than the one it holds, or, for an unknown `gid`, from any contact that lists itself as admin and lists the receiver (joining is reported to the app).
