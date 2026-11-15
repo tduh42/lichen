@@ -62,7 +62,8 @@ where
     tokio::spawn(conn);
     let request = hyper::Request::get(path)
         .header(hyper::header::HOST, host)
-        .header(hyper::header::USER_AGENT, "lichen")
+        // No User-Agent: a fixed "lichen" told GIPHY which app asked, over Tor too (review of
+        // 2026-11-15, SR-36). HTTP/1.1 does not require one.
         .body(Empty::<Bytes>::new())
         .map_err(|e| FetchError::Protocol(e.to_string()))?;
     let response = sender
