@@ -89,11 +89,20 @@ fn bytes32(v: Vec<u8>) -> Result<[u8; 32], BridgeError> {
 }
 
 /// This phone's bridge: its iroh endpoint and its Tor client, each started on demand.
-#[derive(Debug, uniffi::Object)]
+#[derive(uniffi::Object)]
 pub struct LichenBridge {
     bridge: Bridge,
     iroh_key: [u8; 32],
     onion_key: [u8; 32],
+}
+
+/// Without the keys (review of 2026-11-15, SR-34).
+impl std::fmt::Debug for LichenBridge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LichenBridge")
+            .field("bridge", &self.bridge)
+            .finish_non_exhaustive()
+    }
 }
 
 #[uniffi::export(async_runtime = "tokio")]

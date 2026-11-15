@@ -516,6 +516,9 @@ const MAX_INVITATIONS: usize = 8;
 const INVITATION_MS: Millis = 7 * 24 * 3_600_000;
 /// How long a scanned invitation waits for the admin's state (§10.5).
 const JOINING_MS: Millis = 3_600_000;
+/// People one invitation code admits at most (SR-19): a trailhead group, not a photographed
+/// screen passed around.
+const INVITE_ADMISSIONS_MAX: u8 = 12;
 /// Invitation snapshot version (what the app stores, so that a restart loses nothing).
 const INVITATION_SNAPSHOT: u8 = 1;
 /// A sender key in an invitation snapshot: owner, relayed or not, by whom, epoch, key, next.
@@ -1213,6 +1216,7 @@ impl Core {
     /// Closes an invitation: its token admits no one any more.
     pub fn revoke_invite(&mut self, token: &[u8; 16]) {
         self.invites.remove(token);
+        self.invite_admissions.remove(token);
     }
 
     /// Asks to join a group with a scanned invitation (§10.5). The admin becomes a contact,
@@ -1235,7 +1239,13 @@ impl Core {
             |c| (c.name.clone(), c.out_path.clone()),
         );
         self.add_contact(invite.node, &name, path);
-        self.set_identity(&invite.node, invite.admin, true);
+        // Scanned in person, like a contact card (§4.7): it verifies the admin, and replaces an
+        // identity the admin's node no longer has, through the same steps as an accepted
+        // change, so the app is told (review of 2026-11-15, SR-19).
+        if !self.present_identity(&invite.node, invite.admin) {
+            self.accept_identity(&invite.node, &invite.admin, true);
+        }
+        self.set_verified(&invite.node, &invite.admin, true);
         self.joining
             .retain(|(a, at)| *a != invite.admin && at + JOINING_MS > now);
         self.joining.push((invite.admin, now));
@@ -1289,7 +1299,12 @@ impl Core {
             self.tick(now);
             return;
         }
+        // A photographed code admits a few people, not a crowd (SR-19).
+        if self.invite_admissions.get(&token).copied().unwrap_or(0) >= INVITE_ADMISSIONS_MAX {
+            return;
+        }
         if self.add_members(&gid, &[*node], now).is_ok() {
+            *self.invite_admissions.entry(token).or_insert(0) += 1;
             self.events
                 .push_back(Event::MemberJoined { gid, node: *node });
         }

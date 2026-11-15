@@ -801,3 +801,16 @@ mod media_gone {
         );
     }
 }
+
+/// Review of 2026-11-15, SR-35: a file name cannot reorder itself on screen.
+#[cfg(test)]
+mod bidi_names {
+    use super::*;
+
+    #[test]
+    fn bidirectional_controls_are_dropped() {
+        let spoofed = "photo\u{202E}gpj.exe";
+        assert_eq!(super::super::message::shown_name(spoofed), "photogpj.exe");
+        assert_eq!(fit_file_name(spoofed.into(), 64), "photogpj.exe");
+    }
+}

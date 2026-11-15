@@ -248,7 +248,7 @@
     <string name="create_group">Create group</string>
     <string name="group_details">Group details</string>
     <string name="network">Network</string>
-    <string name="network_note">A companion on Wi-Fi, or a USB radio relayed by a computer (lichen bridge; the Android emulator reaches it at 10.0.2.2:5000).</string>
+    <string name="network_note">A companion on Wi-Fi, or a USB radio relayed by a computer (lichen bridge; the Android emulator reaches it at 10.0.2.2:5000). The network link to the radio is not encrypted: on a shared network, someone can read and change MeshCore chats, contacts and channels. lichen messages stay end-to-end encrypted.</string>
     <string name="done">Done</string>
     <string name="verified_by_scan">Verified by the scan. Their phone shows the same numbers once it knows you: after your first message, or when they scan your code.</string>
     <!-- Media and the Internet bridge (L9e) -->

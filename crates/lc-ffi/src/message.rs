@@ -100,6 +100,21 @@ pub struct Provider {
 /// How long a received position stays on the map, in seconds.
 pub(crate) const POSITION_KEEP_S: u64 = 24 * 3600;
 
+/// A file name as the apps show and open it: without the characters that reorder text
+/// (bidirectional controls), which can make `photo` U+202E `gpj.exe` read as `photoexe.jpg` (review
+/// of 2026-11-15, SR-35). The name as sent is kept for references (§6.2).
+pub(crate) fn shown_name(name: &str) -> String {
+    name.chars().filter(|c| !is_bidi_control(*c)).collect()
+}
+
+/// Unicode's bidirectional formatting characters.
+pub(crate) const fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
 impl From<Content> for Message {
     fn from(c: Content) -> Self {
         match c {
@@ -160,7 +175,7 @@ impl From<Content> for Message {
                         key: key.to_vec(),
                     })
                     .collect(),
-                name: a.name,
+                name: shown_name(&a.name),
             },
             c @ Content::MediaRequest { .. } => {
                 let mut v = c.encode();
@@ -176,7 +191,7 @@ impl From<Content> for Message {
                 data,
             } => Self::File {
                 sent_at,
-                name,
+                name: shown_name(&name),
                 data,
             },
             Content::Sticker {

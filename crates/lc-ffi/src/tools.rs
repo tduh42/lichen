@@ -32,7 +32,11 @@ pub fn gif_link(text: String) -> Option<GifLink> {
 pub fn fit_file_name(name: String, max_bytes: u32) -> String {
     let name: String = name
         .chars()
-        .filter(|c| !matches!(c, '/' | '\\' | ':') && !c.is_control())
+        .filter(|c| {
+            !matches!(c, '/' | '\\' | ':')
+                && !c.is_control()
+                && !super::message::is_bidi_control(*c)
+        })
         .collect();
     let name = name
         .trim_start_matches(|c: char| c == '.' || c.is_whitespace())

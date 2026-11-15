@@ -132,11 +132,20 @@ fn identity_seed() -> Result<[u8; 32], String> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    std::fs::write(&path, seed).map_err(|e| format!("{}: {e}", path.display()))?;
+    // Created readable by its owner only, before the seed is written (SR-34).
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    {
+        use std::io::Write;
+        options
+            .open(&path)
+            .and_then(|mut f| f.write_all(&seed))
+            .map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(seed)
 }

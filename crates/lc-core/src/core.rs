@@ -371,8 +371,8 @@ pub enum Error {
     Expired,
 }
 
-/// Core configuration.
-#[derive(Clone, Debug)]
+/// Core configuration. Its `Debug` leaves the seeds out (review of 2026-11-15, SR-34).
+#[derive(Clone)]
 pub struct Config {
     /// Sent in `APP_START`.
     pub app_name: String,
@@ -382,6 +382,14 @@ pub struct Config {
     pub rng_seed: [u8; 32],
     /// Regulatory profile (TOML).
     pub regulatory: String,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("app_name", &self.app_name)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Config {
@@ -667,6 +675,8 @@ pub struct Core {
     /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
     /// them.
     pub(crate) invites: HashMap<[u8; 16], (GroupId, Millis)>,
+    /// People each invitation admitted (SR-19).
+    pub(crate) invite_admissions: HashMap<[u8; 16], u8>,
     /// Groups that listed us and wait for the user's answer (§10.1, SR-13). In memory only.
     pub(crate) invitations: Vec<crate::group::Invitation>,
     /// Invitations to store again or delete (SR-13: they survive restarts).
@@ -759,6 +769,7 @@ impl Core {
             group_recovery: true,
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
+            invite_admissions: HashMap::new(),
             invitations: Vec::new(),
             dirty_invitations: HashSet::new(),
             joining: Vec::new(),
