@@ -49,6 +49,9 @@ const KEPT_MS: Millis = 3_600_000;
 const GAPS_MAX: usize = 16;
 /// Requests for messages we miss too, answered once we recover them (§10.6), per group.
 const OWED_MAX: usize = 32;
+/// Kept messages remembered as handed on, per group (SR-14): more than the kept ones (64)
+/// times a few members asking.
+const ANSWERED_MAX: usize = 512;
 /// A gap is asked for this long after it is seen, plus up to as much again (§10.6).
 const ASK_AFTER_MS: Millis = 20_000;
 /// How long an answer is awaited before asking the other one, then giving up.
@@ -247,6 +250,10 @@ struct Recovery {
     kept: VecDeque<Kept>,
     gaps: Vec<Gap>,
     owed: Vec<Owed>,
+    /// Kept messages already handed to a member: (member, author, key epoch, counter). Each
+    /// goes once to each member: a request is otherwise a tiny frame that makes us send up to
+    /// 16 payloads, again and again (review of 2026-11-15, SR-14).
+    answered: VecDeque<(PubKey, PubKey, u8, u32)>,
     /// When we saw each member added: nobody gets back what was sent before it joined.
     since: HashMap<PubKey, Millis>,
 }
@@ -1487,6 +1494,7 @@ impl Core {
         }
         let since = g.recovery.since.get(from).copied().unwrap_or(0);
         let mut payloads: Vec<Vec<u8>> = Vec::new();
+        let answered = &g.recovery.answered;
         let mut held: Vec<&Kept> = g
             .recovery
             .kept
@@ -1496,17 +1504,26 @@ impl Core {
                     && k.epoch == epoch
                     && counters.contains(&k.counter)
                     && k.at >= since
+                    && !answered.contains(&(*from, k.author, k.epoch, k.counter))
             })
             .collect();
         // In the order they were written, whatever order they came to us in.
         held.sort_by_key(|k| k.counter);
+        let mut sent: Vec<u32> = Vec::new();
         for k in held {
             if payloads.len() + k.payloads.len() > RESEND_MAX {
                 break;
             }
             payloads.extend(k.payloads.iter().cloned());
+            sent.push(k.counter);
         }
         let r = &mut g.recovery;
+        for c in sent {
+            if r.answered.len() >= ANSWERED_MAX {
+                r.answered.pop_front();
+            }
+            r.answered.push_back((*from, *author, epoch, c));
+        }
         for &c in counters {
             let ours = |x: &Gap| x.author == *author && x.epoch == epoch && x.counter == c;
             let owed = |o: &Owed| {
@@ -2812,6 +2829,33 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// Review of 2026-11-15, SR-14: a member asking again and again for the same message gets
+    /// it once; a request is a tiny frame and its answer up to sixteen payloads.
+    #[test]
+    fn a_kept_message_goes_once_to_each_member() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let carol = [0x77; 32];
+        let mut core = core_with_group(&[(bob, [10; 32], 0), (carol, [20; 32], 0)]);
+        let e0 = envelope(&bob, &[10; 32], 0, &bob_prv, "at the col");
+        core.on_group_envelope(&e0, 0, 0, 0);
+        assert_eq!(texts(&mut core), vec!["at the col"]);
+        let ask = encode_missing(&GID, &bob, 0, &[0]);
+        let carol_node = [2u8; 32];
+        let resends = |core: &Core| {
+            core.queued(&carol_node)
+                .iter()
+                .filter(|d| d.first() == Some(&content::GROUP_RESEND))
+                .count()
+        };
+        core.on_group_control(&carol_node, &ask, 10_000);
+        assert_eq!(resends(&core), 1);
+        for t in 1..20 {
+            core.on_group_control(&carol_node, &ask, 10_000 + t * 1_000);
+        }
+        assert_eq!(resends(&core), 1);
     }
 
     /// A member's first message lost: the next one shows it missing from the key's next
