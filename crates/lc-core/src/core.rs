@@ -230,7 +230,15 @@ pub enum Event {
     PlainReceived(crate::plain::PlainMessage),
     /// The companion's channel list changed, or was read (§15.3).
     ChannelsUpdated,
-    /// Someone added us to a group.
+    /// A group that lists us waits for the user to join it or not (§10.1, SR-13):
+    /// [`Core::accept_group`], [`Core::decline_group`].
+    GroupInvited {
+        gid: GroupId,
+        name: String,
+        admin: PubKey,
+        members: usize,
+    },
+    /// We joined a group: invited and accepted, or admitted with a scanned invitation.
     GroupJoined {
         gid: GroupId,
         name: String,
@@ -623,6 +631,14 @@ pub struct Core {
     /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
     /// them.
     pub(crate) invites: HashMap<[u8; 16], (GroupId, Millis)>,
+    /// Groups that listed us and wait for the user's answer (§10.1, SR-13). In memory only.
+    pub(crate) invitations: Vec<crate::group::Invitation>,
+    /// Admins we asked to join with a scanned invitation (§10.5), with when: their state is
+    /// the answer, joined without asking again.
+    pub(crate) joining: Vec<(PubKey, Millis)>,
+    /// A group that lists us waits for the user (true for the apps); false joins at once,
+    /// for test nodes and bots.
+    pub(crate) group_consent: bool,
     /// Members we admitted, with when (§10.2): a key of another member that changes soon
     /// after reaches them through us. In memory only.
     pub(crate) admitted: Vec<(GroupId, PubKey, Millis)>,
@@ -703,6 +719,9 @@ impl Core {
             group_recovery: true,
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
+            invitations: Vec::new(),
+            joining: Vec::new(),
+            group_consent: true,
             admitted: Vec::new(),
             group_tx: VecDeque::new(),
             next_slot: 0,

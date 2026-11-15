@@ -23,6 +23,7 @@ import com.tduhamel.lichen.core.LoraFile
 import com.tduhamel.lichen.core.GifLink
 import com.tduhamel.lichen.ui.clearOldShares
 import com.tduhamel.lichen.core.GroupInfo
+import com.tduhamel.lichen.core.GroupInvitation
 import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
@@ -152,6 +153,25 @@ class AppModel(val app: Application) {
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
     var contacts by mutableStateOf(listOf<ContactInfo>())
     var groups by mutableStateOf(listOf<GroupInfo>())
+
+    /** Groups that list us and wait for an answer (§10.1): someone not verified in person
+     * cannot put us in a group. */
+    var invitations by mutableStateOf(listOf<GroupInvitation>())
+
+    /** Joins the group of an invitation; it then appears with the others. */
+    fun acceptGroup(gid: ByteArray) {
+        runCatching { core.acceptGroup(gid, now()) }
+        groups = core.groups()
+        invitations = core.groupInvitations()
+        contacts = people()
+        pump()
+    }
+
+    /** Forgets an invitation; its admin is not told. */
+    fun declineGroup(gid: ByteArray) {
+        runCatching { core.declineGroup(gid) }
+        invitations = core.groupInvitations()
+    }
     /** The radio's MeshCore channels (protocol.md §15.3). */
     var channels by mutableStateOf(listOf<MeshChannel>())
 
@@ -509,6 +529,8 @@ class AppModel(val app: Application) {
         if (isDemo) return
         resetState()
         replaceCore(makeCore(IdentityStore.randomBytes(32), persistent = false))
+        // The demo's people are friends: their groups are joined without asking.
+        core.setGroupConsent(false)
         demo = DemoNetwork().also { net ->
             // Camille offers her photo over Tor too when Tor is on (her own onion service).
             if (torEnabled) runCatching { net.camilleOverTor(folder("demo-tor-state").path, folder("demo-tor-cache").path) }
@@ -801,7 +823,13 @@ class AppModel(val app: Application) {
                     notify(chat, title(chat), res.getString(R.string.reacted_to, name(e.by), e.emoji, target.message.display(res)))
                 }
             }
+            is LichenEvent.GroupInvited -> {
+                invitations = core.groupInvitations()
+                // Tapping it opens the admin's conversation; the invitation waits in Messages.
+                notify(ChatId.contact(e.admin), res.getString(R.string.group_invitation), res.getString(R.string.invites_you_to, name(e.admin), e.name))
+            }
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
+                invitations = core.groupInvitations()
                 if (e is LichenEvent.GroupJoined && joining.containsKey(e.admin.hex())) {
                     joining = joining - e.admin.hex()
                     joinedByInvite = joinedByInvite + (e.admin.hex() to e.gid)

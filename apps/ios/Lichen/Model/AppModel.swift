@@ -74,6 +74,22 @@ final class AppModel {
     @ObservationIgnored private var debugPlainSaid = false
     #endif
     var groups: [GroupInfo] = []
+    /// Groups that list us and wait for an answer (§10.1): someone not verified in person
+    /// cannot put us in a group.
+    var invitations: [GroupInvitation] = []
+
+    /// Joins the group of an invitation; it then appears with the others.
+    func acceptGroup(_ gid: Data) {
+        try? core.acceptGroup(gid: gid, nowMs: now())
+        groupsChanged()
+        pump()
+    }
+
+    /// Forgets an invitation; its admin is not told.
+    func declineGroup(_ gid: Data) {
+        try? core.declineGroup(gid: gid)
+        groupsChanged()
+    }
     /// Loaded histories, by conversation (filled when a chat is opened).
     var chats: [ChatID: [StoredMessage]] = [:]
     /// Conversations with messages, most recent first, with their unread counts.
@@ -342,6 +358,8 @@ final class AppModel {
     func startDemo() {
         resetState()
         core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
+        // The demo's people are friends: their groups are joined without asking.
+        core.setGroupConsent(ask: false)
         let net = DemoNetwork()
         demo = net
         isDemo = true
@@ -661,6 +679,11 @@ final class AppModel {
                 notifier.message(chat, title: title(of: chat),
                                  body: String(localized: "\(who) reacted \(emoji) to “\(what)”"))
             }
+        case let .groupInvited(_, name, admin, _):
+            groupsChanged()
+            // Tapping it opens the admin's conversation; the invitation waits in Messages.
+            notifier.message(.contact(key: admin), title: String(localized: "Group invitation"),
+                             body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"))
         case let .groupJoined(gid, _, admin):
             if joining.removeValue(forKey: admin) != nil { joinedByInvite[admin] = gid }
             groupsChanged()
@@ -1244,6 +1267,7 @@ final class AppModel {
 
     private func groupsChanged() {
         groups = core.groups()
+        invitations = core.groupInvitations()
         contacts = core.contacts().filter(\.person)
         #if DEBUG
         if debugOpen == nil, let name = UserDefaults.standard.string(forKey: "open"),

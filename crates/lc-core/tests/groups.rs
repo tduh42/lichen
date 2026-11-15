@@ -897,3 +897,115 @@ fn a_removal_reaches_a_member_who_was_away() {
         "the removal never reached Carol"
     );
 }
+
+/// Review of 2026-11-15, SR-13: any contact whose identity we know could put us in a group,
+/// import its members as contacts, and receive our SOS position. A group that lists us now
+/// waits for the user; declined, nothing of it stays.
+#[test]
+fn a_group_waits_for_the_user() {
+    let (mut net, m) = star(13);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    // Bob's app asks, and he never verified Alice in person; the others are simulated
+    // people and join at once.
+    let alice_id = *net.nodes[m[0]].core.as_ref().unwrap().key().unwrap();
+    net.with_core(m[1], |c, _| {
+        c.set_group_consent(true);
+        c.set_verified(&keys[0], &alice_id, false)
+    });
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("Bivouac", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    let mut ev = Vec::new();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        ev.extend(n.take_events(m[1]));
+        ev.iter().any(|e| matches!(e, Event::GroupInvited { .. }))
+    }));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        Event::GroupInvited { gid: g, name, members: 3, .. } if *g == gid && name == "Bivouac"
+    )));
+    assert!(!ev.iter().any(|e| matches!(e, Event::GroupJoined { .. })));
+    fn bob<'a>(net: &'a Net, m: &[usize]) -> &'a lc_core::Core {
+        net.nodes[m[1]].core.as_ref().unwrap()
+    }
+    assert_eq!(bob(&net, &m).groups().count(), 0);
+    assert_eq!(bob(&net, &m).invitations().len(), 1);
+    // Carol's node is not one of Bob's contacts until he joins.
+    assert!(!bob(&net, &m).contacts().any(|c| c.key == keys[2]));
+
+    // He accepts: he is a member, gets the keys, and reads Carol.
+    net.run_until(net.now + 20 * MIN, |_| false);
+    net.with_core(m[1], |c, now| c.accept_group(&gid, now))
+        .unwrap()
+        .unwrap();
+    assert!(bob(&net, &m).contacts().any(|c| c.key == keys[2]));
+    assert!(
+        net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)),
+        "keys after accepting"
+    );
+    settle(&mut net);
+    net.take_events(m[1]);
+    net.with_core(m[2], |c, now| {
+        c.send_group_text(&gid, "welcome", 1_793_900_000, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 5 * MIN, |_| false);
+    assert_eq!(
+        group_texts(&net.take_events(m[1])),
+        vec![(keys[2][0], "welcome".to_owned())]
+    );
+}
+
+#[test]
+fn a_declined_group_leaves_nothing() {
+    let (mut net, m) = star(14);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let alice_id = *net.nodes[m[0]].core.as_ref().unwrap().key().unwrap();
+    net.with_core(m[1], |c, _| {
+        c.set_group_consent(true);
+        c.set_verified(&keys[0], &alice_id, false)
+    });
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("Spam", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        n.nodes[m[1]].core.as_ref().unwrap().invitations().len() == 1
+    }));
+    net.with_core(m[1], |c, _| c.decline_group(&gid));
+    net.run_until(net.now + 30 * MIN, |_| false);
+    let bob = net.nodes[m[1]].core.as_ref().unwrap();
+    assert!(bob.invitations().is_empty());
+    assert_eq!(bob.groups().count(), 0);
+    assert!(!bob.contacts().any(|c| c.key == keys[2]));
+}
+
+/// Someone verified in person adds us: joined at once, as in other messengers.
+#[test]
+fn a_verified_admin_adds_us() {
+    let (mut net, m) = star(15);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    net.with_core(m[1], |c, _| c.set_group_consent(true));
+    let gid = net
+        .with_core(m[0], |c, now| c.create_group("Amis", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        n.nodes[m[1]]
+            .core
+            .as_ref()
+            .unwrap()
+            .groups()
+            .any(|g| g.gid == gid)
+    }));
+    assert!(
+        net.nodes[m[1]]
+            .core
+            .as_ref()
+            .unwrap()
+            .invitations()
+            .is_empty()
+    );
+}

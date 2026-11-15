@@ -778,4 +778,10 @@
     <string name="editing_your_message">Editing your message</string>
     <string name="cancel_edit">Cancel the edit</string>
     <string name="forward">Forward</string>
+    <string name="group_invitation">Group invitation</string>
+    <string name="invites_you_to">%1$s invites you to “%2$s”</string>
+    <string name="invitation_unverified">You did not verify this person in person: join only if you know them.</string>
+    <string name="invitation_nobody_else">Nobody else yet. %1$s</string>
+    <string name="invitation_with">With %1$s. %2$s</string>
+    <string name="decline">Decline</string>
 </resources>

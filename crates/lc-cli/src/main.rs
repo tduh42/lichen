@@ -277,6 +277,13 @@ fn describe(core: &Core, e: &Event) -> String {
         Event::Progress { sent, total, .. } => {
             format!("fragment {sent} sent ({total} in the datagram)")
         }
+        Event::GroupInvited {
+            gid, name, admin, ..
+        } => format!(
+            "invited to group \"{name}\" ({}) by {}",
+            hex::encode(&gid[..4]),
+            name_of(core, admin)
+        ),
         Event::GroupJoined { gid, name, admin } => format!(
             "added to group \"{name}\" ({}) by {}",
             hex::encode(&gid[..4]),

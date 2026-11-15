@@ -86,6 +86,14 @@ pub enum LichenEvent {
         emoji: String,
         target: Option<StoredMessage>,
     },
+    /// A group that lists us waits for the user (§10.1): `accept_group` or `decline_group`.
+    /// `admin` is the admin's node.
+    GroupInvited {
+        gid: Vec<u8>,
+        name: String,
+        admin: Vec<u8>,
+        members: u32,
+    },
     GroupJoined {
         gid: Vec<u8>,
         name: String,
@@ -222,6 +230,17 @@ impl LichenEvent {
                 reason: reason.into(),
             },
             Event::GroupSent { id } => Self::GroupSent { id },
+            Event::GroupInvited {
+                gid,
+                name,
+                admin,
+                members,
+            } => Self::GroupInvited {
+                gid: gid.to_vec(),
+                name,
+                admin: admin_node(&gid, &admin).to_vec(),
+                members: u32::try_from(members).unwrap_or(u32::MAX),
+            },
             Event::GroupJoined { gid, name, admin } => Self::GroupJoined {
                 gid: gid.to_vec(),
                 name,

@@ -366,6 +366,8 @@ impl Net {
         id_seed[1] ^= seed | 1;
         let mut core = Core::new(Config::new("lichen-sim", id_seed, rng_seed));
         core.set_clock(EPOCH_MS + self.now, self.now);
+        // Simulated people join the groups that list them; a test asks for consent itself.
+        core.set_group_consent(false);
         if let Some(n) = self.nodes.get_mut(i) {
             n.core = Some(core);
         }
@@ -382,6 +384,8 @@ impl Net {
         id_seed[0] ^= 0xA5;
         let mut core = Core::new(Config::new("lichen-sim", id_seed, rng_seed));
         core.set_clock(EPOCH_MS + self.now, self.now);
+        // Simulated people join the groups that list them; a test asks for consent itself.
+        core.set_group_consent(false);
         if let Some(n) = self.nodes.get_mut(i) {
             n.core = Some(core);
             n.connected = false;

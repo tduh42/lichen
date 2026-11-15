@@ -236,7 +236,14 @@ impl LichenCore {
             core.groups()
                 .find(|g| g.gid == *gid)
                 .and_then(|g| g.members.iter().find(|m| m.key == *admin))
-                .map_or(*admin, |m| m.node)
+                .map(|m| m.node)
+                .or_else(|| {
+                    core.invitations()
+                        .iter()
+                        .find(|i| i.gid() == gid)
+                        .and_then(|i| i.admin_node())
+                })
+                .unwrap_or(*admin)
         }))
     }
 

@@ -48,6 +48,18 @@ impl ContactInfo {
     }
 }
 
+/// A group that lists us and waits for the user's answer (§10.1).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct GroupInvitation {
+    pub gid: Vec<u8>,
+    pub name: String,
+    /// The admin's node, and the name we know it by.
+    pub admin: Vec<u8>,
+    pub admin_name: String,
+    /// The other members' names, as the admin lists them.
+    pub members: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct GroupInfo {
     pub gid: Vec<u8>,

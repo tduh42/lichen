@@ -465,6 +465,46 @@ pub fn gid_hash(gid: &GroupId) -> u16 {
     u16::from_le_bytes([d[0], d[1]])
 }
 
+/// A group that listed us, waiting for the user (§10.1, SR-13).
+#[derive(Clone, Debug)]
+pub struct Invitation {
+    pub(crate) state: State,
+    pub(crate) at: Millis,
+}
+
+impl Invitation {
+    pub const fn gid(&self) -> &GroupId {
+        &self.state.gid
+    }
+    pub fn name(&self) -> &str {
+        &self.state.name
+    }
+    /// The admin's identity.
+    pub const fn admin(&self) -> &PubKey {
+        &self.state.admin
+    }
+    /// The admin's node, as the state lists it.
+    pub fn admin_node(&self) -> Option<PubKey> {
+        self.state
+            .members
+            .iter()
+            .find(|m| m.key == self.state.admin)
+            .map(|m| m.node)
+    }
+    pub fn members(&self) -> &[Member] {
+        &self.state.members
+    }
+}
+
+/// Groups one phone belongs to at most; a further invitation is declined (SR-13).
+pub const MAX_GROUPS: usize = 32;
+/// Invitations waiting for the user at most; the oldest goes first.
+const MAX_INVITATIONS: usize = 8;
+/// How long an invitation waits for the user.
+const INVITATION_MS: Millis = 7 * 24 * 3_600_000;
+/// How long a scanned invitation waits for the admin's state (§10.5).
+const JOINING_MS: Millis = 3_600_000;
+
 /// A key that arrived before its group state.
 #[derive(Clone, Debug)]
 pub(crate) struct PendingKey {
@@ -1180,6 +1220,9 @@ impl Core {
         );
         self.add_contact(invite.node, &name, path);
         self.set_identity(&invite.node, invite.admin, true);
+        self.joining
+            .retain(|(a, at)| *a != invite.admin && at + JOINING_MS > now);
+        self.joining.push((invite.admin, now));
         let mut join = vec![content::GROUP_JOIN];
         join.extend_from_slice(&invite.token);
         self.unknown_to(&invite.node);
@@ -1619,44 +1662,17 @@ impl Core {
         }
         let listed = state.members.iter().any(|m| m.key == me);
         let gid = state.gid;
+        if !self.groups.contains_key(&gid) {
+            self.invitation(state, listed, now);
+            return;
+        }
         let admin = admin_actor(&state);
         self.dirty_groups.insert(gid);
         if listed {
             self.learn_members(&state.members);
         }
         match self.groups.get_mut(&gid) {
-            None => {
-                if !listed {
-                    return;
-                }
-                let my_key = self.fresh_key();
-                self.groups.insert(
-                    gid,
-                    Group {
-                        gid,
-                        name: state.name.clone(),
-                        admin: state.admin,
-                        epoch: state.epoch,
-                        members: state.members,
-                        my_key,
-                        my_epoch: 0,
-                        my_counter: 0,
-                        my_aux: AUX,
-                        keys: HashMap::new(),
-                        partials: Vec::new(),
-                        announce_key: false,
-                        recovery: Recovery::default(),
-                    },
-                );
-                // Our first key goes to the admin, who forwards it (§10.2).
-                self.send_my_key(&gid, Some(&[state.admin]));
-                self.events.push_back(Event::GroupJoined {
-                    gid,
-                    name: state.name,
-                    admin: state.admin,
-                });
-                self.changed(gid, notice::ADDED_US, admin, Vec::new(), String::new());
-            }
+            None => {}
             Some(g) => {
                 if g.admin != *from || state.epoch <= g.epoch {
                     return;
@@ -1721,21 +1737,144 @@ impl Core {
                 }
             }
         }
-        // Keys that came before this state.
+        self.take_pending_keys(&gid, now);
+    }
+
+    /// Keys that came before group `gid`'s state (or while it waited for the user) are used;
+    /// other groups' keep waiting, ten minutes, or as long as their invitation waits.
+    fn take_pending_keys(&mut self, gid: &GroupId, now: Millis) {
         let pending: Vec<PendingKey> = std::mem::take(&mut self.pending_keys);
         for p in pending {
-            if p.gid == gid {
+            if p.gid == *gid {
                 match p.via {
                     None => self.on_sender_key(&p.from, p.gid, p.epoch, p.key, p.next_counter, now),
                     Some(via) => {
                         let entry = (p.from, p.epoch, p.key, p.next_counter);
-                        self.on_sender_keys(&via, gid, vec![entry], now);
+                        self.on_sender_keys(&via, *gid, vec![entry], now);
                     }
                 }
-            } else if p.at + PENDING_KEY_MS > now {
+            } else if p.at + PENDING_KEY_MS > now
+                || self.invitations.iter().any(|i| i.state.gid == p.gid)
+            {
                 self.pending_keys.push(p);
             }
         }
+    }
+
+    /// A state for a group we do not belong to (§10.1, SR-13). One that lists us is an
+    /// invitation: joined at once when the user asked for it with a scanned invitation
+    /// (§10.5) or its admin is a contact verified in person, held for the user otherwise. A newer state from the same admin replaces a
+    /// held one; one that no longer lists us withdraws it.
+    fn invitation(&mut self, state: State, listed: bool, now: Millis) {
+        let gid = state.gid;
+        self.invitations.retain(|i| i.at + INVITATION_MS > now);
+        self.joining.retain(|(_, at)| at + JOINING_MS > now);
+        if let Some(pos) = self.invitations.iter().position(|i| i.state.gid == gid) {
+            let held = &self.invitations[pos].state;
+            if held.admin != state.admin || state.epoch <= held.epoch {
+                return;
+            }
+            if !listed {
+                self.invitations.remove(pos);
+                return;
+            }
+            self.invitations[pos].state = state;
+            return;
+        }
+        if !listed || self.groups.len() >= MAX_GROUPS {
+            return;
+        }
+        let asked = self.joining.iter().any(|(a, _)| *a == state.admin);
+        // Someone the user verified in person may add them, as a contact may in other
+        // messengers; anyone else's group waits.
+        let trusted = self
+            .contacts
+            .values()
+            .any(|c| c.verified && c.identity == Some(state.admin));
+        if asked || trusted || !self.group_consent {
+            self.joining.retain(|(a, _)| *a != state.admin);
+            self.join_group(state, now);
+            return;
+        }
+        if self.invitations.len() >= MAX_INVITATIONS {
+            self.invitations.remove(0);
+        }
+        self.events.push_back(Event::GroupInvited {
+            gid,
+            name: state.name.clone(),
+            admin: state.admin,
+            members: state.members.len(),
+        });
+        self.invitations.push(Invitation { state, at: now });
+    }
+
+    /// Becomes a member of the group of `state` (§10.1): its members become contacts, our
+    /// first key goes to the admin (§10.2), the keys that came early are used.
+    fn join_group(&mut self, state: State, now: Millis) {
+        let gid = state.gid;
+        let admin = admin_actor(&state);
+        self.dirty_groups.insert(gid);
+        self.learn_members(&state.members);
+        let my_key = self.fresh_key();
+        self.groups.insert(
+            gid,
+            Group {
+                gid,
+                name: state.name.clone(),
+                admin: state.admin,
+                epoch: state.epoch,
+                members: state.members,
+                my_key,
+                my_epoch: 0,
+                my_counter: 0,
+                my_aux: AUX,
+                keys: HashMap::new(),
+                partials: Vec::new(),
+                announce_key: false,
+                recovery: Recovery::default(),
+            },
+        );
+        // Our first key goes to the admin, who forwards it (§10.2).
+        self.send_my_key(&gid, Some(&[state.admin]));
+        self.events.push_back(Event::GroupJoined {
+            gid,
+            name: state.name,
+            admin: state.admin,
+        });
+        self.changed(gid, notice::ADDED_US, admin, Vec::new(), String::new());
+        self.take_pending_keys(&gid, now);
+    }
+
+    /// Groups that listed us and wait for the user (§10.1).
+    pub fn invitations(&self) -> &[Invitation] {
+        &self.invitations
+    }
+
+    /// The user joins the group of a held invitation.
+    pub fn accept_group(&mut self, gid: &GroupId, now: Millis) -> Result<(), Error> {
+        let pos = self
+            .invitations
+            .iter()
+            .position(|i| i.state.gid == *gid)
+            .ok_or(Error::UnknownGroup)?;
+        if self.groups.len() >= MAX_GROUPS {
+            return Err(Error::NotAllowed);
+        }
+        let inv = self.invitations.remove(pos);
+        self.join_group(inv.state, now);
+        Ok(())
+    }
+
+    /// The user does not join: the invitation is forgotten. The admin is not told; it keeps
+    /// listing us until it removes us.
+    pub fn decline_group(&mut self, gid: &GroupId) {
+        self.invitations.retain(|i| i.state.gid != *gid);
+        self.pending_keys.retain(|p| p.gid != *gid);
+    }
+
+    /// Joins at once when listed (test nodes and bots), or waits for the user (the apps).
+    pub fn set_group_consent(&mut self, ask: bool) {
+        self.group_consent = ask;
     }
 
     fn on_sender_key(

@@ -40,6 +40,8 @@ impl Device {
             core: Core::new(Config::new("lichen-cli", identity, seed)),
             verbose: false,
         };
+        // A test bot: it joins the groups that list it, without asking (§10.1).
+        dev.core.set_group_consent(false);
         let now = dev.now();
         dev.core.connect(now);
         Ok(dev)

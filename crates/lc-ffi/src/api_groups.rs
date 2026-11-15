@@ -4,6 +4,65 @@ use super::*;
 
 #[uniffi::export]
 impl LichenCore {
+    /// Groups that list us and wait for the user (§10.1): nothing of them is used, and no
+    /// member becomes a contact, until `accept_group`.
+    pub fn group_invitations(&self) -> Vec<GroupInvitation> {
+        let i = self.lock();
+        let me = i.core.key().copied();
+        i.core
+            .invitations()
+            .iter()
+            .map(|inv| {
+                let admin = inv.admin_node().unwrap_or(*inv.admin());
+                let admin_name = i
+                    .nicknames
+                    .get(&admin)
+                    .cloned()
+                    .or_else(|| {
+                        i.core
+                            .contacts()
+                            .find(|c| c.key == admin)
+                            .map(|c| c.name.clone())
+                    })
+                    .unwrap_or_default();
+                GroupInvitation {
+                    gid: inv.gid().to_vec(),
+                    name: inv.name().to_owned(),
+                    admin: admin.to_vec(),
+                    admin_name,
+                    members: inv
+                        .members()
+                        .iter()
+                        .filter(|m| Some(m.key) != me && m.key != *inv.admin())
+                        .map(|m| m.name.clone())
+                        .collect(),
+                }
+            })
+            .collect()
+    }
+
+    /// Joins the group of an invitation (§10.1).
+    pub fn accept_group(&self, gid: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
+        let g = super::chat::gid(&gid)?;
+        let mut i = self.lock();
+        i.core.accept_group(&g, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Whether a group that lists us, from an admin not verified in person, waits for the user
+    /// (the default) or is joined at once (the demo network's friends).
+    pub fn set_group_consent(&self, ask: bool) {
+        self.lock().core.set_group_consent(ask);
+    }
+
+    /// Does not join: the invitation is forgotten, and the admin is not told.
+    pub fn decline_group(&self, gid: Vec<u8>) -> Result<(), LichenError> {
+        let g = super::chat::gid(&gid)?;
+        self.lock().core.decline_group(&g);
+        Ok(())
+    }
+
     pub fn create_group(
         &self,
         name: String,

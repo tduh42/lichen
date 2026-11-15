@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.core.GroupInvitation
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -190,6 +194,7 @@ fun ConversationsScreen(
         ) {
             item { RadioCard(model) }
             item { StatusBanners(model, pair) }
+            items(model.invitations, key = { "inv" + it.gid.hex() }) { InvitationCard(model, it) }
             if (rows.isEmpty()) {
                 item { EmptyConversations() }
             } else {
@@ -422,6 +427,33 @@ fun RadioCard(model: AppModel) {
 }
 
 /** Degraded states that concern the whole app (mockup `etats`): radio, budget. */
+/** A group that lists us, from someone not verified in person: joined only if the user says
+ * so (§10.1). */
+@Composable
+fun InvitationCard(model: AppModel, invitation: GroupInvitation) {
+    val t = lichen
+    val note = stringResource(R.string.invitation_unverified)
+    val members = if (invitation.members.isEmpty()) {
+        stringResource(R.string.invitation_nobody_else, note)
+    } else {
+        stringResource(R.string.invitation_with, invitation.members.joinToString(", "), note)
+    }
+    Column(
+        Modifier.fillMaxWidth().background(t.s1, RoundedCornerShape(14.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            stringResource(R.string.invites_you_to, invitation.adminName, invitation.name),
+            fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+        )
+        Text(members, fontSize = 13.sp, color = t.tx2)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton(stringResource(R.string.join), Modifier.weight(1f)) { model.acceptGroup(invitation.gid) }
+            SecondaryButton(stringResource(R.string.decline), Modifier.weight(1f)) { model.declineGroup(invitation.gid) }
+        }
+    }
+}
+
 @Composable
 fun StatusBanners(model: AppModel, pair: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

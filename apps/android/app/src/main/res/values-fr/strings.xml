@@ -785,4 +785,10 @@
     <string name="editing_your_message">Modification de ton message</string>
     <string name="cancel_edit">Annuler la modification</string>
     <string name="forward">Transférer</string>
+    <string name="group_invitation">Invitation dans un groupe</string>
+    <string name="invites_you_to">%1$s t\'invite dans « %2$s »</string>
+    <string name="invitation_unverified">Tu n\'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais.</string>
+    <string name="invitation_nobody_else">Personne d\'autre pour l\'instant. %1$s</string>
+    <string name="invitation_with">Avec %1$s. %2$s</string>
+    <string name="decline">Refuser</string>
 </resources>

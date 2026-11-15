@@ -121,6 +121,16 @@
         }
       }
     },
+    "%@ invites you to “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ t'invite dans « %2$@ »"
+          }
+        }
+      }
+    },
     "%@ is searching for you": {
       "localizations": {
         "fr": {
@@ -1911,6 +1921,16 @@
         }
       }
     },
+    "Decline": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refuser"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "fr": {
@@ -2697,6 +2717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Détails du groupe"
+          }
+        }
+      }
+    },
+    "Group invitation": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invitation dans un groupe"
           }
         }
       }
@@ -4077,6 +4107,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun transport ne joint l'expéditeur : active iroh ou Tor."
+          }
+        }
+      }
+    },
+    "Nobody else yet. You did not verify this person in person: join only if you know them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne d'autre pour l'instant. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
           }
         }
       }
@@ -6817,6 +6857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À l'appairage, iOS demande les 6 chiffres affichés sur l'écran de la radio : saisis-les dans sa fenêtre. La radio reste ensuite appairée à ce téléphone."
+          }
+        }
+      }
+    },
+    "With %@. You did not verify this person in person: join only if you know them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec %@. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
           }
         }
       }

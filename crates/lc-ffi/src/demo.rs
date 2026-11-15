@@ -1017,6 +1017,7 @@ mod tests {
     fn a_guest_joins_by_invitation() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("demo-test".into(), vec![8; 32], vec![108; 32], None).unwrap();
+        core.set_group_consent(false);
         core.set_clock(unix_now_ms(), 0);
         core.connect(0);
         let mut gid = None;
@@ -1102,6 +1103,7 @@ mod tests {
     fn demo_conversation_and_group() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("demo-test".into(), vec![7; 32], vec![107; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let mut events = Vec::new();
         let mut sent = false;
@@ -1215,6 +1217,7 @@ mod location {
         let demo = DemoNetwork::new();
         demo.julien_sos();
         let core = LichenCore::new("t".into(), vec![5; 32], vec![105; 32], None).unwrap();
+        core.set_group_consent(false);
         core.set_clock(unix_now_ms(), 0);
         core.connect(0);
         let mut searching: Option<Vec<u8>> = None;
@@ -1292,6 +1295,7 @@ mod location {
     fn bots_share_their_positions() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![4; 32], vec![104; 32], None).unwrap();
+        core.set_group_consent(false);
         core.set_clock(unix_now_ms(), 0);
         core.connect(0);
         let mut events = Vec::new();
@@ -1355,6 +1359,7 @@ mod media {
     fn voice_and_images_with_camille() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![5; 32], vec![105; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let mut changed: Vec<StoredMessage> = Vec::new();
         let mut step = 0;
@@ -1459,6 +1464,7 @@ mod bridge {
     fn camille_announces_her_photo_over_iroh() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![6; 32], vec![106; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let mut announce = None;
         let mut now = 0;
@@ -1575,6 +1581,7 @@ mod persistence {
         let demo = DemoNetwork::new();
 
         let core = LichenCore::new("t".into(), vec![1; 32], vec![101; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let (mut sent, mut posted) = (false, false);
         run(&demo, &core, 0, 8 * 60_000, |c, now| {
@@ -1620,6 +1627,7 @@ mod persistence {
 
         // The app restarts with its identity seed from the Keychain: history before connecting.
         let core = LichenCore::new("t".into(), vec![2; 32], vec![101; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         assert_eq!(
             core.history(
                 ChatRef::Contact {
@@ -1689,6 +1697,7 @@ mod unread {
     fn unread_counts_received_messages() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![3; 32], vec![103; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let mut now = 0;
         while now < 60_000 {
@@ -1779,6 +1788,7 @@ mod outbox {
         let (dir, data) = data_dir("outbox-restart");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![1; 32], vec![111; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 2 * 60_000);
         let camille = camille(&core);
@@ -1807,6 +1817,7 @@ mod outbox {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![2; 32], vec![111; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         assert!(matches!(
             status_of(&core, &camille, m.id),
             MessageStatus::Waiting {
@@ -1829,6 +1840,7 @@ mod outbox {
         let (dir, data) = data_dir("outbox-ack");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![3; 32], vec![112; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 2 * 60_000);
         let camille = camille(&core);
@@ -1852,6 +1864,7 @@ mod outbox {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![4; 32], vec![112; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(6 * 60_000);
         events.extend(run(&demo, &core, 6 * 60_000, 14 * 60_000));
         assert_eq!(status_of(&core, &camille, m.id), MessageStatus::Delivered);
@@ -1863,6 +1876,7 @@ mod outbox {
     fn cancel_expiry_and_retry() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![5; 32], vec![113; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 2 * 60_000);
         let camille = camille(&core);
@@ -1918,6 +1932,7 @@ mod outbox {
     fn a_group_text_waits_for_the_radio() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![6; 32], vec![114; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 8 * 60_000);
         let gid = core.groups().into_iter().next().expect("in the group").gid;
@@ -1988,6 +2003,7 @@ mod replies {
         let (dir, data) = data_dir("replies");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![1; 32], vec![131; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 60_000);
         let camille = core
@@ -2074,6 +2090,7 @@ mod replies {
         // Kept across a restart.
         drop(core);
         let core = LichenCore::new("t".into(), vec![2; 32], vec![131; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         check(&core);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -2084,6 +2101,7 @@ mod replies {
         let (dir, data) = data_dir("reaction-restart");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![3; 32], vec![132; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 60_000);
         let camille = core
@@ -2103,6 +2121,7 @@ mod replies {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![4; 32], vec![132; 32], data.clone()).unwrap();
+        core.set_group_consent(false);
         let pending = |c: &LichenCore| {
             c.lock()
                 .store
@@ -2157,6 +2176,7 @@ mod meshcore {
     fn marc_and_the_public_channel() {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![1; 32], vec![150; 32], None).unwrap();
+        core.set_group_consent(false);
         core.connect(0);
         let events = run(&demo, &core, 0, 70_000);
         let channels = core.channels();

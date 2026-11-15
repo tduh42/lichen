@@ -17,6 +17,7 @@ struct ConversationsView: View {
                     header
                     RadioCard()
                     StatusBanners()
+                    ForEach(model.invitations, id: \.gid) { InvitationCard(invitation: $0) }
                     if rows.isEmpty {
                         EmptyConversations { addingContact = true }
                     }
@@ -321,6 +322,59 @@ struct RadioCard: View {
         case .off: return String(localized: "Bluetooth is off")
         case .idle: return String(localized: "No radio connected")
         }
+    }
+}
+
+/// A group that lists us, from someone not verified in person: joined only if the user says
+/// so (§10.1).
+struct InvitationCard: View {
+    let invitation: GroupInvitation
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.3")
+                    .font(.system(.footnote, weight: .bold))
+                    .foregroundStyle(Theme.tx2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(invitation.adminName) invites you to “\(invitation.name)”")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Theme.tx)
+                    Text(members)
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            HStack(spacing: 10) {
+                // Each its own tap only: they share a List row.
+                Button { model.acceptGroup(invitation.gid) } label: {
+                    Text("Join").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .font(.system(.subheadline, weight: .semibold))
+                .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.actFg)
+                Button { model.declineGroup(invitation.gid) } label: {
+                    Text("Decline").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .font(.system(.subheadline, weight: .semibold))
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.tx)
+            }
+        }
+        .padding(12)
+        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var members: String {
+        let others = invitation.members
+        if others.isEmpty {
+            return String(localized: "Nobody else yet. You did not verify this person in person: join only if you know them.")
+        }
+        let list = ListFormatter.localizedString(byJoining: others)
+        return String(localized: "With \(list). You did not verify this person in person: join only if you know them.")
     }
 }
 
