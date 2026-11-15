@@ -8,6 +8,8 @@ import UserNotifications
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// The conversation on screen, if any.
     var visibleChat: ChatID?
+    /// The app lock's cover is up: the conversation behind it is not on screen.
+    var locked: (() -> Bool)?
     /// Opens a conversation (a tap on its notification).
     var onOpen: ((ChatID) -> Void)?
 
@@ -21,10 +23,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
+    /// Messages, reactions, invitations, MeshCore and channel posts. With the app lock on, they
+    /// say only "New message": no sender, no group, no text on the lock screen.
     func message(_ chat: ChatID, title: String, body: String) {
-        post(chat, title: title, body: body, sos: false)
+        if AppLock.hidesNotifications {
+            post(chat, title: "lichen", body: String(localized: "New message"), sos: false)
+        } else {
+            post(chat, title: title, body: body, sos: false)
+        }
     }
 
+    /// An SOS keeps its sender and content with the app lock on too: safety comes first.
     func sos(_ chat: ChatID, title: String, body: String) {
         post(chat, title: title, body: body, sos: true)
     }
@@ -90,7 +99,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter, willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
         let chat = Self.chat(from: notification.request.content.userInfo)
-        let visible = await MainActor.run { chat != nil && chat == visibleChat }
+        let visible = await MainActor.run { chat != nil && chat == visibleChat && locked?() != true }
         return visible ? [] : [.banner, .list, .sound]
     }
 

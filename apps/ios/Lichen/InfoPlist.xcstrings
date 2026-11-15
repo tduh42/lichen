@@ -25,6 +25,14 @@
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen enregistre tes messages vocaux, encodés en Codec2 pour tenir sur LoRa." } }
       }
     },
+    "NSFaceIDUsageDescription" : {
+      "comment" : "Face ID permission prompt",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen asks for Face ID to unlock when the app lock is on." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen demande Face ID pour se déverrouiller quand le verrouillage de l’appli est activé." } }
+      }
+    },
     "NSLocationWhenInUseUsageDescription" : {
       "comment" : "Location permission prompt",
       "extractionState" : "manual",
