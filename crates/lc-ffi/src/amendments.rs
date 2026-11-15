@@ -98,6 +98,19 @@ impl Inner {
         text: Option<&str>,
         ts: u32,
     ) {
+        // The author dates both the target and the change: the 24 hours are also held to this
+        // phone's clock. A change that comes more than a day (and an hour of slack) after the
+        // target arrived here is not applied (review of 2026-11-15, SR-15).
+        let late = self
+            .store
+            .as_ref()
+            .and_then(|s| s.message_by_ref(&chat, &target).ok().flatten())
+            .is_some_and(|m| {
+                unix_ms() > m.at_ms + (i64::from(lc_core::content::EDIT_WINDOW_S) + 3_600) * 1_000
+            });
+        if late {
+            return;
+        }
         let changed = self.store.as_ref().is_some_and(|s| {
             s.amend(&chat, &target, Some(by), text, ts, false, None)
                 .unwrap_or(false)

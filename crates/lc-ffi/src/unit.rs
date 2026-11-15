@@ -677,3 +677,50 @@ mod cards {
         assert_eq!(c.pending_identity(vec![70; 32]).unwrap(), None);
     }
 }
+
+/// Review of 2026-11-15, SR-15: a modified client can date an edit within 24 hours of its
+/// message whenever it likes. The receiver also counts from when the message arrived.
+#[cfg(test)]
+mod edit_window {
+    use super::*;
+
+    #[test]
+    fn an_edit_long_after_arrival_is_not_applied() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![143; 32], None).unwrap();
+        let mut i = core.lock();
+        let bob = [9u8; 32];
+        let now = u32::try_from(unix_ms() / 1000).unwrap();
+        let first = Content::Text {
+            sent_at: now,
+            text: "see you at 9".into(),
+        };
+        // It arrived two days ago (here), though its author dates the edit within the day.
+        let target = message_ref(&bob, &first.encode());
+        i.record(store::Message {
+            id: 0,
+            chat: Chat::Contact(bob),
+            outgoing: false,
+            author: None,
+            content: first,
+            at_ms: unix_ms() - 2 * 86_400_000,
+            status: Status::Received,
+            fragments: 0,
+            airtime_ms: 0,
+            snr4: None,
+            read: true,
+            msg_ref: Some(target),
+        });
+        i.on_amendment(
+            Chat::Contact(bob),
+            target,
+            &bob,
+            Some("see you never"),
+            now + 60,
+        );
+        drop(i);
+        let h = core
+            .history(ChatRef::Contact { key: bob.to_vec() }, None, 10)
+            .unwrap();
+        assert!(!h[0].edited);
+    }
+}
