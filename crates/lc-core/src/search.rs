@@ -134,9 +134,11 @@ pub struct SearchInfo {
 /// Envelope identity in the clear header: `(gid_hash, sender, key_epoch, counter)`.
 type CopyKey = (u16, u8, u8, u32);
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct Direct {
     key: CopyKey,
+    /// The copy as heard: it counts only once it verifies under the member's key (SR-16).
+    payload: Vec<u8>,
     snr4: i8,
     rssi: i8,
     at: Millis,
@@ -645,7 +647,9 @@ impl Core {
             .find(|a| a.0 == key)
             .map(|a| a.1);
         if let Some(member) = known {
-            self.search_reception(member, key, snr4, rssi, now);
+            if self.copy_is_from(&member, payload) {
+                self.search_reception(member, key, snr4, rssi, now);
+            }
             return;
         }
         let d = &mut self.search.direct;
@@ -654,6 +658,7 @@ impl Core {
         }
         d.push_back(Direct {
             key,
+            payload: payload.to_vec(),
             snr4,
             rssi,
             at: now,
@@ -687,11 +692,13 @@ impl Core {
             .direct
             .iter()
             .filter(|d| d.key == key)
-            .copied()
+            .cloned()
             .collect();
         self.search.direct.retain(|d| d.key != key);
         for c in copies {
-            self.search_reception(member, key, c.snr4, c.rssi, now);
+            if self.copy_is_from(&member, &c.payload) {
+                self.search_reception(member, key, c.snr4, c.rssi, now);
+            }
         }
     }
 

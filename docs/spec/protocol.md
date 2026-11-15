@@ -525,6 +525,8 @@ Every SEARCH message is one group message (§10.3): signed, flooded, two copies.
 - RSSI: the pushed value; when the radio reports 0 (stock MeshCore on a Heltec V4), the noise floor plus the SNR, flagged estimated. The noise floor comes from `GET_STATS` type 1 (`noise i16`), asked every 30 s while a search runs.
 - A searcher shares a MEASURE for the best direct reception (highest SNR) of each target message, at most one per 60 s per target unless it moved more than 50 m since its last one; a bearing is shared when added, at most one per 10 s, in a MEASURE of its own (`rssi` −128).
 
+A direct copy counts as a reception of its member only once it verifies under that member's sender key (each copy is checked, the second one too): an envelope's clear header can be re-emitted by anyone near a searcher, with any signal strength (review of 2026-11-15, SR-16).
+
 ### 11.3 Pings, beacons and airtime
 
 - A searcher sends a PING only if no BEACON or measurement of the target is less than 60 s old (its own or shared), and at most one per 30 s.

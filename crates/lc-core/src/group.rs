@@ -1862,6 +1862,24 @@ impl Core {
         self.take_pending_keys(&gid, now);
     }
 
+    /// Whether `payload`, a copy of an envelope heard on the air, verifies under `member`'s
+    /// sender key for its epoch, in a group whose hash it names: only such a copy is a
+    /// reception of that member (§11.2). Its clear header alone proves nothing (review of
+    /// 2026-11-15, SR-16).
+    pub(crate) fn copy_is_from(&self, member: &PubKey, payload: &[u8]) -> bool {
+        let Some((h, _)) = group::parse(payload) else {
+            return false;
+        };
+        self.groups
+            .values()
+            .filter(|g| gid_hash(&g.gid) == h.gid_hash)
+            .filter_map(|g| g.keys.get(member))
+            .flat_map(|k| [k.current.as_ref(), k.previous.as_ref()])
+            .flatten()
+            .filter(|k| k.epoch == h.key_epoch)
+            .any(|k| group::open(&k.key, &mut payload.to_vec()).is_ok())
+    }
+
     /// Groups that listed us and wait for the user (§10.1).
     pub fn invitations(&self) -> &[Invitation] {
         &self.invitations
@@ -2829,6 +2847,25 @@ mod tests {
         // Handed again: already there.
         core.on_group_control(&[1; 32], &encode_resend(&GID, &[e1]), 51_000);
         assert!(texts(&mut core).is_empty());
+    }
+
+    /// Review of 2026-11-15, SR-16: search counts a direct copy as a reception of its
+    /// member only if it verifies under the member's key. Its clear header can be re-emitted
+    /// by anyone near a searcher, with any signal strength.
+    #[test]
+    fn a_copy_counts_only_if_it_verifies() {
+        let mut probe = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let (bob_prv, bob) = member(&mut probe, 7, [1; 32]);
+        let core = core_with_group(&[(bob, [10; 32], 0)]);
+        let genuine = envelope(&bob, &[10; 32], 0, &bob_prv, "here");
+        assert!(core.copy_is_from(&bob, &genuine));
+        let mut forged = genuine.clone();
+        let last = forged.len() - 1;
+        forged[last] ^= 1;
+        assert!(!core.copy_is_from(&bob, &forged));
+        let mut header_only = genuine[..group::HEADER_LEN].to_vec();
+        header_only.extend_from_slice(&[0u8; 40]);
+        assert!(!core.copy_is_from(&bob, &header_only));
     }
 
     /// Review of 2026-11-15, SR-14: a member asking again and again for the same message gets
