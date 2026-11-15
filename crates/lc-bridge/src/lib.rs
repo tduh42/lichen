@@ -242,7 +242,9 @@ mod offers {
             theirs.write_all(&head).await.unwrap();
             theirs.write_all(&send).await.unwrap();
         });
-        let got = read_response(&mut ours, &hash(&blob), MAX_SIZE).await.unwrap();
+        let got = read_response(&mut ours, &hash(&blob), MAX_SIZE)
+            .await
+            .unwrap();
         writer.await.unwrap();
         assert_eq!(got, blob);
     }
@@ -267,11 +269,17 @@ mod offers {
         let (_x, b) = tokio::io::duplex(64);
         let (mut r, mut w) = tokio::io::split(b);
         let one_more = serve(&offers, &mut r, &mut w).await;
-        assert_eq!(one_more.unwrap_err().kind(), std::io::ErrorKind::QuotaExceeded);
+        assert_eq!(
+            one_more.unwrap_err().kind(),
+            std::io::ErrorKind::QuotaExceeded
+        );
         // The silent ones are given up after the request limit.
         tokio::time::advance(REQUEST_LIMIT + Duration::from_secs(1)).await;
         for t in tasks {
-            assert_eq!(t.await.unwrap().unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+            assert_eq!(
+                t.await.unwrap().unwrap_err().kind(),
+                std::io::ErrorKind::TimedOut
+            );
         }
         assert_eq!(offers.serving.available_permits(), SERVING_MAX);
     }
