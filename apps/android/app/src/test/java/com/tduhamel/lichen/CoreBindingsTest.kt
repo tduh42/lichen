@@ -94,7 +94,7 @@ class CoreBindingsTest {
 
     @Test
     fun chatIdsCompareByContent() {
-        val a = ChatId.contact(byteArrayOf(1, 2, 3))
+        val a = ChatId.contact(ByteArray(32) { it.toByte() })
         val b = ChatId.of(a.ref)
         assertEquals(a, b)
         assertEquals(a, ChatId.fromRoute(a.route))

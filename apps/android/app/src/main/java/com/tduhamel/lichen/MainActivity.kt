@@ -19,6 +19,7 @@ import androidx.core.content.IntentCompat
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.Notifications
+import com.tduhamel.lichen.model.isHex
 import com.tduhamel.lichen.ui.LichenTheme
 import com.tduhamel.lichen.ui.RootScreen
 import com.tduhamel.lichen.ui.isDark
@@ -78,7 +79,7 @@ class MainActivity : ComponentActivity() {
     private fun handle(intent: Intent?) {
         intent?.getStringExtra(Notifications.EXTRA_CHAT)?.let(ChatId::fromRoute)?.let { model.openChat = it }
         // An SOS notification opens its search.
-        intent?.getStringExtra(Notifications.EXTRA_SOS)?.let { model.openSearch = it }
+        intent?.getStringExtra(Notifications.EXTRA_SOS)?.takeIf { it.isHex(32) }?.let { model.openSearch = it.lowercase() }
         if (intent?.action == UsbManager.ACTION_USB_DEVICE_ATTACHED) {
             IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_DEVICE, UsbDevice::class.java)?.let { model.connectUsb(it) }
         }

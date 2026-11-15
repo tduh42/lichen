@@ -1533,7 +1533,10 @@ class AppModel(val app: Application) {
     }
 
     private fun keep(bytes: ByteArray, hash: ByteArray, name: String): File {
-        val ext = name.substringAfterLast('.', "").ifEmpty { "bin" }
+        // The name comes from whoever offered the file: only a plain extension is kept, so a
+        // separator or a control character can never reach the path (review of 2026-11-15, SR-24).
+        val ext = name.substringAfterLast('.', "").takeIf { e -> e.length in 1..10 && e.all { it.isLetterOrDigit() && it.code < 128 } }
+            ?.lowercase() ?: "bin"
         val f = File(folder("downloads"), "${hash.hex()}.$ext")
         f.writeBytes(bytes)
         downloads[hash.hex()] = f
@@ -1607,7 +1610,11 @@ class AppModel(val app: Application) {
                             b.startTor(folder("tor-state").path, folder("tor-cache").path, false, 180u)
                         }
                         val bytes = b.fetch(p.transport, p.key, a.hash, a.size.toULong())
-                        keep(bytes, a.hash, a.name)
+                        try {
+                            keep(bytes, a.hash, a.name)
+                        } catch (e: java.io.IOException) {
+                            break
+                        }
                         return@launch
                     } catch (e: BridgeException) {
                         failure = e.display(res)
