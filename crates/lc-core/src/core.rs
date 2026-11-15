@@ -438,6 +438,31 @@ pub(crate) enum Expect {
     ChannelPost(MsgId),
 }
 
+/// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
+/// answers any command.
+fn answers(expect: Expect, r: &Response<'_>) -> bool {
+    use Response as R;
+    match (expect, r) {
+        (_, R::Err(_)) => true,
+        (Expect::SelfInfo, R::SelfInfo(_)) => true,
+        (Expect::DeviceInfo, R::DeviceInfo(_)) => true,
+        (Expect::Contacts, R::ContactsStart { .. } | R::Contact(_) | R::EndOfContacts { .. }) => {
+            true
+        }
+        (Expect::Contact, R::Contact(_)) => true,
+        (
+            Expect::Ok | Expect::TxPower(_) | Expect::ChannelSet(_) | Expect::ChannelPost(_),
+            R::Ok,
+        ) => true,
+        (Expect::Scope, R::DefaultFloodScope { .. }) => true,
+        (Expect::Stats, R::RadioStats { .. }) => true,
+        (Expect::Sync, R::ContactMsg { .. } | R::ChannelMsg { .. } | R::NoMoreMessages) => true,
+        (Expect::Channel(i), R::ChannelInfo { index, .. }) => *index == i,
+        (Expect::PlainSent(_), R::Sent { .. }) => true,
+        _ => false,
+    }
+}
+
 /// Tries of a membership datagram (GROUP_STATE, SENDER_KEY, SENDER_KEYS): five within half an
 /// hour, then one an hour for a day (§10.1, SR-12).
 const MEMBERSHIP_TRIES: u8 = 5 + 24;
@@ -1558,7 +1583,16 @@ impl Core {
     }
 
     fn on_reply(&mut self, r: Response<'_>, now: Millis) {
-        let expect = self.awaiting.map(|(e, _)| e);
+        // Only the answer to the command we wait for counts, by its type (the companion
+        // protocol has no request id): a reply nobody asked for is dropped and does not end
+        // the wait (review of 2026-11-15, SR-32). One of a type we do not model still ends it.
+        let Some(awaited) = self.awaiting.map(|(e, _)| e) else {
+            return;
+        };
+        if !matches!(r, Response::Other { .. }) && !answers(awaited, &r) {
+            return;
+        }
+        let expect = Some(awaited);
         let mut done = true;
         match r {
             Response::SelfInfo(si) => {
@@ -3037,6 +3071,44 @@ fn received_data(r: Received<'_>) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A GET_CHANNEL answer: `0x12 ‖ index ‖ name (32) ‖ secret (16)`.
+    fn channel_info(index: u8, name: &str, secret: [u8; 16]) -> Vec<u8> {
+        let mut f = vec![0x12, index];
+        let mut n = [0u8; 32];
+        n[..name.len()].copy_from_slice(name.as_bytes());
+        f.extend_from_slice(&n);
+        f.extend_from_slice(&secret);
+        f
+    }
+
+    /// Review of 2026-11-15, SR-32: a reply only counts as the answer to the command awaited,
+    /// by its type. Another channel's info, or one nobody asked for, changes nothing and does
+    /// not end the wait.
+    #[test]
+    fn a_reply_nobody_asked_for_is_dropped() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        let names = |c: &Core| {
+            c.channels()
+                .iter()
+                .map(|ch| ch.name.clone())
+                .collect::<Vec<_>>()
+        };
+        core.on_companion_frame(&channel_info(3, "#evil", [9; 16]), 0);
+        assert!(names(&core).is_empty(), "nothing was asked");
+        core.command(&Command::GetChannel { index: 2 }, Expect::Channel(2));
+        assert!(core.poll_companion(10).is_some());
+        core.on_companion_frame(&channel_info(5, "#evil", [9; 16]), 20);
+        assert_eq!(
+            core.awaiting.map(|(e, _)| e),
+            Some(Expect::Channel(2)),
+            "still waiting"
+        );
+        assert!(names(&core).is_empty());
+        core.on_companion_frame(&channel_info(2, "#hike", [3; 16]), 30);
+        assert_eq!(core.awaiting, None, "answered");
+        assert_eq!(names(&core), vec!["#hike".to_owned()]);
+    }
 
     /// Review of 2026-11-15, SR-07: after a secret is drawn, the generator is a new one, keyed
     /// from its own output: its state is not the old stream continued, so a memory image taken
