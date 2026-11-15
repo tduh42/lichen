@@ -95,18 +95,33 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     // MARK: UNUserNotificationCenterDelegate
 
+    // The completion-handler forms, called on the main queue: with the async forms, iOS called
+    // the completion wherever the task ended, off the main thread, and UIKit aborted the app
+    // when a notification was tapped.
+
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
+        _ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
         let chat = Self.chat(from: notification.request.content.userInfo)
-        let visible = await MainActor.run { chat != nil && chat == visibleChat && locked?() != true }
-        return visible ? [] : [.banner, .list, .sound]
+        DispatchQueue.main.async {
+            let visible = MainActor.assumeIsolated {
+                chat != nil && chat == self.visibleChat && self.locked?() != true
+            }
+            completionHandler(visible ? [] : [.banner, .list, .sound])
+        }
     }
 
     nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
-        guard let chat = Self.chat(from: response.notification.request.content.userInfo) else { return }
-        await MainActor.run { onOpen?(chat) }
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let chat = Self.chat(from: response.notification.request.content.userInfo)
+        DispatchQueue.main.async {
+            if let chat {
+                MainActor.assumeIsolated { self.onOpen?(chat) }
+            }
+            completionHandler()
+        }
     }
 }

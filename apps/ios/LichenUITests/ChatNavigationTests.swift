@@ -47,6 +47,21 @@ final class ChatNavigationTests: XCTestCase {
         XCTAssertFalse(inChat(app).exists, "a chat opened by itself")
     }
 
+    /// Tapping a notification opens its chat. It used to abort the app: the delegate's
+    /// completion ran off the main thread.
+    func testTappingANotificationOpensItsChat() {
+        let app = launch([])
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        // Camille's first message comes while the list is on screen: a banner.
+        let banner = springboard.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS 'Camille' AND label CONTAINS 'refuge'")).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 120), "no banner")
+        banner.tap()
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "her chat did not open")
+        sleep(2)
+        XCTAssertEqual(app.state, .runningForeground, "the app is gone")
+    }
+
     /// A row tapped twice while a long chat opens (it takes a moment) opens it once: Back
     /// returns to the list, not to the same chat.
     func testATappedTwiceRowOpensOnce() {
