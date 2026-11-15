@@ -187,12 +187,25 @@ fn one_sided_card() {
     assert_eq!(known(&net, b, a), (Some(identity(&net, a)), false));
 }
 
-/// Bob reinstalls without his phrase: a new identity. Alice had only met him over the air
-/// (unverified): she is told it changed, the contact is to verify again, messages flow.
+/// The identity node `i` holds as waiting for the user's decision about node `other`.
+fn waiting(net: &Net, i: usize, other: usize) -> Option<[u8; 32]> {
+    let node = net.key(other);
+    net.nodes[i]
+        .core
+        .as_ref()
+        .unwrap()
+        .pending_identity(&node)
+        .copied()
+}
+
+/// Review of 2026-11-15, SR-01. Alice only met Bob over the air (unverified). Whoever answers
+/// for his node with another identity (his app reinstalled without its phrase, or anyone who
+/// sends an introduction under his node's hash byte) does not replace him: the identity Alice
+/// first saw stays, the new one waits for her, and nothing reaches it or comes from it.
 #[test]
-fn changed_identity_is_reported() {
+fn an_unverified_identity_is_pinned() {
     let (mut net, a, b) = pair(3, 0);
-    let bob = net.key(b);
+    let (alice, bob) = (net.key(a), net.key(b));
     let old = identity(&net, b);
     net.with_core(a, |c, now| c.send_text(&bob, "before", 1, now))
         .unwrap()
@@ -207,14 +220,114 @@ fn changed_identity_is_reported() {
     net.run_until(net.now + 20 * S, |_| false);
     let new = identity(&net, b);
     assert_ne!(new, old);
-    net.with_core(a, |c, now| c.send_text(&bob, "after", 2, now))
+    // The new identity writes first, as an attacker would.
+    net.with_core(b, |c, now| {
+        c.send_text(&alice, "it's me, new phone", 2, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    let ea = net.take_events(a);
+    assert!(texts(&ea).is_empty(), "{ea:?}");
+    assert!(learned(&ea).is_empty(), "{ea:?}");
+    assert!(ea.iter().any(|e| matches!(
+        e,
+        Event::IdentityConflict { identity, .. } if *identity == new
+    )));
+    assert_eq!(known(&net, a, b), (Some(old), false));
+    assert_eq!(waiting(&net, a, b), Some(new));
+
+    // What Alice writes goes to the identity she knows. It no longer answers: the message
+    // fails, saying why, and nothing reaches the new one.
+    net.take_events(b);
+    net.with_core(a, |c, now| c.send_text(&bob, "after", 3, now))
         .unwrap()
         .unwrap();
     net.run_until(net.now + 30 * MIN, |_| false);
     let (ea, eb) = (net.take_events(a), net.take_events(b));
-    assert_eq!(learned(&ea), vec![true], "{ea:?}");
+    assert!(texts(&eb).is_empty(), "{eb:?}");
+    assert!(
+        ea.iter().any(|e| matches!(
+            e,
+            Event::Failed {
+                reason: FailReason::IdentityChanged,
+                ..
+            }
+        )),
+        "{ea:?}"
+    );
+    assert_eq!(known(&net, a, b), (Some(old), false));
+
+    // She accepts it: unverified, and messages flow.
+    assert!(
+        net.with_core(a, |c, _| c.accept_identity(&bob, &new, false))
+            .unwrap()
+    );
     assert_eq!(known(&net, a, b), (Some(new), false));
-    assert_eq!(texts(&eb), vec!["after"]);
+    net.with_core(a, |c, now| c.send_text(&bob, "hello again", 4, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert_eq!(texts(&net.take_events(b)), vec!["hello again"]);
+}
+
+/// SR-01, the other half: an identity that waits must not cut Alice off from the one she
+/// knows. Someone presents another identity for Bob's node while Bob is still there: his
+/// messages and hers keep flowing, and the other identity waits until she rejects it.
+#[test]
+fn a_waiting_identity_does_not_block_the_known_one() {
+    let (mut net, a, b) = pair(6, 0);
+    let (alice, bob) = (net.key(a), net.key(b));
+    net.introduce(a, b);
+    let old = identity(&net, b);
+    let bobs_contacts: Vec<_> = net.nodes[b]
+        .core
+        .as_ref()
+        .unwrap()
+        .contacts()
+        .cloned()
+        .collect();
+    // Another app answers for Bob's node and writes to Alice.
+    net.reinstall_app(b, 44);
+    net.connect(b);
+    net.run_until(net.now + 20 * S, |_| false);
+    let other = identity(&net, b);
+    net.with_core(b, |c, now| {
+        c.send_text(&alice, "new number, who dis", 1, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    assert!(texts(&net.take_events(a)).is_empty());
+    assert_eq!(waiting(&net, a, b), Some(other));
+
+    // Bob's own app is on his radio again.
+    net.attach_app(b, 2);
+    net.with_core(b, |c, _| {
+        for k in bobs_contacts {
+            c.restore_contact(k);
+        }
+    });
+    net.connect(b);
+    net.run_until(net.now + 20 * S, |_| false);
+    assert_eq!(identity(&net, b), old);
+    net.take_events(b);
+    net.with_core(a, |c, now| c.send_text(&bob, "still you?", 2, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |_| false);
+    let (ea, eb) = (net.take_events(a), net.take_events(b));
+    assert_eq!(texts(&eb), vec!["still you?"], "{ea:?}");
+    assert!(ea.iter().any(|e| matches!(e, Event::Delivered { .. })));
+    net.with_core(b, |c, now| c.send_text(&alice, "always", 3, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 5 * MIN, |_| false);
+    assert_eq!(texts(&net.take_events(a)), vec!["always"]);
+    assert_eq!(known(&net, a, b), (Some(old), true));
+    assert_eq!(waiting(&net, a, b), Some(other));
+    net.with_core(a, |c, _| c.reject_identity(&bob, &other));
+    assert_eq!(waiting(&net, a, b), None);
 }
 
 /// Review of 2026-11-06, PR-03: Bob was verified in person; whoever answers for his node now
@@ -249,11 +362,12 @@ fn verified_identity_is_not_replaced_without_consent() {
         net.nodes[a].core.as_ref().unwrap().pending_identity(&bob),
         Some(&new)
     );
-    // While it waits, a new message fails at once, saying why.
+    // While it waits, a new message still goes to the identity Alice knows (SR-01); nothing
+    // answers for it, and the failure says why.
     net.with_core(a, |c, now| c.send_text(&bob, "still secret", 2, now))
         .unwrap()
         .unwrap();
-    net.run_until(net.now + MIN, |_| false);
+    net.run_until(net.now + 30 * MIN, |_| false);
     let ea = net.take_events(a);
     assert!(
         ea.iter().any(|e| matches!(

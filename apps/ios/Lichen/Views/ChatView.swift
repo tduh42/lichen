@@ -39,8 +39,8 @@ struct ChatView: View {
         VStack(spacing: 0) {
             // A new key waiting for the user stays in sight, above the messages.
             if case let .contact(key) = chat, let pending = model.conflicts[key] {
-                Banner(kind: .sos, title: String(localized: "\(model.title(of: chat))'s key changed"),
-                       message: String(localized: "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers."),
+                Banner(kind: .sos, title: String(localized: "Another identity answers for \(model.title(of: chat))"),
+                       message: String(localized: "Another identity now answers for their radio: a reinstalled app, or someone else. Your messages still go to the one you know. Compare safety numbers before you accept the new one."),
                        action: (String(localized: "Compare"), { verifying = pending }))
                     .padding(.horizontal, 14)
                     .padding(.top, 8)

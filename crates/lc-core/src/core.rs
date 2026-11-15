@@ -1706,9 +1706,15 @@ impl Core {
                     peer.session = None;
                     peer.pending = None;
                 }
-                // It may have a new identity: introduce again next time (§4.6).
+                // It may have a new identity: introduce again next time (§4.6). When one
+                // already waits for the user, that is why nothing answered.
                 peer.intro_needed = true;
-                self.fail_queue(peer, FailReason::Unreachable, now);
+                let reason = if self.pending_identities.contains_key(k) {
+                    FailReason::IdentityChanged
+                } else {
+                    FailReason::Unreachable
+                };
+                self.fail_queue(peer, reason, now);
             } else {
                 init.attempt += 1;
                 let init = init.clone();
@@ -1924,14 +1930,13 @@ impl Core {
         }
     }
 
-    /// A HELLO when we know the peer's identity, an introduction otherwise (§4.6); nothing
-    /// while a new identity of a verified contact waits for the user.
+    /// A HELLO when we know the peer's identity, an introduction otherwise (§4.6). While
+    /// another identity waits for the user, the known one is still the one we write to, by
+    /// HELLO, which only it can answer: an introduction would be answered by whoever sent the
+    /// other identity.
     fn begin_session(&mut self, k: &PubKey, peer: &mut Peer, path: OwnedPath, now: Millis) {
-        if self.pending_identities.contains_key(k) {
-            self.fail_queue(peer, FailReason::IdentityChanged, now);
-            return;
-        }
-        if self.identity_of(k).is_some() && !peer.intro_needed {
+        let waiting = self.pending_identities.contains_key(k);
+        if self.identity_of(k).is_some() && (waiting || !peer.intro_needed) {
             self.start_handshake(k, peer, path, now);
         } else {
             self.start_intro(k, peer, path, now);
@@ -1998,9 +2003,10 @@ impl Core {
         }
     }
 
-    /// The identity behind contact `node` is `identity` (§4.6): new, confirmed, or replacing an
-    /// unverified one (then reported). A verified contact's identity is never replaced here:
-    /// the new one waits for the user and this returns false (no session with it).
+    /// The identity behind contact `node` is `identity` (§4.6): the first one seen is kept
+    /// (unverified), the same one is confirmed. An identity already known is **never replaced
+    /// here**, verified or not: another one waits for the user, and this returns false (no
+    /// session with it). Anyone can send an introduction under a node's hash byte.
     pub(crate) fn learn_identity(&mut self, node: &PubKey, identity: PubKey) -> bool {
         let Some(c) = self.contacts.get_mut(node) else {
             return false;
@@ -2009,7 +2015,7 @@ impl Core {
         if known == Some(identity) {
             return true;
         }
-        if known.is_some() && c.verified {
+        if known.is_some() {
             if self.pending_identities.insert(*node, identity) != Some(identity) {
                 self.events.push_back(Event::IdentityConflict {
                     node: *node,
@@ -2024,7 +2030,7 @@ impl Core {
         self.events.push_back(Event::IdentityLearned {
             node: *node,
             identity,
-            changed: known.is_some(),
+            changed: false,
         });
         true
     }
@@ -2389,7 +2395,7 @@ impl Core {
                 return;
             };
             if !self.learn_identity(&c, ack.identity) {
-                // A verified contact with another identity: no session with it (§4.6).
+                // The contact is known under another identity: no session with this one (§4.6).
                 if let Some(mut p) = self.peers.remove(&c) {
                     p.introducing = None;
                     self.fail_queue(&mut p, FailReason::IdentityChanged, now);
@@ -2453,7 +2459,7 @@ impl Core {
                 return;
             };
             if !self.learn_identity(&c, id_i) {
-                // A verified contact with another identity: no session with it (§4.6).
+                // The contact is known under another identity: no session with this one (§4.6).
                 return;
             }
             let Some(mut peer) = self.peers.remove(&c) else {
@@ -2653,6 +2659,8 @@ impl Core {
                 p.path = Some(init.path);
                 p.initiating = None;
                 p.introducing = None;
+                // The identity we know answered: no need to introduce ourselves again.
+                p.intro_needed = false;
                 p.unknown_to_peer = false;
                 p.suspect = false;
             }

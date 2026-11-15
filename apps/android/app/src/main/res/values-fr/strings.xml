@@ -57,8 +57,8 @@
         <item quantity="other">%1$d membres · flood</item>
     </plurals>
     <string name="group_signed">Messages de groupe signés, en flood</string>
-    <string name="key_changed_title">La clé de %1$s a changé</string>
-    <string name="key_changed_note">Sa radio répond maintenant avec une autre identité : une app réinstallée, ou quelqu\'un entre vous. Rien ne part tant que vous n\'avez pas comparé vos numéros de sécurité.</string>
+    <string name="key_changed_title">Une autre identité répond pour %1$s</string>
+    <string name="key_changed_note">Une autre identité répond maintenant pour sa radio : une app réinstallée, ou quelqu\'un d\'autre. Tes messages vont toujours à celle que tu connais. Compare les numéros de sécurité avant d\'accepter la nouvelle.</string>
     <string name="session_verified">Session chiffrée · clé vérifiée</string>
     <string name="session_to_verify">Session chiffrée · clé à vérifier</string>
     <string name="session_encrypted">Session chiffrée</string>

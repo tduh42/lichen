@@ -291,16 +291,6 @@
         }
       }
     },
-    "%@'s key changed": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La clé de %@ a changé"
-          }
-        }
-      }
-    },
     "%@, %u": {
       "localizations": {
         "fr": {
@@ -1217,6 +1207,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anonyme, plus lent : on la récupère sur ton service onion (%@)"
+          }
+        }
+      }
+    },
+    "Another identity answers for %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une autre identité répond pour %@"
+          }
+        }
+      }
+    },
+    "Another identity now answers for their radio: a reinstalled app, or someone else. Your messages still go to the one you know. Compare safety numbers before you accept the new one.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une autre identité répond maintenant pour sa radio : une app réinstallée, ou quelqu'un d'autre. Tes messages vont toujours à celle que tu connais. Compare les numéros de sécurité avant d'accepter la nouvelle."
           }
         }
       }
@@ -6097,16 +6107,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sa radio n'a pas répondu à la poignée de main : éteinte, hors de portée, ou l'app fermée."
-          }
-        }
-      }
-    },
-    "Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sa radio répond maintenant avec une autre identité : une app réinstallée, ou quelqu'un entre vous. Rien ne part tant que vous n'avez pas comparé vos numéros de sécurité."
           }
         }
       }

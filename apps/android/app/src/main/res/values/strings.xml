@@ -56,8 +56,8 @@
         <item quantity="other">%1$d members · flood</item>
     </plurals>
     <string name="group_signed">Signed group messages, flooded</string>
-    <string name="key_changed_title">%1$s\'s key changed</string>
-    <string name="key_changed_note">Their radio now answers with another identity: a reinstalled app, or someone in between. Nothing is sent until you compare safety numbers.</string>
+    <string name="key_changed_title">Another identity answers for %1$s</string>
+    <string name="key_changed_note">Another identity now answers for their radio: a reinstalled app, or someone else. Your messages still go to the one you know. Compare safety numbers before you accept the new one.</string>
     <string name="session_verified">Encrypted session · key verified</string>
     <string name="session_to_verify">Encrypted session · key to verify</string>
     <string name="session_encrypted">Encrypted session</string>
