@@ -317,15 +317,22 @@ final class AppModel {
         )
     }
 
-    /// Per-node databases live in Application Support (file protection until first unlock).
+    /// Everything lichen keeps lives in Application Support/lichen (file protection until first
+    /// unlock): the databases, offered and downloaded media, Tor's state, the drafts. The
+    /// folder is excluded from iCloud and Finder backups: a backup would carry the history
+    /// and the group keys off the phone (review of 2026-11-15, SR-22). The identity is in the
+    /// Keychain (this device only) and comes back from the 24 words.
     private static func dataDirectory() -> String? {
         guard let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         else { return nil }
-        let dir = base.appendingPathComponent("lichen", isDirectory: true)
+        var dir = base.appendingPathComponent("lichen", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
         )
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
         return dir.path
     }
 
@@ -801,21 +808,47 @@ final class AppModel {
     /// The text typed in `chat` and not sent, kept across screens and restarts, for this
     /// identity (or the demo) only (recheck R07).
     func draft(_ chat: ChatID) -> String {
-        (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String])?[draftKey(chat)] ?? ""
+        drafts[draftKey(chat)] ?? ""
     }
 
     func setDraft(_ chat: ChatID, _ text: String) {
-        var all = (UserDefaults.standard.dictionary(forKey: Self.draftsDefault) as? [String: String]) ?? [:]
-        all[draftKey(chat)] = text.isEmpty ? nil : text
-        UserDefaults.standard.set(all, forKey: Self.draftsDefault)
+        let key = draftKey(chat)
+        guard drafts[key] != (text.isEmpty ? nil : text) else { return }
+        drafts[key] = text.isEmpty ? nil : text
+        Self.saveDrafts(drafts)
     }
 
     private func draftKey(_ chat: ChatID) -> String {
         "\(isDemo ? "demo" : core.fingerprint().joined())|\(chat.storageKey)"
     }
 
-    /// Drafts by identity; the older ones, by conversation only, are dropped.
+    /// Drafts by identity, in lichen's folder: like the history, out of backups (SR-22). They
+    /// used to be in the preferences, which backups carry: moved once, then removed there.
+    @ObservationIgnored private var drafts: [String: String] = AppModel.loadDrafts()
     private static let draftsDefault = "lichen.drafts.byIdentity"
+
+    private static var draftsFile: URL? {
+        dataDirectory().map { URL(fileURLWithPath: $0).appendingPathComponent("drafts.json") }
+    }
+
+    private static func loadDrafts() -> [String: String] {
+        var all: [String: String] = [:]
+        if let url = draftsFile, let data = try? Data(contentsOf: url),
+           let saved = try? JSONDecoder().decode([String: String].self, from: data) {
+            all = saved
+        }
+        if let old = UserDefaults.standard.dictionary(forKey: draftsDefault) as? [String: String] {
+            all.merge(old) { kept, _ in kept }
+            saveDrafts(all)
+            UserDefaults.standard.removeObject(forKey: draftsDefault)
+        }
+        return all
+    }
+
+    private static func saveDrafts(_ all: [String: String]) {
+        guard let url = draftsFile, let data = try? JSONEncoder().encode(all) else { return }
+        try? data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
 
     /// Makes message `id` (a search result, a quoted message) part of the loaded history: what
     /// lies between it and the oldest message shown is read at once (recheck R08). False when

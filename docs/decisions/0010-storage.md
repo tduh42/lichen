@@ -16,6 +16,6 @@ The apps need the message history, the contacts learned from groups (the node do
 
 ## Consequences
 
-- Sender keys rest on the phone in clear inside the database, protected by the OS (iOS file protection until first unlock, app sandbox). A stolen unlocked phone reads past and future group traffic until the next rekey; it already holds the node's key anyway (ADR-0004).
+- Sender keys rest on the phone in clear inside the database, protected by the OS (iOS file protection until first unlock, app sandbox). The database and everything lichen keeps beside it are excluded from backups on both platforms: iCloud and Finder backups on iOS (since the review of 2026-11-15, SR-22), `allowBackup=false` and the data extraction rules on Android. A stolen unlocked phone reads past and future group traffic until the next rekey; it already holds the node's key anyway (ADR-0004).
 - Schema versioned with `PRAGMA user_version`; a newer database is refused rather than misread.
 - Rejected: storage in each app (Swift, then Kotlin: twice the code); encrypting the database with a Keychain key (to revisit if the threat model asks for it).
