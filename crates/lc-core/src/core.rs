@@ -542,6 +542,8 @@ struct Peer {
     /// Responder side, not confirmed by the initiator yet (§4.4).
     pending: Option<Box<Session>>,
     path: Option<OwnedPath>,
+    /// The path a HELLO gave, adopted when the initiator confirms the session (SR-03).
+    pending_path: Option<OwnedPath>,
     initiating: Option<Initiating>,
     answered: Option<Answered>,
     queue: VecDeque<Outgoing>,
@@ -2757,9 +2759,13 @@ impl Core {
         if fresh {
             let session = Session::new(keys, node[0], c[0], self.timing_for(&path));
             peer.replace_pending(session);
-            peer.session_since = now;
-            peer.session_bytes = 0;
-            peer.path = Some(path.clone());
+            // The session's path and age change once the initiator confirms it: a HELLO alone,
+            // replayed or not, leaves the working path and the session in use as they are
+            // (review of 2026-11-15, SR-03). With no path yet, this one serves meanwhile.
+            peer.pending_path = Some(path.clone());
+            if peer.path.is_none() {
+                peer.path = Some(path.clone());
+            }
             // We know each other: our own introduction is no longer needed (§4.6).
             peer.introducing = None;
             peer.answered = Some(answered);
@@ -2852,8 +2858,14 @@ impl Core {
                 }
             }
             if let Some((_, true)) = outcome {
-                // The initiator confirmed the pending session (§4.4).
+                // The initiator confirmed the pending session (§4.4): its path and its age
+                // start now (SR-03).
                 peer.promote_pending();
+                if let Some(p) = peer.pending_path.take() {
+                    peer.path = Some(p);
+                }
+                peer.session_since = now;
+                peer.session_bytes = 0;
                 peer.unknown_to_peer = false;
                 self.events.push_back(Event::SessionEstablished { peer: c });
             }

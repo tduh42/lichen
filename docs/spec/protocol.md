@@ -128,7 +128,7 @@ Each side encrypts with its own direction's key and decrypts with the other. `ta
 - **Freshness** (review of 2026-11-15, SR-03): R answers a HELLO whose `t_I` is more than 10 minutes away from its own clock only when either clock is unknown (`t_I = 0`, or R has none). A recorded HELLO replayed later gets no answer; its genuine resends, within the 10 minutes R remembers the handshake, get the same one.
 - **Versions**: each side learns the other's version from HELLO, HELLO_ACK or the introduction. A newer one is reported to the app ("update lichen"); there is no older one to fall back to, since version 1 frames do not open (ADR-0029).
 - **Crossing**: if I receives a HELLO from R while its own is waiting for an answer, the handshake of the smaller public key (lexicographic order) wins. The losing side drops its own and answers the other.
-- **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key. Until then it keeps the previous session if there is one. A replayed HELLO therefore cannot break a running session.
+- **Confirmation**: I adopts the session on HELLO_ACK. R keeps it "pending" and adopts it only on the first valid message from I under the new key; the HELLO's return path and the session's age (for renewal) take effect then too. Until then it keeps the previous session and path if there are any. A replayed HELLO therefore cannot break a running session.
 - **No persistence** (ADR-0003): sessions live in memory. After a restart, the first send runs a new handshake.
 - **Renewal**: new handshake before the send `tag` reaches `0xFF00`, after 24 h or after 4 MB sent (configurable). The old receive key stays valid for 10 min.
 
