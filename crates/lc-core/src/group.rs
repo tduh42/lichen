@@ -204,7 +204,14 @@ impl KeyState {
 struct MemberKeys {
     current: Option<KeyState>,
     previous: Option<KeyState>,
+    /// The keys before those, with their replay windows, the newest last: a key that comes
+    /// back comes back with its window, so a relay cannot replay its old traffic by
+    /// reinstalling it (review of 2026-11-15, SR-18). Memory only.
+    retired: VecDeque<KeyState>,
 }
+
+/// Retired keys remembered per member.
+const RETIRED_MAX: usize = 8;
 
 /// One fragment of a two-fragment message, waiting for the other.
 #[derive(Clone, Debug)]
@@ -437,7 +444,14 @@ impl Group {
                 }
             }
             let [current, previous] = slots;
-            keys.insert(k, MemberKeys { current, previous });
+            keys.insert(
+                k,
+                MemberKeys {
+                    current,
+                    previous,
+                    retired: VecDeque::new(),
+                },
+            );
         }
         b.is_empty().then_some(Self {
             gid,
@@ -2181,7 +2195,12 @@ impl Core {
         if admin.is_some_and(|a| a != *from) {
             return;
         }
+        // One entry per owner: a bundle cannot walk a key's epoch around the ring (SR-18).
+        let mut seen: HashSet<PubKey> = HashSet::new();
         for (owner, epoch, key, next) in entries {
+            if !seen.insert(owner) {
+                continue;
+            }
             if Some(owner) == me {
                 // Our own last key, from before we lost the group: our next one goes past it,
                 // so the others take it as newer (§10.5, SR-20).
@@ -2235,8 +2254,30 @@ impl Core {
             Some(c) if relayed && !newer(epoch, c.epoch) => return false,
             _ => {}
         }
+        // A key held before comes back with its windows, whatever epoch it comes under.
+        let earlier = [mk.current.as_ref(), mk.previous.as_ref()]
+            .into_iter()
+            .flatten()
+            .chain(mk.retired.iter())
+            .find(|k| k.key == key)
+            .cloned();
+        let state = match earlier {
+            Some(mut k) => {
+                k.epoch = epoch;
+                k.floor = k.floor.max(next);
+                k
+            }
+            None => KeyState::new(epoch, key, next),
+        };
+        if let Some(old) = mk.previous.take() {
+            mk.retired.retain(|k| k.key != old.key);
+            mk.retired.push_back(old);
+            if mk.retired.len() > RETIRED_MAX {
+                mk.retired.pop_front();
+            }
+        }
         mk.previous = mk.current.take();
-        mk.current = Some(KeyState::new(epoch, key, next));
+        mk.current = Some(state);
         self.dirty_groups.insert(gid);
         // Messages that came before this key can now be read.
         let held: Vec<Held> = std::mem::take(&mut self.held).into();
@@ -2879,6 +2920,7 @@ mod tests {
                 MemberKeys {
                     current: Some(KeyState::new(0, key, floor)),
                     previous: None,
+                    retired: VecDeque::new(),
                 },
             );
         }
@@ -2967,6 +3009,48 @@ mod tests {
         }
         core.on_sender_key(&b, GID, 0, [2; 32], 0, 3_000);
         assert!(texts(&mut core).contains(&"the real one".to_owned()));
+    }
+
+    /// Review of 2026-11-15, SR-18: an admin walks a member's key epoch around the ring in
+    /// relayed bundles and reinstalls the real key: it comes back with the replay window it
+    /// had, so an old envelope is not delivered twice. Within one bundle, only the first entry
+    /// per owner counts.
+    #[test]
+    fn a_relay_cannot_reinstall_a_key_with_a_fresh_window() {
+        let x_prv = expand_seed(&[0x51; 32]);
+        let x = public_key(&x_prv);
+        let admin = [0xAD; 32];
+        let mut core = core_with_group(&[(x, [3; 32], 0), (admin, [4; 32], 0)]);
+        core.groups.get_mut(&GID).unwrap().admin = admin;
+        let admin_node = [2; 32];
+        let old = envelope(&x, &[3; 32], 5, &x_prv, "an old message");
+        core.on_group_envelope(&old, 0, 0, 1_000);
+        assert_eq!(texts(&mut core), vec!["an old message".to_owned()]);
+        // One bundle walking the ring: only its first entry for x counts.
+        let walk = encode_sender_keys(
+            &GID,
+            &[
+                (x, 100, [9; 32], 0),
+                (x, 200, [9; 32], 0),
+                (x, 0, [3; 32], 0),
+            ],
+        );
+        core.on_group_control(&admin_node, &walk, 2_000);
+        assert_eq!(
+            core.groups[&GID].keys[&x].current.as_ref().map(|k| k.epoch),
+            Some(100)
+        );
+        // Three bundles: the real key back at epoch 0, with its window.
+        for (i, (epoch, key)) in [(200u8, [9u8; 32]), (0, [3; 32])].into_iter().enumerate() {
+            let b = encode_sender_keys(&GID, &[(x, epoch, key, 0)]);
+            core.on_group_control(&admin_node, &b, 3_000 + i as u64);
+        }
+        assert_eq!(
+            core.groups[&GID].keys[&x].current.as_ref().map(|k| k.epoch),
+            Some(0)
+        );
+        core.on_group_envelope(&old, 0, 0, 4_000);
+        assert!(texts(&mut core).is_empty(), "replayed");
     }
 
     fn texts(core: &mut Core) -> Vec<String> {
@@ -3664,6 +3748,7 @@ mod tests {
             MemberKeys {
                 current: Some(KeyState::new(0, [50; 32], 0)),
                 previous: None,
+                retired: VecDeque::new(),
             },
         );
         core.learn_members(&core.groups[&GID].members.clone());
