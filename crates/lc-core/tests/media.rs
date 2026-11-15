@@ -33,7 +33,7 @@ fn voice(seconds: u16) -> Content {
     }
 }
 
-/// Ten seconds of 1200 voice over one hop: 10 fragments, delivered whole.
+/// Ten seconds of 1200 voice over one hop: 11 fragments of 149 bytes, delivered whole.
 #[test]
 fn voice_message_is_delivered() {
     let (mut net, a, b) = pair(1);
@@ -43,7 +43,7 @@ fn voice_message_is_delivered() {
         .with_core(a, |c, _| c.estimate_send(&bob, v.encode().len()))
         .unwrap();
     eprintln!("10 s of 1200 voice: {fragments} fragments, {airtime} ms of airtime per hop");
-    assert_eq!(fragments, 10);
+    assert_eq!(fragments, 11);
     net.with_core(a, |c, now| c.send_media(&bob, v.encode(), now))
         .unwrap()
         .unwrap();

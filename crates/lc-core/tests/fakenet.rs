@@ -93,7 +93,8 @@ fn text_between_neighbours() {
 #[test]
 fn ten_kilobytes_over_three_repeaters_at_ten_percent_loss() {
     let (mut net, a, b) = chain(3, 10, 7, true);
-    let data = file(9_800, 3);
+    // 64 fragments of 149 bytes: just under the largest datagram (9,536 bytes).
+    let data = file(9_400, 3);
     let id = send(&mut net, a, b, data.clone());
     let (mut sa, mut sb) = (Seen::default(), Seen::default());
     let t0 = net.now;
@@ -198,7 +199,7 @@ fn measure_ten_kilobytes_by_path_and_loss() {
             let runs = 50;
             for seed in 0..runs {
                 let (mut net, a, b) = chain(reps, loss, seed, true);
-                let id = send(&mut net, a, b, file(9_800, seed as u8));
+                let id = send(&mut net, a, b, file(9_400, seed as u8));
                 let mut sa = Seen::default();
                 let t0 = net.now;
                 net.run_until(net.now + 120 * MIN, |n| {

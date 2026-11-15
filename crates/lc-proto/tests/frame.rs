@@ -1,3 +1,4 @@
+use lc_proto::header::{ACK_FRAME_MAX, ack_frame_len};
 use lc_proto::sender::Timing;
 use lc_proto::window::{ReplayWindow, Verdict};
 use lc_proto::{FrameError, Header, Kind, chunk_for_path};
@@ -20,10 +21,20 @@ fn header_layout_and_nonce() {
 
 #[test]
 fn header_rules() {
+    // The ACK of a 3-fragment datagram is 24 bytes: header, one packed byte, tag (§7.2).
+    let mut long = [0u8; 25];
+    long[..7].copy_from_slice(&[1, 2, 0, 0, 0x40, 3, 0]);
+    assert_eq!(Header::decode(&long).unwrap_err(), FrameError::Malformed);
+    long[5] = 12; // 12 fragments need two packed bytes
+    assert!(Header::decode(&long).is_ok());
+    assert_eq!(
+        Header::decode(&long[..24]).unwrap_err(),
+        FrameError::Malformed
+    );
     let mut f = [0u8; 24];
     f[..7].copy_from_slice(&[1, 2, 0, 0, 0x40, 3, 0]);
-    assert!(Header::decode(&f).is_ok()); // ACK of 24 bytes
-    assert_eq!(Header::decode(&f[..23]).unwrap_err(), FrameError::Malformed);
+    assert!(Header::decode(&f).is_ok());
+    assert_eq!(Header::decode(&f[..23]).unwrap_err(), FrameError::Length);
     f[4] = 0x41; // ACK with index 1
     assert_eq!(Header::decode(&f).unwrap_err(), FrameError::Malformed);
     f[4] = 0x02; // DATA index 2 of total 3
@@ -46,9 +57,23 @@ fn header_rules() {
 
 #[test]
 fn chunk_sizes() {
-    assert_eq!(chunk_for_path(0), 157);
-    assert_eq!(chunk_for_path(2), 157);
-    assert_eq!(chunk_for_path(5), 154);
+    assert_eq!(chunk_for_path(0), 149);
+    assert_eq!(chunk_for_path(2), 149);
+    assert_eq!(chunk_for_path(5), 146);
+}
+
+/// The ACK is one packed byte up to 7 fragments: 24 bytes on the wire, as it was with the
+/// 8-byte tag and its fixed 9-byte body (ADR-0028).
+#[test]
+fn ack_sizes() {
+    for total in 1..=7 {
+        assert_eq!(ack_frame_len(total), 24);
+    }
+    assert_eq!(ack_frame_len(8), 25);
+    assert_eq!(ack_frame_len(15), 25);
+    assert_eq!(ack_frame_len(16), 26);
+    assert_eq!(ack_frame_len(64), 32);
+    assert_eq!(ACK_FRAME_MAX, 32);
 }
 
 #[test]

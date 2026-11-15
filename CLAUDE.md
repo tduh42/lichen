@@ -21,7 +21,7 @@ Original plan: `~/.claude/plans/glistening-wishing-scone.md` (2026-11-06). Tangu
 crates/
   lc-meshcore/  no_std  app side of the companion protocol (subset), USB framing, on-air frame header,
                         MeshCore-style ECDH, LoRa airtime
-  lc-proto/     no_std  lichen frame (7-byte header), crypto (ChaCha20-Poly1305 with 8-byte tag, HKDF),
+  lc-proto/     no_std  lichen frame (7-byte header), crypto (ChaCha20-Poly1305 as RFC 8439, 16-byte tag, HKDF),
                         handshake, introduction (intro.rs), fragmentation and reassembly machines
                         (ACK-on-Error), fixed capacities
   lc-core/      std     sessions, contacts, paths, groups, airtime budget, send queue, events;

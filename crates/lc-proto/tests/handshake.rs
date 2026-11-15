@@ -47,7 +47,7 @@ fn full_handshake_gives_matching_keys() {
     };
     let mut frame = [0u8; 172];
     let n = seal_hello(&s_a, &ends(&alice, &bob), &hello, &mut frame).unwrap();
-    assert_eq!(n, 7 + 16 + 32 + 2 + 2 + 8);
+    assert_eq!(n, 7 + 16 + 32 + 2 + 2 + 16);
     let (h, _) = Header::decode(&frame[..n]).unwrap();
     assert_eq!(
         (h.kind, h.index, h.total, h.tag),

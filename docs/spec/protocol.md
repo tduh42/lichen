@@ -52,21 +52,21 @@ A lichen frame is the payload of a `RAW_CUSTOM` packet.
 
 | `kind` | Name | `index` | `total` | `attempt` | Body after the header |
 |---|---|---|---|---|---|
-| 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..157) ‖ AEAD tag (8)` |
-| 1 | ACK | 0 | `total` of the acknowledged datagram | ACK sequence for this `tag` | `ciphertext (9) ‖ tag (8)` |
-| 2 | ABORT | 0: "I give up my datagram"; 1: "I refuse yours" | `total` of the datagram | sequence | `ciphertext (1) ‖ tag (8)` |
+| 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..149) ‖ AEAD tag (16)` |
+| 1 | ACK | 0 | `total` of the acknowledged datagram | ACK sequence for this `tag` | `ciphertext (1..9, §7.2) ‖ tag (16)` |
+| 2 | ABORT | 0: "I give up my datagram"; 1: "I refuse yours" | `total` of the datagram | sequence | `ciphertext (1) ‖ tag (16)` |
 | 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; 2: PATH_REPLY; 3: INTRO; 4: INTRO_ACK; 5: INTRO_FIN; others reserved, ignored | 1 | try | §4 |
 
-Decoding (otherwise silently dropped): length ≥ 7 + 1 + 8; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = 24; ABORT: `index ∈ {0, 1}` and length = 16; CONTROL: `total = 1`, `index ≤ 5`. `dst` must be our hash.
+Decoding (otherwise silently dropped): length ≥ 7 + 1 + 16; `total` ∈ 1..64; DATA: `index < total`; ACK: `index = 0` and length = `7 + ⌈(total + 1) / 8⌉ + 16`; ABORT: `index ∈ {0, 1}` and length = 24; CONTROL: `total = 1`, `index ≤ 5`. `dst` must be our hash.
 
 ### 3.2 Useful size (ADR-0002)
 
 ```
 payload_max(path_bytes) = min(172, 174 − path_bytes)
-chunk(path_bytes)       = payload_max − 15            (7 header + 8 tag)
+chunk(path_bytes)       = payload_max − 23            (7 header + 16 tag)
 ```
 
-A datagram is at most `64 × chunk` bytes (10,048 bytes up to 2 path bytes). All its fragments are `chunk` bytes long except the last (1..`chunk`). The chunk is fixed when the first fragment is sent; if the path grows during the transfer so that a fragment no longer fits, the datagram is abandoned and resent under a new `tag`.
+A datagram is at most `64 × chunk` bytes (9,536 bytes up to 2 path bytes). All its fragments are `chunk` bytes long except the last (1..`chunk`). The chunk is fixed when the first fragment is sent; if the path grows during the transfer so that a fragment no longer fits, the datagram is abandoned and resent under a new `tag`.
 
 ## 4. Handshake
 
@@ -79,7 +79,7 @@ Notation: `I` = initiator, `R` = responder; `HKDF(salt, ikm, info, L)` = HKDF-SH
 Header: `kind = 3`, `index = 0`, `total = 1`, `tag = h` (random u16, handshake identifier), `attempt = n` (0, then +1 on each resend).
 
 ```
-body  = salt_I (16, in clear) ‖ ciphertext ‖ tag (8)
+body  = salt_I (16, in clear) ‖ ciphertext ‖ tag (16)
 plain = e_I (32, ephemeral X25519 public) ‖ flags (1) ‖ return_path_len (1) ‖ return_path (0..64)
 K_h   = HKDF(salt_I, S, "lichen/1 hello" ‖ pub_I ‖ pub_R, 32)
 AAD   = header (7) ‖ salt_I
@@ -94,7 +94,7 @@ AAD   = header (7) ‖ salt_I
 Header: `kind = 3`, `index = 1`, `total = 1`, `tag = h` (copied from the HELLO), `attempt` = that of the HELLO being answered.
 
 ```
-body   = salt_R (16, in clear) ‖ ciphertext ‖ tag (8)
+body   = salt_R (16, in clear) ‖ ciphertext ‖ tag (16)
 plain  = e_R (32) ‖ flags (1)
 K_ha   = HKDF(salt_R, S, "lichen/1 hello-ack" ‖ pub_R ‖ pub_I ‖ salt_I, 32)
 AAD    = header (7) ‖ salt_R
@@ -131,22 +131,22 @@ When neither the companion nor the session knows a path to the peer, lichen floo
 frame   = header ‖ [tc0 ‖ tc1] ‖ path_len (0) ‖ payload
 header  = FLOOD | GRP_DATA << 2 = 0x19, or TRANSPORT_FLOOD | GRP_DATA << 2 = 0x18 with the transport
           codes of the companion's default flood scope (tc0 = code(region key, 6, payload), tc1 = 0)
-payload = 0x7C (channel hash, ADR-0008) ‖ 0x01 (probe version) ‖ dst (1) ‖ src (1) ‖ id (8, random) ‖ mac (8)
+payload = 0x7C (channel hash, ADR-0008) ‖ 0x02 (probe version) ‖ dst (1) ‖ src (1) ‖ id (8, random) ‖ mac (16)
 K_p     = HKDF(id, S, "lichen/1 probe" ‖ id_src ‖ id_dst, 32)
-mac     = ChaCha20-Poly1305 tag (8) under K_p, nonce 0, empty plaintext, AAD = payload[0..12]
+mac     = ChaCha20-Poly1305 tag (16) under K_p, nonce 0, empty plaintext, AAD = payload[0..12]
 ```
 
 `dst` and `src` are node hashes. When the prober does not know the target's identity yet, the probe is **anonymous**: `K_p = HKDF(id, 0×32, "lichen/1 probe-anon" ‖ node_src ‖ node_dst, 32)`, which anyone can compute; the answer to an anonymous probe is anonymous too (`K_pr` below with `0×32`, `"lichen/1 path-reply-anon"` and the node keys). It is not authenticated: a forged answer can only send the following handshake down a wrong path, which then fails and probes again. The target may not know the prober's identity even when the prober knows the target's (a contact card or an invitation scanned one way, a reinstalled app), and could not check a keyed probe: **only the first probe is keyed, the next ones are anonymous**; a joiner's probes to the admin whose invitation it scanned are anonymous from the first (§10.5), and probes are keyed again once a session with that peer is made.
 
-The payload is 20 bytes: after the 2-byte "MAC" a stock node would read, 17 bytes remain, not a multiple of 16 (§1 fact 9). Repeaters forward it as any flood, appending their hash to the path.
+The payload is 28 bytes: after the 2-byte "MAC" a stock node would read, 25 bytes remain, not a multiple of 16 (§1 fact 9). Version 1 was the 20-byte probe with an 8-byte MAC (before ADR-0028); it is no longer answered. Repeaters forward it as any flood, appending their hash to the path.
 
-**On receipt** (a `LOG_RX_DATA` whose frame decodes as `GRP_DATA`, flood route, 20-byte payload starting `0x7C 0x01`, `dst` = our hash): try the contacts whose `pub[0] = src`; the one whose `K_p` verifies `mac` sent it. The frame's path is the sender-to-us path; its reverse is our path back. The first copy of a given `id` wins (usually the shortest); later copies are ignored. We store the reversed path as our path to the sender and answer.
+**On receipt** (a `LOG_RX_DATA` whose frame decodes as `GRP_DATA`, flood route, 28-byte payload starting `0x7C 0x02`, `dst` = our hash): try the contacts whose `pub[0] = src`; the one whose `K_p` verifies `mac` sent it. The frame's path is the sender-to-us path; its reverse is our path back. The first copy of a given `id` wins (usually the shortest); later copies are ignored. We store the reversed path as our path to the sender and answer.
 
 **PATH_REPLY**, a lichen frame in `RAW_CUSTOM` along the reversed path:
 
 ```
 header = kind 3, index 2, total 1, tag = id[0..2], attempt 0
-body   = id (8, in clear) ‖ r (8, random, in clear) ‖ ciphertext ‖ tag (8)
+body   = id (8, in clear) ‖ r (8, random, in clear) ‖ ciphertext ‖ tag (16)
 plain  = path_len (1) ‖ path (the sender-to-us path, as received)
 K_pr   = HKDF(id ‖ r, S, "lichen/1 path-reply" ‖ id_us ‖ id_sender, 32)
 AAD    = header (7) ‖ id ‖ r
@@ -174,8 +174,8 @@ K_{R→I} = HKDF(salt, ee ‖ es ‖ se, "lichen/1 data" ‖ id_R ‖ id_I, 32)
 | Message | Header | Body |
 |---|---|---|
 | INTRO (I → R) | `index 3`, `tag = h` (random), `attempt` = try | `salt_I (16) ‖ e_I (32) ‖ return_path_len (1) ‖ return_path (0..64)`, in clear |
-| INTRO_ACK (R → I) | `index 4`, `tag = h`, `attempt` copied | `salt_R (16) ‖ e_R (32) ‖ seal(K_1, id_R) (32 + 8) ‖ seal(K_2, flags (1)) (1 + 8)` |
-| INTRO_FIN (I → R) | `index 5`, `tag = h`, `attempt` = try | `seal(K_3, id_I) (32 + 8) ‖ seal(K_4, flags (1)) (1 + 8)` |
+| INTRO_ACK (R → I) | `index 4`, `tag = h`, `attempt` copied | `salt_R (16) ‖ e_R (32) ‖ seal(K_1, id_R) (32 + 16) ‖ seal(K_2, flags (1)) (1 + 16)` |
+| INTRO_FIN (I → R) | `index 5`, `tag = h`, `attempt` = try | `seal(K_3, id_I) (32 + 16) ‖ seal(K_4, flags (1)) (1 + 16)` |
 
 - `seal` is the AEAD of §5 with the frame's header nonce, and as AAD the header followed by everything before the sealed part (for INTRO_ACK, `salt_R ‖ e_R`, then also the first sealed part for the second); each key is used once.
 - INTRO carries nothing secret: the return path is public routing information. Anyone can send one; R answers each `(src, h, salt_I)` with the same `(salt_R, e_R)` for 10 minutes, so a resend gets the same answer.
@@ -199,7 +199,7 @@ nonce (12 bytes) = header[2..7] ‖ 00 00 00 00 00 00 00
 AAD              = header (7)                 (DATA, ACK, ABORT)
 ```
 
-AEAD: ChaCha20-Poly1305 with the tag truncated to its **first 8 bytes**, compared in constant time. This is a variant of RFC 8439, which requires the full tag; its bounds (forgery about `2^-64` per attempt, attempts rate-limited by the radio, short-lived keys) are in ADR-0014.
+AEAD: ChaCha20-Poly1305 exactly as RFC 8439 defines it, with its full **16-byte tag**, compared in constant time; nothing is decrypted before the tag verifies (ADR-0028). Until 2026-11-15 the tag was cut to 8 bytes (ADR-0014, superseded): that variant had no proof beyond about `2^-35` per attempt for a frame the attacker had heard, and a forgery at `2^-52` was found.
 
 Uniqueness under a session key (one direction):
 - DATA: a `tag` serves a single datagram (strictly increasing counter); within a datagram, each fragment is sent at most once per round, and the round is in `attempt`.
@@ -304,7 +304,7 @@ An author can change the text of a message it sent, or take a message back, on t
    - An edited message shows its current text with "edited". Searching finds the current text.
    - A deleted message keeps its place in the history as "message deleted". Its content, its media, its reactions and its edits are dropped from the phone, and a notification for it is withdrawn.
 6. **Outbox.** Like a reaction: the sender applies it at once, keeps it until delivered or sent to the group (§6.1), submits it again after a restart, and gives up after 24 hours.
-7. **Groups.** Both are recoverable (§10.6). An edit fits one group fragment with 62 bytes of text, like a REPLY; a delete always fits one.
+7. **Groups.** Both are recoverable (§10.6). An edit fits one group fragment with 54 bytes of text, like a REPLY; a delete always fits one.
 8. **What it cannot do.** A delete reaches only the phones that receive it: whoever read the message has read it, and a modified app can keep it. The apps say so before sending one.
 
 Deleting a message **for oneself** sends nothing: the phone removes it, its media, reactions and edits.
@@ -333,8 +333,8 @@ Vectors: `testdata/lichen/content.toml` (`[[edit]]`, `[[delete]]`, `[[malformed]
    - `tag` already completed: send a `COMPLETE` ACK again (next sequence);
    - `tag` older than the window (§8): ignored;
    - new `tag`: allocate the reassembly buffer whatever the `index`, thanks to `total`. A reassembly in progress with a smaller `tag` is dropped: the sender has moved on.
-2. Store the fragment in its slot (64 slots of 157 bytes). A duplicate is not stored, but it shows the sender is alive (it resets the give-up counter of step 4), and a repeated fragment that closes the round (step 3) triggers an ACK: it is the sender asking for an ACK it missed (§7.1 step 5).
-3. **ACK** (`bitmap u64 ‖ flags`, bit `i` = fragment `i` received; flag bit 0 = `COMPLETE`):
+2. Store the fragment in its slot (64 slots of 149 bytes). A duplicate is not stored, but it shows the sender is alive (it resets the give-up counter of step 4), and a repeated fragment that closes the round (step 3) triggers an ACK: it is the sender asking for an ACK it missed (§7.1 step 5).
+3. **ACK**: a little-endian bit string of `total + 1` bits in `⌈(total + 1) / 8⌉` bytes. Bit 0 is `COMPLETE`; bit `i + 1` says fragment `i` was received; the bits above are 0, and an ACK where one is set is dropped. Up to 7 fragments the body is one byte and the frame 24 bytes; 64 fragments take 9 bytes and 32 (ADR-0028):
    - everything received: the datagram goes to the app, the `tag` is marked completed, `COMPLETE` ACK;
    - the fragment that **closes the round** arrives while some are missing: ACK with the bitmap. The round is closed by any fragment whose index is at least `round_last`: `total − 1` at first, then the highest index reported missing in our last ACK (the sender resends missing fragments in increasing order). This plays the role of SCHC's "All-1" fragment without spending a header bit;
    - otherwise, when the reassembly timer fires (§7.4): ACK with the bitmap.
@@ -366,7 +366,7 @@ W   (ACK wait, sender)          = (hops + 1) × (2 × t_frame + 2 × t_ack) + 2 
 G   (reassembly, receiver)      = last_received + (missing_after_highest + 2) × g + 3 s
 ```
 
-`hops` = number of repeaters; `t_ack` = airtime of an ACK frame (24-byte payload). `g` = measured gap between the last two fragments received, clamped to 1..60 s; 10 s while only one fragment has been received.
+`hops` = number of repeaters; `t_ack` = airtime of the longest ACK frame (32-byte payload, 64 fragments), whatever the datagram. `g` = measured gap between the last two fragments received, clamped to 1..60 s; 10 s while only one fragment has been received.
 
 ## 8. Replay protection
 
@@ -430,7 +430,7 @@ Sent with `SEND_RAW_PACKET` as a `GRP_DATA` flood (transport codes of the defaul
 
 ```
 payload = 0x7C ‖ type (1) ‖ gid_hash (2) ‖ sender (1) ‖ key_epoch (1) ‖ counter u32 ‖ frag (1)
-          ‖ ciphertext ‖ tag (8) ‖ [0x00 if type = 0x03]
+          ‖ ciphertext ‖ tag (16) ‖ [0x00 if type = 0x03]
 type    = 0x02, or 0x03 when a trailing pad byte is present
 gid_hash = SHA256(gid)[0..2];  sender = id[0] of the sender's identity
 frag    = index << 4 | copy << 3 | total, total ∈ {1, 2}, index < total, copy ∈ {0, 1}, bit 2 = 0
@@ -438,8 +438,8 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 ```
 
 - **Length rule** (§1 fact 9): a stock node reads a 2-byte MAC after the channel hash, so the rest of the payload must not be a non-empty multiple of 16. When `len(payload) − 3` would be one, the sender appends the pad byte and uses type 0x03 (the type byte is in the AAD).
-- **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 139 bytes of plaintext.
-- **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 70 bytes in one fragment, 209 in two.
+- **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 131 bytes of plaintext.
+- **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 62 bytes in one fragment, 193 in two. The signature is what authenticates a group message; the tag keeps frames that are not from a holder of the sender key away from it.
 - **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces. Messages (what the user sends: texts, replies, reactions, announcements) take counters from 0 to 2^31 − 1; what the core sends by itself (positions, search packets) takes counters from 2^31, each range increasing on its own (ADR-0024). A receiver keeps one replay window per range, so a gap among message counters is a lost message (§10.6), never a stale position. The `next_counter` of SENDER_KEY counts messages.
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
 - **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key and counter range); reassemble; verify the signature with the member's identity key; drop anything that fails. Copies of the same flood (several paths) are dropped by the replay window.
@@ -487,7 +487,7 @@ GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..159) ‖ e
 
 **Receiving.** GROUP_RESEND is accepted only from a listed member of a group the receiver belongs to. Each payload goes through §10.3's receiver unchanged (key, replay window, reassembly, signature), so a relayed payload can be neither forged nor replayed; only, it was not heard on the air, so it is not a search measurement (§11). A message recovered this way is reported as **late**: the phones show it where it arrives, with "arrived late" and its sending time.
 
-**Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 70 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
+**Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 62 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
 
 ## 11. Search (ADR-0016)
 
@@ -541,7 +541,7 @@ Every SEARCH message is one group message (§10.3): signed, flooded, two copies.
 
 Integers little-endian. The receiver rebuilds the full time as the unique instant within `[now − 18 h, now + 10 min]` whose low 16 bits are `t16`. It drops a position whose time is not newer than the last one it holds from the same sender in the same conversation (direct, or that group), on top of the session or group replay windows. The time is the one the sender vouches for the position: the measurement, or the heartbeat.
 
-One direct position costs about 30 bytes on air (7 header + 1 type + 14 + 8 tag).
+One direct position costs 38 bytes on air (7 header + 1 type + 14 + 16 tag).
 
 ### 12.2 Sharing
 
@@ -563,7 +563,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 - `mode`, with its bits per 40 ms frame: 0 = Codec2 700C (28), 1 = Codec2 1200 (48), 2 = Codec2 1600 (64), 3 = Codec2 2400 (96: two 20 ms Codec2 frames of 48 bits). `frames` counts 40 ms frames in every mode. Audio is 8 kHz mono. The sender picks the mode (the apps: 1600 by default, 700C to save airtime, 2400 for clarity); a receiver decodes all four.
 - `data`: the frames' bits back to back, most significant bit first, `⌈frames × bits / 8⌉` bytes; anything else is rejected.
-- At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200, 3,000 in 1600, 4,500 in 2400. Ten seconds on one hop: 875 bytes (6 fragments) in 700C, 2,000 (13) in 1600, 3,000 (20) in 2400.
+- At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200, 3,000 in 1600, 4,500 in 2400. Ten seconds on one hop: 875 bytes (6 fragments) in 700C, 2,000 (14) in 1600, 3,000 (21) in 2400.
 - Before encoding, the sender removes DC and rumble (high-pass at about 100 Hz) and brings the speech to about -20 dBFS (at most +24 dB, peaks softly limited); in 700C the encoder's equaliser is on. Codec2 is sensitive to level: a quiet recording comes out muffled.
 
 ### 13.2 FILE (0x02): images and small files
@@ -572,7 +572,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 - `kind` 1: an AVIF image; `kind` 2: a small file, `kind` 3: a compressed small file (below). Other kinds are shown as unsupported.
 - `media_id`: random, chosen by the sender; the same for both variants.
-- `variant` 0: the **preview**, at most 450 bytes of AVIF (3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
+- `variant` 0: the **preview**, at most 426 bytes of AVIF (with the header above, exactly 3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
 - `full_len`: size of the full variant, so the receiver can show its cost before asking; 0 when there is none.
 - The sender sends the preview only. The full variant goes out when the receiver asks for it (§13.3), and the receiver replaces the preview with it.
 
@@ -582,7 +582,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 
 - The name says what it is (its extension); the receiver opens it with whatever handles that type, and never runs it.
 - The name is a label, never a path: whoever writes a copy (to open or share it) drops separators, control characters and leading dots and spaces, writes it into a new folder of its own, and never removes or overwrites anything at a path derived from it. A name such as `..` must not reach the file system.
-- It is a medium: refused when its first round does not fit in the hour (§13.4). Its cost is shown before sending: 8 KB is about 53 fragments, measured in `docs/measurements.md`.
+- It is a medium: refused when its first round does not fit in the hour (§13.4). Its cost is shown before sending: 8 KB is about 56 fragments, measured in `docs/measurements.md`.
 - Anything larger goes over the Internet bridge (§14.1, `kind` 3).
 
 **A compressed small file** (`kind` 3, ADR-0023): the same file, its content compressed.

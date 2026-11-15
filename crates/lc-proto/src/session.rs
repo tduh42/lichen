@@ -210,12 +210,19 @@ impl Session {
         match h.kind {
             Kind::Data => self.on_data(&h, plain, now),
             Kind::Ack => {
-                let bitmap = plain
-                    .get(..8)
-                    .and_then(|b| b.try_into().ok())
-                    .map(u64::from_le_bytes)
-                    .ok_or(FrameError::Malformed)?;
-                let complete = plain.get(8).is_some_and(|f| f & 1 == 1);
+                // The COMPLETE flag, then one bit per fragment (§7.2); the frame's length was
+                // checked against `total`, and bits beyond the last fragment must be zero.
+                let mut packed = [0u8; 16];
+                packed
+                    .get_mut(..plain.len())
+                    .ok_or(FrameError::Malformed)?
+                    .copy_from_slice(plain);
+                let bits = u128::from_le_bytes(packed);
+                if bits >> (u32::from(h.total) + 1) != 0 {
+                    return Err(FrameError::Malformed);
+                }
+                let complete = bits & 1 == 1;
+                let bitmap = (bits >> 1) as u64;
                 let timing = self.timing;
                 match self.sender.as_mut() {
                     Some(s) if s.tag() == h.tag && s.total() == h.total => {
@@ -332,14 +339,13 @@ impl Session {
                         bitmap,
                         complete,
                     } => {
+                        let bits = u128::from(bitmap) << 1 | u128::from(complete);
                         let mut p = [0u8; 9];
-                        if let Some(b) = p.get_mut(..8) {
-                            b.copy_from_slice(&bitmap.to_le_bytes());
+                        for (o, b) in p.iter_mut().zip(bits.to_le_bytes()) {
+                            *o = b;
                         }
-                        if let Some(f) = p.get_mut(8) {
-                            *f = u8::from(complete);
-                        }
-                        (self.header(tag, Kind::Ack, 0, total, seq), p, 9)
+                        let len = crate::header::ack_body_len(total);
+                        (self.header(tag, Kind::Ack, 0, total, seq), p, len)
                     }
                     RxEmit::Abort { reason } => {
                         let mut p = [0u8; 9];

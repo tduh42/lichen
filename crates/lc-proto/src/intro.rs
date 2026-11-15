@@ -623,8 +623,8 @@ mod tests {
         );
         let ack = open_intro_ack(i.node, r.node, &eph_i, &salt_i, &good).unwrap();
         // A resent INTRO_FIN (next attempt) has new bytes and still opens.
-        let mut a = [0u8; 64];
-        let mut b = [0u8; 64];
+        let mut a = [0u8; INTRO_FIN_LEN];
+        let mut b = [0u8; INTRO_FIN_LEN];
         let na = seal_intro_fin(
             i.node, r.node, &i.prv, &i.id, &eph_i, &salt_i, &ack, 0, &mut a,
         )

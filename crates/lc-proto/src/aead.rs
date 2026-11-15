@@ -1,50 +1,27 @@
-//! ChaCha20-Poly1305 (RFC 8439) with the tag truncated to its first 8 bytes, compared in
-//! constant time. Built from the `chacha20` and `poly1305` primitives because the AEAD crates
-//! only verify full 16-byte tags.
+//! ChaCha20-Poly1305 as RFC 8439 defines it, with its full 16-byte tag (ADR-0028), from the
+//! `chacha20poly1305` crate: in place, the tag apart, no allocation. The tag is compared in
+//! constant time and nothing is decrypted before it verifies.
 
 use crate::{Key, TAG_LEN};
-use chacha20::ChaCha20;
-use chacha20::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use poly1305::Poly1305;
-use poly1305::universal_hash::{KeyInit, UniversalHash};
-use subtle::ConstantTimeEq;
+use chacha20poly1305::ChaCha20Poly1305;
+use chacha20poly1305::aead::{AeadInOut, KeyInit};
 
 /// The tag does not verify.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AuthError;
 
-fn cipher(key: &Key, nonce: &[u8; 12]) -> ChaCha20 {
-    ChaCha20::new(key.into(), nonce.into())
-}
-
-fn full_tag(key: &Key, nonce: &[u8; 12], aad: &[u8], ct: &[u8]) -> [u8; 16] {
-    let mut poly_key = [0u8; 32];
-    cipher(key, nonce).apply_keystream(&mut poly_key);
-    let mut mac = Poly1305::new((&poly_key).into());
-    mac.update_padded(aad);
-    mac.update_padded(ct);
-    let mut lengths = [0u8; 16];
-    let (a, c) = lengths.split_at_mut(8);
-    a.copy_from_slice(&(aad.len() as u64).to_le_bytes());
-    c.copy_from_slice(&(ct.len() as u64).to_le_bytes());
-    mac.update_padded(&lengths);
-    mac.finalize().into()
-}
-
-fn truncate(tag: [u8; 16]) -> [u8; TAG_LEN] {
-    let mut out = [0u8; TAG_LEN];
-    for (o, t) in out.iter_mut().zip(tag) {
-        *o = t;
-    }
-    out
-}
-
-/// Encrypts `buf` in place and returns the 8-byte tag.
+/// Encrypts `buf` in place and returns the tag.
 pub fn seal(key: &Key, nonce: &[u8; 12], aad: &[u8], buf: &mut [u8]) -> [u8; TAG_LEN] {
-    let mut c = cipher(key, nonce);
-    c.seek(64u32);
-    c.apply_keystream(buf);
-    truncate(full_tag(key, nonce, aad, buf))
+    match ChaCha20Poly1305::new(key.into()).encrypt_inout_detached(nonce.into(), aad, buf.into()) {
+        Ok(tag) => tag.into(),
+        // The AEAD only refuses a message of 256 GiB or more, before it encrypts anything;
+        // lichen's buffers hold one frame. Should it ever happen, nothing readable may leave:
+        // the buffer is cleared, and an all-zero tag does not verify.
+        Err(_) => {
+            buf.fill(0);
+            [0; TAG_LEN]
+        }
+    }
 }
 
 /// Verifies `tag` over the ciphertext `buf`, then decrypts it in place. `buf` is left
@@ -56,12 +33,7 @@ pub fn open(
     buf: &mut [u8],
     tag: &[u8; TAG_LEN],
 ) -> Result<(), AuthError> {
-    let expected = truncate(full_tag(key, nonce, aad, buf));
-    if !bool::from(expected.ct_eq(tag)) {
-        return Err(AuthError);
-    }
-    let mut c = cipher(key, nonce);
-    c.seek(64u32);
-    c.apply_keystream(buf);
-    Ok(())
+    ChaCha20Poly1305::new(key.into())
+        .decrypt_inout_detached(nonce.into(), aad, buf.into(), tag.into())
+        .map_err(|_| AuthError)
 }

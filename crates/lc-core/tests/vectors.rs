@@ -347,3 +347,235 @@ fn small_files() {
         );
     }
 }
+
+// ----- frames (`testdata/lichen/frames.toml`, an independent Python oracle with its own
+// ChaCha20-Poly1305): session frames, group envelopes and PROBEs with 16-byte tags (ADR-0028).
+
+mod frames {
+    use super::{entries, h};
+    use lc_proto::discovery::{Keying, build_probe, verify_probe};
+    use lc_proto::group::{GroupHeader, open, seal};
+    use lc_proto::sender::Timing;
+    use lc_proto::{CHUNK_MAX, DATAGRAM_MAX, Received, Session, SessionEvent, SessionKeys};
+    use toml::{Table, Value};
+
+    const A: u8 = 0xA1;
+    const B: u8 = 0xB2;
+
+    fn load() -> Table {
+        let path = format!(
+            "{}/../../testdata/lichen/frames.toml",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        std::fs::read_to_string(path).unwrap().parse().unwrap()
+    }
+
+    fn int(v: &Value, k: &str) -> i64 {
+        v[k].as_integer().unwrap()
+    }
+
+    fn pair() -> (Session, Session) {
+        let (k1, k2) = ([1u8; 32], [2u8; 32]);
+        let t = Timing::default();
+        (
+            Session::new(SessionKeys { send: k1, recv: k2 }, A, B, t),
+            Session::new(SessionKeys { send: k2, recv: k1 }, B, A, t),
+        )
+    }
+
+    /// Every frame `s` emits until it has nothing more due, the clock following its timers.
+    fn drain(s: &mut Session, now: &mut u64, limit: usize) -> Vec<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut buf = [0u8; 200];
+        while out.len() < limit {
+            if let Some(n) = s.poll_transmit(*now, &mut buf) {
+                out.push(buf[..n].to_vec());
+            } else if let Some(t) = s.next_wakeup().filter(|t| *t > *now) {
+                *now = t;
+            } else {
+                break;
+            }
+        }
+        out
+    }
+
+    fn delivered(s: &mut Session) -> bool {
+        std::iter::from_fn(|| s.take_event()).any(|e| matches!(e, SessionEvent::Delivered { .. }))
+    }
+
+    /// A short datagram, then one of 8 fragments whose last fragment arrives first: the frames
+    /// both sides emit are the oracle's, byte for byte, and each side accepts the other's.
+    #[test]
+    fn session_frames() {
+        let t = load();
+        let (data, acks) = (entries(&t, "data"), entries(&t, "ack"));
+        let (mut a, mut b) = pair();
+        let mut now = 0u64;
+
+        // One fragment, and its one-byte COMPLETE ACK.
+        let hello = h(&data[0], "plain");
+        assert_eq!(a.send(&hello, CHUNK_MAX, now).unwrap(), 0);
+        let mut sent = drain(&mut a, &mut now, 1);
+        assert_eq!(sent[0], h(&data[0], "frame"));
+        assert_eq!(sent[0].len(), 7 + hello.len() + 16);
+        let got = match b.handle(&mut sent[0], now).unwrap() {
+            Received::Datagram { data, .. } => data.to_vec(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(got, hello);
+        let mut ack = drain(&mut b, &mut now, 1);
+        assert_eq!(ack[0], h(&acks[0], "frame"));
+        assert_eq!(ack[0].len(), 24);
+        a.handle(&mut ack[0], now).unwrap();
+        assert!(delivered(&mut a));
+
+        // Eight fragments of 149 bytes.
+        let long: Vec<u8> = data[1..9].iter().flat_map(|v| h(v, "plain")).collect();
+        assert_eq!(long.len(), 8 * CHUNK_MAX);
+        assert_eq!(a.send(&long, CHUNK_MAX, now).unwrap(), 1);
+        let mut sent = drain(&mut a, &mut now, 8);
+        for (frame, v) in sent.iter().zip(&data[1..9]) {
+            assert_eq!(frame, &h(v, "frame"), "fragment {}", int(v, "index"));
+            assert_eq!(frame.len(), 172);
+        }
+        // The last one alone closes the round: an ACK that names it, in two packed bytes.
+        let mut last = sent.pop().unwrap();
+        assert!(matches!(
+            b.handle(&mut last, now).unwrap(),
+            Received::Nothing
+        ));
+        let ack = drain(&mut b, &mut now, 1);
+        assert_eq!(ack[0], h(&acks[1], "frame"));
+        assert_eq!(ack[0].len(), 25);
+        // The others: the datagram is whole, and the ACK says COMPLETE.
+        let mut whole = None;
+        for f in &mut sent {
+            if let Received::Datagram { data, .. } = b.handle(f, now).unwrap() {
+                whole = Some(data.to_vec());
+            }
+        }
+        assert_eq!(whole.unwrap(), long);
+        let mut ack = drain(&mut b, &mut now, 1);
+        assert_eq!(ack[0], h(&acks[2], "frame"));
+        a.handle(&mut ack[0], now).unwrap();
+        assert!(delivered(&mut a));
+    }
+
+    /// The largest datagram: 64 fragments, acknowledged in nine packed bytes.
+    #[test]
+    fn the_longest_ack() {
+        let t = load();
+        let v = &entries(&t, "ack")[3];
+        let (mut a, mut b) = pair();
+        let mut now = 0u64;
+        // Tags 0 and 1 are used up first, as in the vectors.
+        for len in [10, 20] {
+            a.send(&vec![9u8; len], CHUNK_MAX, now).unwrap();
+            for f in &mut drain(&mut a, &mut now, 1) {
+                b.handle(f, now).unwrap();
+            }
+            for f in &mut drain(&mut b, &mut now, 1) {
+                a.handle(f, now).unwrap();
+            }
+            assert!(delivered(&mut a));
+        }
+        let big = vec![0x5Au8; DATAGRAM_MAX];
+        assert_eq!(a.send(&big, CHUNK_MAX, now).unwrap(), 2);
+        for f in &mut drain(&mut a, &mut now, 64) {
+            b.handle(f, now).unwrap();
+        }
+        let mut ack = drain(&mut b, &mut now, 1);
+        assert_eq!(ack[0], h(v, "frame"));
+        assert_eq!(ack[0].len(), 32);
+        a.handle(&mut ack[0], now).unwrap();
+        assert!(delivered(&mut a));
+    }
+
+    /// An ACK with a bit set beyond its last fragment, or of the wrong length, is dropped.
+    #[test]
+    fn ack_shape() {
+        let t = load();
+        let acks = entries(&t, "ack");
+        let (mut a, _) = pair();
+        a.send(&[1, 2, 3], CHUNK_MAX, 0).unwrap();
+        let mut now = 0u64;
+        drain(&mut a, &mut now, 1);
+        // The 8-fragment ACK does not fit a 1-fragment datagram (its length says so).
+        let mut wrong = h(&acks[2], "frame");
+        wrong[5] = 1;
+        assert!(a.handle(&mut wrong, now).is_err());
+        assert!(!delivered(&mut a));
+        let mut good = h(&acks[0], "frame");
+        a.handle(&mut good, now).unwrap();
+        assert!(delivered(&mut a));
+    }
+
+    #[test]
+    fn abort_frame() {
+        let t = load();
+        let v = &entries(&t, "abort")[0];
+        let (mut a, _) = pair();
+        let mut now = 0u64;
+        a.send(&[7; 12], CHUNK_MAX, now).unwrap();
+        drain(&mut a, &mut now, 1);
+        a.cancel();
+        let out = drain(&mut a, &mut now, 1);
+        assert_eq!(out[0], h(v, "frame"));
+        assert_eq!(out[0].len(), 24);
+    }
+
+    #[test]
+    fn group_envelopes() {
+        let t = load();
+        for v in entries(&t, "envelope") {
+            let key: [u8; 32] = h(v, "key").try_into().unwrap();
+            let header = GroupHeader {
+                gid_hash: u16::try_from(int(v, "gid_hash")).unwrap(),
+                sender: u8::try_from(int(v, "sender")).unwrap(),
+                key_epoch: u8::try_from(int(v, "key_epoch")).unwrap(),
+                counter: u32::try_from(int(v, "counter")).unwrap(),
+                index: u8::try_from(int(v, "index")).unwrap(),
+                total: u8::try_from(int(v, "total")).unwrap(),
+                copy: u8::try_from(int(v, "copy")).unwrap(),
+            };
+            let plain = h(v, "plain");
+            let mut out = [0u8; 200];
+            let n = seal(&key, &header, &plain, &mut out).unwrap();
+            let mut payload = h(v, "payload");
+            assert_eq!(&out[..n], &payload[..], "{} bytes", plain.len());
+            assert_eq!(payload[1] == 0x03, v["padded"].as_bool().unwrap());
+            // A stock node reads a 2-byte MAC after the channel hash and then wants whole
+            // 16-byte blocks: the rest is never one (§1 fact 9).
+            assert!(!(payload.len() - 3).is_multiple_of(16));
+            let (got, opened) = open(&key, &mut payload).unwrap();
+            assert_eq!((got, opened), (header, &plain[..]));
+        }
+    }
+
+    #[test]
+    fn probes() {
+        let t = load();
+        for v in entries(&t, "probe") {
+            let s: [u8; 32] = h(v, "s").try_into().unwrap();
+            let prober: [u8; 32] = h(v, "prober").try_into().unwrap();
+            let target: [u8; 32] = h(v, "target").try_into().unwrap();
+            let id: [u8; 8] = h(v, "id").try_into().unwrap();
+            let k = if v["anonymous"].as_bool().unwrap() {
+                Keying::anonymous(&prober, &target)
+            } else {
+                Keying {
+                    s: &s,
+                    anonymous: false,
+                    prober: &prober,
+                    target: &target,
+                }
+            };
+            let payload = h(v, "payload");
+            assert_eq!(build_probe(&k, prober[0], target[0], &id).to_vec(), payload);
+            assert_eq!(payload.len(), 28);
+            assert!(verify_probe(&k, prober[0], target[0], &payload));
+            // The 20-byte probe of version 1 (8-byte MAC) is not one any more.
+            assert!(!verify_probe(&k, prober[0], target[0], &payload[..20]));
+        }
+    }
+}

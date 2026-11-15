@@ -44,12 +44,12 @@ Everything lichen adds lives in a Rust core on the phone. The companion radio an
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/frame-dark.svg">
-  <img alt="A 7-byte header in clear, the ciphertext, an 8-byte tag; header bytes 2 to 6 form the nonce" src="docs/readme/frame-light.svg" width="760">
+  <img alt="A 7-byte header in clear, the ciphertext, a 16-byte tag; header bytes 2 to 6 form the nonce" src="docs/readme/frame-light.svg" width="760">
 </picture>
 
-Every frame starts with a 7-byte header in clear, authenticated with the body; five of its bytes become the nonce. The body is ChaCha20-Poly1305 with the tag cut to 8 bytes (bounds in ADR-0014). `tag` counts datagrams per session and direction and `attempt` numbers the round, so a nonce never repeats under a key. Sessions are never stored: after a restart, a new handshake.
+Every frame starts with a 7-byte header in clear, authenticated with the body; five of its bytes become the nonce. The body is ChaCha20-Poly1305 as RFC 8439 defines it, with its full 16-byte tag (ADR-0028). `tag` counts datagrams per session and direction and `attempt` numbers the round, so a nonce never repeats under a key. Sessions are never stored: after a restart, a new handshake.
 
-| 157 B | 64 | 10,048 B |
+| 149 B | 64 | 9,536 B |
 |---|---|---|
 | data per fragment | fragments in a datagram | largest datagram |
 
@@ -138,7 +138,7 @@ An SOS without GPS still sends a short beacon every 2 minutes. Searchers measure
   <img alt="Fragments for 10 s of voice in two codecs, a photo preview and its full thumbnail, and an 8 KB file" src="docs/readme/media-light.svg" width="760">
 </picture>
 
-Voice is Codec2 (700C by default), listened to before sending. Photos are AVIF thumbnails: a preview of at most 450 bytes, the full thumbnail when asked. Files of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps, anything larger over the Internet bridge. Media go to contacts only, never flooded, and their airtime is shown before sending.
+Voice is Codec2 (700C by default), listened to before sending. Photos are AVIF thumbnails: a preview of at most 426 bytes, the full thumbnail when asked. Files of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps, anything larger over the Internet bridge. Media go to contacts only, never flooded, and their airtime is shown before sending.
 
 | 875 B | 409 / 975 B | 2.3 KB |
 |---|---|---|

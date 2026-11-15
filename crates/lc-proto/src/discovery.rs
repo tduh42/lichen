@@ -8,12 +8,14 @@ use lc_meshcore::path::{PATH_UNKNOWN, path_bytes};
 
 /// Channel hash of lichen's flooded envelopes.
 pub const CHANNEL_HASH: u8 = 0x7C;
-/// PROBE version byte.
-pub const PROBE_VERSION: u8 = 0x01;
-/// PROBE payload length: never `2 + 16k`, so stock nodes reject it before any MAC check.
-pub const PROBE_LEN: usize = 20;
+/// PROBE version byte: 2 since the tag is 16 bytes (ADR-0028).
+pub const PROBE_VERSION: u8 = 0x02;
 const ID_LEN: usize = 8;
-const PROBE_AAD: usize = PROBE_LEN - TAG_LEN;
+const PROBE_AAD: usize = 4 + ID_LEN;
+/// PROBE payload length (28): never `3 + 16k`, so stock nodes reject it before any MAC check
+/// (§1 fact 9).
+pub const PROBE_LEN: usize = PROBE_AAD + TAG_LEN;
+const _: () = assert!(!(PROBE_LEN - 3).is_multiple_of(16));
 
 /// A probe identifier (random, single use).
 pub type ProbeId = [u8; ID_LEN];

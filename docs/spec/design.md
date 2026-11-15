@@ -91,7 +91,7 @@ Order of magnitude of reliability without selective ACK: with 10 % loss per hop,
 
 ## Cryptography
 
-Each fragment is encrypted separately with ChaCha20-Poly1305, with an implicit nonce (0 bytes transmitted) and a tag truncated to 8 bytes, under a session key derived by HKDF.
+Each fragment is encrypted separately with ChaCha20-Poly1305, with an implicit nonce (0 bytes transmitted) and, since ADR-0028, the full 16-byte tag (the original design truncated it to 8 bytes), under a session key derived by HKDF.
 
 **Choice of algorithm**
 
@@ -106,7 +106,7 @@ Each fragment is encrypted separately with ChaCha20-Poly1305, with an implicit n
 
 **Absolute rule**: `attempt` is in the nonce, not only in the AAD. Resending with the same nonce and a different AAD would give two Poly1305 tags under the same one-time key, which enables forgery. An automated test must check that no nonce is ever reused.
 
-**8-byte tag**: acceptable here because each forgery attempt costs a radio transmission of at least 100 ms subject to the duty cycle. An online attack over 2⁶⁴ tries is physically impossible.
+**Tag**: the original design accepted an 8-byte tag, on the grounds that each forgery attempt costs a radio transmission of at least 100 ms subject to the duty cycle. The review of 2026-11-15 showed that this bound does not hold for a frame the attacker has heard, and that frames can also arrive at wire speed through the companion link; the tag is now the full 16 bytes of RFC 8439 (ADR-0028).
 
 **Key management**
 

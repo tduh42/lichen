@@ -17,13 +17,14 @@ fn header(index: u8, total: u8) -> GroupHeader {
 
 #[test]
 fn sizes() {
-    assert_eq!(FRAGMENT_PLAIN_MAX, 139);
+    assert_eq!(FRAGMENT_PLAIN_MAX, 131);
     // TEXT capacity: content type + ts + text + 64-byte signature.
-    assert_eq!(FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 70);
-    assert_eq!(2 * FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 209);
-    assert_eq!(fragments_for(139), Some(1));
-    assert_eq!(fragments_for(140), Some(2));
-    assert_eq!(fragments_for(279), None);
+    assert_eq!(FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 62);
+    assert_eq!(2 * FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 193);
+    assert_eq!(fragments_for(131), Some(1));
+    assert_eq!(fragments_for(132), Some(2));
+    assert_eq!(fragments_for(262), Some(2));
+    assert_eq!(fragments_for(263), None);
 }
 
 proptest! {

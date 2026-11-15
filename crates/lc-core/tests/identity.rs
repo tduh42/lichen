@@ -90,8 +90,8 @@ fn first_contact_introduces_both() {
         ("INTRO", 7 + 16 + 32 + 1 + 1),
         ("INTRO_ACK", lc_proto::intro::INTRO_ACK_LEN),
         ("INTRO_FIN", lc_proto::intro::INTRO_FIN_LEN),
-        ("HELLO", 7 + 16 + 32 + 2 + 1 + 8),
-        ("HELLO_ACK", 7 + 16 + 33 + 8),
+        ("HELLO", 7 + 16 + 32 + 2 + 1 + lc_proto::TAG_LEN),
+        ("HELLO_ACK", 7 + 16 + 33 + lc_proto::TAG_LEN),
     ] {
         eprintln!(
             "{name}: {len} bytes, {} ms",

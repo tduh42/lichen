@@ -16,6 +16,7 @@ use lc_meshcore::path::{PATH_UNKNOWN, Path};
 use lc_meshcore::response::Response;
 use lc_proto::discovery::{self, Keying, ProbeId};
 use lc_proto::handshake::{self, Ends, Hello, HelloAck, SALT_LEN};
+use lc_proto::header::ACK_FRAME_MAX;
 use lc_proto::intro::{self, Answer, Intro, IntroAck};
 use lc_proto::kdf::x25519_public;
 use lc_proto::sender::{SendError, Timing};
@@ -1568,7 +1569,8 @@ impl Core {
     fn timing_for(&self, path: &OwnedPath) -> Timing {
         let pb = path.bytes.len();
         let t_frame = self.radio.airtime_us(2 + pb + raw_payload_max(pb)) / 1000;
-        let t_ack = self.radio.airtime_us(2 + pb + 24) / 1000;
+        // The longest ACK (64 fragments, §7.2): the timers must hold for every datagram.
+        let t_ack = self.radio.airtime_us(2 + pb + ACK_FRAME_MAX) / 1000;
         Timing::for_path(t_frame, t_ack, path.hops())
     }
 
@@ -1647,7 +1649,7 @@ impl Core {
     /// our next data frame waits for the answer to come back along `path`. Otherwise it
     /// collides, at a repeater we share, with that answer (§7.4).
     fn expect_answer(&mut self, path: &OwnedPath) {
-        let t_ack = self.radio.airtime_us(2 + path.bytes.len() + 24) / 1000;
+        let t_ack = self.radio.airtime_us(2 + path.bytes.len() + ACK_FRAME_MAX) / 1000;
         let k = match path.hops() {
             0 => 1,
             1 => 3,

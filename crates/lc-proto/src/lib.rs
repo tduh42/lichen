@@ -1,5 +1,5 @@
-//! The lichen protocol (`docs/spec/protocol.md`): 7-byte frame header, ChaCha20-Poly1305 with
-//! an 8-byte tag, HKDF handshake with forward secrecy, and the ACK-on-Error fragmentation and
+//! The lichen protocol (`docs/spec/protocol.md`): 7-byte frame header, ChaCha20-Poly1305 (RFC 8439,
+//! 16-byte tag), HKDF handshake with forward secrecy, and the ACK-on-Error fragmentation and
 //! reassembly machines.
 //!
 //! Pure state machines: no IO, no clock, no randomness of their own (time in milliseconds and
@@ -40,8 +40,8 @@ pub type Millis = u64;
 
 /// Header length.
 pub const HEADER_LEN: usize = 7;
-/// Truncated AEAD tag length.
-pub const TAG_LEN: usize = 8;
+/// AEAD tag length: the full Poly1305 tag (ADR-0028).
+pub const TAG_LEN: usize = 16;
 /// Header plus tag.
 pub const OVERHEAD: usize = HEADER_LEN + TAG_LEN;
 /// Largest lichen frame we send: the largest `RAW_DATA` payload a companion can push (172).

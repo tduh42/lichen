@@ -9,6 +9,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "aead"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1973cfbc1a2daf9cf550e74e1f088c28e7f7d8c1e1418fb6c9dc5184b7e84c99"
+dependencies = [
+ "crypto-common",
+ "inout",
+]
+
+[[package]]
 name = "aligned"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -196,6 +206,18 @@ dependencies = [
  "cfg-if",
  "cipher",
  "cpufeatures",
+]
+
+[[package]]
+name = "chacha20poly1305"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b89e1c441e926b9c82a8d023f6e1b7ae0adcfaa7d621814e4d60789bac751cb"
+dependencies = [
+ "aead",
+ "chacha20",
+ "cipher",
+ "poly1305",
 ]
 
 [[package]]
@@ -546,7 +568,7 @@ dependencies = [
 
 [[package]]
 name = "lc-core"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "bip39",
  "lc-meshcore",
@@ -563,7 +585,7 @@ dependencies = [
 
 [[package]]
 name = "lc-media"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "cc",
  "codec2",
@@ -572,7 +594,7 @@ dependencies = [
 
 [[package]]
 name = "lc-meshcore"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
  "curve25519-dalek",
  "ed25519-dalek",
@@ -582,15 +604,13 @@ dependencies = [
 
 [[package]]
 name = "lc-proto"
-version = "0.0.0"
+version = "0.9.0"
 dependencies = [
- "chacha20",
+ "chacha20poly1305",
  "curve25519-dalek",
  "hkdf",
  "lc-meshcore",
- "poly1305",
  "sha2",
- "subtle",
 ]
 
 [[package]]

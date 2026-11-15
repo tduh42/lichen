@@ -51,8 +51,20 @@ pub struct Header {
     pub attempt: u8,
 }
 
-/// Lengths per kind: ACK and ABORT are fixed.
-pub const ACK_FRAME_LEN: usize = HEADER_LEN + 9 + TAG_LEN;
+/// Bytes of an ACK's body for a datagram of `total` fragments (§7.2): bit 0 is the COMPLETE
+/// flag, bit `i + 1` says fragment `i` arrived; 1 byte up to 7 fragments, 9 for 64.
+pub const fn ack_body_len(total: u8) -> usize {
+    (total as usize + 1).div_ceil(8)
+}
+
+/// Length of the ACK frame for a datagram of `total` fragments.
+pub const fn ack_frame_len(total: u8) -> usize {
+    HEADER_LEN + ack_body_len(total) + TAG_LEN
+}
+
+/// The longest ACK frame (64 fragments): what timers count on (§7.4).
+pub const ACK_FRAME_MAX: usize = ack_frame_len(crate::MAX_FRAGMENTS as u8);
+/// An ABORT frame.
 pub const ABORT_FRAME_LEN: usize = HEADER_LEN + 1 + TAG_LEN;
 /// Largest on-air payload.
 const AIR_PAYLOAD_MAX: usize = 184;
@@ -100,7 +112,7 @@ impl Header {
         }
         let ok = match header.kind {
             Kind::Data => header.index < header.total,
-            Kind::Ack => header.index == 0 && frame.len() == ACK_FRAME_LEN,
+            Kind::Ack => header.index == 0 && frame.len() == ack_frame_len(header.total),
             Kind::Abort => header.index <= 1 && frame.len() == ABORT_FRAME_LEN,
             Kind::Control => header.total == 1 && header.index <= 5,
         };

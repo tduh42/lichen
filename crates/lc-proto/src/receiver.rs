@@ -1,4 +1,4 @@
-//! Receiver side of ACK-on-Error fragmentation (§7.2, §7.4): fixed 157-byte slots, bitmap ACKs,
+//! Receiver side of ACK-on-Error fragmentation (§7.2, §7.4): fixed slots of one full fragment, bitmap ACKs,
 //! reassembly timer.
 
 use crate::sender::Timing;

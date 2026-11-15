@@ -1,30 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 210" width="760" height="210" role="img">
-<title>A lichen frame: a 7-byte header in clear, the ChaCha20 ciphertext, an 8-byte Poly1305 tag; header bytes 2 to 6 form the nonce</title>
+<title>A lichen frame: a 7-byte header in clear, the ChaCha20 ciphertext, the 16-byte Poly1305 tag; header bytes 2 to 6 form the nonce</title>
 <rect width="760" height="210" rx="16" fill="#FFFFFF" stroke="#E2E2DC"/>
-<rect x="30" y="30" width="36.229885057471265" height="54" rx="8" fill="#EFEFEB" />
-<text x="48.11494252873563" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">dst</text>
-<text x="48.11494252873563" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
-<rect x="70.22988505747126" y="30" width="36.229885057471265" height="54" rx="8" fill="#EFEFEB" />
-<text x="88.34482758620689" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">src</text>
-<text x="88.34482758620689" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
-<rect x="110.45977011494253" y="30" width="76.45977011494253" height="54" rx="8" fill="#EFEFEB" />
-<text x="148.68965517241378" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">tag</text>
-<text x="148.68965517241378" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">2 B</text>
-<rect x="190.91954022988506" y="30" width="88.5287356321839" height="54" rx="8" fill="#EFEFEB" />
-<text x="235.183908045977" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">kind‖index</text>
-<text x="235.183908045977" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
-<rect x="283.44827586206895" y="30" width="48.298850574712645" height="54" rx="8" fill="#EFEFEB" />
-<text x="307.5977011494253" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">total</text>
-<text x="307.5977011494253" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
-<rect x="335.7471264367816" y="30" width="60.367816091954026" height="54" rx="8" fill="#EFEFEB" />
-<text x="365.93103448275866" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">attempt</text>
-<text x="365.93103448275866" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
-<rect x="400.11494252873564" y="30" width="237.37931034482762" height="54" rx="8" fill="#FBE9DF" />
-<text x="518.8045977011494" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">ciphertext</text>
-<text x="518.8045977011494" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1–157 B</text>
-<rect x="641.4942528735633" y="30" width="84.5057471264368" height="54" rx="8" fill="#E2F2E7" />
-<text x="683.7471264367816" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">tag</text>
-<text x="683.7471264367816" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">8 B</text>
+<rect x="30" y="30" width="34.888888888888886" height="54" rx="8" fill="#EFEFEB" />
+<text x="47.44444444444444" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">dst</text>
+<text x="47.44444444444444" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
+<rect x="68.88888888888889" y="30" width="34.888888888888886" height="54" rx="8" fill="#EFEFEB" />
+<text x="86.33333333333333" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">src</text>
+<text x="86.33333333333333" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
+<rect x="107.77777777777777" y="30" width="73.77777777777777" height="54" rx="8" fill="#EFEFEB" />
+<text x="144.66666666666666" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">tag</text>
+<text x="144.66666666666666" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">2 B</text>
+<rect x="185.55555555555554" y="30" width="85.44444444444443" height="54" rx="8" fill="#EFEFEB" />
+<text x="228.27777777777777" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">kind‖index</text>
+<text x="228.27777777777777" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
+<rect x="275.0" y="30" width="46.55555555555556" height="54" rx="8" fill="#EFEFEB" />
+<text x="298.27777777777777" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">total</text>
+<text x="298.27777777777777" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
+<rect x="325.55555555555554" y="30" width="58.22222222222222" height="54" rx="8" fill="#EFEFEB" />
+<text x="354.66666666666663" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">attempt</text>
+<text x="354.66666666666663" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1 B</text>
+<rect x="387.77777777777777" y="30" width="229.33333333333334" height="54" rx="8" fill="#FBE9DF" />
+<text x="502.44444444444446" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">ciphertext</text>
+<text x="502.44444444444446" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">1–149 B</text>
+<rect x="621.1111111111111" y="30" width="104.88888888888887" height="54" rx="8" fill="#E2F2E7" />
+<text x="673.5555555555555" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#141413" text-anchor="middle">tag</text>
+<text x="673.5555555555555" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#55554F" text-anchor="middle">16 B</text>
 <text x="30" y="112" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#55554F" text-anchor="start">header: in clear, authenticated (the AAD)</text>
 <text x="730" y="112" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" font-weight="400" fill="#55554F" text-anchor="end">the tag is checked before anything is read</text>
 <rect x="30" y="140" width="40" height="30" rx="6" fill="#FBE9DF" />

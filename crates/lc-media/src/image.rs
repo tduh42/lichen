@@ -5,8 +5,9 @@ use ravif::{BitDepth, Encoder, Img, RGB8};
 
 pub const MAX_WIDTH: u32 = 160;
 pub const MAX_HEIGHT: u32 = 120;
-/// Largest preview (3 fragments on one hop).
-pub const PREVIEW_MAX: usize = 450;
+/// Largest preview: with its 21 bytes of FILE header it fills 3 fragments of 149 bytes on one
+/// hop (§13.2).
+pub const PREVIEW_MAX: usize = 426;
 /// Largest full thumbnail.
 pub const FULL_MAX: usize = 4_096;
 
@@ -88,7 +89,7 @@ pub fn thumbnail(rgba: &[u8], width: u32, height: u32) -> Result<Thumbnail, Imag
     let pixels = downscale(rgba, width, height, w, h);
     let full = encode_fitting(&pixels, w, h, &FULL_QUALITIES, FULL_MAX)?;
     let preview = encode_fitting(&pixels, w, h, &PREVIEW_QUALITIES, PREVIEW_MAX).or_else(|_| {
-        // Too much detail for 450 bytes: half the size, the system scales it up.
+        // Too much detail for a preview: half the size, the system scales it up.
         let (hw, hh) = ((w / 2).max(1), (h / 2).max(1));
         let half = downscale_rgb(&pixels, w, h, hw, hh);
         encode_fitting(&half, hw, hh, &PREVIEW_QUALITIES, PREVIEW_MAX)

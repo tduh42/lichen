@@ -230,7 +230,7 @@ footer p { max-width: 75ch; }
     <h2>A frame, byte by byte</h2>
     <div class="prose">
       <p class="lede">Every lichen frame starts with a 7-byte header in clear. The header is authenticated with the body, and five of its bytes become the nonce.</p>
-      <p>The body is <b>ChaCha20-Poly1305</b> with the tag cut to its first <b>8 bytes</b>: a variant of RFC 8439, kept for airtime with its bounds written down in ADR-0014 (forgery about 2<sup>-64</sup> per attempt, and every attempt costs the attacker a transmission). The <code>tag</code> is a counter per session and direction, and <code>attempt</code> numbers the round, so a nonce never repeats under a key. Sessions are never stored: after a restart, a new handshake.</p>
+      <p>The body is <b>ChaCha20-Poly1305</b> exactly as RFC 8439 defines it, with its full <b>16-byte tag</b> (ADR-0028): a forged frame passes with a probability of about 2<sup>-98</sup>, whatever path it came by. The <code>tag</code> is a counter per session and direction, and <code>attempt</code> numbers the round, so a nonce never repeats under a key. Sessions are never stored: after a restart, a new handshake.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="scroll"><div class="bytes" id="frameBytes"></div></div>
@@ -245,9 +245,9 @@ footer p { max-width: 75ch; }
       </div>
     </figure>
     <div class="facts">
-      <div class="fact"><span class="v">157 B</span><span class="k">data per fragment, up to 2 path bytes</span></div>
+      <div class="fact"><span class="v">149 B</span><span class="k">data per fragment, up to 2 path bytes</span></div>
       <div class="fact"><span class="v">64</span><span class="k">fragments at most in a datagram</span></div>
-      <div class="fact"><span class="v">10,048 B</span><span class="k">largest datagram (64 × 157)</span></div>
+      <div class="fact"><span class="v">9,536 B</span><span class="k">largest datagram (64 × 149)</span></div>
     </div>
   </section>
 
@@ -368,7 +368,7 @@ footer p { max-width: 75ch; }
     </figure>
     <div class="facts">
       <div class="fact"><span class="v">97.6 %</span><span class="k">posts delivered with two floods, against 81.6 % with one (10 % loss per link)</span></div>
-      <div class="fact"><span class="v">70 / 209</span><span class="k">characters of text in one or two flooded fragments</span></div>
+      <div class="fact"><span class="v">62 / 193</span><span class="k">characters of text in one or two flooded fragments</span></div>
       <div class="fact"><span class="v">1–32</span><span class="k">members in a group: it may start with the admin alone</span></div>
       <div class="fact"><span class="v">130 s</span><span class="k">two people join by QR: every member holds every key (median of 10, fake network; 489 s before the relay)</span></div>
       <div class="fact"><span class="v">237 s</span><span class="k">a group of 5 created from contacts around one repeater, every key everywhere (median of 10; 412 s before)</span></div>
@@ -446,14 +446,14 @@ footer p { max-width: 75ch; }
     <div class="eyebrow">§13 · Media and files over LoRa</div>
     <h2>Voice, photos and files that fit the radio</h2>
     <div class="prose">
-      <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 450 bytes goes first, and the full thumbnail only when the recipient asks.</p>
+      <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 426 bytes goes first, and the full thumbnail only when the recipient asks.</p>
       <p>Media go to contacts only, never flooded. Before sending, the core estimates the airtime of the first round; when it would not fit in what is left of the hour, the send is refused with the time it would fit, and nothing is queued. A voice note is listened to before it goes, at the quality chosen for it; a photo opens full screen at the best version on the phone.</p>
       <p><b>Files</b> of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps (a 25 KB GPX track goes as 2.3 KB, 29 s of airtime), with its fragments and airtime shown first; anything larger, a PDF, goes over the Internet bridge below. The receiver opens it with the app for its type; lichen never runs it.</p>
     </div>
     <figure class="fig" style="margin:0">
       <h3>Ten seconds of voice</h3>
       <div class="scroll">
-        <svg id="voice" viewBox="0 0 720 120" role="img" aria-label="Codec2 1200 needs 10 fragments, 700C needs 6"></svg>
+        <svg id="voice" viewBox="0 0 720 120" role="img" aria-label="Codec2 1200 needs 11 fragments, 700C needs 6"></svg>
       </div>
       <h3>A photo, preview then full</h3>
       <div class="controls">
@@ -483,9 +483,9 @@ footer p { max-width: 75ch; }
     </figure>
     <div class="facts">
       <div class="fact"><span class="v lora">875 B</span><span class="k">10 s of voice in Codec2 700C, 6 fragments on one hop</span></div>
-      <div class="fact"><span class="v">1,500 B</span><span class="k">the same 10 s in Codec2 1200, 10 fragments</span></div>
+      <div class="fact"><span class="v">1,500 B</span><span class="k">the same 10 s in Codec2 1200, 11 fragments</span></div>
       <div class="fact"><span class="v">409 / 975 B</span><span class="k">measured preview and full thumbnail (3 and 7 fragments)</span></div>
-      <div class="fact"><span class="v lora">93 s</span><span class="k">airtime of an 8 KB file on one hop at CR 4/8, delivered in 5.6 min (fake network)</span></div>
+      <div class="fact"><span class="v lora">99 s</span><span class="k">airtime of an 8 KB file on one hop at CR 4/8, delivered in 6.0 min (fake network)</span></div>
     </div>
   </section>
 
@@ -545,7 +545,7 @@ footer p { max-width: 75ch; }
       <div class="controls">
         <button class="primary" id="uVoice">Send a 15 s voice message (16 s on air)</button>
         <button id="uPos">Send a position (0.365 s)</button>
-        <button id="uFile">Send an 8 KB file (93 s)</button>
+        <button id="uFile">Send an 8 KB file (99 s)</button>
         <button id="uReset">New hour</button>
       </div>
       <div class="log" id="uLog" aria-live="polite">Measured on one hop: voice and position at SF8 / 62.5 kHz / CR 4/5, the file at CR 4/8.</div>
@@ -670,7 +670,7 @@ footer p { max-width: 75ch; }
       extra.push(g);
     }
     const stepsDirect = [
-      ['a', null, 'Alice writes. Her core seals the datagram into lichen frames: a 7-byte header in clear, the body encrypted with ChaCha20-Poly1305 and an 8-byte tag.', 'Nothing leaves the phone in clear but the header, which only names node hashes and counters.'],
+      ['a', null, 'Alice writes. Her core seals the datagram into lichen frames: a 7-byte header in clear, the body encrypted with ChaCha20-Poly1305 and its 16-byte tag.', 'Nothing leaves the phone in clear but the header, which only names node hashes and counters.'],
       ['a', 'ca', 'Over Bluetooth, SEND_RAW_DATA (command 25) hands the companion the path and the frame.', 'The companion answers OK as soon as it is queued, so the core paces fragments itself.'],
       ['ca', 'r', 'The stock companion transmits a RAW_CUSTOM packet. In direct mode only the node whose hash heads the path forwards it.', 'RAW_CUSTOM has no MeshCore crypto: everything lichen needs is in its own header.'],
       ['r', 'cb', 'The repeater forwards it without understanding it, removing its own hash from the path.', 'When the path is empty, every node in range receives it: lichen checks the destination hash itself.'],
@@ -765,8 +765,8 @@ footer p { max-width: 75ch; }
     { name: 'kind‖index', size: '1 B', w: 1.4, cls: 'clear', desc: 'kind in bits 7-6: DATA, ACK, ABORT or CONTROL. index in bits 5-0: the fragment number, 0 to 63.' },
     { name: 'total', size: '1 B', w: 1, cls: 'clear', desc: 'Fragments in the datagram, 1 to 64.' },
     { name: 'attempt', size: '1 B', w: 1.2, cls: 'clear', desc: 'The round number for data, so a resent fragment gets a fresh nonce and fresh bytes for the duplicate filter.' },
-    { name: 'ciphertext', size: '1–157 B', w: 7, cls: 'sealed', desc: 'ChaCha20 under the session key for this direction. Nothing in it is read before the tag checks.' },
-    { name: 'tag', size: '8 B', w: 2.6, cls: 'tagb', desc: 'Poly1305 cut to 8 bytes, compared in constant time. The AAD is the whole header.' },
+    { name: 'ciphertext', size: '1–149 B', w: 7, cls: 'sealed', desc: 'ChaCha20 under the session key for this direction. Nothing in it is read before the tag checks.' },
+    { name: 'tag', size: '16 B', w: 3.2, cls: 'tagb', desc: 'The full Poly1305 tag of RFC 8439, compared in constant time. The AAD is the whole header.' },
   ], 'Tap a field. The first seven bytes are the header, in clear and authenticated.');
 
   /* nonce diagram */
@@ -1070,14 +1070,14 @@ footer p { max-width: 75ch; }
   (() => {
     const v = $('voice');
     const rows = [
-      { y: 18, label: 'Codec2 1200', sub: '48 bits / 40 ms', frags: 10, bytes: '1,500 B', hl: false },
+      { y: 18, label: 'Codec2 1200', sub: '48 bits / 40 ms', frags: 11, bytes: '1,500 B', hl: false },
       { y: 70, label: 'Codec2 700C', sub: '28 bits / 40 ms · sent', frags: 6, bytes: '875 B', hl: true },
     ];
     rows.forEach((r) => {
       txt(v, 0, r.y + 16, r.label, 't', 'start');
       txt(v, 0, r.y + 32, r.sub, 't2', 'start');
-      for (let i = 0; i < r.frags; i++) el('rect', { x: 170 + i * 44, y: r.y, width: 38, height: 34, rx: 6, fill: r.hl ? 'var(--lora-bg)' : 'var(--s2)', stroke: r.hl ? 'var(--lora)' : 'var(--line)' }, v);
-      txt(v, 170 + r.frags * 44 + 8, r.y + 22, `${r.frags} fragments · ${r.bytes}`, 'tm', 'start');
+      for (let i = 0; i < r.frags; i++) el('rect', { x: 170 + i * 40, y: r.y, width: 34, height: 34, rx: 6, fill: r.hl ? 'var(--lora-bg)' : 'var(--s2)', stroke: r.hl ? 'var(--lora)' : 'var(--line)' }, v);
+      txt(v, 170 + r.frags * 40 + 8, r.y + 22, `${r.frags} fragments · ${r.bytes}`, 'tm', 'start');
     });
     let full = false;
     const blur = $('mBlurAmt'), badge = $('mBadge'), label = $('mLabel');
@@ -1230,8 +1230,8 @@ footer p { max-width: 75ch; }
       used = Math.round((used + .365) * 1000) / 1000; paint(); log('Position sent: 33 bytes, 0.365 s.');
     };
     $('uFile').onclick = () => {
-      if (used + 93 > LIMIT) { log(`Refused: 93 s would not fit in the ${(LIMIT - used).toFixed(1)} s left. Larger files go over the Internet bridge anyway.`, true); return; }
-      used += 93; paint(); log('8 KB file sent over LoRa: 93 s of airtime at CR 4/8, a quarter of the hour.');
+      if (used + 99 > LIMIT) { log(`Refused: 99 s would not fit in the ${(LIMIT - used).toFixed(1)} s left. Larger files go over the Internet bridge anyway.`, true); return; }
+      used += 99; paint(); log('8 KB file sent over LoRa: 99 s of airtime at CR 4/8, over a quarter of the hour.');
     };
     $('uReset').onclick = () => { used = 0; voices = 0; paint(); log('A new hour: the window slides, 360 s again.'); };
     paint();

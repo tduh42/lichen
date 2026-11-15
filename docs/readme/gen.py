@@ -118,9 +118,9 @@ def journey(c):
 
 
 def frame(c):
-    s = Svg(c, 760, 210, "A lichen frame: a 7-byte header in clear, the ChaCha20 ciphertext, an 8-byte Poly1305 tag; header bytes 2 to 6 form the nonce")
+    s = Svg(c, 760, 210, "A lichen frame: a 7-byte header in clear, the ChaCha20 ciphertext, the 16-byte Poly1305 tag; header bytes 2 to 6 form the nonce")
     fields = [("dst", "1 B", 1, "s2"), ("src", "1 B", 1, "s2"), ("tag", "2 B", 2, "s2"), ("kind‖index", "1 B", 2.3, "s2"),
-              ("total", "1 B", 1.3, "s2"), ("attempt", "1 B", 1.6, "s2"), ("ciphertext", "1–157 B", 6, "lora_bg"), ("tag", "8 B", 2.2, "ok_bg")]
+              ("total", "1 B", 1.3, "s2"), ("attempt", "1 B", 1.6, "s2"), ("ciphertext", "1–149 B", 6, "lora_bg"), ("tag", "16 B", 2.8, "ok_bg")]
     total = sum(f[2] for f in fields)
     x, W = 30, 700
     for name, size, w, fill in fields:
@@ -281,10 +281,10 @@ def search(c):
 
 
 def media(c):
-    s = Svg(c, 760, 250, "What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 157 bytes")
-    rows = [("10 s of voice · Codec2 700C", 6, "875 B"), ("the same in Codec2 1200", 10, "1,500 B"),
+    s = Svg(c, 760, 250, "What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 149 bytes")
+    rows = [("10 s of voice · Codec2 700C", 6, "875 B"), ("the same in Codec2 1200", 11, "1,500 B"),
             ("photo preview · AVIF 160×120", 3, "409 B"), ("full thumbnail, when asked", 7, "975 B"),
-            ("a file · up to 8 KB", 53, "93 s")]
+            ("a file · up to 8 KB", 56, "99 s")]
     y = 30
     for label, n, size in rows:
         s.text(30, y + 17, label, 12.5, "tx", "start")

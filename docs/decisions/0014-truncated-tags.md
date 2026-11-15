@@ -1,6 +1,6 @@
 # ADR-0014 — 8-byte AEAD tags: a ChaCha20-Poly1305 variant, with its bounds
 
-- Status: accepted (after the review of 2026-11-06, finding PR-05; bounds revised after its second recheck)
+- Status: superseded by ADR-0028 (2026-11-15: full 16-byte tags; the bound below does not hold for a frame the attacker heard, and the rate limit is not enforced off the radio path)
 - Date: 2026-11-06
 
 ## Context
