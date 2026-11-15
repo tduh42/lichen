@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2), EDIT and
 DELETE (§6.4),
-GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), group invitations and GROUP_JOIN (§10.5), stickers, GIFs and GIPHY links (§6.3), small
+GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), GROUP_SYNC (§10.7), group invitations and GROUP_JOIN (§10.5), stickers, GIFs and GIPHY links (§6.3), small
 files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
 An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
@@ -13,7 +13,7 @@ import struct
 import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
-GROUP_MISSING, GROUP_RESEND = 0x15, 0x16
+GROUP_MISSING, GROUP_RESEND, GROUP_SYNC = 0x15, 0x16, 0x17
 STICKER, GIF = 0x0A, 0x0B
 EDIT, DELETE, TIMER = 0x0C, 0x0D, 0x0E
 
@@ -295,7 +295,21 @@ for nm, payloads in resend:
     print(f'datagram = "{group_resend(gid, payloads).hex()}"')
     print()
 
+def group_sync(gid: bytes, epoch: int) -> bytes:
+    return bytes([GROUP_SYNC]) + gid + struct.pack("<I", epoch)
+
+
+for nm, epoch in [("state 3 held", 3), ("the largest epoch", 0xFFFFFFFF)]:
+    print("[[group_sync]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"epoch = {epoch}")
+    print(f'datagram = "{group_sync(gid, epoch).hex()}"')
+    print()
+
 bad = [
+    ("sync, cut in the epoch", group_sync(gid, 3)[:-1]),
+    ("sync, a byte after the epoch", group_sync(gid, 3) + b"\x00"),
     ("missing, no counter", group_missing(gid, julien, 1, [])),
     ("missing, nine counters", group_missing(gid, julien, 1, list(range(9)))),
     ("missing, cut in a counter", group_missing(gid, julien, 1, [41])[:-1]),

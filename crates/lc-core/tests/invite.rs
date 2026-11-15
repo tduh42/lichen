@@ -369,3 +369,60 @@ fn a_restored_phone_joins_again_and_is_heard() {
     let got = group_texts(&net.take_events(bob));
     assert!(got.contains(&"welcome back".to_owned()), "bob: {got:?}");
 }
+
+/// Review of 2026-11-15, SR-12, §10.7: for 35 minutes dave's radio loses every session data
+/// frame while the admin removes carol and everyone draws a new key: the new state and keys
+/// are tried, fail and wait for the hourly resend. Then he holds bob's next post without its
+/// key, asks the admin, and reads it minutes later.
+#[test]
+fn a_member_who_missed_a_rotation_asks_and_reads() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let (mut net, m, j, gid) = setup(24, 1);
+    let (alice, bob, carol, dave) = (m[0], m[1], m[2], j[0]);
+    let inv = invite(&mut net, alice, &gid);
+    net.with_core(dave, |c, now| c.join(&inv, now))
+        .unwrap()
+        .unwrap();
+    let everyone = [alice, bob, carol, dave];
+    assert!(
+        net.run_until(net.now + 60 * MIN, |n| complete(n, &everyone, &gid, 4)),
+        "dave did not get in"
+    );
+    // Dave hears nothing for a while.
+    let away = Arc::new(AtomicBool::new(true));
+    let deaf = away.clone();
+    // Session data frames only: handshakes go through, so the new state and keys are tried,
+    // fail and are given up for the hour.
+    net.deaf = Some(Box::new(move |receiver, frame| {
+        receiver == dave
+            && deaf.load(Ordering::Relaxed)
+            && lc_meshcore::air::Packet::decode(frame)
+                .ok()
+                .filter(|p| p.ptype == lc_meshcore::air::PayloadType::RawCustom)
+                .and_then(|p| lc_proto::Header::decode(p.payload).ok())
+                .is_some_and(|(h, _)| h.kind == lc_proto::Kind::Data)
+    }));
+    let carol_node = net.key(carol);
+    net.with_core(alice, |c, now| c.remove_member(&gid, &carol_node, now))
+        .unwrap()
+        .unwrap();
+    // Longer than the quick resends of the new state and keys (1 to 16 minutes apart): only
+    // the hourly ones are left.
+    net.run_until(net.now + 35 * MIN, |_| false);
+    away.store(false, Ordering::Relaxed);
+    for &x in &everyone {
+        net.take_events(x);
+    }
+    net.with_core(bob, |c, now| {
+        c.send_group_text(&gid, "after the rotation", 5, now)
+    })
+    .unwrap()
+    .unwrap();
+    let start = net.now;
+    let got = net.run_until(net.now + 6 * MIN, |n| {
+        group_texts(&n.take_events(dave)).contains(&"after the rotation".to_owned())
+    });
+    assert!(got, "dave still cannot read bob");
+    println!("read {} s after the post", (net.now - start) / 1000);
+}

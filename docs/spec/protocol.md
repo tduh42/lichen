@@ -249,6 +249,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x14 | SENDER_KEYS | §10.2 (from the admin) | ADR-0021 |
 | 0x15 | GROUP_MISSING | §10.6 | ADR-0024 |
 | 0x16 | GROUP_RESEND | §10.6 | ADR-0024 |
+| 0x17 | GROUP_SYNC | §10.7 | review of 2026-11-15, SR-12 |
 | 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed) | ADR-0021 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
@@ -524,6 +525,20 @@ GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..159) ‖ e
 **Receiving.** GROUP_RESEND is accepted only from a listed member of a group the receiver belongs to. Each payload goes through §10.3's receiver unchanged (key, replay window, reassembly, signature), so a relayed payload can be neither forged nor replayed; only, it was not heard on the air, so it is not a search measurement (§11). A message recovered this way is reported as **late**: the phones show it where it arrives, with "arrived late" and its sending time.
 
 **Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 62 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
+
+### 10.7 Asking the admin for the keys (pairwise datagram, type 0x17 GROUP_SYNC)
+
+```
+gid (16) ‖ epoch u32
+```
+
+A member that missed the keys (a SENDER_KEYS lost on the way, a phone away during an admission) would stay unable to read the group until the admin sends them again, an hour later (§10.1). GROUP_SYNC asks for them at once (review of 2026-11-15, SR-12).
+
+- **Asking.** A member that is not the admin, holding an envelope from a listed member for a minute without the key to open it (§10.3, early messages), sends GROUP_SYNC to the admin over a pairwise session: `epoch` is the state it holds. At most once every 10 minutes per group.
+- **Answering.** The admin accepts GROUP_SYNC only from a listed member (the session's identity, §4.6), for a group it administers. It sends that member alone the current GROUP_STATE when `epoch` is older than its own, then one SENDER_KEYS with every current key it holds, its own included (§10.2). Unlike a newcomer's, each entry's `next_counter` is the key's first counter (the one its owner announced; 0 for the admin's own), not the next one the admin expects: the member holds what was sent under those keys and reads it. At most once per member every 10 minutes; anything else is dropped without an answer.
+- **Cost.** 21 bytes asked; the answer is what an admission costs that member. A member cannot make the admin send anything to anyone else.
+
+Vectors: `testdata/lichen/content.toml` (`[[group_sync]]`, `[[bad_group_control]]`).
 
 ## 11. Search (ADR-0016)
 

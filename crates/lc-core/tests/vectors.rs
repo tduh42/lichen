@@ -155,6 +155,22 @@ fn group_join() {
     }
 }
 
+/// GROUP_SYNC (§10.7): decoded and encoded back to the same bytes.
+#[test]
+fn group_sync() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "group_sync") {
+        let d = h(v, "datagram");
+        let Some(Control::Sync { gid, epoch }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(i64::from(epoch), v["epoch"].as_integer().unwrap());
+        assert_eq!(Control::Sync { gid, epoch }.encode(), d, "{}", s(v, "name"));
+    }
+}
+
 #[test]
 fn group_states() {
     use lc_core::group::Control;

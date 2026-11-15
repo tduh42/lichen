@@ -89,4 +89,6 @@ pub mod content {
     pub const SENDER_KEYS: u8 = 0x14;
     pub const GROUP_MISSING: u8 = 0x15;
     pub const GROUP_RESEND: u8 = 0x16;
+    /// §10.7: a member asks the admin for the keys.
+    pub const GROUP_SYNC: u8 = 0x17;
 }

@@ -39,6 +39,10 @@ const SNAPSHOT_VERSION: u8 = 3;
 /// Counters from here on carry what the core sends by itself (positions, search packets), with
 /// a replay window of their own: a gap below is a lost message (§10.3, §10.6).
 const AUX: u32 = 1 << 31;
+/// A member holding an envelope this long without its key asks the admin (§10.7)…
+const SYNC_AFTER_MS: Millis = 60_000;
+/// …at most this often per group; the admin answers each member at most this often.
+const SYNC_EVERY_MS: Millis = 600_000;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
 /// And at most this many in all…
@@ -281,6 +285,10 @@ struct Recovery {
     /// As admin, when listed members asked to join again (a phone restored from its phrase):
     /// for [`ADMITTED_MS`] their keys go to everyone, as a first key does (§10.5, SR-20).
     rejoined: HashMap<PubKey, Millis>,
+    /// When we last asked the admin for the keys (§10.7).
+    synced_at: Option<Millis>,
+    /// As admin, when we last answered each member's GROUP_SYNC.
+    syncs_answered: HashMap<PubKey, Millis>,
 }
 
 impl Recovery {
@@ -782,6 +790,8 @@ pub enum Control {
         gid: GroupId,
         payloads: Vec<Vec<u8>>,
     },
+    /// A member asks the admin for the keys, holding state `epoch` (§10.7).
+    Sync { gid: GroupId, epoch: u32 },
 }
 
 impl Control {
@@ -816,6 +826,9 @@ impl Control {
             }
             content::GROUP_RESEND => {
                 decode_resend(datagram).map(|(gid, payloads)| Self::Resend { gid, payloads })
+            }
+            content::GROUP_SYNC => {
+                decode_sync(datagram).map(|(gid, epoch)| Self::Sync { gid, epoch })
             }
             _ => None,
         }
@@ -853,8 +866,23 @@ impl Control {
                 counters,
             } => encode_missing(gid, author, *epoch, counters),
             Self::Resend { gid, payloads } => encode_resend(gid, payloads),
+            Self::Sync { gid, epoch } => {
+                let mut v = Vec::with_capacity(21);
+                v.push(content::GROUP_SYNC);
+                v.extend_from_slice(gid);
+                v.extend_from_slice(&epoch.to_le_bytes());
+                v
+            }
         }
     }
+}
+
+/// GROUP_SYNC (§10.7): `gid ‖ epoch u32`, exactly 21 bytes.
+fn decode_sync(datagram: &[u8]) -> Option<(GroupId, u32)> {
+    let b = datagram.strip_prefix(&[content::GROUP_SYNC])?;
+    let (gid, epoch) = b.split_first_chunk::<16>()?;
+    let epoch: [u8; 4] = epoch.try_into().ok()?;
+    Some((*gid, u32::from_le_bytes(epoch)))
 }
 
 /// GROUP_MISSING (§10.6): `gid ‖ author ‖ key_epoch ‖ n (1..8) ‖ n × counter u32`.
@@ -1145,7 +1173,7 @@ impl Core {
         let actor = self.me_as_actor();
         self.changed(*gid, notice::JOINED, actor, subjects, String::new());
         // The newcomers get every key from us, after the state (§10.2).
-        self.send_bundle(gid, &ids, false);
+        self.send_bundle(gid, &ids, false, false);
         self.admitted.retain(|(_, _, at)| at + ADMITTED_MS > now);
         self.admitted.extend(ids.iter().map(|id| (*gid, *id, now)));
         self.events.push_back(Event::GroupUpdated { gid: *gid });
@@ -1337,7 +1365,7 @@ impl Core {
             }
             .encode();
             self.enqueue_internal(node, state);
-            self.send_bundle(&gid, &[id], true);
+            self.send_bundle(&gid, &[id], true, false);
             if let Some(g) = self.groups.get_mut(&gid) {
                 g.keys.remove(&id);
                 g.recovery.rejoined.retain(|_, at| *at + ADMITTED_MS > now);
@@ -1557,8 +1585,129 @@ impl Core {
                     self.on_group_resend(&from, &gid, &payloads, now);
                 }
             }
+            Some(&content::GROUP_SYNC) => {
+                if let Some((gid, epoch)) = decode_sync(datagram) {
+                    let from = *from;
+                    self.on_group_sync(&from, gid, epoch, now);
+                }
+            }
             _ => {}
         }
+    }
+
+    /// A member asks for the keys (§10.7): the state when its own is older, and every key we
+    /// hold, as to a newcomer; once per member in 10 minutes.
+    fn on_group_sync(&mut self, from: &PubKey, gid: GroupId, held: u32, now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        let Some(g) = self.groups.get_mut(&gid) else {
+            return;
+        };
+        if g.admin != me || *from == me || !g.is_member(from) {
+            return;
+        }
+        if g.recovery
+            .syncs_answered
+            .get(from)
+            .is_some_and(|&t| t + SYNC_EVERY_MS > now)
+        {
+            return;
+        }
+        g.recovery
+            .syncs_answered
+            .retain(|_, t| *t + SYNC_EVERY_MS > now);
+        g.recovery.syncs_answered.insert(*from, now);
+        let node = g.members.iter().find(|m| m.key == *from).map(|m| m.node);
+        if held < g.epoch
+            && let Some(node) = node
+        {
+            let state = State {
+                gid,
+                epoch: g.epoch,
+                admin: g.admin,
+                name: g.name.clone(),
+                members: g.members.clone(),
+                cause: None,
+            }
+            .encode();
+            self.enqueue_internal(&node, state);
+        }
+        self.send_bundle(&gid, &[*from], false, true);
+        // It reached us: what waits for it goes now, the answer merged into it included.
+        if let Some(node) = node {
+            self.hurry_internal(&node, now);
+        }
+        self.tick(now);
+    }
+
+    /// Envelopes held a minute without their key: the admin of their group is asked for the
+    /// keys (§10.7), once in 10 minutes per group.
+    fn ask_sync(&mut self, now: Millis) {
+        let Some(me) = self.key else {
+            return;
+        };
+        let waiting: Vec<(u16, u8)> = self
+            .held
+            .iter()
+            .filter(|h| h.at + SYNC_AFTER_MS <= now)
+            .map(|h| (h.gid_hash, h.sender))
+            .collect();
+        if waiting.is_empty() {
+            return;
+        }
+        let mut asks = Vec::new();
+        for g in self.groups.values_mut() {
+            let gh = g.gid_hash();
+            let concerned = waiting.iter().any(|&(h, sender)| {
+                h == gh && g.members.iter().any(|m| m.key[0] == sender && m.key != me)
+            });
+            if g.admin == me
+                || !concerned
+                || g.recovery
+                    .synced_at
+                    .is_some_and(|t| t + SYNC_EVERY_MS > now)
+            {
+                continue;
+            }
+            let Some(admin_node) = g.members.iter().find(|m| m.key == g.admin).map(|m| m.node)
+            else {
+                continue;
+            };
+            g.recovery.synced_at = Some(now);
+            asks.push((
+                admin_node,
+                Control::Sync {
+                    gid: g.gid,
+                    epoch: g.epoch,
+                }
+                .encode(),
+            ));
+        }
+        for (node, datagram) in asks {
+            self.enqueue_control(&node, datagram);
+        }
+    }
+
+    /// When a held envelope will make us ask the admin (§10.7), if it ever does.
+    fn next_sync(&self) -> Option<Millis> {
+        let me = self.key?;
+        self.held
+            .iter()
+            .filter_map(|h| {
+                self.groups
+                    .values()
+                    .filter(|g| g.admin != me && g.gid_hash() == h.gid_hash)
+                    .map(|g| {
+                        let after = h.at + SYNC_AFTER_MS;
+                        g.recovery
+                            .synced_at
+                            .map_or(after, |t| after.max(t + SYNC_EVERY_MS))
+                    })
+                    .filter(|&due| due < h.at + HELD_MS)
+                    .min()
+            })
+            .min()
     }
 
     /// A member asks for messages it missed (§10.6): what we kept of them since it joined;
@@ -2290,8 +2439,10 @@ impl Core {
 
     /// One SENDER_KEYS to each newcomer (identities) with every current key we hold, ours
     /// included (§10.2); with `own`, the newcomer's own last key too (a member that lost the
-    /// group, §10.5).
-    fn send_bundle(&mut self, gid: &GroupId, newcomers: &[PubKey], own: bool) {
+    /// group, §10.5). Each key from the next counter we expect, so that a newcomer does not
+    /// read what came before it; with `from_start`, from the key's first counter instead (a
+    /// member that missed the keys and holds what was sent under them, §10.7).
+    fn send_bundle(&mut self, gid: &GroupId, newcomers: &[PubKey], own: bool, from_start: bool) {
         let (Some(me), Some(g)) = (self.key, self.groups.get(gid)) else {
             return;
         };
@@ -2300,13 +2451,16 @@ impl Core {
             let Some(node) = g.members.iter().find(|m| m.key == *id).map(|m| m.node) else {
                 continue;
             };
-            let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, *g.my_key, g.my_counter)];
+            // Our own key starts at counter 0 (it is new at each rotation and restart).
+            let ours = if from_start { 0 } else { g.my_counter };
+            let mut entries: Vec<KeyEntry> = vec![(me, g.my_epoch, *g.my_key, ours)];
             for m in &g.members {
                 if m.key == me || (m.key == *id && !own) {
                     continue;
                 }
                 if let Some(c) = g.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
-                    entries.push((m.key, c.epoch, *c.key, c.expected()));
+                    let next = if from_start { c.floor } else { c.expected() };
+                    entries.push((m.key, c.epoch, *c.key, next));
                 }
             }
             out.push((node, encode_sender_keys(gid, &entries)));
@@ -2504,6 +2658,7 @@ impl Core {
             g.recovery.owed.retain(|o| o.until > now);
         }
         self.held.retain(|h| h.at + HELD_MS > now);
+        self.ask_sync(now);
         self.ask_missing(now);
     }
 
@@ -2514,10 +2669,7 @@ impl Core {
             .values()
             .flat_map(|g| g.recovery.gaps.iter().map(|x| x.due))
             .min();
-        match (frames, gaps) {
-            (Some(a), Some(b)) => Some(a.min(b)),
-            (a, b) => a.or(b),
-        }
+        [frames, gaps, self.next_sync()].into_iter().flatten().min()
     }
 
     /// A group envelope heard on the air (§10.3).
@@ -3010,6 +3162,65 @@ mod tests {
         }
         core.on_sender_key(&b, GID, 0, [2; 32], 0, 3_000);
         assert!(texts(&mut core).contains(&"the real one".to_owned()));
+    }
+
+    /// §10.7, review of 2026-11-15, SR-12: a member holding an envelope it has no key for,
+    /// a minute on, asks the admin for the keys; once, not again within 10 minutes.
+    #[test]
+    fn a_member_without_a_key_asks_the_admin() {
+        let admin = [0xA1; 32];
+        let b_prv = expand_seed(&[0x62; 32]);
+        let b = public_key(&b_prv);
+        let mut core = core_with_group(&[(admin, [1; 32], 0), (b, [2; 32], 0)]);
+        core.groups.get_mut(&GID).unwrap().admin = admin;
+        core.groups.get_mut(&GID).unwrap().keys.remove(&b);
+        let admin_node = [1; 32];
+        let syncs = |core: &Core| {
+            core.queued(&admin_node)
+                .iter()
+                .filter(|d| matches!(Control::decode(d), Some(Control::Sync { gid, epoch }) if gid == GID && epoch == 1))
+                .count()
+        };
+        core.on_group_envelope(&envelope(&b, &[2; 32], 0, &b_prv, "hello"), 0, 0, 1_000);
+        core.tick_groups(30_000);
+        assert_eq!(syncs(&core), 0, "too early: the key may be on its way");
+        core.tick_groups(62_000);
+        assert_eq!(syncs(&core), 1);
+        core.on_group_envelope(&envelope(&b, &[2; 32], 1, &b_prv, "again"), 0, 0, 100_000);
+        core.tick_groups(200_000);
+        assert_eq!(syncs(&core), 1, "once in 10 minutes");
+    }
+
+    /// §10.7: the admin answers a listed member once in 10 minutes, with the state when the
+    /// member's is older and every key it holds; anyone else gets nothing.
+    #[test]
+    fn the_admin_answers_a_sync_once() {
+        let (a, b) = ([0xA1; 32], [0xB1; 32]);
+        let mut core = core_with_group(&[(a, [1; 32], 0), (b, [2; 32], 0)]);
+        let me = *core.key().unwrap();
+        let a_node = [1; 32];
+        let sync = |epoch: u32| Control::Sync { gid: GID, epoch }.encode();
+        core.on_group_control(&a_node, &sync(0), 1_000);
+        let got = core.queued(&a_node);
+        assert!(
+            got.iter()
+                .any(|d| matches!(Control::decode(d), Some(Control::State { epoch: 1, .. }))),
+            "its state is older"
+        );
+        let mut keys = relayed_to(&core, &a_node);
+        keys.sort_unstable();
+        let mut want = vec![(b, 0), (me, 0)];
+        want.sort_unstable();
+        assert_eq!(keys, want);
+        let n = core.queued(&a_node).len();
+        core.on_group_control(&a_node, &sync(1), 60_000);
+        assert_eq!(core.queued(&a_node).len(), n, "once in 10 minutes");
+        // Someone not listed: nothing.
+        let stranger = [0x77; 32];
+        core.add_contact(stranger, "x", None);
+        core.set_identity(&stranger, [0x78; 32], false);
+        core.on_group_control(&stranger, &sync(0), 2_000);
+        assert!(core.queued(&stranger).is_empty());
     }
 
     /// Review of 2026-11-15, SR-18: an admin walks a member's key epoch around the ring in
@@ -3530,7 +3741,7 @@ mod tests {
         for c in 0..3 {
             core.on_group_envelope(&envelope(&bob, &[10; 32], c, &bob_prv, "x"), 0, 0, 0);
         }
-        core.send_bundle(&GID, &[carol], false);
+        core.send_bundle(&GID, &[carol], false, false);
         let relayed: Vec<_> = core
             .queued(&[2; 32])
             .iter()

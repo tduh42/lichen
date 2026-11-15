@@ -1287,6 +1287,16 @@ impl Core {
         self.enqueue_internal(to, datagram);
     }
 
+    /// Node `k` just reached us: what the core keeps for it goes now rather than at its next
+    /// try, an hour away perhaps (a member asking for the keys, §10.7).
+    pub(crate) fn hurry_internal(&mut self, k: &PubKey, now: Millis) {
+        if let Some(p) = self.peers.get_mut(k) {
+            for m in p.queue.iter_mut().filter(|m| m.internal && !m.started) {
+                m.not_before = m.not_before.min(now);
+            }
+        }
+    }
+
     /// The datagrams waiting for peer `k` (tests).
     #[cfg(test)]
     pub(crate) fn queued(&self, k: &PubKey) -> Vec<Vec<u8>> {
@@ -2918,6 +2928,7 @@ impl Core {
                                 | &lc_proto::content::SENDER_KEYS
                                 | &lc_proto::content::GROUP_MISSING
                                 | &lc_proto::content::GROUP_RESEND
+                                | &lc_proto::content::GROUP_SYNC
                         )
                     )
                 {
