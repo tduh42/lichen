@@ -216,7 +216,7 @@ fun SearchEstimate.ellipse(major: Double, minor: Double): List<Pair<Double, Doub
         val y = minor * sin(t)
         val east = x * sin(th) + y * cos(th)
         val north = x * cos(th) - y * sin(th)
-        (lat + north / mPerLat) to (lon + east / mPerLon)
+        (lat + north / mPerLat).coerceIn(-90.0, 90.0) to (lon + east / mPerLon)
     }
 }
 

@@ -14,9 +14,14 @@ host="$(rustc +nightly -vV | sed -n 's/^host: //p')"
 for t in "${targets[@]}"; do
   echo "-- $t (${secs} s)"
   mkdir -p "fuzz/corpus/$t"
-  # Real snapshots to start from (a random input is rarely one).
-  if [ "$t" = snapshot_restore ]; then
-    cargo test -q -p lc-core --release --test fuzz_seeds -- --ignored --nocapture | grep seeds || true
+  # Seeds a random input rarely finds: real snapshots, well-formed group envelopes.
+  case "$t" in
+    snapshot_restore) seeds=snapshot_seeds ;;
+    group_open) seeds=group_open_seeds ;;
+    *) seeds= ;;
+  esac
+  if [ -n "$seeds" ]; then
+    cargo test -q -p lc-core --release --test fuzz_seeds -- --ignored --exact "$seeds" --nocapture | grep seeds || true
   fi
   (cd fuzz && cargo +nightly fuzz run --target "$host" "$t" "corpus/$t" -- -max_total_time="$secs" -print_final_stats=1)
 done
