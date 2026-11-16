@@ -898,4 +898,7 @@
     <string name="restart_radio">Restart the radio</string>
     <string name="restart_radio_confirm_title">Restart the radio?</string>
     <string name="restart_radio_confirm">The connection drops and comes back in a few seconds.</string>
+    <string name="map_waits_tor">The map waits while Tor is on</string>
+    <string name="map_waits_tor_note">Its tiles come from OpenFreeMap directly, outside Tor: they would show the area you look at.</string>
+    <string name="map_load_once">Load the map this time</string>
 </resources>

@@ -366,3 +366,33 @@ struct MarkerBadge: View {
         .padding(2)
     }
 }
+
+/// With Tor on, map tiles would go to OpenFreeMap directly, outside Tor, and show the area
+/// being looked at: the map waits until allowed, for this run of the app (review of
+/// 2026-11-15, SR-36). Positions themselves never leave the phone this way.
+struct MapGate<Content: View>: View {
+    @Environment(AppModel.self) private var model
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        if model.torEnabled && !model.mapWithTorAllowed {
+            VStack(spacing: 12) {
+                Image(systemName: "map").font(.largeTitle).foregroundStyle(Theme.tx2)
+                Text("The map waits while Tor is on")
+                    .font(.system(.headline))
+                Text("Its tiles come from OpenFreeMap directly, outside Tor: they would show the area you look at.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+                Button("Load the map this time") { model.mapWithTorAllowed = true }
+                    .buttonStyle(.bordered)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.bg)
+        } else {
+            content()
+        }
+    }
+}
+

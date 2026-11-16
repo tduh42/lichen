@@ -43,6 +43,20 @@ import org.maplibre.geojson.Polygon
 import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.sin
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.tduhamel.lichen.R
+import com.tduhamel.lichen.model.AppModel
 
 /** Map styles from OpenFreeMap: no key, no account (ADR-0011). `AUTO` follows the theme. */
 enum class MapStyle(val key: String) {
@@ -306,3 +320,27 @@ private const val ITEMS = "lichen-items"
 private const val CIRCLES = "lichen-circles"
 private const val ELLIPSES = "lichen-search-ellipses"
 private const val HEAT = "lichen-search-heat"
+
+/**
+ * With Tor on, map tiles would go to OpenFreeMap directly, outside Tor, and show the area being
+ * looked at: the map waits until allowed, for this run of the app (review of 2026-11-15, SR-36).
+ * Positions themselves never leave the phone this way.
+ */
+@Composable
+fun MapGate(model: AppModel, content: @Composable () -> Unit) {
+    val t = lichen
+    if (model.torEnabled && !model.mapWithTorAllowed) {
+        Column(
+            Modifier.fillMaxSize().background(t.bg).padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+        ) {
+            Text(stringResource(R.string.map_waits_tor), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+            Text(stringResource(R.string.map_waits_tor_note), fontSize = 13.sp, color = t.tx2, textAlign = TextAlign.Center)
+            SecondaryButton(stringResource(R.string.map_load_once)) { model.mapWithTorAllowed = true }
+        }
+    } else {
+        content()
+    }
+}
+
