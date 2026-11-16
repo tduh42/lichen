@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Radio, airtime, transports, position, appearance (mockup `reglages`).
 struct SettingsView: View {
@@ -9,6 +10,8 @@ struct SettingsView: View {
     @State private var meshName = ""
     @State private var nameError: String?
     @AppStorage("onboarded") private var onboarded = true
+    @State private var importing = false
+    @State private var importResult: String?
 
     var body: some View {
         @Bindable var model = model
@@ -118,6 +121,26 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.segmented)
                         privacy
+                        // History from the official MeshCore app (ADR-0033).
+                        SectionLabel("History").padding(.top, 10)
+                        CardList {
+                            Button { importing = true } label: {
+                                CardRow(title: String(localized: "Import from the MeshCore app"),
+                                        subtitle: String(localized: "The database it exports: your direct messages and channel posts join your MeshCore chats.")) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .fileImporter(isPresented: $importing, allowedContentTypes: [.item]) { result in
+                            if case let .success(url) = result { importResult = model.importMeshCore(from: url) }
+                        }
+                        .alert("Import", isPresented: Binding(get: { importResult != nil }, set: { if !$0 { importResult = nil } })) {
+                            Button("OK") { importResult = nil }
+                        } message: {
+                            Text(importResult ?? "")
+                        }
                         SectionLabel("Demo").padding(.top, 10)
                         CardList {
                             if model.isDemo {

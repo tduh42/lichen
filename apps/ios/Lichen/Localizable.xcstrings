@@ -421,6 +421,16 @@
         }
       }
     },
+    "%lld direct messages and %lld channel posts imported.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld messages directs et %2$lld messages de canaux importés."
+          }
+        }
+      }
+    },
     "%lld fragments": {
       "localizations": {
         "en": {
@@ -677,6 +687,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld were already here.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld y étaient déjà."
           }
         }
       }
@@ -2971,6 +2991,16 @@
         }
       }
     },
+    "History": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historique"
+          }
+        }
+      }
+    },
     "Hold for 3 s": {
       "localizations": {
         "fr": {
@@ -3037,6 +3067,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Immédiatement"
+          }
+        }
+      }
+    },
+    "Import": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        }
+      }
+    },
+    "Import from the MeshCore app": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importer depuis l’app MeshCore"
           }
         }
       }
@@ -6101,6 +6151,16 @@
         }
       }
     },
+    "The database it exports: your direct messages and channel posts join your MeshCore chats.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La base qu’elle exporte : tes messages directs et de canaux rejoignent tes discussions MeshCore."
+          }
+        }
+      }
+    },
     "The download failed.": {
       "localizations": {
         "fr": {
@@ -6507,6 +6567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce fichier dépasse 64 Mo, le maximum que lichen peut envoyer."
+          }
+        }
+      }
+    },
+    "This file is not a database exported by the MeshCore app.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier n’est pas une base exportée par l’app MeshCore."
           }
         }
       }

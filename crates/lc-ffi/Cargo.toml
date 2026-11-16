@@ -28,5 +28,8 @@ lc-bridge.workspace = true
 tokio.workspace = true
 qrcode.workspace = true
 
+[dev-dependencies]
+rusqlite.workspace = true
+
 [lints]
 workspace = true

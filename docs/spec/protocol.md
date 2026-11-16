@@ -780,3 +780,7 @@ The apps show the estimate before sending, as for lichen messages.
 - The composer is text only and counts bytes.
 - A channel joined from lichen starts muted.
 - A MeshCore direct message notifies as "Name · MeshCore", never under the bare name a lichen conversation uses: a node can send plain text under any name (review of 2026-11-15, SR-30).
+
+### 15.7 History from the MeshCore app (ADR-0033)
+
+The official MeshCore app's exported database can be imported once: its plain direct messages go to the MeshCore chat with their node, its channel posts to the channel of their secret (`channel_id(secret)`, §15.3), as received or sent, with the sender's time, read. Other text types are left out; a message already there (same chat, direction, time and text) is skipped. The file is read from a private copy, read-only and immutable, in SQLite's defensive mode.
