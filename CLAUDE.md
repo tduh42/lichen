@@ -116,6 +116,8 @@ scripts/build-android-core.sh                                             # Andr
 (cd apps/android && ./gradlew lintDebug testDebugUnitTest assembleDebug)  # lint, JVM tests on the host core, APK
 (cd apps/android && ./gradlew assembleRelease)   # R8 build; signed with the release key when LICHEN_KEYSTORE and
                                   # LICHEN_KEYSTORE_PASSWORD are set (CI), else the debug key; LICHEN_VERSION_CODE numbers it
+scripts/android-release-key.sh                    # once: the release key (~/.config/lichen), its password in the
+                                  # Keychain (security find-generic-password -s lichen-android-release -w), the CI secrets
 $ANDROID_HOME/emulator/emulator -avd lichen-pixel -allow-host-audio &   # with a window, the Mac's audio and mic
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.tduhamel.lichen/.MainActivity --ez demo true --es open Camille   # debug extras
