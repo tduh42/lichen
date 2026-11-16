@@ -307,18 +307,38 @@ fn measure_group_delivery_one_or_two_copies() {
     }
 }
 
+/// A setting for a measurement from the environment, or `default`.
+fn setting<T: std::str::FromStr>(name: &str, default: T) -> T {
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
+}
+
 /// Posts in a lossy group (20 % per link, both copies of a post can be lost), without and with
 /// recovery from the members (§10.6). Every member posts 8 times, a post a minute overall, then
-/// once more (a message that reveals the last gaps).
+/// once more (a message that reveals the last gaps; `LICHEN_REVEAL=0` leaves it out, so that
+/// each member's last post ends its burst). `LICHEN_LOSS=20` measures one loss rate,
+/// `LICHEN_SEEDS` sets the number of runs (40).
 /// `cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`
 #[test]
 #[ignore = "measurement, prints numbers for docs/measurements.md"]
 fn measure_group_recovery() {
-    const SEEDS: u64 = 40;
+    let seeds: u64 = setting("LICHEN_SEEDS", 40);
+    let only: u32 = setting("LICHEN_LOSS", 0);
+    let reveal = setting("LICHEN_REVEAL", 1u8) != 0;
+    let rounds = if reveal { 9 } else { 8 };
+    println!(
+        "| Loss per link | | Delivered | Last posts | Recovered (late) | Delay p50 / p90 | Frames per run |"
+    );
     for (loss, recovery) in [(10, false), (10, true), (20, false), (20, true)] {
+        if only != 0 && loss != only {
+            continue;
+        }
         let (mut ok, mut total, mut late, mut frames) = (0usize, 0usize, 0usize, 0u64);
+        let (mut last_ok, mut last_total) = (0usize, 0usize);
         let mut delays: Vec<u64> = Vec::new();
-        for seed in 0..SEEDS {
+        for seed in 0..seeds {
             let (mut net, m) = star_with_loss(300 + seed, loss);
             for &i in &m {
                 net.with_core(i, |c, _| c.set_group_recovery(recovery));
@@ -348,7 +368,7 @@ fn measure_group_recovery() {
                     }
                 }
             };
-            for round in 0..9 {
+            for round in 0..rounds {
                 for (j, &i) in m.iter().enumerate() {
                     let text = format!("{round}-{j}");
                     sent_at.insert(text.clone(), net.now);
@@ -375,6 +395,9 @@ fn measure_group_recovery() {
                         && seen.insert(text.clone())
                     {
                         ok += 1;
+                        if text.starts_with("7-") {
+                            last_ok += 1;
+                        }
                         if l {
                             late += 1;
                             if let Some(t) = sent_at.get(&text) {
@@ -384,6 +407,7 @@ fn measure_group_recovery() {
                     }
                 }
                 total += 8 * (m.len() - 1);
+                last_total += m.len() - 1;
             }
         }
         delays.sort_unstable();
@@ -392,12 +416,13 @@ fn measure_group_recovery() {
             None => "—".into(),
         };
         println!(
-            "| {loss} % | {} | {ok}/{total} ({:.1} %) | {late} | {} / {} | {:.0} |",
+            "| {loss} % | {} | {ok}/{total} ({:.1} %) | {last_ok}/{last_total} ({:.1} %) | {late} | {} / {} | {:.0} |",
             if recovery { "with recovery" } else { "without" },
             100.0 * ok as f64 / total.max(1) as f64,
+            100.0 * last_ok as f64 / last_total.max(1) as f64,
             pct(50),
             pct(90),
-            frames as f64 / SEEDS as f64
+            frames as f64 / seeds as f64
         );
     }
 }
