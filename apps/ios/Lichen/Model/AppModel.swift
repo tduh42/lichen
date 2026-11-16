@@ -70,6 +70,20 @@ final class AppModel {
     var contacts: [ContactInfo] = []
     /// What the radio reported of its settings (protocol §1.1), read again after each change.
     var radioSettings: RadioSettings?
+    /// Why the radio did not take a setting, for an alert.
+    var radioError: String?
+
+    /// Changes one of the radio's settings (ADR-0032); a refusal shows as `radioError`. The
+    /// settings shown come back from the radio (`radioSettings`).
+    func radioSet(_ change: () throws -> Void) {
+        do {
+            try change()
+        } catch let e as LichenError {
+            radioError = e.display
+        } catch {
+            radioError = error.localizedDescription
+        }
+    }
     /// The radio's MeshCore channels (§15.3).
     var channels: [MeshChannel] = []
     #if DEBUG
@@ -639,6 +653,7 @@ final class AppModel {
             nodeKey = key
             nodeName = name
             self.radio = radio
+            radioSettings = core.radioSettings()
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
         case let .identityLearned(node, _, _):
             contacts = core.contacts().filter(\.person)
@@ -653,7 +668,11 @@ final class AppModel {
         case let .identityConflict(node, identity):
             conflicts[node] = identity
         case .radioSettings:
-            radioSettings = core.radioSettings()
+            // Read again after a change (ADR-0032): the header follows the radio's parameters.
+            let r = core.radioSettings()
+            radioSettings = r
+            radio = core.radio()
+            if !r.name.isEmpty { nodeName = r.name }
         case .contactsUpdated:
             contacts = core.contacts().filter(\.person)
             #if DEBUG
