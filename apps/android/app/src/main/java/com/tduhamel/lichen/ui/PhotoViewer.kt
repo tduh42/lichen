@@ -79,7 +79,7 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
     }
     val a = announce?.message as? Message.Announce
     val original = a?.let { model.downloads[it.hash.hex()] }
-    val shown = remember(m.id, m.message, original) { best(context, m, a, original) }
+    val shown = rememberInBackground(m.id, m.message, original) { best(context, m, a, original) }
     var error by remember { mutableStateOf<String?>(null) }
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }

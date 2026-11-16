@@ -980,7 +980,7 @@ private struct ImageCard: View {
             let fetched = announce.flatMap { a -> UIImage? in
                 guard case let .announce(_, _, _, hash, _, _, _) = a.message,
                       let url = model.downloads[hash] else { return nil }
-                return BoundedImage.from(url: url, maxPixel: 2048)
+                return DecodedImages.shared.image(url: url, maxPixel: 2048)
             }
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .bottomLeading) {
@@ -988,7 +988,7 @@ private struct ImageCard: View {
                         Image(uiImage: fetched)
                             .resizable()
                             .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                    } else if let ui = BoundedImage.from(data: data, maxPixel: 480) {
+                    } else if let ui = DecodedImages.shared.image(data: data, maxPixel: 480) {
                         Image(uiImage: ui)
                             .resizable()
                             .interpolation(.medium)
@@ -1239,7 +1239,7 @@ private struct Composer: View {
                         Button {
                             let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                             if let link = gifLink, !linkAsText {
-                                let size = gifData.flatMap(AnimatedImage.size)
+                                let size = gifData.flatMap(AnimatedFrames.size)
                                 if let e = model.sendGif(link, size: size, to: chat) { error = e } else { draft = ""; gifData = nil }
                             } else if let m = editing {
                                 if let e = model.edit(text, of: m) { error = e } else { draft = ""; editing = nil }
@@ -1295,8 +1295,11 @@ private struct Composer: View {
             preparing = true
             Task {
                 defer { preparing = false }
+                // Decoded and scaled in the background (SR-27): a picked photo can be large.
                 guard let data = try? await item.loadTransferable(type: Data.self),
-                      let ui = BoundedImage.from(data: data, maxPixel: 2048), let (rgba, w, h) = ui.rgba()
+                      let (rgba, w, h) = await Task.detached(priority: .userInitiated, operation: {
+                          BoundedImage.from(data: data, maxPixel: 2048)?.rgba()
+                      }).value
                 else {
                     error = LichenError.BadImage.display
                     return
@@ -1684,7 +1687,7 @@ private struct SendPhotoSheet: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 230)
                         .overlay {
-                            if let ui = BoundedImage.from(data: image.full, maxPixel: 480) {
+                            if let ui = DecodedImages.shared.image(data: image.full, maxPixel: 480) {
                                 Image(uiImage: ui).resizable().interpolation(.medium).scaledToFill()
                             }
                         }
@@ -2072,7 +2075,7 @@ private struct BridgeSection: View {
                         .contentShape(Rectangle())
                         .onTapGesture { if let file { opened = model.openable(name: name, file: file) } }
                         .quickLookPreview($opened)
-                } else if standalone, let file, let ui = BoundedImage.from(url: file, maxPixel: 2048) {
+                } else if standalone, let file, let ui = DecodedImages.shared.image(url: file, maxPixel: 2048) {
                     Image(uiImage: ui).resizable().scaledToFit()
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .onTapGesture { viewing = true }
