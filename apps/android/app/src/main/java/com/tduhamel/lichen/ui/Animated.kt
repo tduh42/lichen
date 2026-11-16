@@ -60,6 +60,7 @@ import java.nio.ByteBuffer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.zip.Inflater
+import kotlin.math.roundToInt
 
 /**
  * The animated stickers the app ships (protocol.md §6.3, ADR-0025): Noto Animated Emoji as
@@ -208,16 +209,29 @@ private fun groupTitle(group: String) = when (group) {
     else -> R.string.sticker_signs
 }
 
-/** An animated GIF or WebP, looping (decoded by the platform, API 28+). */
+/**
+ * An animated GIF or WebP, looping (decoded by the platform, API 28+): once, in the background,
+ * within bounds (review of 2026-11-15, SR-27). A first frame of more than 16,384 pixels a side
+ * or 64 million in all is refused, and the animation is scaled to 480 pixels at most.
+ */
 @Composable
 fun AnimatedImage(data: ByteArray, modifier: Modifier = Modifier) {
+    val drawable = rememberInBackground(data) {
+        ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(data))) { d, info, _ ->
+            val (w, h) = info.size.width to info.size.height
+            require(w in 1..16_384 && h in 1..16_384 && w.toLong() * h <= 64_000_000L)
+            val scale = minOf(1.0, 480.0 / maxOf(w, h))
+            d.setTargetSize(maxOf(1, (w * scale).roundToInt()), maxOf(1, (h * scale).roundToInt()))
+        }
+    }
     AndroidView(
         factory = { ctx -> ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP } },
         modifier = modifier,
         update = { v ->
-            val drawable = runCatching { ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(data))) }.getOrNull()
-            v.setImageDrawable(drawable)
-            (drawable as? AnimatedImageDrawable)?.start()
+            if (v.drawable !== drawable) {
+                v.setImageDrawable(drawable)
+                (drawable as? AnimatedImageDrawable)?.start()
+            }
         },
     )
 }

@@ -182,9 +182,17 @@ struct StickerSheet: View {
     }
 }
 
-/// An animated GIF or WebP, looping (the frames decoded by ImageIO).
-struct AnimatedImage: UIViewRepresentable {
+/// An animated GIF or WebP, looping: its frames decoded in the background, once (SR-27).
+struct AnimatedImage: View {
     let data: Data
+
+    var body: some View {
+        AnimatedImageView(image: DecodedImages.shared.animated(data: data))
+    }
+}
+
+private struct AnimatedImageView: UIViewRepresentable {
+    let image: UIImage?
 
     func makeUIView(context: Context) -> UIImageView {
         let v = UIImageView()
@@ -192,33 +200,56 @@ struct AnimatedImage: UIViewRepresentable {
         v.clipsToBounds = true
         v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         v.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        v.image = Self.image(data)
+        v.image = image
         return v
     }
 
-    func updateUIView(_ v: UIImageView, context: Context) {}
+    func updateUIView(_ v: UIImageView, context: Context) {
+        if v.image !== image { v.image = image }
+    }
+}
+
+/// The frames of a GIF or WebP, decoded by ImageIO within bounds (review of 2026-11-15,
+/// SR-27): a first frame of more than 16,384 pixels a side or 64 million in all is refused,
+/// each frame is scaled to 480 pixels at most, and only the first 120 frames are kept.
+enum AnimatedFrames {
+    static let maxPixel = 480
+    static let maxFrames = 120
 
     static func image(_ data: Data) -> UIImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let n = CGImageSourceGetCount(src)
-        guard n > 1 else { return UIImage(data: data) }
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let (w, h) = dimensions(src), w <= 16_384, h <= 16_384, w * h <= 64_000_000
+        else { return nil }
+        let n = min(CGImageSourceGetCount(src), maxFrames)
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
         var frames: [UIImage] = []
         var total = 0.0
         for i in 0..<n {
-            guard let cg = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, i, options as CFDictionary) else { continue }
             frames.append(UIImage(cgImage: cg))
             total += delay(src, i)
         }
-        return UIImage.animatedImage(with: frames, duration: total)
+        guard let first = frames.first else { return nil }
+        return frames.count > 1 ? UIImage.animatedImage(with: frames, duration: total) : first
     }
 
     /// The pixel size of the first frame: the shape a GIF message carries (§6.3).
     static func size(_ data: Data) -> (UInt16, UInt16)? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
-              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
-              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int
-        else { return nil }
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil), let (w, h) = dimensions(src) else { return nil }
         return (UInt16(clamping: w), UInt16(clamping: h))
+    }
+
+    private static func dimensions(_ src: CGImageSource) -> (Int, Int)? {
+        guard let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? Int, let h = props[kCGImagePropertyPixelHeight] as? Int,
+              w > 0, h > 0
+        else { return nil }
+        return (w, h)
     }
 
     private static func delay(_ src: CGImageSource, _ i: Int) -> Double {
