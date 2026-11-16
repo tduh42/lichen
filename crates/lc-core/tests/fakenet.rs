@@ -93,8 +93,9 @@ fn text_between_neighbours() {
 #[test]
 fn ten_kilobytes_over_three_repeaters_at_ten_percent_loss() {
     let (mut net, a, b) = chain(3, 10, 7, true);
-    // 64 fragments of 149 bytes: just under the largest datagram (9,536 bytes).
-    let data = file(9_400, 3);
+    // 64 fragments of 145 bytes (3 path bytes): just under the largest datagram on this path
+    // (9,280 bytes), each fragment as large as a Bluetooth link carries whole (ADR-0031).
+    let data = file(9_250, 3);
     let id = send(&mut net, a, b, data.clone());
     let (mut sa, mut sb) = (Seen::default(), Seen::default());
     let t0 = net.now;

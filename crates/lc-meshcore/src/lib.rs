@@ -35,6 +35,12 @@ pub use response::{Contact, DeviceInfo, Response, SelfInfo};
 /// Maximum companion-protocol frame size, both directions (`MAX_FRAME_SIZE`).
 pub const FRAME_MAX: usize = 176;
 
+/// Largest frame a Bluetooth link carries whole (ADR-0031): ESP32 companions set the ATT MTU
+/// to `MAX_FRAME_SIZE` (176) and a notification holds MTU − 3 bytes; a longer frame reaches
+/// the app cut short (arduino-esp32 `BLECharacteristic::notify`). Every frame lichen relies
+/// on, both ways, stays within it.
+pub const BLE_FRAME_MAX: usize = FRAME_MAX - 3;
+
 /// Decoding error: empty, truncated or inconsistent frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DecodeError {

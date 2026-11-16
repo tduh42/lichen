@@ -5,9 +5,9 @@ use ravif::{BitDepth, Encoder, Img, RGB8};
 
 pub const MAX_WIDTH: u32 = 160;
 pub const MAX_HEIGHT: u32 = 120;
-/// Largest preview: with its 21 bytes of FILE header it fills 3 fragments of 149 bytes on one
-/// hop (§13.2).
-pub const PREVIEW_MAX: usize = 426;
+/// Largest preview: with its 21 bytes of FILE header it fills 3 fragments of 146 bytes on one
+/// hop (§13.2, ADR-0031).
+pub const PREVIEW_MAX: usize = 417;
 /// Largest full thumbnail.
 pub const FULL_MAX: usize = 4_096;
 

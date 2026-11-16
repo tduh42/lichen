@@ -44,13 +44,14 @@ pub const HEADER_LEN: usize = 7;
 pub const TAG_LEN: usize = 16;
 /// Header plus tag.
 pub const OVERHEAD: usize = HEADER_LEN + TAG_LEN;
-/// Largest lichen frame we send: the largest `RAW_DATA` payload a companion can push (172).
-pub const FRAME_MAX: usize = 172;
-/// Largest fragment plaintext (`FRAME_MAX − OVERHEAD`).
+/// Largest lichen frame: the largest `RAW_DATA` payload that crosses a Bluetooth link whole
+/// (`raw_payload_max(0)`, 169; ADR-0031).
+pub const FRAME_MAX: usize = lc_meshcore::command::raw_payload_max(0);
+/// Largest fragment plaintext (`FRAME_MAX − OVERHEAD`, 146).
 pub const CHUNK_MAX: usize = FRAME_MAX - OVERHEAD;
 /// Maximum number of fragments in a datagram.
 pub const MAX_FRAGMENTS: usize = 64;
-/// Largest datagram.
+/// Largest datagram (9,344 bytes).
 pub const DATAGRAM_MAX: usize = MAX_FRAGMENTS * CHUNK_MAX;
 
 /// Fragment plaintext size for a path of `path_bytes` bytes (§3.2).

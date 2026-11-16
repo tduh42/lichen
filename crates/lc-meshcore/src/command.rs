@@ -3,7 +3,7 @@
 use crate::bytes::Writer;
 use crate::codes::cmd;
 use crate::path::Path;
-use crate::{EncodeError, FRAME_MAX};
+use crate::{BLE_FRAME_MAX, EncodeError, FRAME_MAX};
 
 /// The commands lichen sends to a companion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -82,11 +82,18 @@ pub const CHANNEL_NAME_MAX: usize = 31;
 /// Smallest `SEND_RAW_DATA` payload accepted by the firmware.
 pub const RAW_DATA_MIN: usize = 4;
 
-/// Largest `SEND_RAW_DATA` payload for a path of `path_bytes` bytes: limited by the companion
-/// frame (176) and by what the receiving companion can push back (`RAW_DATA`, 172).
+/// Largest `SEND_RAW_DATA` payload for a path of `path_bytes` bytes that reaches the other
+/// app whole: our command frame (`2 + path + payload`) and the receiving companion's `RAW_DATA`
+/// push (`4 + payload`) both fit a Bluetooth link ([`BLE_FRAME_MAX`], 173; ADR-0031). 169 up to
+/// 2 path bytes.
 pub const fn raw_payload_max(path_bytes: usize) -> usize {
-    let by_frame = FRAME_MAX - 2 - path_bytes;
-    if by_frame < 172 { by_frame } else { 172 }
+    let by_frame = BLE_FRAME_MAX - 2 - path_bytes;
+    let by_push = BLE_FRAME_MAX - 4;
+    if by_frame < by_push {
+        by_frame
+    } else {
+        by_push
+    }
 }
 
 impl Command<'_> {

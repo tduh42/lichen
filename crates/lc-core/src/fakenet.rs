@@ -38,6 +38,10 @@
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, VecDeque};
 
+/// Bytes a Bluetooth notification from an ESP32 companion carries: ATT MTU 176 − 3. Not
+/// `lc_meshcore::BLE_FRAME_MAX`: the fake radio models the firmware, not what lichen expects.
+const BLE_NOTIFY_MAX: usize = 173;
+
 use lc_meshcore::air::{Packet, PayloadType, Route};
 use lc_meshcore::airtime::LoRaParams;
 use lc_meshcore::codes::{cmd, resp};
@@ -735,7 +739,9 @@ impl Net {
         }
     }
 
-    /// Pushes a frame to the app of companion `i` if it is connected.
+    /// Pushes a frame to the app of companion `i` if it is connected. The app is on Bluetooth,
+    /// as on a phone: an ESP32 companion's notification holds 173 bytes and a longer frame
+    /// arrives cut short (ADR-0031).
     fn push_to_app(&mut self, i: usize, frame: &[u8]) {
         let now = self.now;
         let Some(n) = self.nodes.get_mut(i) else {
@@ -744,6 +750,7 @@ impl Net {
         if !n.connected {
             return;
         }
+        let frame = frame.get(..BLE_NOTIFY_MAX).unwrap_or(frame);
         if n.external {
             n.outbox.push(frame.to_vec());
             return;

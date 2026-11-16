@@ -38,18 +38,20 @@ fn airtime_meshcore_eu_narrow() {
 
 #[test]
 fn raw_payload_limits() {
-    assert_eq!(raw_payload_max(0), 172);
-    assert_eq!(raw_payload_max(2), 172);
-    assert_eq!(raw_payload_max(3), 171);
-    assert_eq!(raw_payload_max(64), 110);
+    // Whole over Bluetooth (173 bytes, ADR-0031): our frame 2 + path + payload, the
+    // receiver's RAW_DATA push 4 + payload.
+    assert_eq!(raw_payload_max(0), 169);
+    assert_eq!(raw_payload_max(2), 169);
+    assert_eq!(raw_payload_max(3), 168);
+    assert_eq!(raw_payload_max(64), 107);
     let path = Path::from_hashes(&[1, 2, 3]).unwrap();
-    let ok = [0u8; 171];
+    let ok = [0u8; 168];
     let mut out = [0u8; 176];
     assert_eq!(
         Command::SendRawData { path, payload: &ok }.encode(&mut out),
-        Ok(176)
+        Ok(173)
     );
-    let too_long = [0u8; 172];
+    let too_long = [0u8; 169];
     assert!(
         Command::SendRawData {
             path,

@@ -461,14 +461,14 @@ mod frames {
         a.handle(&mut ack[0], now).unwrap();
         assert!(delivered(&mut a));
 
-        // Eight fragments of 149 bytes.
+        // Eight fragments of 146 bytes.
         let long: Vec<u8> = data[1..9].iter().flat_map(|v| h(v, "plain")).collect();
         assert_eq!(long.len(), 8 * CHUNK_MAX);
         assert_eq!(a.send(&long, CHUNK_MAX, now).unwrap(), 1);
         let mut sent = drain(&mut a, &mut now, 8);
         for (frame, v) in sent.iter().zip(&data[1..9]) {
             assert_eq!(frame, &h(v, "frame"), "fragment {}", int(v, "index"));
-            assert_eq!(frame.len(), 172);
+            assert_eq!(frame.len(), 169);
         }
         // The last one alone closes the round: an ACK that names it, in two packed bytes.
         let mut last = sent.pop().unwrap();
