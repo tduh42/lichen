@@ -76,7 +76,7 @@ fun RootScreen(model: AppModel) {
     // Debug extra `screen`: a screen to show at launch (screenshots).
     LaunchedEffect(Unit) {
         when (model.debugScreen) {
-            "contact", "identity", "sos" -> nav.navigate(model.debugScreen!!)
+            "contact", "identity", "sos", "radio" -> nav.navigate(model.debugScreen!!)
         }
     }
     // Debug extra `screen join`: the scanner opens on the demo's invitation.
@@ -132,9 +132,10 @@ fun RootScreen(model: AppModel) {
             composable("search") { SearchScreen(model) }
             composable("sos") { SosScreen(model, close = { nav.popBackStack() }) }
             composable("settings") {
-                SettingsScreen(model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") })
+                SettingsScreen(model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") })
             }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
+            composable("radio") { RadioSettingsScreen(model, back = { nav.popBackStack() }) }
             composable("contact") { ContactScreen(model, back = { nav.popBackStack() }) }
             composable("group/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)

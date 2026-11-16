@@ -74,9 +74,12 @@ impl Core {
         self.command(&Command::GetBattAndStorage, Expect::Battery);
     }
 
-    /// Reads the battery and storage again (the radio card).
+    /// Reads the battery and storage again (the radio card); nothing before the connection,
+    /// which reads them anyway.
     pub fn radio_refresh(&mut self) {
-        self.command(&Command::GetBattAndStorage, Expect::Battery);
+        if self.online {
+            self.command(&Command::GetBattAndStorage, Expect::Battery);
+        }
     }
 
     /// LoRa parameters: frequency (kHz), bandwidth (Hz), spreading factor, coding rate. The

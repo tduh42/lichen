@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("onboarded") private var onboarded = true
     @State private var importing = false
     @State private var importResult: String?
+    @State private var radioOpen = false
 
     var body: some View {
         @Bindable var model = model
@@ -27,7 +28,17 @@ struct SettingsView: View {
                         radioCard
                         SectionLabel("Radio").padding(.top, 10)
                         CardList {
-                            CardRow(title: String(localized: "Preset"), subtitle: preset)
+                            // The radio's own settings (ADR-0032).
+                            NavigationLink {
+                                RadioSettingsView()
+                            } label: {
+                                CardRow(title: String(localized: "Radio settings"), subtitle: preset) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!model.isConnected)
                             CardDivider()
                             CardRow(title: String(localized: "Sub-band"), subtitle: subBand)
                             CardDivider()
@@ -202,9 +213,12 @@ struct SettingsView: View {
                     #if DEBUG
                     // -screen privacy: the Privacy section, for screenshots.
                     if model.debugScreen == "privacy" { proxy.scrollTo("privacy", anchor: .top) }
+                    // -screen radio: the radio's settings (ADR-0032).
+                    if model.debugScreen == "radio" { radioOpen = true }
                     #endif
                 }
             }
+            .navigationDestination(isPresented: $radioOpen) { RadioSettingsView() }
             .screen()
             .toolbar(.hidden, for: .navigationBar)
             .alert("Name on the mesh", isPresented: $naming) {

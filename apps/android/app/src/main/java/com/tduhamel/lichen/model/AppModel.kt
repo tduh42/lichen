@@ -160,6 +160,17 @@ class AppModel(val app: Application) {
     var contacts by mutableStateOf(listOf<ContactInfo>())
     /** What the radio reported of its settings (protocol §1.1), read again after each change. */
     var radioSettings by mutableStateOf<RadioSettings?>(null)
+    /** Why the radio did not take a setting, for a dialog. */
+    var radioError by mutableStateOf<String?>(null)
+
+    /** Changes one of the radio's settings (ADR-0032); a refusal shows as [radioError]. */
+    fun radioSet(change: () -> Unit) {
+        try {
+            change()
+        } catch (e: LichenException) {
+            radioError = e.display(app.resources)
+        }
+    }
     var groups by mutableStateOf(listOf<GroupInfo>())
 
     /** Groups that list us and wait for an answer (§10.1): someone not verified in person
@@ -840,6 +851,7 @@ class AppModel(val app: Application) {
                 nodeKey = e.key
                 nodeName = e.name
                 radio = e.radio
+                radioSettings = core.radioSettings()
                 // The ongoing notification names the node, not the link's address.
                 if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
@@ -855,7 +867,13 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
-            LichenEvent.RadioSettings -> radioSettings = core.radioSettings()
+            LichenEvent.RadioSettings -> {
+                // Read again after a change (ADR-0032): the header follows the radio's parameters.
+                val r = core.radioSettings()
+                radioSettings = r
+                radio = core.radio()
+                if (r.name.isNotEmpty()) nodeName = r.name
+            }
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
                 debugInvites()
