@@ -636,6 +636,13 @@
     <string name="err_no_clock">L\'horloge du téléphone n\'est pas encore réglée.</string>
     <string name="err_invite_expired">Cette invitation a expiré : demandes-en une nouvelle.</string>
     <string name="err_invalid_setting">La radio n’accepte pas ce réglage.</string>
+    <string name="history">Historique</string>
+    <string name="import_meshcore">Importer depuis l’app MeshCore</string>
+    <string name="import_meshcore_note">La base qu’elle exporte : tes messages directs et de canaux rejoignent tes discussions MeshCore.</string>
+    <string name="import_title">Import</string>
+    <string name="import_done">%1$d messages directs et %2$d messages de canaux importés.</string>
+    <string name="import_already_here">%1$d y étaient déjà.</string>
+    <string name="err_not_an_export">Ce fichier n’est pas une base exportée par l’app MeshCore.</string>
     <string name="joined_with_invite">%1$s a rejoint le groupe avec ton invitation</string>
     <string name="sunday_hike">Sortie du dimanche</string>
     <string name="invite_unreadable">Cette invitation est illisible.</string>

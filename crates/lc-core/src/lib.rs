@@ -11,6 +11,7 @@ pub mod core;
 pub mod fakenet;
 pub mod group;
 pub mod identity;
+pub mod import;
 pub mod location;
 pub mod plain;
 pub mod radio;

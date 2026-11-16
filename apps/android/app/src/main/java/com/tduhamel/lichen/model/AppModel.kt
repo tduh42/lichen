@@ -615,6 +615,29 @@ class AppModel(val app: Application) {
         pump()
     }
 
+    /**
+     * Imports the database the official MeshCore app exports (ADR-0033), picked with the system's
+     * file picker: copied to the cache first (the core reads a path), removed after. What came in,
+     * or why not.
+     */
+    fun importMeshCore(uri: android.net.Uri): String {
+        val res = app.resources
+        val copy = File(app.cacheDir, "meshcore-export.db")
+        return try {
+            app.contentResolver.openInputStream(uri)?.use { input -> copy.outputStream().use { input.copyTo(it) } }
+                ?: return LichenException.NotAnExport().display(res)
+            val r = core.importMeshcoreApp(copy.path)
+            val text = res.getString(R.string.import_done, r.direct.toInt(), r.channel.toInt())
+            if (r.alreadyHere > 0u) text + " " + res.getString(R.string.import_already_here, r.alreadyHere.toInt()) else text
+        } catch (e: LichenException) {
+            e.display(res)
+        } catch (e: java.io.IOException) {
+            LichenException.NotAnExport().display(res)
+        } finally {
+            copy.delete()
+        }
+    }
+
     fun stopDemo() {
         if (!isDemo) return
         demoJob?.cancel()

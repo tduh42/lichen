@@ -47,6 +47,8 @@ pub enum LichenError {
     Expired,
     /// A radio setting outside what the radio takes (protocol §1.1).
     InvalidSetting,
+    /// Not a database the MeshCore app exported (ADR-0033).
+    NotAnExport,
 }
 
 impl std::fmt::Display for LichenError {
