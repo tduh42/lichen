@@ -3,7 +3,7 @@
 //! clock jumps. Never panic, never emit an oversized frame.
 #![no_main]
 use lc_proto::sender::Timing;
-use lc_proto::{FRAME_MAX, Header, Kind, Session, SessionKeys, aead};
+use lc_proto::{CHUNK_MAX, FRAME_MAX, Header, Kind, Session, SessionKeys, aead};
 use libfuzzer_sys::fuzz_target;
 
 const A: u8 = 0xA1;
@@ -14,7 +14,8 @@ const K_BA: [u8; 32] = [2; 32];
 fuzz_target!(|data: &[u8]| {
     let mut b = Session::new(SessionKeys { send: K_BA, recv: K_AB }, B, A, Timing::default());
     let outgoing: Vec<u8> = (0..900u32).map(|i| i as u8).collect();
-    let _ = b.send(&outgoing, 157, 0);
+    // The largest chunk a frame holds: a larger one is refused and nothing would be sent.
+    assert!(b.send(&outgoing, CHUNK_MAX, 0).is_ok());
     let mut now = 0u64;
     let mut out = [0u8; 256];
     let mut input = data;
