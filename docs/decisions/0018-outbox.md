@@ -5,7 +5,7 @@
 
 ## Context
 
-Off-grid chat is the product (`docs/messaging-product-brief-2026-11-08.md`). Until now a message could only be sent while the radio was connected; a radio that dropped mid-send kept the core transmitting into nothing until the message failed; and a restart marked every unfinished message failed (`Interrupted`, ADR-0010) for the user to resend as a new message. Group texts were recorded as sent while their frames still waited in memory. Sessions, sender keys and nonces must never be persisted (ADR-0003), so the ciphertext of a pending message cannot be kept either.
+Off-grid chat is the product (the product brief of 2026-11-08, not published). Until now a message could only be sent while the radio was connected; a radio that dropped mid-send kept the core transmitting into nothing until the message failed; and a restart marked every unfinished message failed (`Interrupted`, ADR-0010) for the user to resend as a new message. Group texts were recorded as sent while their frames still waited in memory. Sessions, sender keys and nonces must never be persisted (ADR-0003), so the ciphertext of a pending message cannot be kept either.
 
 ## Decision
 

@@ -1,6 +1,6 @@
 # Messaging: what exists, what the brief asks — 2026-11-09
 
-The product brief (`docs/messaging-product-brief-2026-11-08.md`) makes off-grid chat the main product. This is where both apps stand against its seven proposals, after the audit fixes (M01–M15, up to f08c2ac). "Both" means iOS and Android alike.
+The product brief of 2026-11-08 (not published) makes off-grid chat the main product. This is where both apps stand against its seven proposals, after the audit fixes (M01–M15, up to 5720301). "Both" means iOS and Android alike.
 
 | # | Proposal | Exists | Missing |
 |---|---|---|---|

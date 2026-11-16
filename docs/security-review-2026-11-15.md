@@ -1,6 +1,6 @@
 # Security review — 2026-11-15
 
-Three independent read-only reviews of the tree at `2961a89`, one per area, each by a reviewer that had not seen the others' work or the earlier reviews until it had its own list:
+Three independent read-only reviews of the tree at `a771051`, one per area, each by a reviewer that had not seen the others' work or the earlier reviews until it had its own list:
 
 - **Core:** the pairwise cryptography (spec §1–§9, `lc-proto`, sessions and paths in `lc-core`).
 - **Groups:** groups, content semantics and insiders (spec §6, §10–§12).
@@ -19,7 +19,7 @@ No third party has audited lichen. This review does not replace one.
 
 ## Findings
 
-Severity: High, Medium, Low, Info. "Wire" says whether the fix changes what travels on the air or how keys are derived. Line numbers are those of `2961a89`.
+Severity: High, Medium, Low, Info. "Wire" says whether the fix changes what travels on the air or how keys are derived. Line numbers are those of `a771051`.
 
 ### Core
 

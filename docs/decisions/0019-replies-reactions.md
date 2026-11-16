@@ -5,7 +5,7 @@
 
 ## Context
 
-Off-grid chat is the product (`docs/messaging-product-brief-2026-11-08.md` §2): people want to answer one message in a busy group, or acknowledge it with a 👍. Both need a way to name a message that every phone agrees on, survives resends and restarts, and binds the message's author; local row ids differ per phone. Every byte costs shared airtime, and a group message already carries a 64-byte signature and goes out twice (§10.3).
+Off-grid chat is the product (the product brief of 2026-11-08, §2, not published): people want to answer one message in a busy group, or acknowledge it with a 👍. Both need a way to name a message that every phone agrees on, survives resends and restarts, and binds the message's author; local row ids differ per phone. Every byte costs shared airtime, and a group message already carries a 64-byte signature and goes out twice (§10.3).
 
 ## Decision
 

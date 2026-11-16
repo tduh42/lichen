@@ -5,7 +5,7 @@
 
 ## Context
 
-An admin could only invite people already in their contacts (ADR-0017): at a trailhead, someone new needed two steps (exchange contact codes, then be invited). The brief (`docs/messaging-product-brief-2026-11-08.md` §4) asks for an in-person invitation by QR code, warning that a code or link must not carry group secrets, and that authentication, expiry and revocation, membership authorization and key rotation must be specified. A QR code can be photographed by anyone around.
+An admin could only invite people already in their contacts (ADR-0017): at a trailhead, someone new needed two steps (exchange contact codes, then be invited). The product brief of 2026-11-08 (§4, not published) asks for an in-person invitation by QR code, warning that a code or link must not carry group secrets, and that authentication, expiry and revocation, membership authorization and key rotation must be specified. A QR code can be photographed by anyone around.
 
 ## Decision
 

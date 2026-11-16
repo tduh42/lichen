@@ -2,7 +2,7 @@
 
 ## Second recheck — fixes committed, 76 tests pass
 
-Rechecked on 2026-11-06 at HEAD `7709c7c`, including protocol-fix commit `bb808f8`. This is the latest status and supersedes both earlier assessments below. The implementation tree was clean when this recheck began; this report was untracked.
+Rechecked on 2026-11-06 at HEAD `eba76eb`, including protocol-fix commit `d8e2bf1`. This is the latest status and supersedes both earlier assessments below. The implementation tree was clean when this recheck began; this report was untracked.
 
 **Assessment: the original concrete defects are addressed, but an additional identity-approval race was reproduced in this recheck (PR-07, high priority). The truncated-tag security rationale also remains only partially addressed.**
 
@@ -75,7 +75,7 @@ Resolve PR-07 before treating identity-change consent as secure.
 
 ## Recheck — current status after Claude's changes
 
-Rechecked on 2026-11-06 at HEAD `34e435b` plus the uncommitted group fixes, protocol wording change, and ADR-0014. This section supersedes the original status table below; the original findings remain as historical evidence. No implementation files were changed by this recheck.
+Rechecked on 2026-11-06 at HEAD `1e651fd` plus the uncommitted group fixes, protocol wording change, and ADR-0014. This section supersedes the original status table below; the original findings remain as historical evidence. No implementation files were changed by this recheck.
 
 **Assessment: improved, but not ready for a security sign-off. Two original high-priority issues remain.**
 

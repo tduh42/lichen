@@ -204,7 +204,7 @@ Paris, indoors, the two radios a few metres apart on the same desk. An iPhone 17
 
 SNR 10.5 to 13 dB throughout. The Heltec reports RSSI 0 dBm in every push (`RAW_DATA` and `LOG_RX_DATA`): its stock firmware's reading, not lichen's.
 
-Found and fixed: an introduction names its sender by one hash byte, and the core took the first contact with that byte, a repeater sharing the phone's node byte (`7d9fcd8`, spec §4.6).
+Found and fixed: an introduction names its sender by one hash byte, and the core took the first contact with that byte, a repeater sharing the phone's node byte (`7b17a37`, spec §4.6).
 
 ## 2026-11-08 — Android on the real radio, from the emulator
 

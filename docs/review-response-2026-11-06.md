@@ -12,7 +12,7 @@ The review (Codex, at Tanguy's request) reported five findings on the tree as it
 
 The review's observation that the build was broken mid-migration is historical: `scripts/check.sh` (fmt, clippy, all tests, no_std) passes on the commit that carries these fixes, and the oxymesh cross-check (`sim/`) passes too.
 
-## Second recheck (Codex, at `7709c7c`)
+## Second recheck (Codex, at `eba76eb`)
 
 The recheck confirmed PR-01, PR-02, PR-04 and PR-06 fixed, and PR-03's automatic adoption gone. It reported a new finding and two items still open. Each was checked against the source.
 
