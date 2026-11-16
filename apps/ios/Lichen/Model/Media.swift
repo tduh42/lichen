@@ -205,6 +205,70 @@ enum BoundedImage {
     }
 }
 
+/// Images decoded off the main thread, once (review of 2026-11-15, SR-27). A view asks for one
+/// in its body: a decoded image comes back at once; otherwise its decoding starts in the
+/// background, the view shows its placeholder, and draws again when the image is ready.
+@MainActor @Observable
+final class DecodedImages {
+    static let shared = DecodedImages()
+
+    private var images: [String: UIImage] = [:]
+    @ObservationIgnored private var order: [String] = []
+    @ObservationIgnored private var pending: Set<String> = []
+    /// Bytes that did not decode: not tried again at each redraw.
+    @ObservationIgnored private var failed: Set<String> = []
+    /// A screen of photos and the viewer; the oldest go first.
+    private let keep = 48
+    private let keepAnimated = 6
+
+    func image(data: Data, maxPixel: Int) -> UIImage? {
+        var h = Hasher()
+        data.withUnsafeBytes { h.combine(bytes: $0) }
+        return image(key: "d\(h.finalize())/\(data.count)/\(maxPixel)") {
+            BoundedImage.from(data: data, maxPixel: maxPixel)
+        }
+    }
+
+    /// A downloaded file: its content never changes under its path (named by its hash).
+    func image(url: URL, maxPixel: Int) -> UIImage? {
+        image(key: "u\(url.path)/\(maxPixel)") { BoundedImage.from(url: url, maxPixel: maxPixel) }
+    }
+
+    /// A GIF or WebP's frames (AnimatedFrames). Heavier: only the last few are kept.
+    func animated(data: Data) -> UIImage? {
+        var h = Hasher()
+        data.withUnsafeBytes { h.combine(bytes: $0) }
+        return image(key: "a\(h.finalize())/\(data.count)") { AnimatedFrames.image(data) }
+    }
+
+    private func image(key: String, decode: @escaping @Sendable () -> UIImage?) -> UIImage? {
+        if let ui = images[key] { return ui }
+        guard !pending.contains(key), !failed.contains(key) else { return nil }
+        pending.insert(key)
+        Task.detached(priority: .userInitiated) {
+            let ui = decode()
+            await self.store(key, ui)
+        }
+        return nil
+    }
+
+    private func store(_ key: String, _ ui: UIImage?) {
+        pending.remove(key)
+        guard let ui else {
+            failed.insert(key)
+            return
+        }
+        images[key] = ui
+        order.append(key)
+        // Frames weigh tens of megabytes: at most a few animations, and `keep` images in all.
+        while order.count > keep || order.filter({ $0.hasPrefix("a") }).count > keepAnimated,
+              let oldest = order.first(where: { order.count > keep || $0.hasPrefix("a") }) {
+            order.removeAll { $0 == oldest }
+            images[oldest] = nil
+        }
+    }
+}
+
 extension UIImage {
     /// RGBA8 pixels at most `maxSide` on the longer side (the core makes the thumbnail).
     func rgba(maxSide: CGFloat = 640) -> (Data, UInt32, UInt32)? {

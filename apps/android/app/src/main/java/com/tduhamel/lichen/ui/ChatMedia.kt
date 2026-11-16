@@ -202,7 +202,7 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
     val chat = ChatId.of(m.chat)
     val announce = model.announcement(img.mediaId, chat)
     val fetched = (announce?.message as? Message.Announce)?.let { model.downloads[it.hash.hex()] }
-    val bitmap = remember(m.id, img.data.size, fetched) {
+    val bitmap = rememberInBackground(m.id, img.data.size, fetched) {
         (fetched?.let { decodeFile(it) } ?: decodeImage(img.data))?.asImageBitmap()
     }
     var error by remember { mutableStateOf<String?>(null) }
@@ -286,7 +286,7 @@ private fun BridgeSection(model: AppModel, announce: StoredMessage, standalone: 
                 FileRow(a.name, a.size.toLong())
             }
         } else if (standalone && file != null) {
-            val bitmap = remember(file) { decodeFile(file)?.asImageBitmap() }
+            val bitmap = rememberInBackground(file) { decodeFile(file)?.asImageBitmap() }
             var viewing by remember { mutableStateOf(false) }
             if (viewing) PhotoViewer(model, announce) { viewing = false }
             if (bitmap != null) {
@@ -515,7 +515,7 @@ fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original
     val size = Formatter.formatShortFileSize(context, original.size.toLong())
     val estimate = model.estimate(chat, imageDatagramLen(image))
     val cost = estimate?.let { stringResource(R.string.approx_seconds, "%.0f".format(maxOf(1.0, it.airtimeMs.toDouble() / 1000))) } ?: "LoRa"
-    val preview = remember(image) { decodeImage(image.full)?.asImageBitmap() }
+    val preview = rememberInBackground(image) { decodeImage(image.full)?.asImageBitmap() }
     val irohDetail = when {
         irohOK -> stringResource(R.string.iroh_detail, size)
         !model.irohEnabled -> stringResource(R.string.iroh_off_in_settings)

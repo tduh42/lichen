@@ -103,12 +103,12 @@ struct PhotoViewer: View {
 
     private var best: Shown? {
         if let announce, case let .announce(_, _, _, hash, size, providers, _) = announce.message,
-           let url = model.downloads[hash], let ui = BoundedImage.from(url: url, maxPixel: 4096) {
+           let url = model.downloads[hash], let ui = DecodedImages.shared.image(url: url, maxPixel: 4096) {
             let via = providers.contains { $0.transport == 1 } ? "iroh" : "Tor"
             let bytes = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
             return Shown(image: ui, caption: String(localized: "Original · \(bytes) · \(via), hash verified"), file: url)
         }
-        guard case let .image(_, _, full, _, _, _, data) = message.message, let ui = BoundedImage.from(data: data, maxPixel: 480) else { return nil }
+        guard case let .image(_, _, full, _, _, _, data) = message.message, let ui = DecodedImages.shared.image(data: data, maxPixel: 480) else { return nil }
         let bytes = ByteCountFormatter.string(fromByteCount: Int64(data.count), countStyle: .file)
         return Shown(image: ui,
                      caption: full ? String(localized: "Full thumbnail · LoRa · \(bytes)")
