@@ -10,9 +10,12 @@ pub mod cmd {
     pub const SET_DEVICE_TIME: u8 = 6;
     pub const SEND_SELF_ADVERT: u8 = 7;
     pub const SET_ADVERT_NAME: u8 = 8;
+    pub const SET_RADIO_PARAMS: u8 = 11;
     pub const SYNC_NEXT_MESSAGE: u8 = 10;
     pub const SET_RADIO_TX_POWER: u8 = 12;
     pub const RESET_PATH: u8 = 13;
+    pub const SET_ADVERT_LATLON: u8 = 14;
+    pub const REBOOT: u8 = 19;
     pub const GET_BATT_AND_STORAGE: u8 = 20;
     pub const DEVICE_QUERY: u8 = 22;
     pub const EXPORT_PRIVATE_KEY: u8 = 23;
@@ -20,8 +23,14 @@ pub mod cmd {
     pub const GET_CONTACT_BY_KEY: u8 = 30;
     pub const GET_CHANNEL: u8 = 31;
     pub const SET_CHANNEL: u8 = 32;
+    pub const SET_DEVICE_PIN: u8 = 37;
+    pub const SET_OTHER_PARAMS: u8 = 38;
+    pub const GET_CUSTOM_VARS: u8 = 40;
+    pub const SET_CUSTOM_VAR: u8 = 41;
     pub const SEND_PATH_DISCOVERY_REQ: u8 = 52;
     pub const GET_STATS: u8 = 56;
+    pub const SET_AUTOADD_CONFIG: u8 = 58;
+    pub const GET_AUTOADD_CONFIG: u8 = 59;
     pub const GET_DEFAULT_FLOOD_SCOPE: u8 = 64;
     pub const SEND_RAW_PACKET: u8 = 65;
 }
@@ -46,7 +55,9 @@ pub mod resp {
     pub const CONTACT_MSG: u8 = 0x10;
     pub const CHANNEL_MSG: u8 = 0x11;
     pub const CHANNEL_INFO: u8 = 0x12;
+    pub const CUSTOM_VARS: u8 = 21;
     pub const STATS: u8 = 24;
+    pub const AUTOADD_CONFIG: u8 = 25;
     pub const DEFAULT_FLOOD_SCOPE: u8 = 28;
 
     pub const ADVERT: u8 = 0x80;
