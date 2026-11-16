@@ -60,6 +60,11 @@
                 android:resource="@xml/usb_devices" />
         </activity>
 
+        <!-- Reply and Mark as read from a message's notification (ADR-0034): only its own
+             notifications' intents reach it. -->
+        <receiver
+            android:name=".model.NotificationActions"
+            android:exported="false" />
         <service
             android:name=".model.RadioService"
             android:exported="false"

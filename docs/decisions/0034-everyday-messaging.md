@@ -1,4 +1,4 @@
-# ADR-0034 — Everyday messaging: links, places
+# ADR-0034 — Everyday messaging
 
 - Status: accepted
 - Date: 2026-11-16
@@ -16,6 +16,14 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 - **What is a place**: a `geo:` URI (RFC 5870, and the `geo:0,0?q=lat,lon` that maps apps share); two decimal numbers, latitude then longitude, with three decimals at least when neither carries a degree sign or a hemisphere letter; degrees with minutes (and seconds) and a hemisphere (`N`, `S`, `E`, `W`, and `O` for the French "ouest"). Latitude within ±90°, longitude within ±180°. A number glued to a letter, a dot or another number is not a coordinate.
 - **A place opens lichen's map**, centred on a pin, with its coordinates to copy; the long-press menu offers "Show on the map". Nothing leaves the phone but the map's tiles, as for any position (ADR-0011).
 - **One scanner for both apps**: `lc_core::links::find`, exposed as `text_links` with UTF-16 offsets (what Swift's `NSRange` and Kotlin's strings count). Fuzzed (`text_links`).
+
+### Answering from a notification
+
+- A message's notification offers **Reply** and **Mark as read**; both need the phone unlocked (iOS `authenticationRequired`, Android `setAuthenticationRequired`), so that whoever holds a locked phone neither answers nor hides messages as its owner.
+- **With the app lock on**, notifications say "New message" and offer nothing: no sender, no text, no action.
+- A reply is an ordinary text to that conversation, through the outbox (§6.1): it waits for the radio like one typed in the app. A reply that is refused (too long, a contact whose identity changed) is said in a notification of its own.
+- Invitations, searches and SOS alerts have no actions.
+- **What a notification carries is checked as if another app had written it** (review of 2026-11-15, SR-25): the conversation must be a known kind with an id of the right length, the action one of ours, the text non-empty and at most 4,096 bytes. On Android the actions go to a receiver that is not exported, through explicit intents; the reply's is mutable only because the system writes the typed text into it.
 
 ## Consequences
 

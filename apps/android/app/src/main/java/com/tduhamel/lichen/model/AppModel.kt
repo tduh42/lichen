@@ -1016,7 +1016,7 @@ class AppModel(val app: Application) {
             is LichenEvent.GroupInvited -> {
                 invitations = core.groupInvitations()
                 // Tapping it opens the admin's conversation; the invitation waits in Messages.
-                notify(ChatId.contact(e.admin), res.getString(R.string.group_invitation), res.getString(R.string.invites_you_to, name(e.admin), e.name))
+                notify(ChatId.contact(e.admin), res.getString(R.string.group_invitation), res.getString(R.string.invites_you_to, name(e.admin), e.name), actions = false)
             }
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
                 invitations = core.groupInvitations()
@@ -1074,7 +1074,7 @@ class AppModel(val app: Application) {
             is LichenEvent.Searched -> {
                 // A member asks where we are and we answer (SOS or this group's consent, §11).
                 val chat = ChatId.group(e.gid)
-                notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)))
+                notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)), actions = false)
                 searchedBy = core.searchedBy(now())
             }
             is LichenEvent.SearchUpdated -> {
@@ -1112,14 +1112,35 @@ class AppModel(val app: Application) {
     }
 
     /** A notification for a message, unless its conversation is on screen (not behind the lock's
-     * cover). With the app lock on, it says only "New message": no sender, no group, no text. */
-    private fun notify(chat: ChatId, title: String, text: String) {
+     * cover); `actions`: Reply and Mark as read (ADR-0034). With the app lock on, it says only
+     * "New message": no sender, no group, no text, nothing to answer it with. */
+    private fun notify(chat: ChatId, title: String, text: String, actions: Boolean = true) {
         if (inForeground && !lock.locked && visibleChat == chat) return
         if (lock.enabled) {
             Notifications.message(app, chat, app.getString(R.string.app_name), app.getString(R.string.new_message))
         } else {
-            Notifications.message(app, chat, title, text)
+            Notifications.message(app, chat, title, text, actions)
         }
+    }
+
+    /** A text typed in a notification (ADR-0034): a message like any other, in the outbox when
+     * the radio is away. Not sent: said in the same place. */
+    fun replyFromNotification(chat: ChatId, text: String) {
+        val error = send(text, chat)
+        if (error == null) {
+            markRead(chat)
+            Notifications.clear(app, chat)
+        } else if (lock.enabled) {
+            Notifications.message(app, chat, app.getString(R.string.app_name), app.getString(R.string.answer_not_sent))
+        } else {
+            Notifications.message(app, chat, app.getString(R.string.not_sent), error)
+        }
+    }
+
+    /** "Mark as read" on a notification. */
+    fun markReadFromNotification(chat: ChatId) {
+        markRead(chat)
+        Notifications.clear(app, chat)
     }
 
     /** Debug extra `share`: 100 m with that contact. */

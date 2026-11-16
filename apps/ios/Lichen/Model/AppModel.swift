@@ -297,6 +297,22 @@ final class AppModel {
             openRequest = chat
         }
         notifier.locked = { [weak self] in self?.lock.locked ?? false }
+        // Reply and Mark as read from a notification (ADR-0034): the answer is a message like
+        // any other, in the outbox when the radio is away.
+        notifier.onReply = { [weak self] chat, text in
+            guard let self else { return }
+            if let error = send(text, to: chat) {
+                notifier.notSent(chat, reason: error)
+            } else {
+                markRead(chat)
+                notifier.clear(chat)
+            }
+        }
+        notifier.onMarkRead = { [weak self] chat in
+            guard let self else { return }
+            markRead(chat)
+            notifier.clear(chat)
+        }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
         shares = core.shares()
@@ -830,7 +846,7 @@ final class AppModel {
             groupsChanged()
             // Tapping it opens the admin's conversation; the invitation waits in Messages.
             notifier.message(.contact(key: admin), title: String(localized: "Group invitation"),
-                             body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"))
+                             body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"), actions: false)
         case let .groupJoined(gid, _, admin):
             if joining.removeValue(forKey: admin) != nil { joinedByInvite[admin] = gid }
             groupsChanged()
@@ -919,7 +935,7 @@ final class AppModel {
             // A member asks where we are and we answer (SOS or this group's consent, §11).
             let chat = ChatID.group(gid: gid)
             notifier.message(chat, title: title(of: chat),
-                             body: String(localized: "\(name(of: by)) is searching for you"))
+                             body: String(localized: "\(name(of: by)) is searching for you"), actions: false)
             searchedBy = core.searchedBy(nowMs: now())
         case .searchUpdated:
             searchVersion += 1

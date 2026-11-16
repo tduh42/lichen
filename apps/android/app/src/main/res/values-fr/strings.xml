@@ -1086,4 +1086,7 @@
     <string name="kept_by_room">Gardé par le salon · %1$s s de temps d’antenne</string>
     <!-- Places in messages (ADR-0034) -->
     <string name="remove_pin">Retirer le repère</string>
+    <!-- Notification actions (ADR-0034) -->
+    <string name="mark_as_read">Marquer comme lu</string>
+    <string name="answer_not_sent">Ta réponse n’a pas été envoyée.</string>
 </resources>

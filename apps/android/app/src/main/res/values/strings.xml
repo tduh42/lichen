@@ -1079,4 +1079,7 @@
     <string name="kept_by_room">Kept by the room · %1$s s of airtime</string>
     <!-- Places in messages (ADR-0034) -->
     <string name="remove_pin">Remove the pin</string>
+    <!-- Notification actions (ADR-0034) -->
+    <string name="mark_as_read">Mark as read</string>
+    <string name="answer_not_sent">Your answer was not sent.</string>
 </resources>
