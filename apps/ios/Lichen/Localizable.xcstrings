@@ -4821,6 +4821,16 @@
         }
       }
     },
+    "Mark as read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme lu"
+          }
+        }
+      }
+    },
     "Meanwhile your groups get a beacon without position every 2 minutes, to locate you by radio.": {
       "localizations": {
         "fr": {
@@ -6767,6 +6777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retirer ma réaction"
+          }
+        }
+      }
+    },
+    "Remove the pin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer le repère"
           }
         }
       }
@@ -9807,6 +9827,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu as désactivé les messages éphémères"
+          }
+        }
+      }
+    },
+    "Your answer was not sent.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta réponse n’a pas été envoyée."
           }
         }
       }
