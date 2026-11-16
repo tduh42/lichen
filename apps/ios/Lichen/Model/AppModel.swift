@@ -729,6 +729,7 @@ final class AppModel {
             secured.insert(peer)
         case let .received(from, message, snr, _):
             lastSnr[from] = snr
+            prefetchGif(message)
             // A muted chat stays silent; SOS alerts go through `notifier.sos`, never muted.
             if !isMuted(.contact(key: from)) {
                 notifier.message(.contact(key: from), title: name(of: from), body: message.display)
@@ -798,6 +799,7 @@ final class AppModel {
                                  body: String(localized: "\(name(of: node)) joined with your invitation"))
             }
         case let .groupMessage(gid, from, message, snr, _, _):
+            prefetchGif(message)
             lastSnr[from] = snr
             let chat = ChatID.group(gid: gid)
             if !isMuted(chat) {
@@ -1116,6 +1118,17 @@ final class AppModel {
 
     /// GIFs load by themselves: asked for, or through Tor.
     var gifsLoadThemselves: Bool { gifAutoLoad || torStatus == .ready }
+
+    /// With Tor on, the map loads its tiles only once allowed, for this run of the app (SR-36).
+    var mapWithTorAllowed = false
+
+    /// With GIFs loading by themselves, a received GIF loads as it arrives, not when it is read:
+    /// GIPHY's view counter then tells its sender no more than the delivery lichen acknowledges
+    /// anyway (review of 2026-11-15, SR-36).
+    private func prefetchGif(_ m: Message) {
+        guard gifsLoadThemselves, case let .gif(_, provider, _, _, id, _) = m, provider == 1, cachedGif(id) == nil else { return }
+        Task { _ = await loadGif(id) }
+    }
 
     private static var gifFolder: URL? {
         guard let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }

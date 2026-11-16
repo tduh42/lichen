@@ -18,8 +18,10 @@ struct MapScreen: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter) { bounds, zoom in
-                camera = (bounds, zoom)
+            MapGate {
+                MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter) { bounds, zoom in
+                    camera = (bounds, zoom)
+                }
             }
             .ignoresSafeArea(edges: .top)
             topBar

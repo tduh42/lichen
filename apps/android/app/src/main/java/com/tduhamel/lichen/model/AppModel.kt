@@ -370,6 +370,20 @@ class AppModel(val app: Application) {
     /** GIFs load by themselves: asked for, or through Tor. */
     val gifsLoadThemselves: Boolean get() = gifAutoLoad || torStatus == TorStatus.READY
 
+    /** With Tor on, the map loads its tiles only once allowed, for this run of the app (SR-36). */
+    var mapWithTorAllowed by mutableStateOf(false)
+
+    /**
+     * With GIFs loading by themselves, a received GIF loads as it arrives, not when it is read:
+     * GIPHY's view counter then tells its sender no more than the delivery lichen acknowledges
+     * anyway (review of 2026-11-15, SR-36).
+     */
+    private fun prefetchGif(m: Message) {
+        val gif = m as? Message.Gif ?: return
+        if (!gifsLoadThemselves || gif.provider.toInt() != 1 || cachedGif(gif.id) != null) return
+        scope.launch { loadGif(gif.id) }
+    }
+
     /** Content fetched or offered over the bridge, by BLAKE3 hash (hex). */
     val downloads = mutableStateMapOf<String, File>()
 
@@ -885,6 +899,7 @@ class AppModel(val app: Application) {
             is LichenEvent.SessionEstablished -> secured = secured + e.peer.hex()
             is LichenEvent.Received -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
+                prefetchGif(e.message)
                 // A muted chat stays silent; SOS alerts have their own path, never muted.
                 val chat = ChatId.contact(e.from)
                 if (!isMuted(chat)) notify(chat, name(e.from), e.message.display(res))
@@ -939,6 +954,7 @@ class AppModel(val app: Application) {
             }
             is LichenEvent.GroupMessage -> {
                 lastSnr = lastSnr + (e.from.hex() to e.snrDb)
+                prefetchGif(e.message)
                 val chat = ChatId.group(e.gid)
                 if (!isMuted(chat)) notify(chat, title(chat), "${name(e.from)}: ${e.message.display(res)}")
             }

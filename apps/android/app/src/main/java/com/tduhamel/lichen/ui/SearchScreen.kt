@@ -277,10 +277,12 @@ private fun SearchMap(model: AppModel, target: String, estimate: SearchEstimate?
     val label = estimate?.let { stringResource(R.string.search_map_label, name, distanceText(it.major68M)) } ?: stringResource(R.string.tab_map)
     Box(Modifier.fillMaxWidth().height(300.dp).clip(CardShape).semantics { contentDescription = label }) {
         if (items.isNotEmpty() || overlay != null) {
-            LichenMap(
-                items, style.resolved(t.dark), recenter + reframe, Modifier.fillMaxSize(),
-                overlay = overlay, margins = intArrayOf(30, 30, 30, 30),
-            ) { _, _ -> }
+            MapGate(model) {
+                LichenMap(
+                    items, style.resolved(t.dark), recenter + reframe, Modifier.fillMaxSize(),
+                    overlay = overlay, margins = intArrayOf(30, 30, 30, 30),
+                ) { _, _ -> }
+            }
         }
     }
 }

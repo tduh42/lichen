@@ -905,4 +905,7 @@
     <string name="restart_radio">Redémarrer la radio</string>
     <string name="restart_radio_confirm_title">Redémarrer la radio ?</string>
     <string name="restart_radio_confirm">La connexion coupe et revient en quelques secondes.</string>
+    <string name="map_waits_tor">La carte attend pendant que Tor est activé</string>
+    <string name="map_waits_tor_note">Ses tuiles viennent d’OpenFreeMap en direct, hors de Tor : elles montreraient la zone que tu regardes.</string>
+    <string name="map_load_once">Charger la carte cette fois</string>
 </resources>
