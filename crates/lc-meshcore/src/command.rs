@@ -5,6 +5,21 @@ use crate::codes::cmd;
 use crate::path::Path;
 use crate::{BLE_FRAME_MAX, EncodeError, FRAME_MAX};
 
+/// The preferences `SET_OTHER_PARAMS` sets and `SELF_INFO` reports.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct OtherParams {
+    /// Only the advert types of the auto-add mask become contacts by themselves; off, every
+    /// advert does.
+    pub manual_add: bool,
+    /// Who may ask for telemetry: `env << 4 | location << 2 | base`, each 0 nobody, 1 the
+    /// contacts allowed one by one, 2 everyone.
+    pub telemetry: u8,
+    /// 0: adverts carry no position; 1: they carry the node's.
+    pub advert_loc_policy: u8,
+    /// Extra transmissions of each ACK.
+    pub multi_acks: u8,
+}
+
 /// The commands lichen sends to a companion.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command<'a> {
@@ -59,6 +74,36 @@ pub enum Command<'a> {
     },
     /// `[8] name` → `OK`: the name the node advertises.
     SetAdvertName { name: &'a [u8] },
+    /// `[11] freq kHz u32 ‖ bw Hz u32 ‖ sf ‖ cr ‖ repeat` → `OK`, or `ERR 6` outside 150–2,500 MHz,
+    /// 7–500 kHz, SF 5–12, CR 5–8 (or a repeat frequency not allowed). Applied at once, kept.
+    SetRadioParams {
+        freq_khz: u32,
+        bw_hz: u32,
+        sf: u8,
+        cr: u8,
+        repeat: bool,
+    },
+    /// `[14] lat i32 ‖ lon i32` (degrees × 10⁶) → `OK`, or `ERR 6` outside ±90 / ±180: the
+    /// position an advert carries when the policy allows it; a GPS fix overwrites it.
+    SetAdvertLatLon { lat_e6: i32, lon_e6: i32 },
+    /// `[19] "reboot"` → no answer: the radio restarts.
+    Reboot,
+    /// `[37] pin u32` → `OK`, or `ERR 6` unless 0 (the default) or 100000–999999: the Bluetooth
+    /// PIN, used from the next boot.
+    SetDevicePin { pin: u32 },
+    /// `[38] manual_add ‖ telemetry ‖ advert_loc_policy ‖ multi_acks` → `OK`: all four always
+    /// (a shorter frame keeps the rest, but the first byte is always taken).
+    SetOtherParams(OtherParams),
+    /// `[40]` → `CUSTOM_VARS`: the board's settings, such as `gps`.
+    GetCustomVars,
+    /// `[41] "name:value"` → `OK`, or `ERR 6` for an unknown name or value (`gps:1`, `gps:0`,
+    /// `gps_interval:<s>`).
+    SetCustomVar { name: &'a str, value: &'a str },
+    /// `[58] mask ‖ max_hops` → `OK`: which advert types become contacts by themselves when
+    /// manual add is on, and from how far.
+    SetAutoaddConfig { mask: u8, max_hops: u8 },
+    /// `[59]` → `AUTOADD_CONFIG`.
+    GetAutoaddConfig,
     /// `[10]` → the next queued message (`CONTACT_MSG`, `CHANNEL_MSG`…) or `NO_MORE_MESSAGES`.
     SyncNextMessage,
     /// `[31] index` → `CHANNEL_INFO`, or `ERR 2` past the last slot.
@@ -175,6 +220,61 @@ impl Command<'_> {
                 w.u32(ts)?;
                 w.put(text)?;
             }
+            Command::SetRadioParams {
+                freq_khz,
+                bw_hz,
+                sf,
+                cr,
+                repeat,
+            } => {
+                w.u8(cmd::SET_RADIO_PARAMS)?;
+                w.u32(freq_khz)?;
+                w.u32(bw_hz)?;
+                w.put(&[sf, cr, u8::from(repeat)])?;
+            }
+            Command::SetAdvertLatLon { lat_e6, lon_e6 } => {
+                w.u8(cmd::SET_ADVERT_LATLON)?;
+                w.put(&lat_e6.to_le_bytes())?;
+                w.put(&lon_e6.to_le_bytes())?;
+            }
+            Command::Reboot => {
+                w.u8(cmd::REBOOT)?;
+                w.put(b"reboot")?;
+            }
+            Command::SetDevicePin { pin } => {
+                if pin != 0 && !(100_000..=999_999).contains(&pin) {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SET_DEVICE_PIN)?;
+                w.u32(pin)?;
+            }
+            Command::SetOtherParams(p) => w.put(&[
+                cmd::SET_OTHER_PARAMS,
+                u8::from(p.manual_add),
+                p.telemetry,
+                p.advert_loc_policy,
+                p.multi_acks,
+            ])?,
+            Command::GetCustomVars => w.u8(cmd::GET_CUSTOM_VARS)?,
+            Command::SetCustomVar { name, value } => {
+                let bad = |s: &str| {
+                    s.is_empty()
+                        || !s
+                            .bytes()
+                            .all(|b| b.is_ascii_graphic() && b != b':' && b != b',')
+                };
+                if bad(name) || bad(value) {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SET_CUSTOM_VAR)?;
+                w.put(name.as_bytes())?;
+                w.u8(b':')?;
+                w.put(value.as_bytes())?;
+            }
+            Command::SetAutoaddConfig { mask, max_hops } => {
+                w.put(&[cmd::SET_AUTOADD_CONFIG, mask, max_hops.min(64)])?
+            }
+            Command::GetAutoaddConfig => w.u8(cmd::GET_AUTOADD_CONFIG)?,
             Command::SetAdvertName { name } => {
                 if name.len() > CHANNEL_NAME_MAX {
                     return Err(EncodeError::Invalid);

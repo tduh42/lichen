@@ -13,7 +13,7 @@ Integers are **little-endian**. `‖` = concatenation. MeshCore facts come from 
 | Paths | contacts' `out_path` (`GET_CONTACTS`), otherwise lichen's own discovery (§4.5): a flooded probe via `SEND_RAW_PACKET`, read through `LOG_RX_DATA` | PATH_REPLY in `RAW_DATA` |
 | Flood scope | `GET_DEFAULT_FLOOD_SCOPE` (64): region name and key, used for the transport codes of our floods | — |
 | Identity | `EXPORT_PRIVATE_KEY` (23) → 64 "expanded" orlp bytes; public key in `SELF_INFO` | — |
-| Radio | `SELF_INFO`: frequency kHz, BW Hz, SF, CR (5..8) | — |
+| Radio | `SELF_INFO`: frequency kHz, BW Hz, SF, CR (5..8); the radio's settings, §1.1 | — |
 
 Facts that constrain the protocol:
 
@@ -27,6 +27,27 @@ Facts that constrain the protocol:
 6. The companion does not report when a frame has left: `SEND_RAW_DATA` answers OK as soon as it is queued. Pacing is our job (§7.3).
 7. Hash of an identity = `pub[0]` (A:§3).
 10. **Over Bluetooth, a frame from an ESP32 companion is ≤ 173 bytes whole** (ADR-0031). The firmware sets the ATT MTU to `MAX_FRAME_SIZE` (176) (`src/helpers/esp32/SerialBLEInterface.cpp` at 81dbae5) and sends each frame as one notification, which holds MTU − 3 bytes; a longer one reaches the app cut short (arduino-esp32 `BLECharacteristic::notify`, "Truncating to %d bytes"). The receiving app's link is unknown to the sender, so everything lichen sends must arrive in pushes of ≤ 173 bytes: `RAW_DATA` payload ≤ 169, `LOG_RX_DATA` raw frame ≤ 170. Writes from the app go with response, which Bluetooth carries in several pieces.
+
+
+### 1.1 Radio settings (ADR-0032)
+
+The settings lichen reads and sets on the companion, as firmware v1.18 parses them (`examples/companion_radio/MyMesh.cpp` at 81dbae5, line of each handler; vectors in `testdata/meshcore/settings.toml`). Integers little-endian. A setting is kept by the radio; lichen stores none and reads them at each connection.
+
+| Command | Frame | Answer, rules |
+|---|---|---|
+| `SET_RADIO_PARAMS` (11, L1424) | `freq kHz u32 ‖ bw Hz u32 ‖ sf ‖ cr ‖ repeat` | `OK`, applied at once; `ERR 6` outside 150,000–2,500,000 kHz, 7,000–500,000 Hz, SF 5–12, CR 5–8, or a repeat frequency not allowed |
+| `SET_RADIO_TX_POWER` (12) | `dBm i8` | `OK` within −9 and the radio's maximum (`SELF_INFO`) |
+| `SET_ADVERT_LATLON` (14, L1266) | `lat i32 ‖ lon i32` (degrees × 10⁶) | `OK`; a GPS fix overwrites it |
+| `REBOOT` (19, L1512) | `"reboot"` | none: the radio restarts |
+| `GET_BATT_AND_STORAGE` (20) | — | `BATT_AND_STORAGE` (12): `mV u16 ‖ used KB u32 ‖ total KB u32` |
+| `SET_DEVICE_PIN` (37, L1839) | `pin u32` | `OK` for 0 (default) or 100000–999999, used from the next boot |
+| `SET_OTHER_PARAMS` (38, L1488) | `manual_add ‖ telemetry ‖ advert_loc_policy ‖ multi_acks` | `OK`; lichen always sends all four. `telemetry = env << 4 ‖ location << 2 ‖ base`, each 0 nobody, 1 contacts allowed one by one, 2 everyone; `advert_loc_policy` 1 puts the node's position in its adverts |
+| `GET_CUSTOM_VARS` (40, L1853) | — | `CUSTOM_VARS` (21): ASCII `name:value` pairs joined by commas, empty without any |
+| `SET_CUSTOM_VAR` (41, L1867) | ASCII `name:value` | `OK`, or `ERR 6`; `gps:1` / `gps:0` and `gps_interval:<s>` (0–86,400) on boards with a GPS |
+| `SET_AUTOADD_CONFIG` (58, L2023) | `mask ‖ max_hops` (≤ 64) | `OK`; mask 0x01 overwrite the oldest when full, 0x02 chat, 0x04 repeater, 0x08 room, 0x10 sensor (used when manual add is on) |
+| `GET_AUTOADD_CONFIG` (59, L2030) | — | `AUTOADD_CONFIG` (25): `mask ‖ max_hops` |
+
+`SELF_INFO` carries the four preferences of `SET_OTHER_PARAMS` at offsets 44–47 (`multi_acks`, `advert_loc_policy`, `telemetry`, `manual_add`), between the position and the radio parameters. A position in adverts or in location telemetry is only ever set by an explicit choice of the user (ADR-0032).
 
 ## 2. Identity and static secret (ADR-0013)
 

@@ -28,7 +28,7 @@ pub mod usb;
 
 pub use air::{Packet, PayloadType, Route};
 pub use airtime::LoRaParams;
-pub use command::Command;
+pub use command::{Command, OtherParams};
 pub use path::Path;
 pub use response::{Contact, DeviceInfo, Response, SelfInfo};
 
