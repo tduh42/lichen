@@ -629,6 +629,13 @@
     <string name="err_no_clock">The phone\'s clock is not set yet.</string>
     <string name="err_invite_expired">This invitation has expired: ask for a new one.</string>
     <string name="err_invalid_setting">The radio does not take this setting.</string>
+    <string name="history">History</string>
+    <string name="import_meshcore">Import from the MeshCore app</string>
+    <string name="import_meshcore_note">The database it exports: your direct messages and channel posts join your MeshCore chats.</string>
+    <string name="import_title">Import</string>
+    <string name="import_done">%1$d direct messages and %2$d channel posts imported.</string>
+    <string name="import_already_here">%1$d were already here.</string>
+    <string name="err_not_an_export">This file is not a database exported by the MeshCore app.</string>
     <string name="joined_with_invite">%1$s joined with your invitation</string>
     <string name="sunday_hike">Sunday hike</string>
     <string name="invite_unreadable">This invitation could not be read.</string>

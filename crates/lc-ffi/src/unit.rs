@@ -1076,3 +1076,90 @@ mod radio_settings {
         );
     }
 }
+
+/// History from the MeshCore app's export (ADR-0033): into the MeshCore chats, with the
+/// people's names, and nothing twice.
+#[cfg(test)]
+mod import_meshcore {
+    use super::*;
+
+    const ME: [u8; 32] = [0xAA; 32];
+    const MARC: [u8; 32] = [0x4D; 32];
+
+    fn hex(k: &[u8]) -> String {
+        k.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn export() -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("lichen-ffi-import-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute_batch(
+            r#"CREATE TABLE "contact_messages" ("id" INTEGER PRIMARY KEY, "status" TEXT NOT NULL, "to" TEXT NOT NULL, "from" TEXT NOT NULL, "txt_type" INTEGER NOT NULL, "sender_timestamp" INTEGER NOT NULL, "text" TEXT NOT NULL, "timestamp" INTEGER NOT NULL, "snr" REAL NULL);
+               CREATE TABLE "channel_messages" ("id" INTEGER PRIMARY KEY, "channel_secret" BLOB NULL, "from" TEXT NULL, "txt_type" INTEGER NOT NULL, "sender_timestamp" INTEGER NOT NULL, "text" TEXT NOT NULL, "timestamp" INTEGER NOT NULL, "snr" REAL NULL);
+               CREATE TABLE "contacts" ("id" INTEGER PRIMARY KEY, "public_key" BLOB NOT NULL, "adv_name" TEXT NOT NULL, "custom_name" TEXT NULL);"#,
+        )
+        .unwrap();
+        db.execute(
+            r#"INSERT INTO contact_messages (status, "to", "from", txt_type, sender_timestamp, text, timestamp) VALUES ('received', ?1, ?2, 0, 1793000000, 'At the refuge?', 1793000000250)"#,
+            rusqlite::params![hex(&ME), hex(&MARC)],
+        )
+        .unwrap();
+        db.execute(
+            r#"INSERT INTO channel_messages (channel_secret, "from", txt_type, sender_timestamp, text, timestamp) VALUES (?1, NULL, 0, 1793000010, 'Lucie: Fog on the ridge', 1793000010000)"#,
+            rusqlite::params![[0x8Bu8; 16].as_slice()],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO contacts (public_key, adv_name, custom_name) VALUES (?1, 'MARC-R1', 'Marc')",
+            rusqlite::params![MARC.as_slice()],
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn imported_once_with_names() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![147; 32], None).unwrap();
+        let path = export();
+        let first = core
+            .import_meshcore_app(path.display().to_string())
+            .unwrap();
+        assert_eq!(
+            (
+                first.direct,
+                first.channel,
+                first.already_here,
+                first.skipped
+            ),
+            (1, 1, 0, 0)
+        );
+        let again = core
+            .import_meshcore_app(path.display().to_string())
+            .unwrap();
+        assert_eq!((again.direct, again.channel, again.already_here), (0, 0, 2));
+        let _ = std::fs::remove_file(&path);
+        let marc = core
+            .contacts()
+            .into_iter()
+            .find(|c| c.key == MARC.to_vec())
+            .unwrap();
+        assert_eq!(marc.name, "Marc");
+        let history = core
+            .history(ChatRef::Mesh { key: MARC.to_vec() }, None, 10)
+            .unwrap();
+        assert_eq!(history.len(), 1);
+        assert!(
+            matches!(&history[0].message, Message::Text { text, .. } if text == "At the refuge?")
+        );
+        // Not a MeshCore export.
+        let junk = std::env::temp_dir().join(format!("lichen-ffi-junk-{}.db", std::process::id()));
+        std::fs::write(&junk, b"nothing").unwrap();
+        assert!(matches!(
+            core.import_meshcore_app(junk.display().to_string()),
+            Err(LichenError::NotAnExport)
+        ));
+        let _ = std::fs::remove_file(&junk);
+    }
+}

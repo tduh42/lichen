@@ -463,6 +463,25 @@ final class AppModel {
         pump()
     }
 
+    /// Imports the database the official MeshCore app exports (ADR-0033): what came in, or why
+    /// not.
+    func importMeshCore(from url: URL) -> String {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let r = try core.importMeshcoreApp(path: url.path)
+            var text = String(localized: "\(Int(r.direct)) direct messages and \(Int(r.channel)) channel posts imported.")
+            if r.alreadyHere > 0 {
+                text += " " + String(localized: "\(Int(r.alreadyHere)) were already here.")
+            }
+            return text
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return LichenError.NotAnExport.display
+        }
+    }
+
     func stopDemo() {
         leaveDemo()
         resetState()
@@ -2105,6 +2124,7 @@ extension LichenError {
         case .NoClock: return String(localized: "The phone's clock is not set yet.")
         case .Expired: return String(localized: "This invitation has expired: ask for a new one.")
         case .InvalidSetting: return String(localized: "The radio does not take this setting.")
+        case .NotAnExport: return String(localized: "This file is not a database exported by the MeshCore app.")
         }
     }
 }

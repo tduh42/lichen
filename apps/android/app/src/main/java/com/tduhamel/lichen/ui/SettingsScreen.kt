@@ -5,6 +5,8 @@ import android.os.Build
 import android.os.LocaleList
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -80,6 +82,20 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
     var advertSent by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf<String?>(null) }
+    var importResult by remember { mutableStateOf<String?>(null) }
+    // History from the official MeshCore app (ADR-0033): its exported database.
+    val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importResult = model.importMeshCore(uri)
+    }
+    importResult?.let {
+        AlertDialog(
+            onDismissRequest = { importResult = null },
+            title = { Text(stringResource(R.string.import_title)) },
+            text = { Text(it) },
+            confirmButton = { TextButton(onClick = { importResult = null }) { Text(stringResource(R.string.ok), color = t.tx) } },
+            containerColor = t.s1,
+        )
+    }
     Scaffold(
         containerColor = t.bg,
         // The tab bar below takes the navigation bar.
@@ -238,6 +254,14 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             if (Build.VERSION.SDK_INT >= 33) {
                 item { SectionLabel(stringResource(R.string.language), Modifier.padding(top = 10.dp)) }
                 item { LanguagePicker() }
+            }
+            item { SectionLabel(stringResource(R.string.history), Modifier.padding(top = 10.dp)) }
+            item {
+                CardList {
+                    Box(Modifier.clickable { importer.launch(arrayOf("*/*")) }) {
+                        CardRow(stringResource(R.string.import_meshcore), stringResource(R.string.import_meshcore_note))
+                    }
+                }
             }
             item { SectionLabel(stringResource(R.string.demo), Modifier.padding(top = 10.dp)) }
             item {

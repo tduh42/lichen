@@ -8,7 +8,7 @@ all-features = true
 # Each ignored advisory says why it does not reach lichen and when to look again.
 ignore = [
     { id = "RUSTSEC-2023-0071", reason = "rsa (Marvin attack, timing of private-key operations) comes with Arti 0.48 for Tor's legacy relay identities; lichen only verifies such signatures and holds no RSA private key. No fixed rsa release is accepted by Arti yet: look again at each Arti update." },
-    { id = "RUSTSEC-2026-0459", reason = "Bundled SQLite before 3.54 can return stale memory when it opens a database with a crafted -wal file. lichen only opens databases it created in its own private directory. The fix needs rusqlite >= 0.41, which Arti 0.48 (tor-dirmgr: rusqlite < 0.41) does not accept: upgrade with the next Arti release, and never open a database file that came from outside." },
+    { id = "RUSTSEC-2026-0459", reason = "Bundled SQLite before 3.54 can return stale memory when it opens a database with a crafted -wal file. lichen opens databases it created in its own private directory, and an imported MeshCore app export only as a copy without any -wal, read-only and immutable (ADR-0033). The fix needs rusqlite >= 0.41, which Arti 0.48 (tor-dirmgr: rusqlite < 0.41) does not accept: upgrade with the next Arti release, and never open a database file from outside with its -wal." },
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained (no known flaw); a compile-time macro pulled by dependencies." },
     { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained (no known flaw); pulled by dependencies, lichen's config uses toml." },
 ]

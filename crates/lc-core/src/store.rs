@@ -816,6 +816,26 @@ impl Store {
 
     // ----- messages --------------------------------------------------------------------
 
+    /// Whether `chat` already holds this text, sent at `sent_at` in this direction: an
+    /// imported history read twice adds nothing (ADR-0033).
+    pub fn has_text(
+        &self,
+        chat: &Chat,
+        outgoing: bool,
+        sent_at: u32,
+        text: &str,
+    ) -> Result<bool, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT content FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND outgoing = ?3",
+        )?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes(), outgoing], |r| {
+            r.get::<_, Vec<u8>>(0)
+        })?;
+        Ok(rows.filter_map(Result::ok).any(|c| {
+            matches!(Content::decode(&c), Some(Content::Text { sent_at: s, text: t }) if s == sent_at && t == text)
+        }))
+    }
+
     /// Inserts `m` and returns it with its row id.
     pub fn insert(&self, m: &Message) -> Result<Message, Error> {
         let (s, a, b) = m.status.columns();

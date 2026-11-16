@@ -31,6 +31,7 @@ mod api_contacts;
 mod api_groups;
 mod api_history;
 mod api_identity;
+mod api_import;
 mod api_location;
 mod api_plain;
 mod api_radio;
@@ -53,6 +54,7 @@ mod tools;
 #[cfg(test)]
 mod unit;
 
+pub use api_import::ImportReport;
 pub use api_radio::{RadioSettings, RadioVar, Telemetry};
 pub use chat::*;
 pub use error::*;
