@@ -37,6 +37,11 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 
 - `chat_prefs.archived`: the conversation leaves the list for an "Archived" row that opens in place. A received message (not a notice) brings it back, unless the conversation is muted then; our own messages do not.
 
+### Drafts
+
+- The message a draft answers (§6.2) is kept with the draft, per conversation and identity, across screens and restarts; it is dropped when that message is no longer on the phone.
+- A voice recording made in a conversation stops when the user leaves it and waits there, in memory: coming back shows it under review, to listen to, send or discard. It never goes to another conversation.
+
 ## Consequences
 
 - Both apps link the same spans; a test in Rust covers what is and is not a link or a place.

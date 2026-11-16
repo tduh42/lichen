@@ -271,7 +271,18 @@ struct ChatView: View {
             if timer > 0, model.timers[chat] != UInt32(timer) { _ = model.setTimer(chat, UInt32(timer)) }
             #endif
         }
-        .onAppear { if draft.isEmpty { draft = model.draft(chat) } }
+        .onAppear {
+            if draft.isEmpty { draft = model.draft(chat) }
+            // The message the draft answers, kept with it (ADR-0034).
+            if replyTo == nil, editing == nil, let id = model.replyDraft(chat) {
+                if model.loadUntil(chat, id), let m = model.chats[chat]?.first(where: { $0.id == id }), m.referable {
+                    replyTo = m
+                } else {
+                    model.setReplyDraft(chat, nil)
+                }
+            }
+        }
+        .onChange(of: replyTo?.id) { model.setReplyDraft(chat, replyTo?.id) }
         // A group we left, closed or were removed from: back to the conversations.
         .onChange(of: model.groups.map(\.gid)) { _, gids in
             if case let .group(gid) = chat, !gids.contains(gid) { dismissChat() }
@@ -279,8 +290,9 @@ struct ChatView: View {
         .onChange(of: draft) { model.setDraft(chat, draft) }
         .onDisappear {
             if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
-            // A recording belongs to its conversation: leaving it drops the recording.
-            model.recorder.cancel(for: chat)
+            // A recording belongs to its conversation: leaving it stops the recording, which
+            // waits there to be sent or discarded (ADR-0034).
+            model.keepRecording(for: chat)
         }
         .sheet(isPresented: Binding(get: { verifying != nil }, set: { if !$0 { verifying = nil } })) {
             if case let .contact(key) = chat {
@@ -1405,8 +1417,18 @@ private struct Composer: View {
             #endif
         }
         .sheet(isPresented: $locating) { ChatShareSheet(chat: chat) }
-        // A recording under review belongs to this conversation: leaving it stops the playback.
-        .onDisappear { if model.player.playing == VoicePlayer.review { model.player.stop() } }
+        // A recording under review belongs to this conversation: leaving it stops the playback,
+        // and the recording waits there (ADR-0034).
+        .onDisappear {
+            if model.player.playing == VoicePlayer.review { model.player.stop() }
+            if let r = review { model.voiceDrafts[chat] = AppModel.VoiceDraft(pcm: r.pcm, mode: r.mode) }
+        }
+        // A recording left behind: back under review.
+        .onAppear {
+            if review == nil, let v = model.voiceDrafts.removeValue(forKey: chat) {
+                review = Review(pcm: v.pcm, mode: v.mode, voice: prepareVoice(pcm: v.pcm, mode: v.mode))
+            }
+        }
         .sheet(item: Binding(get: { image.map(ImageDraft.init) }, set: { image = $0?.image })) { draft in
             SendPhotoSheet(chat: chat, image: draft.image, original: original) { e in
                 image = nil

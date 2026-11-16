@@ -174,8 +174,9 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.visibleChat = chat
         onDispose {
             if (model.visibleChat == chat) model.visibleChat = null
-            // A recording belongs to its conversation: leaving it drops the recording.
-            model.recorder.cancel(chat)
+            // A recording belongs to its conversation: leaving it stops the recording, which
+            // waits there to be sent or discarded (ADR-0034).
+            model.keepRecording(chat)
         }
     }
     // The first message that was unread when the chat opened, and how many were: the divider
@@ -183,8 +184,10 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var dividerBefore by remember(chat) { mutableStateOf<Long?>(null) }
     var unreadAtOpen by remember(chat) { mutableIntStateOf(0) }
     var highlight by remember(chat) { mutableStateOf<Long?>(null) }
-    // The message being answered (§6.2).
+    // The message being answered (§6.2), kept with the draft (ADR-0034).
     var replyTo by remember(chat) { mutableStateOf<StoredMessage?>(null) }
+    var replyRestored by remember(chat) { mutableStateOf(false) }
+    LaunchedEffect(replyTo?.id, replyRestored) { if (replyRestored) model.setReplyDraft(chat, replyTo?.id) }
     /** Our message being edited (§6.4). */
     var editing by remember(chat) { mutableStateOf<StoredMessage?>(null) }
     LaunchedEffect(chat) {
@@ -193,6 +196,12 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             model.focus = null
             if (model.loadUntil(chat, id)) highlight = id else error = noLongerHere
         }
+        // The message the draft answers, kept with it (ADR-0034).
+        model.replyDraft(chat)?.let { id ->
+            val m = if (model.loadUntil(chat, id)) model.chats[chat].orEmpty().firstOrNull { it.id == id } else null
+            if (m != null && m.referable) replyTo = m else model.setReplyDraft(chat, null)
+        }
+        replyRestored = true
         // Before marking them read: where the unread messages start.
         val unread = model.chats[chat].orEmpty().filter { !it.outgoing && !it.read }
         dividerBefore = unread.firstOrNull()?.id
@@ -1044,10 +1053,21 @@ private fun Composer(
     val scope = rememberCoroutineScope()
     // Kept per conversation, across screens and restarts.
     var draft by remember(chat) { mutableStateOf(model.draft(chat)) }
-    // A recording stopped and not sent yet; it belongs to this conversation.
-    var review by remember(chat) { mutableStateOf<VoiceReview?>(null) }
+    // A recording stopped and not sent yet; it belongs to this conversation. One left behind
+    // there comes back under review (ADR-0034).
+    var review by remember(chat) {
+        mutableStateOf(
+            model.voiceDrafts.remove(chat)?.let {
+                VoiceReview(it.pcm, it.mode, com.tduhamel.lichen.core.prepareVoice(it.pcm.toList(), it.mode.toUByte()))
+            },
+        )
+    }
+    val currentReview by androidx.compose.runtime.rememberUpdatedState(review)
     DisposableEffect(chat) {
-        onDispose { if (model.player.playing == com.tduhamel.lichen.model.VoicePlayer.REVIEW) model.player.stop() }
+        onDispose {
+            if (model.player.playing == com.tduhamel.lichen.model.VoicePlayer.REVIEW) model.player.stop()
+            currentReview?.let { model.voiceDrafts[chat] = AppModel.VoiceDraft(it.pcm, it.mode) }
+        }
     }
     LaunchedEffect(draft) { model.setDraft(chat, draft) }
     var menu by remember { mutableStateOf(false) }

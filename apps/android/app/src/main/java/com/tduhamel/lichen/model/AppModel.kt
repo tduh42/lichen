@@ -1284,6 +1284,26 @@ class AppModel(val app: Application) {
     private fun draftKey(chat: ChatId): String =
         DRAFT + (if (isDemo) "demo" else core.fingerprint().joinToString("")) + "|" + chat.route
 
+    /** The message the draft of `chat` answers (§6.2), kept with the draft (ADR-0034). */
+    fun replyDraft(chat: ChatId): Long? =
+        prefs.getLong(draftKey(chat) + "|reply", -1L).takeIf { it >= 0 }
+
+    fun setReplyDraft(chat: ChatId, id: Long?) {
+        prefs.edit { if (id == null) remove(draftKey(chat) + "|reply") else putLong(draftKey(chat) + "|reply", id) }
+    }
+
+    /** A recording stopped because its conversation was left: offered there again, to listen
+     * to, send or discard (ADR-0034). In memory only, like the recording itself. */
+    class VoiceDraft(val pcm: ShortArray, val mode: Int)
+
+    val voiceDrafts = mutableMapOf<ChatId, VoiceDraft>()
+
+    /** Conversation `chat` is left: a recording made for it stops and waits for it. */
+    fun keepRecording(chat: ChatId) {
+        if (recorder.chat != chat) return
+        recorder.stop(keep = true)?.let { voiceDrafts[chat] = VoiceDraft(it, voiceMode) }
+    }
+
     /**
      * Makes message `id` (a search result, a quoted message) part of the loaded history: what
      * lies between it and the oldest message shown is read at once (recheck R08). False when it
@@ -1380,6 +1400,8 @@ class AppModel(val app: Application) {
     fun deleteConversation(chat: ChatId) {
         runCatching { core.deleteConversation(chat.ref) }
         setDraft(chat, "")
+        setReplyDraft(chat, null)
+        voiceDrafts.remove(chat)
         chats.remove(chat)
         conversations = core.conversations()
     }

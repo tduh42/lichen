@@ -1022,6 +1022,41 @@ final class AppModel {
         "\(isDemo ? "demo" : core.fingerprint().joined())|\(chat.storageKey)"
     }
 
+    /// The message the draft of `chat` answers (§6.2), kept with the draft (ADR-0034).
+    func replyDraft(_ chat: ChatID) -> Int64? {
+        drafts[draftKey(chat) + "|reply"].flatMap { Int64($0) }
+    }
+
+    func setReplyDraft(_ chat: ChatID, _ id: Int64?) {
+        let key = draftKey(chat) + "|reply"
+        let value = id.map { String($0) }
+        guard drafts[key] != value else { return }
+        drafts[key] = value
+        Self.saveDrafts(drafts)
+    }
+
+    /// A recording stopped because its conversation was left: offered there again, to listen
+    /// to, send or discard (ADR-0034). In memory only, like the recording itself.
+    struct VoiceDraft {
+        let pcm: [Int16]
+        let mode: UInt8
+    }
+
+    @ObservationIgnored var voiceDrafts: [ChatID: VoiceDraft] = [:]
+
+    /// Conversation `chat` is left: a recording made for it stops and waits for it.
+    func keepRecording(for chat: ChatID) {
+        guard recorder.chat == chat else { return }
+        guard recorder.recording else {
+            // Still asking for the microphone: nothing recorded.
+            recorder.cancel(for: chat)
+            return
+        }
+        if let pcm = recorder.stop(keep: true) {
+            voiceDrafts[chat] = VoiceDraft(pcm: pcm, mode: UInt8(voiceMode))
+        }
+    }
+
     /// Drafts by identity, in lichen's folder: like the history, out of backups (SR-22). They
     /// used to be in the preferences, which backups carry: moved once, then removed there.
     @ObservationIgnored private var drafts: [String: String] = AppModel.loadDrafts()
@@ -1163,6 +1198,8 @@ final class AppModel {
     func deleteConversation(_ chat: ChatID) {
         try? core.deleteConversation(chat: chat)
         setDraft(chat, "")
+        setReplyDraft(chat, nil)
+        voiceDrafts[chat] = nil
         chats[chat] = nil
         conversations = core.conversations()
     }
