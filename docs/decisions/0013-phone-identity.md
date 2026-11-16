@@ -1,11 +1,11 @@
 # ADR-0013 — The identity is a key generated on the phone; the node key only routes
 
-- Status: accepted (Tanguy, 2026-11-06); supersedes ADR-0004
+- Status: accepted (2026-11-06); supersedes ADR-0004
 - Date: 2026-11-06
 
 ## Context
 
-Until now a lichen identity was the MeshCore node's key, exported from the companion (`EXPORT_PRIVATE_KEY`, ADR-0004). Tanguy's design (`docs/design/`, Identity and Add-a-contact screens) generates the key on the phone instead, with a 24-word recovery phrase, a key fingerprint, QR codes and safety numbers. He chose it after weighing the costs.
+Until now a lichen identity was the MeshCore node's key, exported from the companion (`EXPORT_PRIVATE_KEY`, ADR-0004). The design (`docs/design/`, Identity and Add-a-contact screens) generates the key on the phone instead, with a 24-word recovery phrase, a key fingerprint, QR codes and safety numbers. It was chosen after weighing the costs.
 
 ## Decision
 

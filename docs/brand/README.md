@@ -2,7 +2,7 @@
 
 <img src="lichen-icon.svg" width="96" alt="lichen icon">
 
-The mark ("Chirp", chosen by Tanguy on 2026-11-06): two and a half teeth of a chirp, the shape of a LoRa signal on a spectrogram, ending in a dot, the packet leaving. Stroke 5.5 on a 64 grid, round joins and caps.
+The mark ("Chirp", chosen on 2026-11-06): two and a half teeth of a chirp, the shape of a LoRa signal on a spectrogram, ending in a dot, the packet leaving. Stroke 5.5 on a 64 grid, round joins and caps.
 
 | File | Use |
 |---|---|

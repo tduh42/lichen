@@ -9,7 +9,7 @@ The original design gives each member a sender key so that "no member can impers
 
 ## Decision
 
-- Every group message is **signed** (Ed25519, 64 bytes) with the sender's MeshCore identity, inside the ciphertext, over the group id, key epoch, counter and content. Proposed to Tanguy on 2026-11-06, no objection.
+- Every group message is **signed** (Ed25519, 64 bytes) with the sender's MeshCore identity, inside the ciphertext, over the group id, key epoch, counter and content. Proposed on 2026-11-06, no objection.
 - Sender keys per member and per epoch, distributed over pairwise sessions; new keys when a member leaves; current and previous key kept.
 - Flooded envelope on channel hash `0x7C` (shared with the probe, ADR-0008) with a type byte, a pad byte when needed so stock nodes reject it, at most 159 bytes so it fits `LOG_RX_DATA` after 8 hops, 1 or 2 fragments per message.
 - Our own sender key and counter are never stored: a restart draws a new key, so no counter repeats. The others' keys are stored with the group (ADR-0010).

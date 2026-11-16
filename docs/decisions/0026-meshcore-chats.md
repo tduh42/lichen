@@ -5,7 +5,7 @@
 
 ## Context
 
-lichen runs on stock MeshCore radios, among people who use the stock MeshCore apps: the Heltec on Tanguy's desk lists 163 nodes around Paris. Until now lichen could not talk to any of them. It never sent `SYNC_NEXT_MESSAGE`, so plain direct messages and channel posts that the companion decrypted for us piled up in its offline queue until the oldest were dropped. `docs/spec/design.md` listed compatibility with official clients as a non-goal for lichen's own features, which stays true. Tanguy asked for lichen users to be able to chat with MeshCore users.
+lichen runs on stock MeshCore radios, among people who use the stock MeshCore apps: a test Heltec lists 163 nodes in range. Until now lichen could not talk to any of them. It never sent `SYNC_NEXT_MESSAGE`, so plain direct messages and channel posts that the companion decrypted for us piled up in its offline queue until the oldest were dropped. `docs/spec/design.md` listed compatibility with official clients as a non-goal for lichen's own features, which stays true. lichen users should be able to chat with MeshCore users.
 
 ## Decision
 

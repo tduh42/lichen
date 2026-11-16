@@ -2,7 +2,7 @@
 
 An **encrypted** application layer on top of the **stock MeshCore** network, running on the host (phone, PC). No repeater or companion firmware is modified: the app talks to the companion through its protocol (BLE or USB) and carries its frames in `RAW_CUSTOM` packets (unicast, direct route) and `GRP_DATA` packets (groups, flood). It adds what MeshCore lacks: long fragmented messages, modern AEAD, private groups, media, location, search mode.
 
-Tanguy's design: `docs/spec/design.md` (French original `design.fr.md`); normative spec: `docs/spec/protocol.md`. Mockups: `docs/maquettes/`. Passages marked **(ADR-xxxx)** refer to `docs/decisions/`.
+The original design: `docs/spec/design.md` (French original `design.fr.md`); normative spec: `docs/spec/protocol.md`. Mockups: `docs/maquettes/`. Passages marked **(ADR-xxxx)** refer to `docs/decisions/`.
 
 ---
 
@@ -67,7 +67,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 
 - Unit tests, `proptest` (round trips, unique nonces, forged fragment rejected), vectors (`testdata/`).
 - Fake network in `lc-core`: chain of repeaters, losses, half-duplex collisions, 160-entry duplicate filter on `SHA256(type ‖ payload)`.
-- Hardware: Heltec V4 (MeshCore C++ v1.18, USB) and ThinkNode M5 (CH340 bridge); port names change between sessions (`ls /dev/cu.*`, e.g. `/dev/cu.usbmodem2141101`, `/dev/cu.wchusbserial2120`). Both are shared with oxymesh and loranet (echo bot): check `lsof` and ask Tanguy before using them.
+- Hardware: Heltec V4 (MeshCore C++ v1.18, USB) and ThinkNode M5 (CH340 bridge); port names change between sessions (`ls /dev/cu.*`, e.g. `/dev/cu.usbmodem2141101`, `/dev/cu.wchusbserial2120`). Both are shared with oxymesh and loranet (echo bot): check `lsof` and ask the maintainer before using them.
 - Measurements go to `docs/measurements.md`.
 
 ## 5. Roadmap

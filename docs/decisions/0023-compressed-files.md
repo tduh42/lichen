@@ -5,7 +5,7 @@
 
 ## Context
 
-The first field test of files (ADR-0022) was a 25 KB hiking track from Visorando (GPX), sent from Tanguy's iPhone to the Heltec bot. It is above the 8 KB of a small file, so the app offered only the Internet bridge, which the bot does not have: the track never left. ADR-0022 had rejected compression because most documents are already compressed, but the file people most want to pass on off-grid is a route, and a GPX is XML: a comparable 25 KB track is 3.2 KB with DEFLATE. Notes, KML, CSV and JSON behave the same way.
+The first field test of files (ADR-0022) was a 25 KB hiking track from Visorando (GPX), sent from an iPhone to the Heltec bot. It is above the 8 KB of a small file, so the app offered only the Internet bridge, which the bot does not have: the track never left. ADR-0022 had rejected compression because most documents are already compressed, but the file people most want to pass on off-grid is a route, and a GPX is XML: a comparable 25 KB track is 3.2 KB with DEFLATE. Notes, KML, CSV and JSON behave the same way.
 
 ## Decision
 

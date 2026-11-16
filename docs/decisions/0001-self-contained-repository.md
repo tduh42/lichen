@@ -5,7 +5,7 @@
 
 ## Context
 
-lichen talks to stock MeshCore nodes. oxymesh already contains the MeshCore v1.18 formats, verified byte for byte (`mc-proto`, `mc-air`, `mc-core`), and a companion simulator. Tanguy asked why depend on oxymesh when the app does not depend on its firmware.
+lichen talks to stock MeshCore nodes. oxymesh already contains the MeshCore v1.18 formats, verified byte for byte (`mc-proto`, `mc-air`, `mc-core`), and a companion simulator. Why depend on oxymesh when the app does not depend on its firmware?
 
 ## Decision
 
