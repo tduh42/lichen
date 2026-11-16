@@ -1703,11 +1703,15 @@ final class AppModel {
         }
     }
 
-    private func keep(_ bytes: Data, hash: Data, name: String) -> URL? {
+    /// Where content of `hash` named `name` is kept: `downloads/<hash>.<extension>`.
+    private func downloadURL(hash: Data, name: String) -> URL? {
         let ext = (name as NSString).pathExtension
-        guard let url = Self.folder("downloads")?.appendingPathComponent(hash.hex)
+        return Self.folder("downloads")?.appendingPathComponent(hash.hex)
             .appendingPathExtension(ext.isEmpty ? "bin" : ext)
-        else { return nil }
+    }
+
+    private func keep(_ bytes: Data, hash: Data, name: String) -> URL? {
+        guard let url = downloadURL(hash: hash, name: name) else { return nil }
         try? bytes.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         downloads[hash] = url
         return url
@@ -1791,10 +1795,19 @@ final class AppModel {
                         let (state, cache) = Self.torDirs
                         _ = try await bridge.startTor(stateDir: state, cacheDir: cache, publish: false, limitS: 180)
                     }
-                    let bytes = try await bridge.fetch(transport: p.transport, provider: p.key, hash: hash, size: UInt64(size))
+                    guard let url = downloadURL(hash: hash, name: name) else { break }
+                    // Straight to the file, verified before it appears: the content never sits
+                    // in memory or crosses the bindings (review of 2026-11-15, SR-33).
+                    _ = try await bridge.fetchToFile(transport: p.transport, provider: p.key, hash: hash,
+                                                     size: UInt64(size), path: url.path)
                     // Cancelled meanwhile: dropped.
-                    if Task.isCancelled { return }
-                    _ = keep(bytes, hash: hash, name: name)
+                    if Task.isCancelled {
+                        try? FileManager.default.removeItem(at: url)
+                        return
+                    }
+                    try? FileManager.default.setAttributes(
+                        [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: url.path)
+                    downloads[hash] = url
                     return
                 } catch let e as BridgeError {
                     failure = e.display

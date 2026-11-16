@@ -73,6 +73,8 @@ pub enum FetchError {
     Mismatch,
     Protocol(String),
     Timeout,
+    /// The download could not be written where asked (disk full, no such folder).
+    Storage(String),
 }
 
 impl std::fmt::Display for FetchError {
@@ -383,11 +385,25 @@ async fn write_request<W: AsyncWrite + Unpin>(w: &mut W, hash: &Hash) -> Result<
 }
 
 /// The requester side: reads at most `max` bytes and keeps them only if they hash to `hash`.
+#[cfg(test)]
 async fn read_response<R: AsyncRead + Unpin>(
     r: &mut R,
     hash: &Hash,
     max: u64,
 ) -> Result<Vec<u8>, FetchError> {
+    let mut bytes = Vec::new();
+    read_response_into(r, &mut bytes, hash, max).await?;
+    Ok(bytes)
+}
+
+/// Reads an answer into `w` as it comes, hashed on the way; returns its size. What `w` holds
+/// is only the content once this returns `Ok`: the hash is checked at the end.
+async fn read_response_into<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
+    r: &mut R,
+    w: &mut W,
+    hash: &Hash,
+    max: u64,
+) -> Result<u64, FetchError> {
     let mut status = [0u8; 1];
     r.read_exact(&mut status).await.map_err(protocol)?;
     if status[0] != 0 {
@@ -399,9 +415,8 @@ async fn read_response<R: AsyncRead + Unpin>(
     if size > max.min(MAX_SIZE) {
         return Err(FetchError::TooLarge);
     }
-    // Read as it comes, hashed on the way: nothing is set aside for what a provider only
-    // claims it will send (SR-33).
-    let mut bytes = Vec::with_capacity(usize::try_from(size).unwrap_or(0).min(CHUNK));
+    // Read as it comes, hashed on the way, and handed to `w`: nothing is set aside for what a
+    // provider only claims it will send, and a download goes to a file, not memory (SR-33).
     let mut hasher = blake3::Hasher::new();
     let mut buf = vec![0u8; CHUNK];
     let mut left = size;
@@ -414,17 +429,59 @@ async fn read_response<R: AsyncRead + Unpin>(
         }
         let got = chunk.get(..n).ok_or_else(|| protocol("buffer"))?;
         hasher.update(got);
-        bytes.extend_from_slice(got);
+        w.write_all(got).await.map_err(storage)?;
         left -= n as u64;
     }
     if *hasher.finalize().as_bytes() != *hash {
         return Err(FetchError::Mismatch);
     }
-    Ok(bytes)
+    Ok(size)
 }
 
 fn protocol(e: impl std::fmt::Display) -> FetchError {
     FetchError::Protocol(e.to_string())
+}
+
+fn storage(e: impl std::fmt::Display) -> FetchError {
+    FetchError::Storage(e.to_string())
+}
+
+/// A download's `<path>.part` file: removed unless it became the download, including when the
+/// fetch is dropped half-way (a cancelled download).
+struct Part {
+    path: PathBuf,
+    kept: bool,
+}
+
+impl Part {
+    async fn create(path: &Path) -> Result<(Self, tokio::fs::File), FetchError> {
+        let mut name = path.as_os_str().to_owned();
+        name.push(".part");
+        let part = Self {
+            path: PathBuf::from(name),
+            kept: false,
+        };
+        let file = tokio::fs::File::create(&part.path).await.map_err(storage)?;
+        Ok((part, file))
+    }
+
+    /// The content is complete and matches: it becomes `path`.
+    async fn keep(mut self, mut file: tokio::fs::File, path: &Path) -> Result<(), FetchError> {
+        file.flush().await.map_err(storage)?;
+        file.sync_all().await.map_err(storage)?;
+        drop(file);
+        tokio::fs::rename(&self.path, path).await.map_err(storage)?;
+        self.kept = true;
+        Ok(())
+    }
+}
+
+impl Drop for Part {
+    fn drop(&mut self) {
+        if !self.kept {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 /// `lichen/blob/1` on iroh.
@@ -629,7 +686,7 @@ impl Bridge {
     }
 
     /// Fetches `hash` from a provider of an announcement (`transport`, `key`), at most `max`
-    /// bytes.
+    /// bytes, into memory (tests, the demo network).
     pub async fn fetch(
         &self,
         transport: u8,
@@ -637,10 +694,60 @@ impl Bridge {
         hash: Hash,
         max: u64,
     ) -> Result<Vec<u8>, FetchError> {
+        let mut bytes = Vec::new();
+        self.fetch_into(transport, key, hash, max, &mut bytes)
+            .await?;
+        Ok(bytes)
+    }
+
+    /// Fetches `hash` like [`Bridge::fetch`] into the file `path`, never holding it in memory
+    /// (review of 2026-11-15, SR-33). It is written to `<path>.part` and renamed to `path` only
+    /// once its hash matches; on any failure, or if this future is dropped, nothing is left.
+    pub async fn fetch_to_file(
+        &self,
+        transport: u8,
+        key: [u8; 32],
+        hash: Hash,
+        max: u64,
+        path: &Path,
+    ) -> Result<u64, FetchError> {
+        let (part, mut file) = Part::create(path).await?;
+        let size = self
+            .fetch_into(transport, key, hash, max, &mut file)
+            .await?;
+        part.keep(file, path).await?;
+        Ok(size)
+    }
+
+    /// [`Bridge::fetch_to_file`] over iroh from a full address (tests, or an address learned
+    /// otherwise).
+    pub async fn fetch_from_to_file(
+        &self,
+        addr: EndpointAddr,
+        hash: Hash,
+        max: u64,
+        path: &Path,
+    ) -> Result<u64, FetchError> {
+        let (part, mut file) = Part::create(path).await?;
+        let size = self.fetch_from_into(addr, hash, max, &mut file).await?;
+        part.keep(file, path).await?;
+        Ok(size)
+    }
+
+    /// Fetches `hash` into `w`; what `w` holds is the content only if this returns `Ok`.
+    async fn fetch_into<W: AsyncWrite + Unpin + Send>(
+        &self,
+        transport: u8,
+        key: [u8; 32],
+        hash: Hash,
+        max: u64,
+        w: &mut W,
+    ) -> Result<u64, FetchError> {
         match transport {
             transport::IROH => {
                 let id = EndpointId::from_bytes(&key).map_err(protocol)?;
-                self.fetch_from(EndpointAddr::from(id), hash, max).await
+                self.fetch_from_into(EndpointAddr::from(id), hash, max, w)
+                    .await
             }
             transport::TOR => {
                 let client = self
@@ -650,7 +757,7 @@ impl Bridge {
                     .as_ref()
                     .map(tor::Tor::client)
                     .ok_or_else(|| FetchError::Unreachable("Tor is not started".into()))?;
-                let work = tor::fetch(&client, key, hash, max);
+                let work = tor::fetch(&client, key, hash, max, w);
                 tokio::time::timeout(tor::FETCH_LIMIT, work)
                     .await
                     .map_err(|_| FetchError::Timeout)?
@@ -710,6 +817,18 @@ impl Bridge {
         hash: Hash,
         max: u64,
     ) -> Result<Vec<u8>, FetchError> {
+        let mut bytes = Vec::new();
+        self.fetch_from_into(addr, hash, max, &mut bytes).await?;
+        Ok(bytes)
+    }
+
+    async fn fetch_from_into<W: AsyncWrite + Unpin + Send>(
+        &self,
+        addr: EndpointAddr,
+        hash: Hash,
+        max: u64,
+        w: &mut W,
+    ) -> Result<u64, FetchError> {
         let router = self
             .router()
             .ok_or_else(|| FetchError::Unreachable("iroh is not started".into()))?;
@@ -725,9 +844,9 @@ impl Bridge {
                 .map_err(|e| FetchError::Unreachable(e.to_string()))?;
             write_request(&mut send, &hash).await?;
             let _ = send.finish();
-            let bytes = read_response(&mut recv, &hash, max).await;
+            let size = read_response_into(&mut recv, w, &hash, max).await;
             conn.close(0u32.into(), b"done");
-            bytes
+            size
         };
         tokio::time::timeout(Duration::from_secs(120), work)
             .await
