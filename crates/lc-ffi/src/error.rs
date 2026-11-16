@@ -63,6 +63,8 @@ pub enum LichenError {
     /// No repeater to go through: the node is heard directly, or the radio floods to it
     /// (§16.3).
     NoPath,
+    /// The user blocked this contact (ADR-0034): unblock it first.
+    Blocked,
 }
 
 impl std::fmt::Display for LichenError {
@@ -97,6 +99,7 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::Invalid => Self::InvalidSetting,
             lc_core::Error::IdentityPending => Self::IdentityPending,
             lc_core::Error::NoPath => Self::NoPath,
+            lc_core::Error::Blocked => Self::Blocked,
         }
     }
 }

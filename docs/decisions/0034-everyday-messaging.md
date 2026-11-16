@@ -25,10 +25,26 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 - Invitations, searches and SOS alerts have no actions.
 - **What a notification carries is checked as if another app had written it** (review of 2026-11-15, SR-25): the conversation must be a known kind with an id of the right length, the action one of ours, the text non-empty and at most 4,096 bytes. On Android the actions go to a receiver that is not exported, through explicit intents; the reply's is mutable only because the system writes the typed text into it.
 
+### Block
+
+- **Local**: nothing is sent, and the person is not told. A block holds a node and the identity it is known under (§4.6), kept in the store (`blocked`) and restored into the core at start.
+- **What it drops**, in the core, before anything is answered: every lichen frame from that node (introductions, handshakes, probes, session frames: the node is no longer a candidate for a frame's hash byte); an introduction that proves the blocked identity from another node (INTRO_FIN, INTRO_ACK); MeshCore direct messages from that node (§15.2). Internal datagrams (group state, keys) are no longer queued for it. The other side sees its messages fail like messages to someone unreachable.
+- **Groups**: the member's posts (texts, replies, reactions, edits, deletes, stickers, GIFs, timers) are not reported, but kept for the others as §10.6 requires; its positions and SOS still show, since safety comes first. Its posts already on the phone are hidden from the history, the list and search, and show again when unblocked. Blocking a group's admin also stops its group updates reaching us: leave the group instead when that is what is wanted.
+- **Ours to them**: refused (`Blocked`); messages waiting for them fail (`Refused`) at the block. The chat shows "You blocked …" with Unblock instead of the composer.
+- MeshCore channels are left alone: their authors are names anyone can take.
+
+### Archive
+
+- `chat_prefs.archived`: the conversation leaves the list for an "Archived" row that opens in place. A received message (not a notice) brings it back, unless the conversation is muted then; our own messages do not.
+
 ## Consequences
 
 - Both apps link the same spans; a test in Rust covers what is and is not a link or a place.
 - A pair of numbers with three decimals that is not a place ("version 1.2345, 2.3456") is offered as one: tapping it shows a pin somewhere wrong, nothing worse.
+- Store version 13: `blocked`, `chat_prefs.archived`. One event, `ChatPrefsChanged`, when a message brings a conversation back.
+- What a blocked person sends while blocked is lost: nothing is kept to show after an unblock, except group posts already received before the block.
 - Rejected:
+  - blocking in the apps only (frames from the blocked node would still be answered, and introductions would still attach an identity);
+  - keeping a blocked person's direct messages hidden (the phone would still store what the user asked not to receive);
   - the platforms' own detectors (`NSDataDetector`, `Linkify`): they differ between the apps, find phone numbers and addresses that would hand text to other apps, and know nothing of coordinates;
   - link previews: they fetch a page the sender chose, from every phone that shows the message, and tell its server who reads it.

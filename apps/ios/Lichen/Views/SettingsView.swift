@@ -322,6 +322,18 @@ struct SettingsView: View {
             }
             .opacity(lock.enabled ? 1 : 0.5)
             .disabled(!lock.enabled)
+            CardDivider()
+            // People the user blocked (ADR-0034), to unblock.
+            NavigationLink { BlockedView() } label: {
+                CardRow(title: String(localized: "Blocked")) {
+                    HStack(spacing: 8) {
+                        Text(String(model.blocked.count)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
         Text("The radio keeps receiving while lichen is locked.")
             .font(.system(.caption))
@@ -448,5 +460,41 @@ struct SettingsView: View {
         return model.phraseBackedUp
             ? String(localized: "Key \(f)… · backed up")
             : String(localized: "Key \(f)… · not backed up")
+    }
+}
+
+/// Settings › Privacy › Blocked (ADR-0034): who, since when, and Unblock.
+struct BlockedView: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        List {
+            Section {
+                if model.blocked.isEmpty {
+                    Text("Nobody is blocked.").foregroundStyle(Theme.tx2)
+                }
+                ForEach(model.blocked, id: \.node) { b in
+                    HStack(spacing: 12) {
+                        Avatar(name: b.name, key: b.node)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(b.name).font(.system(.body, weight: .semibold))
+                            Text(String(localized: "Since \(Date(timeIntervalSince1970: TimeInterval(b.atMs) / 1000).formatted(date: .abbreviated, time: .omitted))"))
+                                .font(.system(.footnote))
+                                .foregroundStyle(Theme.tx2)
+                        }
+                        Spacer()
+                        Button("Unblock") { model.unblock(b.node) }
+                            .buttonStyle(.borderless)
+                    }
+                    .listRowBackground(Theme.s1)
+                }
+            } footer: {
+                Text("A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.")
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Theme.bg)
+        .navigationTitle("Blocked")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

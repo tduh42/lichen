@@ -124,7 +124,7 @@ impl LichenCore {
             .collect()
     }
 
-    /// Pinned and muted conversations.
+    /// Pinned, muted and archived conversations.
     pub fn chat_prefs(&self) -> Vec<ChatPrefs> {
         self.lock()
             .store
@@ -136,8 +136,19 @@ impl LichenCore {
                 chat: ChatRef::from_store(&p.chat),
                 pinned_at_ms: p.pinned_at,
                 muted_until_ms: p.muted_until,
+                archived: p.archived,
             })
             .collect()
+    }
+
+    /// Archives a conversation (out of the list, under "Archived") or brings it back. A
+    /// message received in it brings it back, unless it is muted (ADR-0034).
+    pub fn set_archived(&self, chat: ChatRef, archived: bool) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.set_archived(&c, archived)
+            .map_err(|_| LichenError::Storage)
     }
 
     /// Pins a conversation at the top of the list (the latest pinned first), or unpins it.

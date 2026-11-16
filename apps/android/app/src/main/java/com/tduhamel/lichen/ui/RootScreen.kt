@@ -144,8 +144,10 @@ fun RootScreen(model: AppModel) {
                     model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
                     nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
+                    blocked = { nav.navigate("blocked") },
                 )
             }
+            composable("blocked") { BlockedScreen(model, back = { nav.popBackStack() }) }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
             composable("radio") { RadioSettingsScreen(model, back = { nav.popBackStack() }) }
             composable("licences") { LicencesScreen(back = { nav.popBackStack() }) }

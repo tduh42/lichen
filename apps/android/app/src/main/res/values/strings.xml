@@ -1082,4 +1082,19 @@
     <!-- Notification actions (ADR-0034) -->
     <string name="mark_as_read">Mark as read</string>
     <string name="answer_not_sent">Your answer was not sent.</string>
+    <!-- Block and archive (ADR-0034) -->
+    <string name="err_blocked">You blocked this contact: unblock them first.</string>
+    <string name="archived">Archived</string>
+    <string name="archive">Archive</string>
+    <string name="unarchive">Unarchive</string>
+    <string name="block">Block</string>
+    <string name="unblock">Unblock</string>
+    <string name="block_q">Block %1$s?</string>
+    <string name="block_note">Their messages, introductions and group posts no longer reach this phone, and their posts already in your groups are hidden. They are not told. Their position and SOS in a group still show.</string>
+    <string name="you_blocked">You blocked %1$s. Nothing they send reaches this phone.</string>
+    <string name="blocked">Blocked</string>
+    <string name="nobody_blocked">Nobody is blocked.</string>
+    <string name="blocked_since">Since %1$s</string>
+    <string name="blocked_note">A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.</string>
+    <string name="more">More</string>
 </resources>

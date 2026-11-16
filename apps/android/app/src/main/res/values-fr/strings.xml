@@ -1089,4 +1089,19 @@
     <!-- Notification actions (ADR-0034) -->
     <string name="mark_as_read">Marquer comme lu</string>
     <string name="answer_not_sent">Ta réponse n’a pas été envoyée.</string>
+    <!-- Block and archive (ADR-0034) -->
+    <string name="err_blocked">Tu as bloqué ce contact : débloque-le d’abord.</string>
+    <string name="archived">Archivées</string>
+    <string name="archive">Archiver</string>
+    <string name="unarchive">Désarchiver</string>
+    <string name="block">Bloquer</string>
+    <string name="unblock">Débloquer</string>
+    <string name="block_q">Bloquer %1$s ?</string>
+    <string name="block_note">Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone, et ceux déjà dans tes groupes sont masqués. Cette personne n’est pas prévenue. Sa position et son SOS dans un groupe s’affichent toujours.</string>
+    <string name="you_blocked">Tu as bloqué %1$s. Rien de ce que cette personne envoie n’arrive sur ce téléphone.</string>
+    <string name="blocked">Bloqués</string>
+    <string name="nobody_blocked">Personne n’est bloqué.</string>
+    <string name="blocked_since">Depuis le %1$s</string>
+    <string name="blocked_note">Une personne bloquée n’est pas prévenue. Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone ; sa position et son SOS dans un groupe s’affichent toujours. Ce qu’elle envoie pendant le blocage est perdu.</string>
+    <string name="more">Plus</string>
 </resources>

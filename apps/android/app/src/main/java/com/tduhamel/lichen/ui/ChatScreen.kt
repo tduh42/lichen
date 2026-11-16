@@ -14,6 +14,10 @@ import com.tduhamel.lichen.core.QuoteKind
 import com.tduhamel.lichen.core.TextTarget
 import com.tduhamel.lichen.core.textLinks
 import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material.icons.outlined.Block
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -159,6 +163,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var renaming by remember { mutableStateOf(false) }
     /** What a MeshCore chat is (§15.6). */
     var plainInfo by remember { mutableStateOf(false) }
+    /** Blocking the other side, to confirm (ADR-0034). */
+    var blocking by remember { mutableStateOf(false) }
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
@@ -276,6 +282,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             },
             actions = {
                 TimerMenu(model, chat) { error = it }
+                MoreMenu(model, chat, block = { blocking = true }, archived = back)
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
                 } else if (chat.plain) {
@@ -401,7 +408,28 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
             }
         }
-        Composer(model, chat, replyTo, { replyTo = null }, editing, { editing = null }) { error = it }
+        val blockedNode = chat.nodeKey?.takeIf { model.isBlocked(it) }
+        if (blockedNode != null) {
+            // Nothing to write with: they are blocked (ADR-0034).
+            BlockedBar(model.title(chat)) { model.unblock(blockedNode) }
+        } else {
+            Composer(model, chat, replyTo, { replyTo = null }, editing, { editing = null }) { error = it }
+        }
+    }
+    if (blocking) {
+        AlertDialog(
+            onDismissRequest = { blocking = false },
+            title = { Text(stringResource(R.string.block_q, model.title(chat))) },
+            text = { Text(stringResource(R.string.block_note)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    blocking = false
+                    chat.nodeKey?.let { model.block(it) }?.let { error = it }
+                }) { Text(stringResource(R.string.block), color = t.sos) }
+            },
+            dismissButton = { TextButton(onClick = { blocking = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
     }
 
     if (renaming) chat.nodeKey?.let { RenameDialog(model, it) { renaming = false } }
@@ -419,6 +447,67 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(R.string.ok), color = t.tx) } },
             containerColor = t.s1,
         )
+    }
+}
+
+/** Archive and block (ADR-0034); archiving goes back to the list (`archived`). */
+@Composable
+private fun MoreMenu(model: AppModel, chat: ChatId, block: () -> Unit, archived: () -> Unit) {
+    val t = lichen
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more), tint = t.tx) }
+        DropdownMenu(open, { open = false }, containerColor = t.s1) {
+            val isArchived = model.isArchived(chat)
+            DropdownMenuItem(
+                text = { Text(stringResource(if (isArchived) R.string.unarchive else R.string.archive)) },
+                leadingIcon = { Icon(if (isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) },
+                onClick = {
+                    open = false
+                    model.setArchived(chat, !isArchived)
+                    if (!isArchived) archived()
+                },
+            )
+            chat.nodeKey?.let { node ->
+                if (model.isBlocked(node)) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.unblock)) },
+                        leadingIcon = { Icon(Icons.Outlined.Block, null) },
+                        onClick = {
+                            open = false
+                            model.unblock(node)
+                        },
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.block), color = t.sos) },
+                        leadingIcon = { Icon(Icons.Outlined.Block, null, tint = t.sos) },
+                        onClick = {
+                            open = false
+                            block()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** In place of the composer for someone the user blocked (ADR-0034). */
+@Composable
+private fun BlockedBar(name: String, unblock: () -> Unit) {
+    val t = lichen
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(t.s1)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(stringResource(R.string.you_blocked, name), fontSize = 13.sp, color = t.tx2, textAlign = TextAlign.Center)
+        SecondaryButton(stringResource(R.string.unblock), onClick = unblock)
     }
 }
 

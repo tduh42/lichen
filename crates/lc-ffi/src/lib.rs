@@ -28,6 +28,7 @@ uniffi::setup_scaffolding!();
 
 mod amendments;
 mod api_backup;
+mod api_block;
 mod api_contacts;
 mod api_groups;
 mod api_history;
@@ -63,6 +64,7 @@ mod unit;
 mod unit_mesh;
 
 pub use api_backup::{BackupSummary, RestoredBackup};
+pub use api_block::BlockedContact;
 pub use api_import::ImportReport;
 pub use api_mesh::{ChannelCode, NodeInfo, NodeKind, PathHop, TraceInfo, TraceLeg, TraceState};
 pub use api_radio::{RadioSettings, RadioVar, Telemetry};

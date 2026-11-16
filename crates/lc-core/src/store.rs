@@ -40,9 +40,12 @@ pub use rusqlite::Error;
 /// 10: MeshCore chats (ADR-0026): chat kinds 2 (a node, plain) and 3 (a channel), and
 /// `channels` (table added, nothing migrated).
 /// 11: edits and deletes (ADR-0027): `amendments` (table added, nothing migrated).
+/// 12: disappearing messages (ADR-0030): `timers`, `messages.vanish_ms`.
 /// 13: room servers (ADR-0043): chat kind 4 (a room's posts); saved radios (ADR-0042):
 /// `radios` (table added, nothing migrated).
-const VERSION: i32 = 13;
+/// 14: blocking and archiving (ADR-0034): `blocked` (table added), `chat_prefs.archived`
+/// (added to older databases).
+const VERSION: i32 = 14;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -296,7 +299,14 @@ CREATE TABLE IF NOT EXISTS chat_prefs (
     chat BLOB NOT NULL,
     pinned_at INTEGER,
     muted_until INTEGER,
+    archived INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat_kind, chat)
+);
+CREATE TABLE IF NOT EXISTS blocked (
+    node BLOB PRIMARY KEY,
+    identity BLOB,
+    name TEXT NOT NULL,
+    at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS amendments (
     chat_kind INTEGER NOT NULL,
@@ -384,12 +394,25 @@ pub struct PendingReaction {
     pub expires_ms: Option<i64>,
 }
 
-/// A conversation's local preferences (Unix ms): when it was pinned, until when it is muted.
+/// A conversation's local preferences (Unix ms): when it was pinned, until when it is muted,
+/// whether it is archived (out of the list until a message comes, ADR-0034).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChatPref {
     pub chat: Chat,
     pub pinned_at: Option<i64>,
     pub muted_until: Option<i64>,
+    pub archived: bool,
+}
+
+/// Someone the user blocked (ADR-0034): their node, the identity it had then, and the name
+/// shown then (the list in Settings outlives the contact).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Blocked {
+    pub node: PubKey,
+    pub identity: Option<PubKey>,
+    pub name: String,
+    /// Unix ms.
+    pub at: i64,
 }
 
 /// Text as search compares it: lower case, accents removed (canonical decomposition, combining
@@ -403,6 +426,10 @@ pub fn fold(s: &str) -> String {
 
 const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
                        status_b, fragments, airtime_ms, snr4, read, ref";
+
+/// Shown: not a group post by a member the user blocked (ADR-0034). They stay stored, and
+/// come back when the member is unblocked.
+const SHOWN: &str = "NOT (chat_kind = 1 AND author IN (SELECT node FROM blocked))";
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Option<Message>> {
     let chat_bytes: Vec<u8> = r.get(2)?;
@@ -497,6 +524,15 @@ impl Store {
             .exists([])?;
         if !has_ref {
             conn.execute_batch("ALTER TABLE messages ADD COLUMN ref BLOB")?;
+        }
+        // Version 14: archived conversations (ADR-0034).
+        let has_archived = conn
+            .prepare("SELECT 1 FROM pragma_table_info('chat_prefs') WHERE name = 'archived'")?
+            .exists([])?;
+        if !has_archived {
+            conn.execute_batch(
+                "ALTER TABLE chat_prefs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+            )?;
         }
         // Version 12: disappearing messages (§6.5).
         let has_vanish = conn
@@ -1100,7 +1136,7 @@ impl Store {
     ) -> Result<Vec<Message>, Error> {
         let mut st = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
-             ORDER BY id DESC LIMIT ?4"
+             AND {SHOWN} ORDER BY id DESC LIMIT ?4"
         ))?;
         let rows = st.query_map(
             params![chat.kind(), chat.bytes(), before.unwrap_or(i64::MAX), limit],
@@ -1122,7 +1158,7 @@ impl Store {
     ) -> Result<Vec<Message>, Error> {
         let mut st = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id >= ?3
-             AND id < ?4 ORDER BY id LIMIT ?5"
+             AND id < ?4 AND {SHOWN} ORDER BY id LIMIT ?5"
         ))?;
         let rows = st.query_map(params![chat.kind(), chat.bytes(), from, before, limit], row)?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -1134,9 +1170,10 @@ impl Store {
         let mut st = self.conn.prepare(&format!(
             "SELECT {COLUMNS},
                 (SELECT COUNT(*) FROM messages u WHERE u.chat_kind = m.chat_kind
-                    AND u.chat = m.chat AND u.read = 0 AND u.outgoing = 0)
+                    AND u.chat = m.chat AND u.read = 0 AND u.outgoing = 0
+                    AND NOT (u.chat_kind = 1 AND u.author IN (SELECT node FROM blocked)))
              FROM messages m
-             WHERE id IN (SELECT MAX(id) FROM messages GROUP BY chat_kind, chat)
+             WHERE id IN (SELECT MAX(id) FROM messages WHERE {SHOWN} GROUP BY chat_kind, chat)
              ORDER BY id DESC"
         ))?;
         let rows = st.query_map([], |r| Ok(row(r)?.map(|m| (m, r.get(15).unwrap_or(0)))))?;
@@ -1152,7 +1189,7 @@ impl Store {
         }
         let mut st = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM messages WHERE substr(content, 1, 1) IN (x'01', x'08')
-             ORDER BY id DESC"
+             AND {SHOWN} ORDER BY id DESC"
         ))?;
         let rows = st.query_map([], row)?;
         let mut out = Vec::new();
@@ -1191,25 +1228,91 @@ impl Store {
         self.prune_prefs()
     }
 
+    /// Archives `chat` (out of the list) or brings it back (ADR-0034).
+    pub fn set_archived(&self, chat: &Chat, archived: bool) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO chat_prefs (chat_kind, chat, archived) VALUES (?1, ?2, ?3)
+             ON CONFLICT (chat_kind, chat) DO UPDATE SET archived = ?3",
+            params![chat.kind(), chat.bytes(), archived],
+        )?;
+        self.prune_prefs()
+    }
+
+    /// A message came in `chat` at `now_ms` (Unix ms): an archived conversation comes back to
+    /// the list, unless it is muted then (ADR-0034). True when it did.
+    pub fn unarchive_on_message(&self, chat: &Chat, now_ms: i64) -> Result<bool, Error> {
+        let n = self.conn.execute(
+            "UPDATE chat_prefs SET archived = 0
+             WHERE chat_kind = ?1 AND chat = ?2 AND archived = 1
+               AND (muted_until IS NULL OR muted_until <= ?3)",
+            params![chat.kind(), chat.bytes(), now_ms],
+        )?;
+        self.prune_prefs()?;
+        Ok(n > 0)
+    }
+
     fn prune_prefs(&self) -> Result<(), Error> {
         self.conn.execute(
-            "DELETE FROM chat_prefs WHERE pinned_at IS NULL AND muted_until IS NULL",
+            "DELETE FROM chat_prefs WHERE pinned_at IS NULL AND muted_until IS NULL
+             AND archived = 0",
             [],
         )?;
         Ok(())
     }
 
-    /// Pinned and muted conversations.
+    /// Pinned, muted and archived conversations.
     pub fn chat_prefs(&self) -> Result<Vec<ChatPref>, Error> {
-        let mut st = self
-            .conn
-            .prepare("SELECT chat_kind, chat, pinned_at, muted_until FROM chat_prefs")?;
+        let mut st = self.conn.prepare(
+            "SELECT chat_kind, chat, pinned_at, muted_until, archived FROM chat_prefs",
+        )?;
         let rows = st.query_map([], |r| {
             let bytes: Vec<u8> = r.get(1)?;
             Ok(Chat::from_row(r.get(0)?, &bytes).map(|chat| ChatPref {
                 chat,
                 pinned_at: r.get(2).ok().flatten(),
                 muted_until: r.get(3).ok().flatten(),
+                archived: r.get(4).unwrap_or(false),
+            }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    // ----- blocking (ADR-0034) ---------------------------------------------------------
+
+    /// Blocks node `node` (and `identity`, the one it had), shown as `name` in the list.
+    pub fn block(
+        &self,
+        node: &PubKey,
+        identity: Option<&PubKey>,
+        name: &str,
+        at_ms: i64,
+    ) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO blocked (node, identity, name, at) VALUES (?1, ?2, ?3, ?4)",
+            params![node.as_slice(), identity.map(|i| i.as_slice()), name, at_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn unblock(&self, node: &PubKey) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM blocked WHERE node = ?1", params![node.as_slice()])?;
+        Ok(())
+    }
+
+    /// Everyone blocked, the latest first.
+    pub fn blocked(&self) -> Result<Vec<Blocked>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT node, identity, name, at FROM blocked ORDER BY at DESC")?;
+        let rows = st.query_map([], |r| {
+            let node: Vec<u8> = r.get(0)?;
+            let identity: Option<Vec<u8>> = r.get(1)?;
+            Ok(node.as_slice().try_into().ok().map(|node| Blocked {
+                node,
+                identity: identity.and_then(|i| i.as_slice().try_into().ok()),
+                name: r.get(2).unwrap_or_default(),
+                at: r.get(3).unwrap_or(0),
             }))
         })?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -1853,6 +1956,86 @@ mod tests {
         assert_eq!(s.next_vanish().unwrap(), None);
     }
 
+    /// ADR-0034: an archived conversation stays archived through our own messages and comes
+    /// back with one received, unless it is muted then.
+    #[test]
+    fn archived_until_a_message_comes() {
+        let s = Store::in_memory().unwrap();
+        let a = Chat::Contact([4; 32]);
+        let g = Chat::Group([5; 16]);
+        s.set_archived(&a, true).unwrap();
+        s.set_archived(&g, true).unwrap();
+        s.set_muted(&g, Some(10_000)).unwrap();
+        let archived = |s: &Store| -> Vec<Chat> {
+            let mut v: Vec<Chat> = s
+                .chat_prefs()
+                .unwrap()
+                .into_iter()
+                .filter(|p| p.archived)
+                .map(|p| p.chat)
+                .collect();
+            v.sort_by_key(|c| c.kind());
+            v
+        };
+        assert_eq!(archived(&s), [a, g]);
+        // Muted then: it stays archived; once the mute is over, a message brings it back.
+        assert!(!s.unarchive_on_message(&g, 9_999).unwrap());
+        assert!(s.unarchive_on_message(&a, 9_999).unwrap());
+        assert_eq!(archived(&s), [g]);
+        assert!(s.unarchive_on_message(&g, 10_000).unwrap());
+        assert!(archived(&s).is_empty());
+        // Nothing else held: the rows go, except the mute.
+        assert_eq!(s.chat_prefs().unwrap().len(), 1);
+    }
+
+    /// ADR-0034: a blocked member's group posts are hidden from the history, the list and
+    /// search, and come back when unblocked; direct conversations stay as they were.
+    #[test]
+    fn blocked_members_posts_are_hidden() {
+        let s = Store::in_memory().unwrap();
+        let g = Chat::Group([5; 16]);
+        let bob = [6u8; 32];
+        let carol = [7u8; 32];
+        let post = |who: [u8; 32], t: &str, at| Message {
+            author: Some(who),
+            ..text(g, false, t, at)
+        };
+        s.insert(&post(carol, "carol au col", 1_000)).unwrap();
+        s.insert(&post(bob, "bob au col", 2_000)).unwrap();
+        s.insert(&text(Chat::Contact(bob), false, "bob en direct", 3_000))
+            .unwrap();
+        s.block(&bob, Some(&[8; 32]), "Bob", 4_000).unwrap();
+        assert_eq!(
+            s.blocked().unwrap(),
+            [Blocked {
+                node: bob,
+                identity: Some([8; 32]),
+                name: "Bob".into(),
+                at: 4_000
+            }]
+        );
+        let texts = |v: Vec<Message>| -> Vec<String> {
+            v.into_iter()
+                .filter_map(|m| match m.content {
+                    Content::Text { text, .. } => Some(text),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(texts(s.history(&g, None, 10).unwrap()), ["carol au col"]);
+        assert_eq!(texts(s.search("au col", 10).unwrap()), ["carol au col"]);
+        let list = s.conversations().unwrap();
+        let group = list.iter().find(|(m, _)| m.chat == g).unwrap();
+        assert_eq!((texts(vec![group.0.clone()]), group.1), (vec!["carol au col".into()], 1));
+        assert!(list.iter().any(|(m, _)| m.chat == Chat::Contact(bob)));
+        s.unblock(&bob).unwrap();
+        assert!(s.blocked().unwrap().is_empty());
+        assert_eq!(
+            texts(s.history(&g, None, 10).unwrap()),
+            ["carol au col", "bob au col"]
+        );
+    }
+
     /// Review of 2026-11-15, SR-15: a reaction or an edit whose target never comes is not kept
     /// forever; one whose target is here stays.
     #[test]
@@ -2211,6 +2394,7 @@ mod tests {
             chat,
             pinned_at,
             muted_until,
+            archived: false,
         };
         assert_eq!(
             prefs,

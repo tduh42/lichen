@@ -885,6 +885,9 @@ final class AppModel {
                 _ = send(say, to: chat)
             }
             #endif
+        case .chatPrefsChanged:
+            // An archived conversation came back with a message (ADR-0034).
+            refreshPrefs()
         case .channelsUpdated:
             channels = core.channels()
             refreshPrefs()
@@ -1066,6 +1069,59 @@ final class AppModel {
 
     func refreshPrefs() {
         prefs = Dictionary(core.chatPrefs().map { ($0.chat, $0) }, uniquingKeysWith: { a, _ in a })
+        blocked = core.blocked()
+    }
+
+    // MARK: blocking and archiving (ADR-0034)
+
+    /// People the user blocked, the latest first.
+    var blocked: [BlockedContact] = []
+
+    func isBlocked(_ node: Data) -> Bool { blocked.contains { $0.node == node } }
+
+    /// The node behind a direct conversation, lichen or MeshCore.
+    func node(of chat: ChatID) -> Data? {
+        switch chat {
+        case let .contact(key), let .mesh(key): key
+        case .group, .channel: nil
+        }
+    }
+
+    /// Blocks contact `node`: local, they are not told. Returns an error to show, or nil.
+    func block(_ node: Data) -> String? {
+        do {
+            try core.block(node: node, nowMs: now())
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not block.")
+        }
+        refreshPrefs()
+        reloadGroupChats()
+        pump()
+        return nil
+    }
+
+    func unblock(_ node: Data) {
+        try? core.unblock(node: node)
+        refreshPrefs()
+        reloadGroupChats()
+    }
+
+    /// A block hides (or shows again) a member's posts already in group histories.
+    private func reloadGroupChats() {
+        for chat in Array(chats.keys) {
+            if case .group = chat { load(chat) }
+        }
+        conversations = core.conversations()
+    }
+
+    /// Archived: out of the list, under "Archived", until a message comes (unless muted).
+    func isArchived(_ chat: ChatID) -> Bool { prefs[chat]?.archived ?? false }
+
+    func setArchived(_ chat: ChatID, _ archived: Bool) {
+        try? core.setArchived(chat: chat, archived: archived)
+        refreshPrefs()
     }
 
     func isPinned(_ chat: ChatID) -> Bool { prefs[chat]?.pinnedAtMs != nil }
@@ -2368,6 +2424,7 @@ extension LichenError {
         case .WrongBackupWords: return String(localized: "These 24 words are not the ones of this backup.")
         case .BackupDamaged: return String(localized: "This backup is damaged or incomplete: nothing was restored.")
         case .NoPath: return String(localized: "No repeater on the way: the radio hears it directly, or does not know a path yet.")
+        case .Blocked: return String(localized: "You blocked this contact: unblock them first.")
         }
     }
 }

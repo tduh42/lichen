@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
+import com.tduhamel.lichen.core.BlockedContact
 import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.NodeInfo
@@ -1101,6 +1102,8 @@ class AppModel(val app: Application) {
                     }
                 }
             }
+            // An archived conversation came back with a message (ADR-0034).
+            is LichenEvent.ChatPrefsChanged -> refreshChatPrefs()
             is LichenEvent.ChannelsUpdated -> {
                 channels = core.channels()
                 refreshChatPrefs()
@@ -1302,6 +1305,45 @@ class AppModel(val app: Application) {
 
     fun refreshChatPrefs() {
         chatPrefs = core.chatPrefs().associateBy { ChatId.of(it.chat) }
+        blocked = core.blocked()
+    }
+
+    // ----- blocking and archiving (ADR-0034) -----
+
+    /** People the user blocked, the latest first. */
+    var blocked by mutableStateOf(listOf<BlockedContact>())
+
+    fun isBlocked(node: ByteArray): Boolean = blocked.any { it.node.contentEquals(node) }
+
+    /** Blocks contact `node`: local, they are not told. Returns an error to show, or null. */
+    fun block(node: ByteArray): String? = try {
+        core.block(node, now())
+        refreshChatPrefs()
+        reloadGroupChats()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    fun unblock(node: ByteArray) {
+        runCatching { core.unblock(node) }
+        refreshChatPrefs()
+        reloadGroupChats()
+    }
+
+    /** A block hides (or shows again) a member's posts already in group histories. */
+    private fun reloadGroupChats() {
+        chats.keys.filter { it.group }.forEach { load(it) }
+        conversations = core.conversations()
+    }
+
+    /** Archived: out of the list, under "Archived", until a message comes (unless muted). */
+    fun isArchived(chat: ChatId): Boolean = chatPrefs[chat]?.archived == true
+
+    fun setArchived(chat: ChatId, archived: Boolean) {
+        runCatching { core.setArchived(chat.ref, archived) }
+        refreshChatPrefs()
     }
 
     fun isPinned(chat: ChatId): Boolean = chatPrefs[chat]?.pinnedAtMs != null

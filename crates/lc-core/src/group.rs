@@ -3986,6 +3986,9 @@ impl Core {
                     self.search_fix(&member, lat, lon, p.prec, at);
                 }
             }
+            // A member the user blocked: its posts are kept for the others (§10.6) but not
+            // shown (ADR-0034). Its positions and SOS still are.
+            Some(_) if self.member_blocked(&member_node, &member) => {}
             Some(content) => self.events.push_back(Event::GroupMessage {
                 gid,
                 from: member_node,

@@ -239,12 +239,14 @@ pub struct ReactionCount {
     pub mine: bool,
 }
 
-/// A conversation's local preferences: pinned (since when, Unix ms) and muted (until when).
+/// A conversation's local preferences: pinned (since when, Unix ms), muted (until when),
+/// archived (out of the list until a message comes, ADR-0034).
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ChatPrefs {
     pub chat: ChatRef,
     pub pinned_at_ms: Option<i64>,
     pub muted_until_ms: Option<i64>,
+    pub archived: bool,
 }
 
 impl From<store::Message> for StoredMessage {

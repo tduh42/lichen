@@ -37,6 +37,8 @@ struct ChatView: View {
     /// The view stays on the last message while the content grows (photos, stickers and GIFs
     /// laid out after the first pass): from opening at the end until the user scrolls away.
     @State private var pinned = false
+    /// Blocking the other side, to confirm (ADR-0034).
+    @State private var blocking = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -183,7 +185,12 @@ struct ChatView: View {
                     }
                 }
             }
-            Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo, editing: $editing)
+            if let node = chatKey, model.isBlocked(node) {
+                // Nothing to write with: they are blocked (ADR-0034).
+                BlockedBar(name: model.title(of: chat)) { model.unblock(node) }
+            } else {
+                Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo, editing: $editing)
+            }
         }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
@@ -225,6 +232,15 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) { timerMenu }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+        }
+        .confirmationDialog(String(localized: "Block \(model.title(of: chat))?"), isPresented: $blocking,
+                            titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                if let node = chatKey { error = model.block(node) }
+            }
+        } message: {
+            Text("Their messages, introductions and group posts no longer reach this phone, and their posts already in your groups are hidden. They are not told. Their position and SOS in a group still show.")
         }
         .sheet(isPresented: $plainInfo) { PlainInfoSheet(chat: chat) }
         .navigationDestination(isPresented: $showingGroup) {
@@ -377,6 +393,29 @@ struct ChatView: View {
                 .labelStyle(TintedIconLabel(tint: Theme.ok))
                 .padding(.top, 4)
         }
+    }
+
+    /// Archive and block (ADR-0034).
+    private var moreMenu: some View {
+        let archived = model.isArchived(chat)
+        return Menu {
+            Button {
+                model.setArchived(chat, !archived)
+                if !archived { dismissChat() }
+            } label: {
+                Label(archived ? "Unarchive" : "Archive", systemImage: archived ? "tray.and.arrow.up" : "archivebox")
+            }
+            if let node = chatKey {
+                if model.isBlocked(node) {
+                    Button { model.unblock(node) } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                } else {
+                    Button(role: .destructive) { blocking = true } label: { Label("Block", systemImage: "hand.raised") }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle").foregroundStyle(Theme.tx2)
+        }
+        .accessibilityLabel("More")
     }
 
     /// Disappearing messages (§6.5): the choices, and what the timer cannot do.
@@ -2183,6 +2222,26 @@ private struct BridgeSection: View {
                 content
             }
         }
+    }
+}
+
+/// In place of the composer for someone the user blocked (ADR-0034).
+private struct BlockedBar: View {
+    let name: String
+    let unblock: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("You blocked \(name). Nothing they send reaches this phone.")
+                .font(.system(.footnote))
+                .foregroundStyle(Theme.tx2)
+                .multilineTextAlignment(.center)
+            Button("Unblock", action: unblock)
+                .buttonStyle(SecondaryButtonStyle(height: 44))
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(Theme.s1)
     }
 }
 

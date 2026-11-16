@@ -1436,3 +1436,72 @@ mod text_links {
         assert!(crate::text_links("nothing here".into()).is_empty());
     }
 }
+
+/// Blocking and archiving (ADR-0034).
+#[cfg(test)]
+mod block_archive {
+    use super::*;
+
+    fn core_with_bob() -> std::sync::Arc<LichenCore> {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![149; 32], None).unwrap();
+        core.lock().core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        core
+    }
+
+    #[test]
+    fn a_block_is_listed_and_lifted() {
+        let core = core_with_bob();
+        core.rename_contact(vec![9; 32], Some("Bobby".into()))
+            .unwrap();
+        assert!(!core.is_blocked(vec![9; 32]));
+        core.block(vec![9; 32], 0).unwrap();
+        assert!(core.is_blocked(vec![9; 32]));
+        let list = core.blocked();
+        assert_eq!(list.len(), 1);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].identity.as_deref()),
+            ("Bobby", Some(&[7u8; 32][..]))
+        );
+        assert_eq!(
+            core.send_text(vec![9; 32], "hi".into(), 1, 0).err(),
+            Some(LichenError::Blocked)
+        );
+        assert_eq!(
+            core.block(vec![8; 32], 0).err(),
+            Some(LichenError::UnknownContact)
+        );
+        core.unblock(vec![9; 32]).unwrap();
+        assert!(!core.is_blocked(vec![9; 32]));
+        assert!(core.blocked().is_empty());
+    }
+
+    #[test]
+    fn a_message_brings_an_archived_chat_back() {
+        let core = core_with_bob();
+        let chat = ChatRef::Contact { key: vec![9; 32] };
+        core.set_archived(chat.clone(), true).unwrap();
+        assert!(core.chat_prefs().iter().any(|p| p.chat == chat && p.archived));
+        let mut i = core.lock();
+        assert!(i.on_event(&received(
+            [9; 32],
+            Content::Text {
+                sent_at: 5,
+                text: "back".into()
+            }
+        )));
+        assert!(
+            i.extra
+                .iter()
+                .any(|e| matches!(e, LichenEvent::ChatPrefsChanged))
+        );
+        drop(i);
+        assert!(!core.chat_prefs().iter().any(|p| p.archived));
+    }
+}
