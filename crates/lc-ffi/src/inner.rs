@@ -29,6 +29,8 @@ pub(crate) struct Inner {
     pub(crate) amend_inflight: HashMap<u64, (Chat, MessageRef, u32)>,
     /// Our disappearing-message timers on their way (§6.5): core id → chat and timestamp.
     pub(crate) timer_inflight: HashMap<u64, (Chat, u32)>,
+    /// The recent log of problem reports (ADR-0045).
+    pub(crate) diag: report::Diag,
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
