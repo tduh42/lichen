@@ -77,7 +77,7 @@ fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean
  * about. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
+fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit, radio: () -> Unit = {}) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
@@ -117,14 +117,17 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit) {
             item {
                 CardList {
                     val r = model.radio
-                    CardRow(
-                        stringResource(R.string.preset),
-                        if (r != null) {
-                            "SF${r.sf} / ${bandwidth(r.bwHz)} · CR 4/${r.cr} · ${"%.3f".format(r.freqKhz.toDouble() / 1000)} MHz"
-                        } else {
-                            stringResource(R.string.read_from_radio)
-                        },
-                    )
+                    // The radio's own settings (ADR-0032).
+                    Box(Modifier.clickable(enabled = model.isConnected) { radio() }) {
+                        CardRow(
+                            stringResource(R.string.radio_settings),
+                            if (r != null) {
+                                "SF${r.sf} / ${bandwidth(r.bwHz)} · CR 4/${r.cr} · ${"%.3f".format(r.freqKhz.toDouble() / 1000)} MHz"
+                            } else {
+                                stringResource(R.string.read_from_radio)
+                            },
+                        ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
+                    }
                     CardDivider()
                     val khz = r?.freqKhz?.toInt() ?: 869_618
                     val band = if (khz in 869_400..869_650) "869.4–869.65 MHz" else "%.3f MHz".format(khz / 1000.0)

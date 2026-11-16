@@ -1163,3 +1163,35 @@ mod import_meshcore {
         let _ = std::fs::remove_file(&junk);
     }
 }
+
+/// The demo's radio reports its settings to the app (ADR-0032): what SELF_INFO carries too.
+#[cfg(test)]
+mod demo_radio_settings {
+    use super::*;
+
+    #[test]
+    fn the_demo_radio_reports_all_its_settings() {
+        let demo = crate::DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![9; 32], vec![148; 32], None).unwrap();
+        // The settings screen asks for the battery as it appears, maybe before the connection.
+        core.refresh_radio();
+        core.connect(0);
+        let mut now = 0;
+        while now < 20_000 {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while core.poll_event().is_some() {}
+            now += 100;
+        }
+        let r = core.radio_settings();
+        assert_eq!((r.freq_khz, r.bw_hz, r.sf), (869_618, 62_500, 8), "{r:?}");
+        assert_eq!(r.max_tx_dbm, 22);
+        assert_eq!(r.gps, Some(false));
+        assert_eq!(r.battery_mv, Some(4_012));
+    }
+}
