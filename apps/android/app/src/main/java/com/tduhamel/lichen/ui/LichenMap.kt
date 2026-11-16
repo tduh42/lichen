@@ -202,8 +202,8 @@ fun LichenMap(
             val ring = (0..64).map { i ->
                 val a = i / 64.0 * 2 * Math.PI
                 val dlat = item.radius * cos(a) / 111_320
-                val dlon = item.radius * sin(a) / (111_320 * cos(Math.toRadians(item.lat)))
-                Point.fromLngLat(item.lon + dlon, item.lat + dlat)
+                val dlon = item.radius * sin(a) / (111_320 * max(0.01, cos(Math.toRadians(item.lat))))
+                Point.fromLngLat(item.lon + dlon, (item.lat + dlat).coerceIn(-90.0, 90.0))
             }
             Feature.fromGeometry(Polygon.fromLngLats(listOf(ring))).apply {
                 addStringProperty("color", "#%06X".format(item.color and 0xFFFFFF))
@@ -253,11 +253,14 @@ private fun fit(m: MapLibreMap, items: List<MapItem>, overlay: MapOverlay?, marg
     for (i in items) {
         val dlat = i.radius / 111_320
         val dlon = i.radius / (111_320 * max(0.01, cos(Math.toRadians(i.lat))))
-        b.include(LatLng(i.lat - dlat, i.lon - dlon))
-        b.include(LatLng(i.lat + dlat, i.lon + dlon))
+        // Positions come from other people: near a pole, a circle reaches past ±90°, which
+        // LatLng refuses with an exception, and past what the map projects (review of
+        // 2026-11-15, SR-37).
+        b.include(LatLng((i.lat - dlat).coerceIn(-LAT_MAX, LAT_MAX), i.lon - dlon))
+        b.include(LatLng((i.lat + dlat).coerceIn(-LAT_MAX, LAT_MAX), i.lon + dlon))
     }
     // And the search estimate's 95 % ellipse.
-    overlay?.ellipse95?.forEach { b.include(LatLng(it.first, it.second)) }
+    overlay?.ellipse95?.forEach { b.include(LatLng(it.first.coerceIn(-LAT_MAX, LAT_MAX), it.second)) }
     val pad = IntArray(4) { (margins[it] * density).toInt() }
     val camera = runCatching { m.getCameraForLatLngBounds(b.build(), pad) }.getOrNull() ?: return
     val capped = CameraPosition.Builder(camera).zoom(minOf(camera.zoom, 15.0)).build()
@@ -320,6 +323,9 @@ private const val ITEMS = "lichen-items"
 private const val CIRCLES = "lichen-circles"
 private const val ELLIPSES = "lichen-search-ellipses"
 private const val HEAT = "lichen-search-heat"
+
+/** Web Mercator ends here: a camera asked to show beyond it has no answer. */
+private const val LAT_MAX = 85.0
 
 /**
  * With Tor on, map tiles would go to OpenFreeMap directly, outside Tor, and show the area being

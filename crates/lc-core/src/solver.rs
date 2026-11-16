@@ -421,6 +421,11 @@ fn phi(x: f64) -> f64 {
     }
 }
 
+/// A longitude in −180..180.
+fn wrap_lon(lon: f64) -> f64 {
+    (lon + 180.0).rem_euclid(360.0) - 180.0
+}
+
 /// Weights from log-weights, summing to 1.
 fn normalized(lw: &[f64]) -> Vec<f64> {
     let max = lw.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -535,6 +540,17 @@ fn summarize(
         .collect();
     let (north, west) = plane.latlon(mx - half_m, my + half_m);
     let (south, east) = plane.latlon(mx + half_m, my - half_m);
+    // A place a map takes (review of 2026-11-15, SR-37): near a pole the plane runs past ±90°
+    // and its columns span more than the globe, and the mean may cross the antimeridian.
+    // Android's map rejects a latitude beyond ±90° outright.
+    let (lat, lon) = (lat.clamp(-90.0, 90.0), wrap_lon(lon));
+    let (north, south) = (north.clamp(-90.0, 90.0), south.clamp(-90.0, 90.0));
+    let (west, east) = if east - west >= 360.0 {
+        (-180.0, 180.0)
+    } else {
+        let w = wrap_lon(west);
+        (w, w + (east - west))
+    };
     Estimate {
         lat,
         lon,
@@ -608,6 +624,37 @@ mod tests {
             }
         }
         obs
+    }
+
+    /// Review of 2026-11-15, SR-37 (found by `search_solve`): a group member can send positions
+    /// anywhere, the poles and the antimeridian included; the estimate stays a place a map can
+    /// show (latitude within ±90°, longitude within ±180°), heat grid included.
+    #[test]
+    fn estimates_stay_on_the_map() {
+        let weak = Kind::Rssi {
+            rssi: -125.0,
+            tx_dbm: 22.0,
+            extra_sigma_db: 0.0,
+            lower_bound: false,
+        };
+        for (lat, lon) in [(89.99, 0.0), (-89.99, 10.0), (0.0, 179.99), (60.0, -179.99)] {
+            let obs: Vec<Observation> = (0..20)
+                .map(|k| Observation {
+                    t: 1_800_000_000.0 + 60.0 * f64::from(k),
+                    lat,
+                    lon,
+                    kind: weak,
+                })
+                .collect();
+            let e = solve(&obs, &Params::new(PathLoss::DEFAULT, 3)).unwrap();
+            assert!((-90.0..=90.0).contains(&e.lat), "{lat}, {lon}: {}", e.lat);
+            assert!((-180.0..=180.0).contains(&e.lon), "{lat}, {lon}: {}", e.lon);
+            let h = &e.heat;
+            assert!(
+                (-90.0..=90.0).contains(&h.north) && (-90.0..=90.0).contains(&h.south),
+                "{lat}, {lon}: {h:?}"
+            );
+        }
     }
 
     #[test]

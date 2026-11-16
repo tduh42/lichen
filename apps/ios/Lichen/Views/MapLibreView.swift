@@ -102,6 +102,9 @@ struct MapLibreView: UIViewRepresentable {
         }
     }
 
+    /// Web Mercator ends here: a camera asked to show beyond it has no answer.
+    static let latitudeMax = 85.0
+
     private func fit(_ map: MLNMapView) {
         guard let first = items.first else { return }
         if items.count == 1 && first.radius < 500 && overlay == nil {
@@ -118,6 +121,10 @@ struct MapLibreView: UIViewRepresentable {
             ne.latitude = max(ne.latitude, i.lat + dlat)
             ne.longitude = max(ne.longitude, i.lon + dlon)
         }
+        // Positions come from other people: near a pole, a circle reaches past what the map
+        // projects (review of 2026-11-15, SR-37).
+        sw.latitude = max(sw.latitude, -Self.latitudeMax)
+        ne.latitude = min(ne.latitude, Self.latitudeMax)
         // And the search estimate's 95 % ellipse.
         for p in overlay?.ellipse95 ?? [] {
             sw.latitude = min(sw.latitude, p.latitude)
@@ -196,8 +203,8 @@ struct MapLibreView: UIViewRepresentable {
             var coords = (0..<64).map { i -> CLLocationCoordinate2D in
                 let a = Double(i) / 64 * 2 * .pi
                 let dlat = item.radius * cos(a) / 111_320
-                let dlon = item.radius * sin(a) / (111_320 * cos(item.lat * .pi / 180))
-                return CLLocationCoordinate2D(latitude: item.lat + dlat, longitude: item.lon + dlon)
+                let dlon = item.radius * sin(a) / (111_320 * max(0.01, cos(item.lat * .pi / 180)))
+                return CLLocationCoordinate2D(latitude: min(max(item.lat + dlat, -90), 90), longitude: item.lon + dlon)
             }
             let polygon = MLNPolygon(coordinates: &coords, count: UInt(coords.count))
             circleColors[ObjectIdentifier(polygon)] = item.color

@@ -138,3 +138,10 @@ path = "fuzz_targets/snapshot_restore.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "search_solve"
+path = "fuzz_targets/search_solve.rs"
+test = false
+doc = false
+bench = false

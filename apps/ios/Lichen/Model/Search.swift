@@ -267,7 +267,7 @@ extension SearchEstimate {
             let (x, y) = (major * cos(t), minor * sin(t))
             let east = x * sin(th) + y * cos(th)
             let north = x * cos(th) - y * sin(th)
-            return CLLocationCoordinate2D(latitude: lat + north / mPerLat, longitude: lon + east / mPerLon)
+            return CLLocationCoordinate2D(latitude: min(max(lat + north / mPerLat, -90), 90), longitude: lon + east / mPerLon)
         }
     }
 }
