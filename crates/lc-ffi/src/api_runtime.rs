@@ -15,6 +15,28 @@ impl LichenCore {
         identity_seed: Vec<u8>,
         data_dir: Option<String>,
     ) -> Result<Arc<Self>, LichenError> {
+        Self::with_database_key(app_name, rng_seed, identity_seed, data_dir, None)
+    }
+
+    /// As [`LichenCore::new`], the database encrypted with `database_key` (ADR-0036): 32 random
+    /// bytes the app keeps in the Keychain or behind the Android Keystore. A plain database is
+    /// encrypted at the first start with a key. Only when [`database_encryption`] is true:
+    /// otherwise, or with another key, nothing is stored (`storage_ok` is false). An empty key
+    /// means the app could not read its own (the Keychain before the first unlock): no database
+    /// is opened rather than a clear one.
+    #[uniffi::constructor]
+    pub fn with_database_key(
+        app_name: String,
+        rng_seed: Vec<u8>,
+        identity_seed: Vec<u8>,
+        data_dir: Option<String>,
+        database_key: Option<Vec<u8>>,
+    ) -> Result<Arc<Self>, LichenError> {
+        let key_unavailable = database_key.as_ref().is_some_and(Vec::is_empty);
+        let db_key: Option<[u8; 32]> = database_key
+            .filter(|k| !k.is_empty())
+            .map(|k| k.as_slice().try_into().map_err(|_| LichenError::InvalidKey))
+            .transpose()?;
         let rng: [u8; 32] = rng_seed
             .as_slice()
             .try_into()
@@ -28,6 +50,7 @@ impl LichenCore {
             seed,
             store: None,
             data_dir: data_dir.map(PathBuf::from),
+            db_key,
             inflight: HashMap::new(),
             nicknames: HashMap::new(),
             extra: VecDeque::new(),
@@ -42,7 +65,9 @@ impl LichenCore {
         };
         inner.diag.note(0, "core started", None);
         // The history is available before the node connects.
-        if let Some(id) = inner.core.key().copied() {
+        if let Some(id) = inner.core.key().copied()
+            && !key_unavailable
+        {
             inner.open_store(&id);
         }
         Ok(Arc::new(Self {

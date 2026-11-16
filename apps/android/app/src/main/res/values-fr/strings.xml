@@ -202,7 +202,7 @@
     <string name="restore_identity">Restaurer une identité</string>
     <string name="restore_identity_note">À partir de ses 24 mots : remplace celle-ci</string>
     <string name="encrypted_backup">Sauvegarde chiffrée</string>
-    <string name="encrypted_backup_note">Fichier protégé par mot de passe : plus tard</string>
+    <string name="encrypted_backup_note">Tes messages, contacts, groupes et médias dans un fichier que tes 24 mots ouvrent</string>
     <string name="recovery_phrase_intro">Écris ces 24 mots sur papier, dans l\'ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi.</string>
     <string name="wrote_them_down">Je les ai notés</string>
     <string name="restore_intro">Tape les 24 mots de l\'identité à restaurer, séparés par des espaces. Elle remplace l\'identité de ce téléphone.</string>
@@ -923,4 +923,23 @@
     <string name="report_note">Ce que lichen a fait récemment, pour ses développeurs : les versions, le modèle de ta radio, son firmware et ses réglages, et le journal récent de l’app. Aucun message, aucune clé, aucun nom ni aucune position n’y figure. Relis-le, puis envoie-le avec quelques mots sur ce qui n’a pas marché.</string>
     <string name="report_share">Partager le rapport</string>
     <string name="report_subject">Rapport de problème lichen</string>
+    <!-- Encrypted backup (ADR-0037). -->
+    <string name="backup">Sauvegarde</string>
+    <string name="export_backup">Exporter une sauvegarde</string>
+    <string name="export_backup_note">Messages, contacts, groupes, réglages et médias dans un fichier que tes 24 mots ouvrent.</string>
+    <string name="backup_made">%1$d messages et %2$d fichiers médias, %3$s. Garde le fichier et tes 24 mots, mais pas ensemble : avec les deux, n’importe qui peut lire tes messages.</string>
+    <string name="backup_saved">Sauvegarde enregistrée</string>
+    <string name="backup_failed">Aucune sauvegarde n’a été faite</string>
+    <string name="backup_nothing">Rien à sauvegarder pour l’instant.</string>
+    <string name="restore_backup">Restaurer une sauvegarde</string>
+    <string name="restore_backup_note">Un fichier de sauvegarde et ses 24 mots : remplace cette identité et ses messages</string>
+    <string name="restore_backup_intro">Tes messages, contacts, groupes, réglages et médias reviennent d’un fichier de sauvegarde. Il remplace l’identité et les messages de ce téléphone.</string>
+    <string name="choose_backup_file">Choisir le fichier de sauvegarde</string>
+    <string name="choose_backup_file_note">Depuis tes fichiers, un cloud ou une clé USB</string>
+    <string name="backup_words">Les 24 mots de cette identité</string>
+    <string name="restoring">Restauration…</string>
+    <string name="err_not_a_backup">Ce fichier n’est pas une sauvegarde lichen.</string>
+    <string name="err_newer_backup">Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour.</string>
+    <string name="err_wrong_backup_words">Ces 24 mots ne sont pas ceux de cette sauvegarde.</string>
+    <string name="err_backup_damaged">Cette sauvegarde est abîmée ou incomplète : rien n’a été restauré.</string>
 </resources>

@@ -71,6 +71,7 @@ fun IdentityScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null
     val t = lichen
     var showingPhrase by remember { mutableStateOf(false) }
     var restoring by remember { mutableStateOf(false) }
+    var restoringBackup by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
@@ -115,9 +116,10 @@ fun IdentityScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null
                 CardDivider()
                 ChevronRow(stringResource(R.string.restore_identity), stringResource(R.string.restore_identity_note)) { restoring = true }
                 CardDivider()
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 11.dp)) {
-                    Text(stringResource(R.string.encrypted_backup), fontSize = 16.sp, color = t.tx2)
-                    Text(stringResource(R.string.encrypted_backup_note), fontSize = 13.sp, color = t.tx2)
+                ChevronRow(stringResource(R.string.restore_backup), stringResource(R.string.restore_backup_note)) { restoringBackup = true }
+                if (model.canBackUp) {
+                    CardDivider()
+                    BackupExportRow(model, stringResource(R.string.encrypted_backup), stringResource(R.string.encrypted_backup_note))
                 }
             }
             if (next != null) PrimaryButton(stringResource(R.string.continue_), Modifier.padding(top = 8.dp), onClick = next)
@@ -125,6 +127,7 @@ fun IdentityScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null
     }
     if (showingPhrase) RecoveryPhraseSheet(model) { showingPhrase = false }
     if (restoring) RestoreSheet(model) { restoring = false }
+    if (restoringBackup) RestoreBackupSheet(model, { restoringBackup = false }) { next?.invoke() }
 }
 
 @Composable

@@ -37,6 +37,7 @@ private struct WelcomeView: View {
     @State private var pairing = false
     @State private var identity = false
     @State private var contact = false
+    @State private var restoring = false
 
     var body: some View {
         // Fits on one screen when it can; scrolls at large text sizes (audit M12).
@@ -48,6 +49,7 @@ private struct WelcomeView: View {
         .padding(.bottom, 12)
         .screen()
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $restoring) { RestoreBackupSheet(restored: done) }
         .navigationDestination(isPresented: $pairing) { PairingView(done: { identity = true }) }
         .navigationDestination(isPresented: $identity) {
             IdentityView(next: { contact = true })
@@ -92,6 +94,11 @@ private struct WelcomeView: View {
                     .font(.system(.callout, weight: .semibold))
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .foregroundStyle(Theme.tx)
+                // A phone that replaces another (ADR-0037): everything comes back from the file.
+                Button("Restore a backup") { restoring = true }
+                    .font(.system(.footnote, weight: .medium))
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .foregroundStyle(Theme.tx2)
             }
         }
     }

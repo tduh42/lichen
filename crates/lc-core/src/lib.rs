@@ -5,7 +5,9 @@
 //! [`fakenet`] simulates a small MeshCore network (companions and repeaters, half duplex,
 //! losses, collisions, duplicate filters) to test the whole stack without radios.
 
+pub mod backup;
 pub mod budget;
+pub mod cipher;
 pub mod content;
 pub mod core;
 pub mod fakenet;

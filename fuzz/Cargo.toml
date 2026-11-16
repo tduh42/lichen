@@ -145,3 +145,10 @@ path = "fuzz_targets/search_solve.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "backup_open"
+path = "fuzz_targets/backup_open.rs"
+test = false
+doc = false
+bench = false

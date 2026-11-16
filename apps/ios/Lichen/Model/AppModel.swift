@@ -386,8 +386,20 @@ final class AppModel {
     }
 
     private static func makeCore(seed: Data, persistent: Bool = true) -> LichenCore {
+        // The database is encrypted when the core can (ADR-0036); a key that cannot be read
+        // keeps the history closed (`storageOk` false), never in clear. Without SQLCipher in the
+        // core, nothing changes.
+        if persistent, databaseEncryption() {
+            // Empty when the Keychain cannot give it now: the core then opens no database.
+            let key = Keychain.databaseKey() ?? Data()
+            // The seed and the key are 32 bytes (or the key empty): construction cannot fail.
+            return try! LichenCore.withDatabaseKey(
+                appName: "lichen-ios", rngSeed: Keychain.randomSeed(), identitySeed: seed,
+                dataDir: dataDirectory(), databaseKey: key
+            )
+        }
         // The seed is 32 bytes and the identity 64 or absent: construction cannot fail.
-        try! LichenCore(
+        return try! LichenCore(
             appName: "lichen-ios",
             rngSeed: Keychain.randomSeed(),
             identitySeed: seed,
@@ -1951,6 +1963,100 @@ final class AppModel {
         }
     }
 
+    // MARK: encrypted backup (ADR-0037, docs/spec/backup.md)
+
+    enum BackupOutcome {
+        case made(URL, BackupSummary)
+        case failed(String)
+    }
+
+    /// The settings a backup carries (backup.md §4), under the names both apps use.
+    private func backupSettings() -> Data {
+        var s: [String: Any] = [
+            "lichen.myName": myName,
+            "lichen.tor": torEnabled,
+            "lichen.iroh": irohEnabled,
+            "lichen.relayOnly": relayOnly,
+            "lichen.gifAuto": gifAutoLoad,
+            "lichen.voiceMode": voiceMode,
+        ]
+        let d = UserDefaults.standard
+        if let a = d.string(forKey: "appearance") { s["appearance"] = a }
+        if let m = d.string(forKey: "map.style") { s["map.style"] = m }
+        return (try? JSONSerialization.data(withJSONObject: s, options: [.sortedKeys])) ?? Data()
+    }
+
+    /// The settings of a restored backup: the keys this app knows, with values of the right type.
+    private func applyBackupSettings(_ data: Data) {
+        guard !data.isEmpty, let s = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return }
+        if let v = s["lichen.myName"] as? String { myName = v }
+        if let v = s["lichen.tor"] as? Bool { torEnabled = v }
+        if let v = s["lichen.iroh"] as? Bool { irohEnabled = v }
+        if let v = s["lichen.relayOnly"] as? Bool { relayOnly = v }
+        if let v = s["lichen.gifAuto"] as? Bool { gifAutoLoad = v }
+        if let v = s["lichen.voiceMode"] as? Int, [0, 2, 3].contains(v) { voiceMode = v }
+        // Android writes these in capitals.
+        if let v = (s["appearance"] as? String)?.lowercased(), Appearance(rawValue: v) != nil {
+            UserDefaults.standard.set(v, forKey: "appearance")
+        }
+        if let v = (s["map.style"] as? String)?.lowercased(), MapStyle(rawValue: v) != nil {
+            UserDefaults.standard.set(v, forKey: "map.style")
+        }
+    }
+
+    /// Writes a backup of this phone's data into a temporary file, for the user to save or send.
+    /// Runs off the main thread; the app keeps working meanwhile.
+    func exportBackup() async -> BackupOutcome {
+        guard !isDemo, identityProblem == nil else { return .failed(LichenError.NotAllowed.display) }
+        let day = Date().formatted(.iso8601.year().month().day())
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("lichen-\(day).lichen-backup")
+        try? FileManager.default.removeItem(at: url)
+        let (core, settings) = (core, backupSettings())
+        do {
+            let made = try await Task.detached(priority: .userInitiated) {
+                try core.exportBackup(path: url.path, settings: settings)
+            }.value
+            return .made(url, made)
+        } catch LichenError.NotAllowed {
+            return .failed(String(localized: "There is nothing to back up yet."))
+        } catch let e as LichenError {
+            return .failed(e.display)
+        } catch {
+            return .failed(LichenError.Storage.display)
+        }
+    }
+
+    /// Restores a backup with its 24 words: its identity, messages, contacts, groups, settings
+    /// and media replace this phone's. Nil once done, otherwise why not (nothing was changed).
+    func restoreBackup(from url: URL, words: [String]) async -> String? {
+        guard let dir = Self.dataDirectory() else { return LichenError.Storage.display }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let core = core
+        do {
+            let r = try await Task.detached(priority: .userInitiated) {
+                try core.restoreBackup(path: url.path, words: words, dataDir: dir)
+            }.value
+            do {
+                try Keychain.replaceIdentitySeed(r.identitySeed)
+            } catch {
+                // The data is in place, but the identity is not saved: the app goes on with its
+                // own, its store open again.
+                if let identitySeed { useIdentity(identitySeed) }
+                return String(localized: "The identity could not be saved on this phone. Try again.")
+            }
+            phraseBackedUp = true
+            useIdentity(r.identitySeed)
+            applyBackupSettings(r.settings)
+            loadDownloads()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return LichenError.Storage.display
+        }
+    }
+
     // MARK: lookups for the views
 
     func name(of key: Data) -> String {
@@ -2190,6 +2296,10 @@ extension LichenError {
         case .InvalidSetting: return String(localized: "The radio does not take this setting.")
         case .NotAnExport: return String(localized: "This file is not a database exported by the MeshCore app.")
         case .IdentityPending: return String(localized: "This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.")
+        case .NotABackup: return String(localized: "This file is not a lichen backup.")
+        case .NewerBackup: return String(localized: "This backup was made by a newer version of lichen: update the app first.")
+        case .WrongBackupWords: return String(localized: "These 24 words are not the ones of this backup.")
+        case .BackupDamaged: return String(localized: "This backup is damaged or incomplete: nothing was restored.")
         }
     }
 }

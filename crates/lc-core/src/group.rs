@@ -614,6 +614,32 @@ fn put_name(v: &mut Vec<u8>, name: &str) {
     v.extend_from_slice(&name.as_bytes()[..end]);
 }
 
+/// A [`Group::snapshot`] without the other members' sender keys and replay windows: the
+/// group's state, its members and our key epoch, what a backup keeps of it (ADR-0037). Restored,
+/// it draws our next key as after a restart, and the others' keys come again (§10.7). None when
+/// `snapshot` does not decode.
+pub fn snapshot_without_keys(snapshot: &[u8]) -> Option<Vec<u8>> {
+    let (&version, rest) = snapshot.split_first()?;
+    if version != SNAPSHOT_VERSION && version != 2 {
+        return None;
+    }
+    let mut b = rest;
+    let b = &mut b;
+    // gid, epoch, admin, name.
+    take(b, 16 + 4 + 32)?;
+    take_name(b)?;
+    let n = usize::from(*take(b, 1)?.first()?);
+    for _ in 0..n {
+        take(b, 64)?;
+        take_name(b)?;
+    }
+    // Our key epoch, then no member key.
+    take(b, 1)?;
+    let mut v = snapshot.get(..snapshot.len() - b.len())?.to_vec();
+    v.push(0);
+    Some(v)
+}
+
 fn take<'a>(b: &mut &'a [u8], n: usize) -> Option<&'a [u8]> {
     let (head, tail) = b.split_at_checked(n)?;
     *b = tail;
@@ -3128,6 +3154,29 @@ mod tests {
     }
 
     const GID: GroupId = [5; 16];
+
+    /// ADR-0037: a backup keeps a group's state, members and our key epoch, not the others'
+    /// sender keys; restored, our next key is drawn past the epoch we had.
+    #[test]
+    fn a_snapshot_without_keys() {
+        let (a, b) = ([0xA1; 32], [0xB2; 32]);
+        let mut core = core_with_group(&[(a, [0x11; 32], 0), (b, [0x22; 32], 0)]);
+        core.groups.get_mut(&GID).unwrap().my_epoch = 7;
+        let full = core.group_snapshot(&GID).unwrap();
+        let bare = snapshot_without_keys(&full).unwrap();
+        let has_key = |s: &[u8]| s.windows(32).any(|w| w == [0x11; 32] || w == [0x22; 32]);
+        assert!(has_key(&full) && !has_key(&bare));
+        let mut restored = Core::new(Config::new("t", [200; 32], [2; 32]));
+        assert!(restored.restore_group(&bare));
+        let g = restored.groups.get(&GID).unwrap();
+        assert_eq!(g.members, core.groups.get(&GID).unwrap().members);
+        assert_eq!((g.epoch, g.name.as_str(), g.my_epoch), (1, "g", 8));
+        assert!(g.keys.is_empty() && g.announce_key);
+        // What does not decode is refused, not cut anywhere.
+        assert!(snapshot_without_keys(&full[..40]).is_none());
+        assert!(snapshot_without_keys(&[9]).is_none());
+        assert_eq!(snapshot_without_keys(&bare), Some(bare));
+    }
 
     /// The flooded payload of a text from `sender` (identity, sender key) at `counter`,
     /// signed by `signer`.
