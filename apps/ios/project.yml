@@ -67,6 +67,14 @@ targets:
         NSFaceIDUsageDescription: lichen asks for Face ID to unlock when the app lock is on.
         NSLocalNetworkUsageDescription: "lichen reaches a MeshCore radio on your network: one on Wi-Fi, or one a computer relays."
         UIBackgroundModes: [bluetooth-central, location]
+        # "Open in lichen" for any file or photo (ADR-0034): the system hands lichen a copy in
+        # Documents/Inbox, read once and deleted. A share extension would need an App Group.
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: File
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes: [public.data, public.content]
+        LSSupportsOpeningDocumentsInPlace: false
     settings:
       base:
         # Team and identifier: Signing.xcconfig, overridden by a git-ignored Local.xcconfig.

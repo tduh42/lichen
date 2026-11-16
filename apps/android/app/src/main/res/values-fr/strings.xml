@@ -1132,4 +1132,12 @@
         <item quantity="many">%1$d supprimés</item>
         <item quantity="other">%1$d supprimés</item>
     </plurals>
+    <!-- Sharing into lichen (ADR-0034) -->
+    <string name="send_to">Envoyer à</string>
+    <string name="plain_text_only">Une discussion MeshCore ne transporte que du texte.</string>
+    <plurals name="shared_files">
+        <item quantity="one">%1$d fichier ou photo</item>
+        <item quantity="many">%1$d fichiers ou photos</item>
+        <item quantity="other">%1$d fichiers ou photos</item>
+    </plurals>
 </resources>

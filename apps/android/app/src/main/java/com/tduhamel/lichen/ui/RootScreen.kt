@@ -109,6 +109,8 @@ fun RootScreen(model: AppModel) {
             model.openMap = false
             tab("map")
         }
+        // Shared into lichen from another app (ADR-0034): where to send it.
+        model.incomingShare?.let { share -> ShareTargetSheet(model, share) { model.incomingShare = null } }
         // An SOS notification, or the debug extra `screen search`: the Search tab on them.
         LaunchedEffect(model.openSearch) {
             val who = model.openSearch ?: return@LaunchedEffect

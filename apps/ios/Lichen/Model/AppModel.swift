@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 /// A conversation: `ChatRef` comes from the core (contact, group, or a plain MeshCore chat).
 typealias ChatID = ChatRef
@@ -1149,6 +1150,53 @@ final class AppModel {
             if case .group = chat { load(chat) }
         }
         conversations = core.conversations()
+    }
+
+    // MARK: sharing into lichen (ADR-0034)
+
+    /// A file or a photo another app opened in lichen ("Open in lichen"), read, its copy gone,
+    /// its name sanitised: it waits for the user to choose a conversation.
+    struct SharedFile: Identifiable {
+        let id = UUID()
+        let name: String
+        let data: Data
+        let isImage: Bool
+    }
+
+    var incomingShare: SharedFile?
+    /// What the user chose to send to a conversation: its composer takes it.
+    var sharedFor: [ChatID: SharedFile] = [:]
+    var shareError: String?
+
+    /// A URL the system opened lichen with. Only a file is taken: lichen registers no URL
+    /// scheme, and anything else is ignored. The system's copy (Documents/Inbox) is read once,
+    /// at most 64 MB, and deleted.
+    func receiveShared(_ url: URL) {
+        guard url.isFileURL else { return }
+        let inbox = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL.path
+        defer {
+            if let inbox, url.standardizedFileURL.path.hasPrefix(inbox + "/") {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        switch readPicked(url) {
+        case let .success(draft):
+            let safe = fitFileName(name: draft.name, maxBytes: 64)
+            let name = safe.isEmpty ? "file" : safe
+            let type = UTType(filenameExtension: (name as NSString).pathExtension)
+            incomingShare = SharedFile(name: name, data: draft.data, isImage: type?.conforms(to: .image) ?? false)
+        case let .failure(problem):
+            shareError = problem.message
+        }
+    }
+
+    /// Sends what was shared to `chat`: its conversation opens on the photo or file sheet.
+    func share(_ shared: SharedFile, to chat: ChatID) {
+        incomingShare = nil
+        sharedFor[chat] = shared
+        tab = .messages
+        openRequest = chat
     }
 
     // MARK: media and storage (ADR-0034)

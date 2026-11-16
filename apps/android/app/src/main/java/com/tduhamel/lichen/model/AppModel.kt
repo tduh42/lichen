@@ -1359,6 +1359,23 @@ class AppModel(val app: Application) {
         conversations = core.conversations()
     }
 
+    // ----- sharing into lichen (ADR-0034) -----
+
+    /** Something another app shared, waiting for the user to choose a conversation. */
+    var incomingShare by mutableStateOf<IncomingShare?>(null)
+
+    /** What the user chose to send to a conversation: its composer takes it. */
+    val sharedFor = mutableStateMapOf<ChatId, IncomingShare>()
+
+    /** Sends what was shared to `chat`: its conversation opens, the text in the draft, each
+     * photo or file on its sheet. */
+    fun share(share: IncomingShare, chat: ChatId) {
+        incomingShare = null
+        sharedFor[chat] = share
+        tab = Tab.MESSAGES
+        openChat = chat
+    }
+
     // ----- media and storage (ADR-0034) -----
 
     /** What `chat` holds: photos, files and voice messages, the newest first. */

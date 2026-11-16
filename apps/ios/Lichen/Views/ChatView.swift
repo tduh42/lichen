@@ -1380,23 +1380,17 @@ private struct Composer: View {
             preparing = true
             Task {
                 defer { preparing = false }
-                // Decoded and scaled in the background (SR-27): a picked photo can be large.
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let (rgba, w, h) = await Task.detached(priority: .userInitiated, operation: {
-                          BoundedImage.from(data: data, maxPixel: 2048)?.rgba()
-                      }).value
-                else {
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
                     error = LichenError.BadImage.display
                     return
                 }
-                original = data
-                do {
-                    image = try await Task.detached { try prepareImage(rgba: rgba, width: w, height: h) }.value
-                } catch {
-                    self.error = LichenError.BadImage.display
-                }
+                await preparePhoto(data)
             }
         }
+        // Something shared into lichen for this conversation (ADR-0034): a photo goes to the
+        // photo sheet, anything else to the file sheet, as if picked here.
+        .onAppear(perform: takeShared)
+        .onChange(of: model.sharedFor[chat]?.id) { takeShared() }
         .onAppear {
             #if DEBUG
             // -screen share: the location sheet.
@@ -1447,6 +1441,36 @@ private struct Composer: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Allow it in Settings to record voice messages.")
+        }
+    }
+
+    /// Decodes and scales a photo in the background (SR-27: it can be large), then prepares its
+    /// LoRa variants: the photo sheet opens on them.
+    private func preparePhoto(_ data: Data) async {
+        guard let (rgba, w, h) = await Task.detached(priority: .userInitiated, operation: {
+            BoundedImage.from(data: data, maxPixel: 2048)?.rgba()
+        }).value else {
+            error = LichenError.BadImage.display
+            return
+        }
+        original = data
+        do {
+            image = try await Task.detached { try prepareImage(rgba: rgba, width: w, height: h) }.value
+        } catch {
+            self.error = LichenError.BadImage.display
+        }
+    }
+
+    private func takeShared() {
+        guard let shared = model.sharedFor.removeValue(forKey: chat) else { return }
+        if shared.isImage {
+            preparing = true
+            Task {
+                defer { preparing = false }
+                await preparePhoto(shared.data)
+            }
+        } else {
+            file = FileDraft(name: shared.name, data: shared.data)
         }
     }
 
@@ -1896,7 +1920,7 @@ private struct SendPhotoSheet: View {
 }
 
 /// A file picked in the composer.
-private struct FileDraft: Identifiable {
+struct FileDraft: Identifiable {
     let id = UUID()
     let name: String
     let data: Data
@@ -1918,13 +1942,13 @@ private func fileSymbol(_ name: String) -> String {
 /// The most a file can be: what the Internet bridge carries (§14.1, 64 MiB).
 private let fileMax = 64 << 20
 
-private struct PickProblem: Error {
+struct PickProblem: Error {
     let message: String
 }
 
 /// A picked file, read in full only when it is at most `fileMax`: the size the system reports
 /// is checked first, and reading stops one byte past the limit whatever it said (recheck R04).
-private func readPicked(_ url: URL) -> Result<FileDraft, PickProblem> {
+func readPicked(_ url: URL) -> Result<FileDraft, PickProblem> {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     let tooLarge = PickProblem(message: String(localized: "This file is larger than 64 MB, the most lichen can send."))

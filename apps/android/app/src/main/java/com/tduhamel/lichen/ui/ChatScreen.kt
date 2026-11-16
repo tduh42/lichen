@@ -1125,8 +1125,7 @@ private fun Composer(
             file = FileDraft(if (screen == "fileBig") "Topo Vercors 2026.pdf" else "Refuge notes.txt", data)
         }
     }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    fun preparePhoto(uri: android.net.Uri) {
         preparing = true
         scope.launch {
             // The core encodes the AVIF thumbnails (a few seconds): off the main thread.
@@ -1136,6 +1135,43 @@ private fun Composer(
             }
             preparing = false
             if (result == null) onError(res.getString(R.string.err_bad_image)) else picked = result
+        }
+    }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) preparePhoto(uri)
+    }
+    // Something shared into lichen for this conversation (ADR-0034): its text joins the draft;
+    // each photo goes to the photo sheet, each file to the file sheet, one after the other, as
+    // if picked here. File names are only labels: sanitised before anything shows them.
+    val shared = model.sharedFor[chat]
+    LaunchedEffect(shared, picked, file, preparing) {
+        val s = shared ?: return@LaunchedEffect
+        if (picked != null || file != null || preparing) return@LaunchedEffect
+        s.text?.let { draft = if (draft.isBlank()) it else "$draft $it" }
+        val uri = s.uris.firstOrNull()
+        val rest = s.uris.drop(1)
+        if (rest.isEmpty()) model.sharedFor.remove(chat) else model.sharedFor[chat] = com.tduhamel.lichen.model.IncomingShare(null, rest)
+        if (uri == null) return@LaunchedEffect
+        if (chat.plain) {
+            model.sharedFor.remove(chat)
+            onError(res.getString(R.string.plain_text_only))
+            return@LaunchedEffect
+        }
+        val type = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+        if (type?.startsWith("image/") == true) {
+            preparePhoto(uri)
+        } else {
+            // In the composer's scope: this effect starts again as the queue shrinks.
+            preparing = true
+            scope.launch {
+                val read = withContext(Dispatchers.IO) { readPicked(context, uri) }
+                preparing = false
+                when (read) {
+                    null -> onError(res.getString(R.string.file_unreadable))
+                    TOO_LARGE -> onError(res.getString(R.string.file_too_large))
+                    else -> file = FileDraft(com.tduhamel.lichen.core.fitFileName(read.name, 64u).ifEmpty { "file" }, read.data)
+                }
+            }
         }
     }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->

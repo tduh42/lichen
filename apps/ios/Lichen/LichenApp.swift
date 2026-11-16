@@ -40,6 +40,12 @@ struct RootView: View {
         .fullScreenCover(item: $model.sosAlert) { alert in
             SosReceivedView(from: alert.id)
         }
+        // "Open in lichen" from another app (ADR-0034): a file or a photo, then where to send it.
+        .onOpenURL { model.receiveShared($0) }
+        .sheet(item: $model.incomingShare) { ShareTargetSheet(shared: $0) }
+        .alert(model.shareError ?? "", isPresented: Binding(get: { model.shareError != nil }, set: { if !$0 { model.shareError = nil } })) {
+            Button("OK", role: .cancel) {}
+        }
         // The app lock (Settings › Privacy): its own window covers everything, sheets included,
         // and shows the SOS alert's line; this one covers the app's window until it is up.
         .overlay {

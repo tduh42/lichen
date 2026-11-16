@@ -1123,4 +1123,11 @@
         <item quantity="one">%1$d removed</item>
         <item quantity="other">%1$d removed</item>
     </plurals>
+    <!-- Sharing into lichen (ADR-0034) -->
+    <string name="send_to">Send to</string>
+    <string name="plain_text_only">A MeshCore chat carries text only.</string>
+    <plurals name="shared_files">
+        <item quantity="one">%1$d file or photo</item>
+        <item quantity="other">%1$d files or photos</item>
+    </plurals>
 </resources>

@@ -48,6 +48,12 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 - **Settings › Storage**: per conversation, its messages, how many are media, and its bytes: the database's (messages and the full images kept for others) plus the downloads of what it announced.
 - **Clear media older than** 30 days, 90 days or 1 year: each such message goes as a delete for me goes (§6.4): its row, its media, its reactions and edits, with `secure_delete` overwriting them (SR-28), and an announcement's download and offer (`MediaGone`). Its place in the conversation goes too: a placeholder would keep its date and sender, which the user asked to clear. Ours still being sent stay.
 
+### Sharing into lichen
+
+- **Android**: `ACTION_SEND` and `ACTION_SEND_MULTIPLE` of any type. What comes in is another app's data (SR-25): a text of 4,096 characters at most; only `content:` URIs, never `file:` and never one of lichen's own providers (another app could otherwise make lichen send lichen's own files); ten at most. Nothing is read until the user picks a conversation; each file is then read with the 64 MB limit of the file picker, and its name passed through `fit_file_name` before anything shows or sends it.
+- **iOS**: a share extension would need an App Group to hand what it receives to the app. Apple's "Supported capabilities (iOS)" table lists App Groups per membership type, but its marks did not survive a text fetch, and reports on free Personal Teams disagree; lichen is built with whatever team the maintainer has, so it does not depend on one. Instead lichen declares document types (any data or content, rank Alternate, not opened in place): "Open in lichen" from the share sheet or Files gives the app a copy in `Documents/Inbox`, read once (64 MB at most), its name sanitised, then deleted. Texts cannot come this way.
+- Then the same picker on both: lichen contacts (not blocked) and groups; MeshCore chats too for a text alone. The conversation opens with the text in the draft, a photo on the photo sheet, a file on the file sheet, so that the route and its cost are shown as for anything picked in the app.
+
 ## Consequences
 
 - Both apps link the same spans; a test in Rust covers what is and is not a link or a place.
