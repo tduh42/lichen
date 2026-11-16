@@ -1,0 +1,5 @@
+// Signing of iPhone builds. Leave this file as it is: copy Local.example.xcconfig to
+// Local.xcconfig (git-ignored) and put your own team and bundle identifier there.
+DEVELOPMENT_TEAM =
+LICHEN_BUNDLE_ID = com.tduhamel.lichen
+#include? "Local.xcconfig"

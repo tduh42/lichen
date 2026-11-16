@@ -4,6 +4,7 @@ description = "UniFFI bindings of the lichen core for Swift and Kotlin."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [lib]

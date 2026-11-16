@@ -6,4 +6,4 @@ The speech codec of [Codec2](https://github.com/drowe67/codec2) **1.2.0** (tag `
 - `codebook/`: the quantiser tables the 3200…700C modes use, unmodified. `build.rs` turns them into C the way Codec2's `generate_codebook.c` does (same `%g` printing), and adds `codec2/version.h`.
 - `../src/codec2_c.rs` is the only `unsafe` code of the repository: a five-function FFI wrapper, fuzzed (`fuzz/fuzz_targets/voice_decode.rs`).
 
-Licence: the app links this code statically. Distributing the app (App Store) requires meeting the LGPL's relinking terms, for example by publishing the app's object files, or by shipping the codec as a separate dynamic framework.
+Licence: the apps link this code statically. lichen's own source is public under the GPL-3.0-or-later, so anyone receiving the app can rebuild it with a modified Codec2, as the LGPL asks.

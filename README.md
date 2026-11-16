@@ -22,6 +22,14 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 | `lc-media` | voice (Codec2) and image thumbnails (AVIF) for LoRa |
 | `lc-bridge` | the Internet bridge: content over iroh or Tor, checked against its BLAKE3 hash |
 
+## Status
+
+Experimental: version 0.9.0, protocol version 2 (older builds cannot talk to it).
+
+- On real radios, texts, voice notes, photos, a file and the outbox have been tested between two radios on one desk. Everything else runs on the fake network (`lc-core`'s tests) and on the apps' demo network; there has been no long-range field test yet.
+- The Android app has only run in the emulator.
+- Not audited by a third party: read [`SECURITY.md`](SECURITY.md) before relying on it.
+
 ## How lichen works
 
 The same tour with live diagrams: [`docs/how-lichen-works.html`](docs/how-lichen-works.html), to open in a browser. Every figure comes from the spec, the decisions and the measurement log ([`docs/measurements.md`](docs/measurements.md)); fake-network figures are labelled as such.
@@ -173,9 +181,12 @@ For a full-resolution photo or any file up to 64 MiB, one LoRa datagram announce
 
 ```sh
 scripts/build-ios-core.sh                 # Rust core → apps/ios/LichenCore.xcframework + Swift bindings
+cp apps/ios/Local.example.xcconfig apps/ios/Local.xcconfig   # your Apple team id and bundle identifier
 cd apps/ios && xcodegen generate          # Lichen.xcodeproj from project.yml
 open Lichen.xcodeproj                     # Run on a simulator or an iPhone
 ```
+
+Needs Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Rust (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`). To run it on your own iPhone, a free Apple ID is enough: set its team id in `Local.xcconfig`, turn on Developer Mode on the phone (Settings › Privacy & Security), and run from Xcode; a free team's app stops opening after 7 days until you run it again.
 
 Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings → **Try the demo network** runs the app's real core against a simulated network with two other users and a group, in real time.
 
@@ -201,3 +212,7 @@ scripts/check.sh                                               # all checks
 cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10   # a transfer on the fake network
 cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101  # a real companion over USB
 ```
+
+## Licence
+
+lichen is free software, under the GNU General Public License, version 3 or later ([`LICENSE`](LICENSE)). Third-party code and content keep their own licences: [`THIRD-PARTY.md`](THIRD-PARTY.md).

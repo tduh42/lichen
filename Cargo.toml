@@ -8,6 +8,7 @@ exclude = ["fuzz", "sim"]
 version = "0.9.0"
 edition = "2024"
 rust-version = "1.97"
+license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.dependencies]

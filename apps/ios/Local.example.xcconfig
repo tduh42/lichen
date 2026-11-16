@@ -1,0 +1,6 @@
+// Copy to Local.xcconfig (git-ignored), then run `xcodegen generate` again.
+// Your team id: Xcode › Settings › Accounts › your Apple ID › the team's id. A free Apple ID
+// works; the app then has to be installed again from Xcode every 7 days.
+DEVELOPMENT_TEAM = ABCDE12345
+// An identifier of your own: Apple gives each one to the first team that registers it.
+LICHEN_BUNDLE_ID = org.example.lichen

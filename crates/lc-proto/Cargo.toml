@@ -4,6 +4,7 @@ description = "lichen protocol: frame, crypto, handshake, ACK-on-Error fragmenta
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [dependencies]

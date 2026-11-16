@@ -24,6 +24,9 @@ targets:
   Lichen:
     type: application
     platform: iOS
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
     sources:
       - path: Lichen
       - path: Generated
@@ -62,8 +65,8 @@ targets:
         UIBackgroundModes: [bluetooth-central, location]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tduhamel.lichen
-        DEVELOPMENT_TEAM: A3QVD3333F
+        # Team and identifier: Signing.xcconfig, overridden by a git-ignored Local.xcconfig.
+        PRODUCT_BUNDLE_IDENTIFIER: $(LICHEN_BUNDLE_ID)
         # The Rust core is built for arm64 only (Apple Silicon simulators and iPhones).
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
         CODE_SIGN_STYLE: Automatic
@@ -76,13 +79,16 @@ targets:
   LichenUITests:
     type: bundle.ui-testing
     platform: iOS
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
     sources:
       - path: LichenUITests
     dependencies:
       - target: Lichen
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tduhamel.lichen.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: $(LICHEN_BUNDLE_ID).uitests
         GENERATE_INFOPLIST_FILE: YES
         TEST_TARGET_NAME: Lichen
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64

@@ -4,6 +4,7 @@ description = "`lichen` command: run the lichen core against a MeshCore companio
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+license.workspace = true
 publish.workspace = true
 
 [[bin]]
