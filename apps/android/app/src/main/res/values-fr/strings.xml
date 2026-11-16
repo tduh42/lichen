@@ -1104,4 +1104,32 @@
     <string name="blocked_since">Depuis le %1$s</string>
     <string name="blocked_note">Une personne bloquée n’est pas prévenue. Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone ; sa position et son SOS dans un groupe s’affichent toujours. Ce qu’elle envoie pendant le blocage est perdu.</string>
     <string name="more">Plus</string>
+    <!-- Media and storage (ADR-0034) -->
+    <string name="media_files_voice">Médias, fichiers et vocaux</string>
+    <string name="photos">Photos</string>
+    <string name="files">Fichiers</string>
+    <string name="voice">Vocaux</string>
+    <string name="no_photos_here">Aucune photo dans cette conversation.</string>
+    <string name="no_files_here">Aucun fichier dans cette conversation.</string>
+    <string name="no_voice_here">Aucun message vocal dans cette conversation.</string>
+    <string name="storage_note">L’espace par conversation ; effacer les anciens photos, fichiers et messages vocaux.</string>
+    <string name="storage_in_all">En tout : %1$s</string>
+    <string name="no_conversations_yet">Pas encore de conversation.</string>
+    <string name="clear_media">Effacer les médias</string>
+    <string name="clear_media_note">Les photos, fichiers et messages vocaux plus anciens sont supprimés de ce téléphone, comme avec « Supprimer pour moi » : leur place dans la conversation disparaît aussi. Les autres téléphones gardent les leurs.</string>
+    <string name="cannot_be_undone">C’est définitif.</string>
+    <string name="remove">Supprimer</string>
+    <string name="media_older_30">Médias de plus de 30 jours</string>
+    <string name="media_older_90">Médias de plus de 90 jours</string>
+    <string name="media_older_365">Médias de plus d’un an</string>
+    <plurals name="messages_media">
+        <item quantity="one">%1$d message · %2$d médias</item>
+        <item quantity="many">%1$d messages · %2$d médias</item>
+        <item quantity="other">%1$d messages · %2$d médias</item>
+    </plurals>
+    <plurals name="media_removed">
+        <item quantity="one">%1$d supprimé</item>
+        <item quantity="many">%1$d supprimés</item>
+        <item quantity="other">%1$d supprimés</item>
+    </plurals>
 </resources>

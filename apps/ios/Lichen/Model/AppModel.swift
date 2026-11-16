@@ -1151,6 +1151,35 @@ final class AppModel {
         conversations = core.conversations()
     }
 
+    // MARK: media and storage (ADR-0034)
+
+    /// What `chat` holds: photos, files and voice messages, the newest first.
+    func chatMedia(_ chat: ChatID) -> [StoredMessage] {
+        (try? core.chatMedia(chat: chat, beforeId: nil, limit: 2_000)) ?? []
+    }
+
+    /// What each conversation takes on this phone: its messages and the media kept for it,
+    /// and the files downloaded over the bridge for it.
+    func storageUsage() -> [(usage: ChatUsage, bytes: Int64)] {
+        core.storageUsage().map { u in
+            let downloaded = u.announced.compactMap { downloads[$0] }.reduce(Int64(0)) { sum, url in
+                sum + ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0)
+            }
+            return (u, Int64(clamping: u.bytes) + downloaded)
+        }
+    }
+
+    /// Removes photos, files and voice messages older than `days` days from this phone, as
+    /// "delete for me" does (their downloads go with them, SR-28). Returns how many.
+    func clearMedia(olderThanDays days: Int) -> Int {
+        let before = Int64((Date().timeIntervalSince1970 - Double(days) * 86_400) * 1000)
+        let n = (try? core.clearMediaOlderThan(beforeMs: before)) ?? 0
+        for chat in Array(chats.keys) { load(chat) }
+        conversations = core.conversations()
+        pump()
+        return Int(n)
+    }
+
     /// Archived: out of the list, under "Archived", until a message comes (unless muted).
     func isArchived(_ chat: ChatID) -> Bool { prefs[chat]?.archived ?? false }
 

@@ -287,6 +287,19 @@ impl From<store::Message> for StoredMessage {
     }
 }
 
+/// What a conversation takes on this phone (ADR-0034).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ChatUsage {
+    pub chat: ChatRef,
+    pub messages: u32,
+    /// Photos, files and voice messages among them.
+    pub media: u32,
+    /// Bytes in the database: messages and the media kept for it.
+    pub bytes: u64,
+    /// Content it announced (§14.1): the app adds what it downloaded of it.
+    pub announced: Vec<Vec<u8>>,
+}
+
 /// A conversation with its last message.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct Conversation {

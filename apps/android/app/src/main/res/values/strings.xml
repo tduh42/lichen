@@ -1097,4 +1097,30 @@
     <string name="blocked_since">Since %1$s</string>
     <string name="blocked_note">A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.</string>
     <string name="more">More</string>
+    <!-- Media and storage (ADR-0034) -->
+    <string name="media_files_voice">Media, files and voice</string>
+    <string name="photos">Photos</string>
+    <string name="files">Files</string>
+    <string name="voice">Voice</string>
+    <string name="no_photos_here">No photos in this conversation.</string>
+    <string name="no_files_here">No files in this conversation.</string>
+    <string name="no_voice_here">No voice messages in this conversation.</string>
+    <string name="storage_note">Usage per conversation; clear old photos, files and voice messages.</string>
+    <string name="storage_in_all">In all: %1$s</string>
+    <string name="no_conversations_yet">No conversations yet.</string>
+    <string name="clear_media">Clear media</string>
+    <string name="clear_media_note">Photos, files and voice messages older than that are removed from this phone, as “Delete for me” does: their place in the conversation goes too. The other phones keep theirs.</string>
+    <string name="cannot_be_undone">This cannot be undone.</string>
+    <string name="remove">Remove</string>
+    <string name="media_older_30">Media older than 30 days</string>
+    <string name="media_older_90">Media older than 90 days</string>
+    <string name="media_older_365">Media older than 1 year</string>
+    <plurals name="messages_media">
+        <item quantity="one">%1$d message · %2$d media</item>
+        <item quantity="other">%1$d messages · %2$d media</item>
+    </plurals>
+    <plurals name="media_removed">
+        <item quantity="one">%1$d removed</item>
+        <item quantity="other">%1$d removed</item>
+    </plurals>
 </resources>

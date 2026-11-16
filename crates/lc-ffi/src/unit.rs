@@ -1505,3 +1505,79 @@ mod block_archive {
         assert!(!core.chat_prefs().iter().any(|p| p.archived));
     }
 }
+
+/// Media and storage (ADR-0034): old media go as a delete for me does, announcements with
+/// their downloads (`MediaGone`), texts stay.
+#[cfg(test)]
+mod storage {
+    use super::*;
+
+    #[test]
+    fn old_media_are_cleared() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![150; 32], None).unwrap();
+        let chat = Chat::Contact([9; 32]);
+        let announce = Content::Announce(lc_core::Announce {
+            sent_at: 1,
+            media_id: [3; 8],
+            kind: 3,
+            hash: [6; 32],
+            size: 10_000,
+            providers: vec![(1, [8; 32])],
+            name: "topo.pdf".into(),
+        });
+        {
+            let i = core.lock();
+            let st = i.store.as_ref().unwrap();
+            for (content, at_ms) in [
+                (
+                    Content::Text {
+                        sent_at: 1,
+                        text: "old text".into(),
+                    },
+                    1_000,
+                ),
+                (announce, 1_000),
+                (
+                    Content::Voice {
+                        sent_at: 1,
+                        mode: 2,
+                        frames: 2,
+                        data: vec![7; 16],
+                    },
+                    9_000,
+                ),
+            ] {
+                st.insert(&store::Message {
+                    id: 0,
+                    chat,
+                    outgoing: false,
+                    author: None,
+                    content,
+                    at_ms,
+                    status: Status::Received,
+                    fragments: 1,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                    msg_ref: None,
+                })
+                .unwrap();
+            }
+        }
+        let r = ChatRef::Contact { key: vec![9; 32] };
+        assert_eq!(core.chat_media(r.clone(), None, 10).unwrap().len(), 2);
+        let usage = core.storage_usage();
+        assert_eq!((usage[0].messages, usage[0].media), (3, 2));
+        assert_eq!(usage[0].announced, vec![vec![6u8; 32]]);
+        assert_eq!(core.clear_media_older_than(5_000).unwrap(), 1);
+        assert!(
+            core.lock()
+                .extra
+                .iter()
+                .any(|e| matches!(e, LichenEvent::MediaGone { hash } if hash == &[6u8; 32]))
+        );
+        let left = core.history(r.clone(), None, 10).unwrap();
+        assert_eq!(left.len(), 2, "the text and the newer voice message stay");
+        assert_eq!(core.chat_media(r, None, 10).unwrap().len(), 1);
+    }
+}

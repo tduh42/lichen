@@ -154,7 +154,7 @@ import com.tduhamel.lichen.model.writtenEarlierMs
 /** One conversation (mockup `chat`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit) {
+fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit, media: () -> Unit = {}) {
     val t = lichen
     var error by remember { mutableStateOf<String?>(null) }
     val noLongerHere = stringResource(R.string.message_no_longer_here)
@@ -291,7 +291,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             },
             actions = {
                 TimerMenu(model, chat) { error = it }
-                MoreMenu(model, chat, block = { blocking = true }, archived = back)
+                MoreMenu(model, chat, block = { blocking = true }, archived = back, media = media)
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
                 } else if (chat.plain) {
@@ -459,14 +459,25 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     }
 }
 
-/** Archive and block (ADR-0034); archiving goes back to the list (`archived`). */
+/** Media, archive and block (ADR-0034); archiving goes back to the list (`archived`). */
 @Composable
-private fun MoreMenu(model: AppModel, chat: ChatId, block: () -> Unit, archived: () -> Unit) {
+private fun MoreMenu(model: AppModel, chat: ChatId, block: () -> Unit, archived: () -> Unit, media: () -> Unit) {
     val t = lichen
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more), tint = t.tx) }
         DropdownMenu(open, { open = false }, containerColor = t.s1) {
+            // A MeshCore chat carries text only (§15).
+            if (!chat.plain) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.media_files_voice)) },
+                    leadingIcon = { Icon(Icons.Outlined.Photo, null) },
+                    onClick = {
+                        open = false
+                        media()
+                    },
+                )
+            }
             val isArchived = model.isArchived(chat)
             DropdownMenuItem(
                 text = { Text(stringResource(if (isArchived) R.string.unarchive else R.string.archive)) },

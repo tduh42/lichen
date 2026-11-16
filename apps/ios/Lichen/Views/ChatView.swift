@@ -39,6 +39,8 @@ struct ChatView: View {
     @State private var pinned = false
     /// Blocking the other side, to confirm (ADR-0034).
     @State private var blocking = false
+    /// Chat info › Media, files and voice (ADR-0034).
+    @State private var showingMedia = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -246,6 +248,7 @@ struct ChatView: View {
         .navigationDestination(isPresented: $showingGroup) {
             if case let .group(gid) = chat { GroupView(gid: gid) }
         }
+        .navigationDestination(isPresented: $showingMedia) { ChatMediaView(chat: chat) }
         .onAppear {
             model.load(chat)
             if let f = model.focus, f.chat == chat {
@@ -411,6 +414,10 @@ struct ChatView: View {
     private var moreMenu: some View {
         let archived = model.isArchived(chat)
         return Menu {
+            // A MeshCore chat carries text only (§15).
+            if !chat.isPlain {
+                Button { showingMedia = true } label: { Label("Media, files and voice", systemImage: "photo.on.rectangle") }
+            }
             Button {
                 model.setArchived(chat, !archived)
                 if !archived { dismissChat() }
@@ -980,7 +987,7 @@ private struct MessageView: View {
 }
 
 /// Play button (LoRa orange), waveform, length, codec (mockup `chat`).
-private struct VoiceNote: View {
+struct VoiceNote: View {
     let message: StoredMessage
     @Environment(AppModel.self) private var model
 
@@ -2119,7 +2126,7 @@ private struct FileCard: View {
 }
 
 /// Icon, name and size of a file, and a transport badge.
-private struct FileRow<Badge: View>: View {
+struct FileRow<Badge: View>: View {
     let name: String
     let size: Int
     let badge: Badge

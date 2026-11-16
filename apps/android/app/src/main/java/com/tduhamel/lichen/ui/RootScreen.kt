@@ -145,9 +145,15 @@ fun RootScreen(model: AppModel) {
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
                     nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
                     blocked = { nav.navigate("blocked") },
+                    blocked = { nav.navigate("blocked") }, storage = { nav.navigate("storage") },
                 )
             }
             composable("blocked") { BlockedScreen(model, back = { nav.popBackStack() }) }
+            composable("storage") { StorageScreen(model, back = { nav.popBackStack() }) }
+            composable("media/{id}") { e ->
+                val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
+                if (chat != null) ChatMediaScreen(model, chat, back = { nav.popBackStack() })
+            }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
             composable("radio") { RadioSettingsScreen(model, back = { nav.popBackStack() }) }
             composable("licences") { LicencesScreen(back = { nav.popBackStack() }) }
@@ -179,7 +185,10 @@ fun RootScreen(model: AppModel) {
             composable("chat/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
                 if (chat != null) {
-                    ChatScreen(model, chat, back = { nav.popBackStack() }, details = { nav.navigate("group/${chat.route}") })
+                    ChatScreen(
+                        model, chat, back = { nav.popBackStack() }, details = { nav.navigate("group/${chat.route}") },
+                        media = { nav.navigate("media/${chat.route}") },
+                    )
                 }
             }
         }

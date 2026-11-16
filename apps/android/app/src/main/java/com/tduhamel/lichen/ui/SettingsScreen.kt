@@ -87,6 +87,7 @@ fun SettingsScreen(
     nodes: () -> Unit = {},
     radios: () -> Unit = {},
     blocked: () -> Unit = {},
+    storage: () -> Unit = {},
 ) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
@@ -278,6 +279,15 @@ fun SettingsScreen(
             item { PrivacyCard(model, blocked) }
             item {
                 Text(stringResource(R.string.lock_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+            }
+            // What each conversation takes, and old media to clear (ADR-0034).
+            item { SectionLabel(stringResource(R.string.storage), Modifier.padding(top = 10.dp)) }
+            item {
+                CardList {
+                    Box(Modifier.clickable(onClick = storage)) {
+                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note))
+                    }
+                }
             }
             if (Build.VERSION.SDK_INT >= 33) {
                 item { SectionLabel(stringResource(R.string.language), Modifier.padding(top = 10.dp)) }

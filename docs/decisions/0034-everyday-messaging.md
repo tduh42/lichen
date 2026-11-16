@@ -42,6 +42,12 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 - The message a draft answers (§6.2) is kept with the draft, per conversation and identity, across screens and restarts; it is dropped when that message is no longer on the phone.
 - A voice recording made in a conversation stops when the user leaves it and waits there, in memory: coming back shows it under review, to listen to, send or discard. It never goes to another conversation.
 
+### Media and storage
+
+- **Chat info › Media, files and voice**: what a conversation holds — FILE (photos and small files), VOICE and ANNOUNCE (content over the bridge) — newest first; photos in a grid showing the best version on the phone, files and voice messages in lists. MeshCore chats carry text only and have none.
+- **Settings › Storage**: per conversation, its messages, how many are media, and its bytes: the database's (messages and the full images kept for others) plus the downloads of what it announced.
+- **Clear media older than** 30 days, 90 days or 1 year: each such message goes as a delete for me goes (§6.4): its row, its media, its reactions and edits, with `secure_delete` overwriting them (SR-28), and an announcement's download and offer (`MediaGone`). Its place in the conversation goes too: a placeholder would keep its date and sender, which the user asked to clear. Ours still being sent stay.
+
 ## Consequences
 
 - Both apps link the same spans; a test in Rust covers what is and is not a link or a place.

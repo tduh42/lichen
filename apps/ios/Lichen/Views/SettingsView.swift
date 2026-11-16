@@ -158,6 +158,18 @@ struct SettingsView: View {
                         }
                         .pickerStyle(.segmented)
                         privacy
+                        // What each conversation takes, and old media to clear (ADR-0034).
+                        SectionLabel("Storage").padding(.top, 10)
+                        CardList {
+                            NavigationLink { StorageView() } label: {
+                                CardRow(title: String(localized: "Storage"),
+                                        subtitle: String(localized: "Usage per conversation; clear old photos, files and voice messages.")) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                         // History from the official MeshCore app (ADR-0033).
                         SectionLabel("History").padding(.top, 10)
                         CardList {

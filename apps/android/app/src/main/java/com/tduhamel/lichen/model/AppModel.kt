@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
 import com.tduhamel.lichen.core.BlockedContact
+import com.tduhamel.lichen.core.ChatUsage
 import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.NodeInfo
@@ -1356,6 +1357,30 @@ class AppModel(val app: Application) {
     private fun reloadGroupChats() {
         chats.keys.filter { it.group }.forEach { load(it) }
         conversations = core.conversations()
+    }
+
+    // ----- media and storage (ADR-0034) -----
+
+    /** What `chat` holds: photos, files and voice messages, the newest first. */
+    fun chatMedia(chat: ChatId): List<StoredMessage> =
+        runCatching { core.chatMedia(chat.ref, null, 2_000u) }.getOrDefault(emptyList())
+
+    /** What each conversation takes on this phone (bytes): its messages and the media kept for
+     * it, and the files downloaded over the bridge for it. */
+    fun storageUsage(): List<Pair<ChatUsage, Long>> = core.storageUsage().map { u ->
+        val downloaded = u.announced.sumOf { h -> downloads[h.hex()]?.length() ?: 0L }
+        u to (u.bytes.toLong() + downloaded)
+    }
+
+    /** Removes photos, files and voice messages older than `days` days from this phone, as
+     * "delete for me" does (their downloads go with them, SR-28). Returns how many. */
+    fun clearMedia(days: Int): Int {
+        val before = System.currentTimeMillis() - days * 86_400_000L
+        val n = runCatching { core.clearMediaOlderThan(before) }.getOrDefault(0u)
+        chats.keys.toList().forEach { load(it) }
+        conversations = core.conversations()
+        pump()
+        return n.toInt()
     }
 
     /** Archived: out of the list, under "Archived", until a message comes (unless muted). */

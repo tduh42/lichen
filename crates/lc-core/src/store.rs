@@ -427,6 +427,19 @@ pub fn fold(s: &str) -> String {
 const COLUMNS: &str = "id, chat_kind, chat, outgoing, author, content, at_ms, status, status_a, \
                        status_b, fragments, airtime_ms, snr4, read, ref";
 
+/// Media (ADR-0034): FILE (an image or a small file, §13.2), ANNOUNCE (§14.1), VOICE (§13.1).
+const MEDIA: &str = "substr(content, 1, 1) IN (x'02', x'04', x'05')";
+
+/// What a conversation takes on this phone (ADR-0034): its messages, how many are media, and
+/// their bytes with the media kept for it (full images we sent).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Usage {
+    pub chat: Chat,
+    pub messages: u32,
+    pub media: u32,
+    pub bytes: u64,
+}
+
 /// Shown: not a group post by a member the user blocked (ADR-0034). They stay stored, and
 /// come back when the member is unblocked.
 const SHOWN: &str = "NOT (chat_kind = 1 AND author IN (SELECT node FROM blocked))";
@@ -1277,6 +1290,79 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
+    // ----- media and storage (ADR-0034) ------------------------------------------------
+
+    /// `chat`'s photos, files and voice messages (announced ones too), newest first, before
+    /// row `before`.
+    pub fn media_messages(
+        &self,
+        chat: &Chat,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<Message>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
+             AND {MEDIA} AND {SHOWN} ORDER BY id DESC LIMIT ?4"
+        ))?;
+        let rows = st.query_map(
+            params![chat.kind(), chat.bytes(), before.unwrap_or(i64::MAX), limit],
+            row,
+        )?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// What each conversation takes, the largest first.
+    pub fn usage(&self) -> Result<Vec<Usage>, Error> {
+        let mut out: Vec<Usage> = Vec::new();
+        {
+            let mut st = self.conn.prepare(&format!(
+                "SELECT chat_kind, chat, COUNT(*), SUM(CASE WHEN {MEDIA} THEN 1 ELSE 0 END),
+                     SUM(length(content))
+                 FROM messages GROUP BY chat_kind, chat"
+            ))?;
+            let rows = st.query_map([], |r| {
+                let bytes: Vec<u8> = r.get(1)?;
+                Ok(Chat::from_row(r.get(0)?, &bytes).map(|chat| Usage {
+                    chat,
+                    messages: r.get::<_, i64>(2).unwrap_or(0).try_into().unwrap_or(0),
+                    media: r.get::<_, i64>(3).unwrap_or(0).try_into().unwrap_or(0),
+                    bytes: r.get::<_, i64>(4).unwrap_or(0).try_into().unwrap_or(0),
+                }))
+            })?;
+            out.extend(rows.filter_map(|r| r.ok().flatten()));
+        }
+        let mut st = self.conn.prepare(
+            "SELECT chat_kind, chat, SUM(length(datagram)) FROM media GROUP BY chat_kind, chat",
+        )?;
+        let kept = st.query_map([], |r| {
+            let bytes: Vec<u8> = r.get(1)?;
+            Ok(Chat::from_row(r.get(0)?, &bytes)
+                .map(|c| (c, r.get::<_, i64>(2).unwrap_or(0).try_into().unwrap_or(0u64))))
+        })?;
+        for (chat, bytes) in kept.filter_map(|r| r.ok().flatten()) {
+            match out.iter_mut().find(|u| u.chat == chat) {
+                Some(u) => u.bytes += bytes,
+                None => out.push(Usage {
+                    chat,
+                    messages: 0,
+                    media: 0,
+                    bytes,
+                }),
+            }
+        }
+        out.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        Ok(out)
+    }
+
+    /// The media messages stored before `before_ms` (Unix ms), by row id.
+    pub fn media_before(&self, before_ms: i64) -> Result<Vec<i64>, Error> {
+        let mut st = self.conn.prepare(&format!(
+            "SELECT id FROM messages WHERE at_ms < ?1 AND {MEDIA} ORDER BY id"
+        ))?;
+        let rows = st.query_map(params![before_ms], |r| r.get(0))?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     // ----- blocking (ADR-0034) ---------------------------------------------------------
 
     /// Blocks node `node` (and `identity`, the one it had), shown as `name` in the list.
@@ -1986,6 +2072,50 @@ mod tests {
         assert!(archived(&s).is_empty());
         // Nothing else held: the rows go, except the mute.
         assert_eq!(s.chat_prefs().unwrap().len(), 1);
+    }
+
+    /// ADR-0034: a conversation's media, what each conversation takes, and the media older
+    /// than a date; texts are neither media nor old media.
+    #[test]
+    fn media_and_usage() {
+        let s = Store::in_memory().unwrap();
+        let a = Chat::Contact([4; 32]);
+        let g = Chat::Group([5; 16]);
+        let voice = |chat, at| Message {
+            content: Content::Voice {
+                sent_at: 1,
+                mode: 2,
+                frames: 2,
+                data: vec![7; 16],
+            },
+            ..text(chat, false, "", at)
+        };
+        let file = |chat, at| Message {
+            content: Content::File {
+                sent_at: 1,
+                name: "topo.gpx".into(),
+                data: vec![1; 100],
+            },
+            ..text(chat, true, "", at)
+        };
+        s.insert(&text(a, false, "salut", 1_000)).unwrap();
+        let old_voice = s.insert(&voice(a, 1_000)).unwrap();
+        let new_file = s.insert(&file(a, 5_000)).unwrap();
+        let old_file = s.insert(&file(g, 2_000)).unwrap();
+        s.put_media(&[9; 8], &a, &[0; 400]).unwrap();
+        let media: Vec<i64> = s
+            .media_messages(&a, None, 10)
+            .unwrap()
+            .iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(media, [new_file.id, old_voice.id]);
+        let usage = s.usage().unwrap();
+        let ua = usage.iter().find(|u| u.chat == a).unwrap();
+        assert_eq!((ua.messages, ua.media), (3, 2));
+        assert!(ua.bytes > 400 + 100 + 16, "{ua:?}");
+        assert_eq!(usage[0].chat, a, "the largest first");
+        assert_eq!(s.media_before(3_000).unwrap(), [old_voice.id, old_file.id]);
     }
 
     /// ADR-0034: a blocked member's group posts are hidden from the history, the list and
