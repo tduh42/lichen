@@ -13,6 +13,7 @@ import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
 import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
+import com.tduhamel.lichen.core.RadioSettings
 import com.tduhamel.lichen.core.InviteCode
 import com.tduhamel.lichen.core.Budget
 import com.tduhamel.lichen.core.ContactInfo
@@ -157,6 +158,8 @@ class AppModel(val app: Application) {
     /** New identities presented by verified contacts, waiting for the user (node hex → identity). */
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
     var contacts by mutableStateOf(listOf<ContactInfo>())
+    /** What the radio reported of its settings (protocol §1.1), read again after each change. */
+    var radioSettings by mutableStateOf<RadioSettings?>(null)
     var groups by mutableStateOf(listOf<GroupInfo>())
 
     /** Groups that list us and wait for an answer (§10.1): someone not verified in person
@@ -829,6 +832,7 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
+            LichenEvent.RadioSettings -> radioSettings = core.radioSettings()
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
                 debugInvites()

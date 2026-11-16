@@ -40,6 +40,7 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.NotReferable -> res.getString(R.string.err_not_referable)
     is LichenException.NoClock -> res.getString(R.string.err_no_clock)
     is LichenException.Expired -> res.getString(R.string.err_invite_expired)
+    is LichenException.InvalidSetting -> res.getString(R.string.err_invalid_setting)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {

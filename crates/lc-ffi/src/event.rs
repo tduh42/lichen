@@ -53,6 +53,8 @@ pub enum LichenEvent {
         identity: Vec<u8>,
     },
     ContactsUpdated,
+    /// The radio's settings changed, or were read again: read `radio_settings()`.
+    RadioSettings,
     SessionEstablished {
         peer: Vec<u8>,
     },
@@ -225,6 +227,7 @@ impl LichenEvent {
                 identity: identity.to_vec(),
             },
             Event::ContactsUpdated => Self::ContactsUpdated,
+            Event::RadioSettings => Self::RadioSettings,
             Event::SessionEstablished { peer } => Self::SessionEstablished {
                 peer: peer.to_vec(),
             },

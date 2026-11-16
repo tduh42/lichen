@@ -33,6 +33,7 @@ mod api_history;
 mod api_identity;
 mod api_location;
 mod api_plain;
+mod api_radio;
 mod api_replies;
 mod api_runtime;
 mod api_search;
@@ -52,6 +53,7 @@ mod tools;
 #[cfg(test)]
 mod unit;
 
+pub use api_radio::{RadioSettings, RadioVar, Telemetry};
 pub use chat::*;
 pub use error::*;
 pub use event::*;
