@@ -45,6 +45,8 @@ pub enum LichenError {
     NoClock,
     /// The invitation has expired (§10.5).
     Expired,
+    /// A radio setting outside what the radio takes (protocol §1.1).
+    InvalidSetting,
 }
 
 impl std::fmt::Display for LichenError {
@@ -76,6 +78,7 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::Started | lc_core::Error::NotQueued => Self::NotCancellable,
             lc_core::Error::NoClock => Self::NoClock,
             lc_core::Error::Expired => Self::Expired,
+            lc_core::Error::Invalid => Self::InvalidSetting,
         }
     }
 }

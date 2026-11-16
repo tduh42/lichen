@@ -193,6 +193,8 @@ pub struct Outbound {
 /// What the app should know about.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
+    /// The radio's settings changed, or were read again (§1.1, [`Core::radio_settings`]).
+    RadioSettings,
     /// The companion answered `APP_START`.
     Connected {
         key: PubKey,
@@ -380,6 +382,8 @@ pub enum Error {
     NoClock,
     /// The invitation has expired (§10.5).
     Expired,
+    /// A radio setting outside what the radio takes (protocol §1.1).
+    Invalid,
 }
 
 /// Core configuration. Its `Debug` leaves the seeds out (review of 2026-11-15, SR-34).
@@ -436,6 +440,12 @@ pub(crate) enum Expect {
     PlainSent(MsgId),
     /// `SEND_CHANNEL_TXT_MSG` of this post (§15.3).
     ChannelPost(MsgId),
+    /// `GET_CUSTOM_VARS` (§1.1).
+    CustomVars,
+    /// `GET_AUTOADD_CONFIG` (§1.1).
+    Autoadd,
+    /// `GET_BATT_AND_STORAGE` (§1.1).
+    Battery,
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -459,6 +469,9 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
         (Expect::Sync, R::ContactMsg { .. } | R::ChannelMsg { .. } | R::NoMoreMessages) => true,
         (Expect::Channel(i), R::ChannelInfo { index, .. }) => *index == i,
         (Expect::PlainSent(_), R::Sent { .. }) => true,
+        (Expect::CustomVars, R::CustomVars(_)) => true,
+        (Expect::Autoadd, R::AutoaddConfig { .. }) => true,
+        (Expect::Battery, R::BattAndStorage { .. }) => true,
         _ => false,
     }
 }
@@ -663,7 +676,7 @@ impl Peer {
 
 /// The application core.
 pub struct Core {
-    app_name: String,
+    pub(crate) app_name: String,
     pub(crate) rng: ChaCha20Rng,
     regulatory: String,
     /// The phone identity (ADR-0013): private and public key. Always set.
@@ -673,7 +686,7 @@ pub struct Core {
     pub(crate) node: Option<PubKey>,
     /// The companion answered and has not been reported gone since (§6.1): nothing goes on
     /// the air, and no timer advances, while it is false.
-    online: bool,
+    pub(crate) online: bool,
     pub(crate) name: String,
     freq_khz: u32,
     pub(crate) radio: LoRaParams,
@@ -686,6 +699,8 @@ pub struct Core {
     /// Plain MeshCore text (§15).
     pub(crate) plain: crate::plain::Plain,
     pub(crate) events: VecDeque<Event>,
+    /// What the radio reported of its own settings (§1.1, ADR-0032).
+    pub(crate) settings: crate::radio::RadioSettings,
     pub(crate) next_id: MsgId,
     deferred_until: Option<Millis>,
     /// Hashes of datagrams received recently, per peer, to drop resends (§6).
@@ -793,6 +808,7 @@ impl Core {
             awaiting: None,
             plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
+            settings: crate::radio::RadioSettings::default(),
             next_id: 1,
             deferred_until: None,
             recent: HashMap::new(),
@@ -990,6 +1006,7 @@ impl Core {
             Expect::DeviceInfo,
         );
         self.command(&Command::GetDefaultFloodScope, Expect::Scope);
+        self.radio_read_all();
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
         self.plain_connected();
         self.tick(now);
@@ -1596,6 +1613,8 @@ impl Core {
         let mut done = true;
         match r {
             Response::SelfInfo(si) => {
+                // Read again after a setting changed (§1.1): the same radio, still connected.
+                let again = self.online && self.node == Some(*si.key);
                 if self.node.is_some_and(|n| n != *si.key) {
                     self.forget_routes();
                 }
@@ -1611,11 +1630,25 @@ impl Core {
                 {
                     self.budget = b;
                 }
-                self.events.push_back(Event::Connected {
-                    key: *si.key,
-                    name: self.name.clone(),
-                    freq_khz: si.freq_khz,
-                    radio: self.radio,
+                self.settings.name = self.name.clone();
+                self.settings.freq_khz = si.freq_khz;
+                self.settings.bw_hz = si.bw_hz;
+                self.settings.sf = si.sf;
+                self.settings.cr = si.cr;
+                self.settings.tx_dbm = si.tx_power_dbm;
+                self.settings.max_tx_dbm = si.max_tx_power_dbm;
+                self.settings.lat_e6 = si.lat_e6;
+                self.settings.lon_e6 = si.lon_e6;
+                self.settings.other = si.other;
+                self.events.push_back(if again {
+                    Event::RadioSettings
+                } else {
+                    Event::Connected {
+                        key: *si.key,
+                        name: self.name.clone(),
+                        freq_khz: si.freq_khz,
+                        radio: self.radio,
+                    }
                 });
             }
             Response::ContactsStart { .. } => {
@@ -1721,7 +1754,17 @@ impl Core {
                 name,
                 secret,
             } => self.on_channel_info(index, Some((name, secret)), now),
-            Response::DeviceInfo(d) => self.plain_set_max_channels(d.max_channels),
+            Response::DeviceInfo(d) => {
+                self.plain_set_max_channels(d.max_channels);
+                self.radio_device_info(&d);
+            }
+            Response::CustomVars(text) => self.radio_vars(text),
+            Response::AutoaddConfig { mask, max_hops } => self.radio_autoadd(mask, max_hops),
+            Response::BattAndStorage {
+                millivolts,
+                used_kb,
+                total_kb,
+            } => self.radio_battery(millivolts, used_kb, total_kb),
             Response::RadioStats { noise, .. } => self.search_noise(noise),
             _ => {}
         }

@@ -13,6 +13,7 @@ pub mod group;
 pub mod identity;
 pub mod location;
 pub mod plain;
+pub mod radio;
 pub mod search;
 mod secret;
 pub mod solver;

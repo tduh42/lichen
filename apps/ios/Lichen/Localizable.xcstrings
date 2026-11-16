@@ -6241,6 +6241,16 @@
         }
       }
     },
+    "The radio does not take this setting.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio n’accepte pas ce réglage."
+          }
+        }
+      }
+    },
     "The radio has no free channel slot.": {
       "localizations": {
         "fr": {

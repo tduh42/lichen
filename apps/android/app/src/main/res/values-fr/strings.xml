@@ -635,6 +635,7 @@
     <!-- Group invitations by QR code (§10.5) -->
     <string name="err_no_clock">L\'horloge du téléphone n\'est pas encore réglée.</string>
     <string name="err_invite_expired">Cette invitation a expiré : demandes-en une nouvelle.</string>
+    <string name="err_invalid_setting">La radio n’accepte pas ce réglage.</string>
     <string name="joined_with_invite">%1$s a rejoint le groupe avec ton invitation</string>
     <string name="sunday_hike">Sortie du dimanche</string>
     <string name="invite_unreadable">Cette invitation est illisible.</string>

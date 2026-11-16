@@ -208,6 +208,26 @@ fn describe(core: &Core, e: &Event) -> String {
             ))
         ),
         Event::ContactsUpdated => format!("{} contacts", core.contacts().count()),
+        Event::RadioSettings => {
+            let r = core.radio_settings();
+            let vars: Vec<String> = r.vars.iter().map(|(n, v)| format!("{n}={v}")).collect();
+            format!(
+                "radio: {} dBm (max {}), battery {} mV, {}{}",
+                r.tx_dbm,
+                r.max_tx_dbm,
+                r.battery_mv.unwrap_or(0),
+                if r.firmware.is_empty() {
+                    "firmware ?"
+                } else {
+                    &r.firmware
+                },
+                if vars.is_empty() {
+                    String::new()
+                } else {
+                    format!(", {}", vars.join(" "))
+                }
+            )
+        }
         Event::SessionEstablished { peer } => {
             format!("secure session with {}", name_of(core, peer))
         }

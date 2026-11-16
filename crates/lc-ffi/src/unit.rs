@@ -1033,3 +1033,46 @@ mod timers {
         assert!(core.set_disappearing(bob, 29 * 86_400).is_err());
     }
 }
+
+/// The radio's settings as the apps read them (protocol §1.1): telemetry modes from their
+/// packed byte, the GPS from the board's variables.
+#[cfg(test)]
+mod radio_settings {
+    use crate::api_radio::RadioSettings;
+    use lc_meshcore::OtherParams;
+
+    #[test]
+    fn telemetry_and_gps_for_the_apps() {
+        let core = lc_core::radio::RadioSettings {
+            other: OtherParams {
+                manual_add: true,
+                telemetry: 2 << 4 | 1 << 2,
+                advert_loc_policy: 1,
+                multi_acks: 0,
+            },
+            vars: vec![
+                ("gps".into(), "1".into()),
+                ("gps_interval".into(), "300".into()),
+            ],
+            autoadd: Some((0x03, 2)),
+            ..Default::default()
+        };
+        let r = RadioSettings::from(&core);
+        assert_eq!(
+            (
+                r.telemetry.base,
+                r.telemetry.location,
+                r.telemetry.environment
+            ),
+            (0, 1, 2)
+        );
+        assert!(r.position_in_adverts && r.manual_add);
+        assert_eq!((r.gps, r.gps_interval_s), (Some(true), Some(300)));
+        assert_eq!((r.autoadd_mask, r.autoadd_max_hops), (Some(3), Some(2)));
+        let none = RadioSettings::from(&lc_core::radio::RadioSettings::default());
+        assert_eq!(
+            (none.gps, none.battery_mv, none.autoadd_mask),
+            (None, None, None)
+        );
+    }
+}

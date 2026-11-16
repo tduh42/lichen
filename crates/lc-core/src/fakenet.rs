@@ -59,6 +59,21 @@ pub enum Role {
     Repeater,
 }
 
+/// A fake companion's settings (protocol §1.1): what `SELF_INFO`, `GET_CUSTOM_VARS`,
+/// `GET_AUTOADD_CONFIG` report and the setting commands change.
+#[derive(Clone, Debug, Default)]
+pub struct FakeSettings {
+    /// LoRa parameters set by `SET_RADIO_PARAMS` (kHz, Hz, SF, CR); the network's otherwise.
+    pub radio: Option<(u32, u32, u8, u8)>,
+    pub lat_e6: i32,
+    pub lon_e6: i32,
+    /// `SELF_INFO` bytes 44–47: multi_acks, advert_loc_policy, telemetry, manual_add.
+    pub prefs: [u8; 4],
+    /// `Some` for a board with a GPS: whether it is on.
+    pub gps: Option<bool>,
+    pub autoadd: (u8, u8),
+}
+
 /// One simulated node.
 pub struct Node {
     pub key: PubKey,
@@ -94,6 +109,8 @@ pub struct Node {
     last_rx: (i8, i8),
     /// Channel slots: name and secret (§15.3).
     pub channels: Vec<Option<(String, [u8; 16])>>,
+    /// The companion's own settings (protocol §1.1), as the firmware keeps them.
+    pub settings: FakeSettings,
     /// Plain messages waiting for `SYNC_NEXT_MESSAGE` (companion frames).
     pub inbox: VecDeque<Vec<u8>>,
     /// Direct messages sent and not acknowledged yet: their ACK tag and when they left.
@@ -264,6 +281,7 @@ impl Net {
             rssi_zero: false,
             last_rx: (0, 0),
             channels: vec![None; CHANNEL_SLOTS],
+            settings: FakeSettings::default(),
             inbox: VecDeque::new(),
             acks: Vec::new(),
         });
@@ -800,15 +818,138 @@ impl Net {
         let (tx_dbm, noise, last_rx) = (node.tx_dbm, node.noise_dbm, node.last_rx);
         match code {
             cmd::APP_START => {
+                let s = self
+                    .nodes
+                    .get(i)
+                    .map(|n| n.settings.clone())
+                    .unwrap_or_default();
+                let (freq, bw, sf, cr) =
+                    s.radio
+                        .unwrap_or((FREQ_KHZ, self.radio.bw_hz, self.radio.sf, self.radio.cr));
                 let mut v = vec![resp::SELF_INFO, 1, tx_dbm as u8, 22];
                 v.extend_from_slice(&key);
-                v.extend_from_slice(&[0u8; 12]);
-                v.extend_from_slice(&FREQ_KHZ.to_le_bytes());
-                v.extend_from_slice(&self.radio.bw_hz.to_le_bytes());
-                v.extend_from_slice(&[self.radio.sf, self.radio.cr]);
+                v.extend_from_slice(&s.lat_e6.to_le_bytes());
+                v.extend_from_slice(&s.lon_e6.to_le_bytes());
+                v.extend_from_slice(&s.prefs);
+                v.extend_from_slice(&freq.to_le_bytes());
+                v.extend_from_slice(&bw.to_le_bytes());
+                v.extend_from_slice(&[sf, cr]);
                 v.extend_from_slice(name.as_bytes());
                 vec![v]
             }
+            // Settings (protocol §1.1), with the firmware's checks. The simulation keeps its
+            // own radio: new LoRa parameters only show in SELF_INFO.
+            cmd::SET_RADIO_PARAMS => {
+                let u = |at: usize| {
+                    frame
+                        .get(at..at + 4)
+                        .and_then(|b| b.try_into().ok())
+                        .map(u32::from_le_bytes)
+                };
+                match (u(1), u(5), frame.get(9), frame.get(10)) {
+                    (
+                        Some(f @ 150_000..=2_500_000),
+                        Some(b @ 7_000..=500_000),
+                        Some(&s @ 5..=12),
+                        Some(&c @ 5..=8),
+                    ) => {
+                        if let Some(n) = self.nodes.get_mut(i) {
+                            n.settings.radio = Some((f, b, s, c));
+                        }
+                        vec![vec![resp::OK]]
+                    }
+                    _ => vec![vec![resp::ERR, 6]],
+                }
+            }
+            cmd::SET_ADVERT_LATLON => {
+                let i32_at = |at: usize| {
+                    frame
+                        .get(at..at + 4)
+                        .and_then(|b| b.try_into().ok())
+                        .map(i32::from_le_bytes)
+                };
+                match (i32_at(1), i32_at(5)) {
+                    (
+                        Some(lat @ -90_000_000..=90_000_000),
+                        Some(lon @ -180_000_000..=180_000_000),
+                    ) => {
+                        if let Some(n) = self.nodes.get_mut(i) {
+                            (n.settings.lat_e6, n.settings.lon_e6) = (lat, lon);
+                        }
+                        vec![vec![resp::OK]]
+                    }
+                    _ => vec![vec![resp::ERR, 6]],
+                }
+            }
+            cmd::SET_OTHER_PARAMS => {
+                if let Some(n) = self.nodes.get_mut(i) {
+                    // manual_add, telemetry, advert_loc_policy, multi_acks; SELF_INFO's order is
+                    // multi_acks, advert_loc_policy, telemetry, manual_add.
+                    let p = &mut n.settings.prefs;
+                    if let Some(&m) = frame.get(1) {
+                        p[3] = m;
+                    }
+                    if let Some(&t) = frame.get(2) {
+                        p[2] = t & 0x3F;
+                    }
+                    if let Some(&l) = frame.get(3) {
+                        p[1] = l;
+                    }
+                    if let Some(&a) = frame.get(4) {
+                        p[0] = a;
+                    }
+                }
+                vec![vec![resp::OK]]
+            }
+            cmd::GET_CUSTOM_VARS => {
+                let mut v = vec![resp::CUSTOM_VARS];
+                if let Some(Some(on)) = self.nodes.get(i).map(|n| n.settings.gps) {
+                    v.extend_from_slice(if on { b"gps:1" } else { b"gps:0" });
+                }
+                vec![v]
+            }
+            cmd::SET_CUSTOM_VAR => {
+                let text = frame.get(1..).unwrap_or_default();
+                let node = self.nodes.get_mut(i);
+                match (node, text) {
+                    (Some(n), b"gps:1" | b"gps:0") if n.settings.gps.is_some() => {
+                        n.settings.gps = Some(text == b"gps:1");
+                        vec![vec![resp::OK]]
+                    }
+                    (Some(n), t) if n.settings.gps.is_some() && t.starts_with(b"gps_interval:") => {
+                        vec![vec![resp::OK]]
+                    }
+                    _ => vec![vec![resp::ERR, 6]],
+                }
+            }
+            cmd::GET_AUTOADD_CONFIG => {
+                let (mask, hops) = self.nodes.get(i).map_or((0, 0), |n| n.settings.autoadd);
+                vec![vec![resp::AUTOADD_CONFIG, mask, hops]]
+            }
+            cmd::SET_AUTOADD_CONFIG => {
+                if let Some(n) = self.nodes.get_mut(i) {
+                    n.settings.autoadd = (
+                        frame.get(1).copied().unwrap_or(0),
+                        frame.get(2).copied().unwrap_or(0).min(64),
+                    );
+                }
+                vec![vec![resp::OK]]
+            }
+            cmd::GET_BATT_AND_STORAGE => {
+                let mut v = vec![resp::BATT_AND_STORAGE];
+                v.extend_from_slice(&4_012u16.to_le_bytes());
+                v.extend_from_slice(&96u32.to_le_bytes());
+                v.extend_from_slice(&1_024u32.to_le_bytes());
+                vec![v]
+            }
+            cmd::SET_DEVICE_PIN => match frame
+                .get(1..5)
+                .and_then(|b| b.try_into().ok())
+                .map(u32::from_le_bytes)
+            {
+                Some(0 | 100_000..=999_999) => vec![vec![resp::OK]],
+                _ => vec![vec![resp::ERR, 6]],
+            },
             cmd::DEVICE_QUERY => vec![vec![resp::DEVICE_INFO, 14]],
             cmd::EXPORT_PRIVATE_KEY => {
                 let mut v = vec![resp::PRIVATE_KEY];
