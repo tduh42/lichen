@@ -3,6 +3,7 @@
 
 use crate::bytes::Reader;
 use crate::codes::resp;
+use crate::command::OtherParams;
 use crate::path::{PATH_UNKNOWN, Path, path_bytes};
 use crate::{DecodeError, FRAME_MAX};
 
@@ -32,6 +33,8 @@ pub struct SelfInfo<'a> {
     pub key: &'a [u8; 32],
     pub lat_e6: i32,
     pub lon_e6: i32,
+    /// Manual add, telemetry, position in adverts, extra ACKs (`SET_OTHER_PARAMS`).
+    pub other: OtherParams,
     pub freq_khz: u32,
     pub bw_hz: u32,
     pub sf: u8,
@@ -156,6 +159,14 @@ pub enum Response<'a> {
         name: &'a [u8],
         secret: &'a [u8; 16],
     },
+    /// `GET_CUSTOM_VARS`'s answer: ASCII `name:value` pairs joined by commas (`gps:1`), empty
+    /// when the board has none.
+    CustomVars(&'a [u8]),
+    /// `GET_AUTOADD_CONFIG`'s answer.
+    AutoaddConfig {
+        mask: u8,
+        max_hops: u8,
+    },
     /// A code lichen does not interpret.
     Other {
         code: u8,
@@ -234,7 +245,14 @@ impl<'a> Response<'a> {
                 let key = r.array::<32>().ok_or(t)?;
                 let lat_e6 = r.i32().ok_or(t)?;
                 let lon_e6 = r.i32().ok_or(t)?;
-                let _prefs = r.array::<4>().ok_or(t)?;
+                let [multi_acks, advert_loc_policy, telemetry, manual_add] =
+                    *r.array::<4>().ok_or(t)?;
+                let other = OtherParams {
+                    manual_add: manual_add & 1 != 0,
+                    telemetry,
+                    advert_loc_policy,
+                    multi_acks,
+                };
                 let freq_khz = r.u32().ok_or(t)?;
                 let bw_hz = r.u32().ok_or(t)?;
                 let sf = r.u8().ok_or(t)?;
@@ -246,6 +264,7 @@ impl<'a> Response<'a> {
                     key,
                     lat_e6,
                     lon_e6,
+                    other,
                     freq_khz,
                     bw_hz,
                     sf,
@@ -393,6 +412,11 @@ impl<'a> Response<'a> {
                 index: r.u8().ok_or(t)?,
                 name: trim_nul(r.array::<32>().ok_or(t)?),
                 secret: r.array::<16>().ok_or(t)?,
+            },
+            resp::CUSTOM_VARS => Response::CustomVars(r.rest()),
+            resp::AUTOADD_CONFIG => Response::AutoaddConfig {
+                mask: r.u8().ok_or(t)?,
+                max_hops: r.u8().ok_or(t)?,
             },
             code => Response::Other {
                 code,
