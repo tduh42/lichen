@@ -13,6 +13,7 @@ use arti_client::config::{BoolOrAuto, TorClientConfigBuilder};
 use arti_client::{StreamPrefs, TorClient};
 use futures::StreamExt;
 use safelog::DisplayRedacted;
+use tokio::io::AsyncWrite;
 use tor_cell::relaycell::msg::{Connected, End, EndReason};
 use tor_config::ExplicitOrAuto;
 use tor_hscrypto::pk::{HsId, HsIdKey, HsIdKeypair};
@@ -23,7 +24,7 @@ use tor_llcrypto::pk::ed25519;
 use tor_proto::stream::IncomingStreamRequest;
 use tor_rtcompat::PreferredRuntime;
 
-use crate::{FetchError, Hash, Offers, read_response, serve, write_request};
+use crate::{FetchError, Hash, Offers, read_response_into, serve, write_request};
 
 /// The onion service's virtual port for `lichen/blob/1`.
 pub const ONION_PORT: u16 = 1;
@@ -159,13 +160,14 @@ impl Tor {
     }
 }
 
-/// Fetches `hash` from the onion service of identity `key`.
-pub(crate) async fn fetch(
+/// Fetches `hash` from the onion service of identity `key` into `out`.
+pub(crate) async fn fetch<W: AsyncWrite + Unpin>(
     client: &TorClient<PreferredRuntime>,
     key: [u8; 32],
     hash: Hash,
     max: u64,
-) -> Result<Vec<u8>, FetchError> {
+    out: &mut W,
+) -> Result<u64, FetchError> {
     let host = onion_address(&key).ok_or_else(|| FetchError::Protocol("bad onion key".into()))?;
     let mut prefs = StreamPrefs::new();
     prefs.connect_to_onion_services(BoolOrAuto::Explicit(true));
@@ -175,5 +177,5 @@ pub(crate) async fn fetch(
         .map_err(|e| FetchError::Unreachable(e.to_string()))?;
     let (mut r, mut w) = tokio::io::split(stream);
     write_request(&mut w, &hash).await?;
-    read_response(&mut r, &hash, max).await
+    read_response_into(&mut r, out, &hash, max).await
 }

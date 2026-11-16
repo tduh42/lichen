@@ -40,7 +40,7 @@ impl From<FetchError> for BridgeError {
             FetchError::TooLarge => Self::TooLarge,
             FetchError::Mismatch => Self::Mismatch,
             FetchError::Timeout => Self::Timeout,
-            FetchError::Protocol(reason) => Self::Failed { reason },
+            FetchError::Protocol(reason) | FetchError::Storage(reason) => Self::Failed { reason },
         }
     }
 }
@@ -232,16 +232,21 @@ impl LichenBridge {
         Ok(self.bridge.gif(&id, via_tor).await?)
     }
 
-    /// Fetches announced content from one of its providers (`transport` 1 iroh, 2 Tor),
-    /// verified against its hash.
-    pub async fn fetch(
+    /// Fetches announced content from one of its providers (`transport` 1 iroh, 2 Tor) into
+    /// the file `path`, verified against its hash: the file appears only once it matches, and
+    /// the content never crosses the bindings (review of 2026-11-15, SR-33). Returns its size.
+    pub async fn fetch_to_file(
         &self,
         transport: u8,
         provider: Vec<u8>,
         hash: Vec<u8>,
         size: u64,
-    ) -> Result<Vec<u8>, BridgeError> {
+        path: String,
+    ) -> Result<u64, BridgeError> {
         let (provider, hash) = (bytes32(provider)?, bytes32(hash)?);
-        Ok(self.bridge.fetch(transport, provider, hash, size).await?)
+        Ok(self
+            .bridge
+            .fetch_to_file(transport, provider, hash, size, std::path::Path::new(&path))
+            .await?)
     }
 }

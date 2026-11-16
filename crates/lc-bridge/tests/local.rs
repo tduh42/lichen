@@ -81,6 +81,154 @@ async fn substitution_is_caught() {
     b.shutdown().await;
 }
 
+/// Review of 2026-11-15, SR-33: a download goes to a file, which appears only once its hash
+/// matches; a substituted one leaves nothing behind, not even its `.part`.
+#[tokio::test]
+async fn a_download_goes_to_a_file() {
+    let dir = std::env::temp_dir().join(format!("lc-bridge-dl-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (a, b) = pair().await;
+    let photo: Vec<u8> = (0..300_000u32).map(|i| (i * 7 % 253) as u8).collect();
+    let (h, size) = a.offer(photo.clone()).unwrap();
+    let addr = a.addr().unwrap();
+    let path = dir.join("photo.jpg");
+    assert_eq!(
+        b.fetch_from_to_file(addr.clone(), h, size, &path).await,
+        Ok(size)
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), photo);
+    assert!(!dir.join("photo.jpg.part").exists());
+
+    // Not offered: no file.
+    let missing = dir.join("missing.jpg");
+    assert_eq!(
+        b.fetch_from_to_file(addr.clone(), [7; 32], size, &missing)
+            .await,
+        Err(FetchError::NotFound)
+    );
+    // Larger than announced: no file.
+    let short = dir.join("short.jpg");
+    assert_eq!(
+        b.fetch_from_to_file(addr.clone(), h, size - 1, &short)
+            .await,
+        Err(FetchError::TooLarge)
+    );
+    // A folder that does not exist: a storage error, nothing fetched.
+    assert!(matches!(
+        b.fetch_from_to_file(addr, h, size, &dir.join("no/such.jpg"))
+            .await,
+        Err(FetchError::Storage(_))
+    ));
+    let left: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left, vec![std::ffi::OsString::from("photo.jpg")]);
+    a.shutdown().await;
+    b.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn substitution_leaves_no_file() {
+    let dir = std::env::temp_dir().join(format!("lc-bridge-liar-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .alpns(vec![lc_bridge::ALPN.to_vec()])
+        .bind()
+        .await
+        .unwrap();
+    let liar = iroh::protocol::Router::builder(endpoint)
+        .accept(lc_bridge::ALPN, Liar)
+        .spawn();
+    let b = Bridge::start(derive_key(&[6; 32], "lichen/1 iroh"), None, Network::Local)
+        .await
+        .unwrap();
+    let path = dir.join("photo.jpg");
+    let r = b
+        .fetch_from_to_file(
+            liar.endpoint().addr(),
+            hash(b"the real photo"),
+            1_000,
+            &path,
+        )
+        .await;
+    assert_eq!(r, Err(FetchError::Mismatch));
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    let _ = liar.shutdown().await;
+    b.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A provider that announces 1,000 bytes, sends ten and stalls.
+#[derive(Debug, Clone)]
+struct Staller;
+
+impl iroh::protocol::ProtocolHandler for Staller {
+    async fn accept(
+        &self,
+        connection: iroh::endpoint::Connection,
+    ) -> Result<(), iroh::protocol::AcceptError> {
+        let (mut send, mut recv) = connection.accept_bi().await?;
+        let mut req = [0u8; 33];
+        let _ = recv.read_exact(&mut req).await;
+        let mut head = [0u8; 9];
+        head[1..].copy_from_slice(&1_000u64.to_le_bytes());
+        let _ = send.write_all(&head).await;
+        let _ = send.write_all(b"ten bytes!").await;
+        connection.closed().await;
+        Ok(())
+    }
+}
+
+/// SR-33: a download given up half-way (the app cancels it, the future is dropped) leaves no
+/// `.part` behind.
+#[tokio::test]
+async fn a_cancelled_download_leaves_nothing() {
+    let dir = std::env::temp_dir().join(format!("lc-bridge-stall-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .alpns(vec![lc_bridge::ALPN.to_vec()])
+        .bind()
+        .await
+        .unwrap();
+    let staller = iroh::protocol::Router::builder(endpoint)
+        .accept(lc_bridge::ALPN, Staller)
+        .spawn();
+    let b = Bridge::start(derive_key(&[8; 32], "lichen/1 iroh"), None, Network::Local)
+        .await
+        .unwrap();
+    let path = dir.join("photo.jpg");
+    let part = dir.join("photo.jpg.part");
+    let mut fetch =
+        Box::pin(b.fetch_from_to_file(staller.endpoint().addr(), [9; 32], 1_000, &path));
+    // Until the first bytes are on disk.
+    let waited = tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            tokio::select! {
+                r = &mut fetch => panic!("finished: {r:?}"),
+                () = tokio::time::sleep(Duration::from_millis(20)) => {}
+            }
+            if std::fs::metadata(&part).is_ok_and(|m| m.len() == 10) {
+                break;
+            }
+        }
+    })
+    .await;
+    assert!(
+        waited.is_ok(),
+        "the first bytes never reached the .part file"
+    );
+    drop(fetch);
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
+    let _ = staller.shutdown().await;
+    b.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[tokio::test]
 async fn offers_survive_a_restart() {
     let dir = std::env::temp_dir().join(format!("lc-bridge-{}", std::process::id()));
