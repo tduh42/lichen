@@ -285,7 +285,7 @@ env2 = bytes([0x7C, 0x02]) + hashlib.sha256(b"envelope 2").digest()[:20]
 resend = [
     ("one envelope", [env1]),
     ("a two-fragment message", [env1, env2]),
-    ("the longest payload", [bytes([0x7C]) + bytes(158)]),
+    ("the longest payload", [bytes([0x7C]) + bytes(155)]),
 ]
 for nm, payloads in resend:
     print("[[group_resend]]")

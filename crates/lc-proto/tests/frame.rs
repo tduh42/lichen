@@ -57,9 +57,10 @@ fn header_rules() {
 
 #[test]
 fn chunk_sizes() {
-    assert_eq!(chunk_for_path(0), 149);
-    assert_eq!(chunk_for_path(2), 149);
-    assert_eq!(chunk_for_path(5), 146);
+    // Whole over Bluetooth (ADR-0031): a 169-byte frame, 23 of header and tag.
+    assert_eq!(chunk_for_path(0), 146);
+    assert_eq!(chunk_for_path(2), 146);
+    assert_eq!(chunk_for_path(5), 143);
 }
 
 /// The ACK is one packed byte up to 7 fragments: 24 bytes on the wire, as it was with the

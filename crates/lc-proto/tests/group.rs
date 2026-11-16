@@ -17,14 +17,15 @@ fn header(index: u8, total: u8) -> GroupHeader {
 
 #[test]
 fn sizes() {
-    assert_eq!(FRAGMENT_PLAIN_MAX, 131);
+    // A 156-byte envelope, whole over Bluetooth after 8 hops (ADR-0031).
+    assert_eq!(FRAGMENT_PLAIN_MAX, 128);
     // TEXT capacity: content type + ts + text + 64-byte signature.
-    assert_eq!(FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 62);
-    assert_eq!(2 * FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 193);
-    assert_eq!(fragments_for(131), Some(1));
-    assert_eq!(fragments_for(132), Some(2));
-    assert_eq!(fragments_for(262), Some(2));
-    assert_eq!(fragments_for(263), None);
+    assert_eq!(FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 59);
+    assert_eq!(2 * FRAGMENT_PLAIN_MAX - 1 - 4 - 64, 187);
+    assert_eq!(fragments_for(128), Some(1));
+    assert_eq!(fragments_for(129), Some(2));
+    assert_eq!(fragments_for(256), Some(2));
+    assert_eq!(fragments_for(257), None);
 }
 
 proptest! {
