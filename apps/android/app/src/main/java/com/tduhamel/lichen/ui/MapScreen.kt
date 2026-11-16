@@ -152,7 +152,9 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
         Box(Modifier.weight(1f)) {
-            LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize()) { b, z -> camera = b to z }
+            MapGate(model) {
+                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize()) { b, z -> camera = b to z }
+            }
             Row(
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,

@@ -3541,6 +3541,16 @@
         }
       }
     },
+    "Its tiles come from OpenFreeMap directly, outside Tor: they would show the area you look at.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses tuiles viennent d’OpenFreeMap en direct, hors de Tor : elles montreraient la zone que tu regardes."
+          }
+        }
+      }
+    },
     "Join": {
       "localizations": {
         "fr": {
@@ -3907,6 +3917,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Charger l'image complète"
+          }
+        }
+      }
+    },
+    "Load the map this time": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Charger la carte cette fois"
           }
         }
       }
@@ -6887,6 +6907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le verrouillage reste désactivé"
+          }
+        }
+      }
+    },
+    "The map waits while Tor is on": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carte attend pendant que Tor est activé"
           }
         }
       }

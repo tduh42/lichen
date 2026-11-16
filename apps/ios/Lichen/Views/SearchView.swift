@@ -167,8 +167,10 @@ struct SearchView: View {
                        ellipse68: e.ellipse(major: e.major68M, minor: e.minor68M),
                        ellipse95: e.ellipse(major: e.major95M, minor: e.minor95M))
         }
-        return MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { _, _ in },
-                            overlay: overlay, insets: UIEdgeInsets(top: 30, left: 30, bottom: 30, right: 30))
+        return MapGate {
+            MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { _, _ in },
+                         overlay: overlay, insets: UIEdgeInsets(top: 30, left: 30, bottom: 30, right: 30))
+        }
             .onAppear { recenter += 1 }
             .onChange(of: estimate != nil) { recenter += 1 }
             .accessibilityLabel(estimate.map { String(localized: "Map: \(name) is probably within \(distanceText($0.major68M)) of the centre") }
