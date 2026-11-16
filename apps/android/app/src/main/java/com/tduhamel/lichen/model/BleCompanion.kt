@@ -91,9 +91,24 @@ class BleCompanion(
 
     private val bondState = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
-            val bonded = i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR) == BluetoothDevice.BOND_BONDED
-            // Paired with the radio's code: enable the notifications again, now encrypted.
-            if (bonded && !ready) gatt?.let { enableNotifications(it) }
+            val g = gatt ?: return
+            val device = if (Build.VERSION.SDK_INT >= 33) {
+                i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+            }
+            if (ready || device?.address != g.device.address) return
+            when (i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.ERROR)) {
+                // Paired with the radio's code: the link is encrypted, the notifications can go on.
+                BluetoothDevice.BOND_BONDED -> enableNotifications(g)
+                // Pairing refused or cancelled: the link is never used unprotected (review of
+                // 2026-11-15, SR-32); the radio is forgotten so it does not ask again in a loop.
+                BluetoothDevice.BOND_NONE ->
+                    if (i.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.ERROR) == BluetoothDevice.BOND_BONDING) {
+                        disconnect()
+                    }
+            }
         }
     }
 
@@ -267,14 +282,25 @@ class BleCompanion(
                 if (g != gatt) return@post
                 val s = g.getService(service) ?: return@post
                 rx = s.getCharacteristic(rxUuid)
-                enableNotifications(g)
+                // Only over a bonded, so encrypted, link (review of 2026-11-15, SR-32): an
+                // unpaired link would let anyone nearby read and forge plain MeshCore chats and
+                // contacts, and a look-alike radio pose as ours. Stock MeshCore asks for its code;
+                // the bond receiver goes on once paired.
+                when (g.device.bondState) {
+                    BluetoothDevice.BOND_BONDED -> enableNotifications(g)
+                    BluetoothDevice.BOND_NONE -> {
+                        retriedAfterBond = true
+                        g.device.createBond()
+                    }
+                    else -> {}
+                }
             }
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
             main.post {
                 if (g != gatt) return@post
-                if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (status == BluetoothGatt.GATT_SUCCESS && g.device.bondState == BluetoothDevice.BOND_BONDED) {
                     ready = true
                     state = AppModel.RadioState.Connected(deviceName)
                     pumpWrites()
