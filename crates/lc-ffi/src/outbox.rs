@@ -88,7 +88,8 @@ impl Inner {
             })
     }
 
-    pub(crate) fn save_contacts(&self) {
+    pub(crate) fn save_contacts(&mut self) {
+        self.note_renames();
         if let Some(st) = &self.store {
             for c in self.core.contacts() {
                 let _ = st.put_contact(c);

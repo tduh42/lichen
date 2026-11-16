@@ -250,7 +250,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x15 | GROUP_MISSING | §10.6 | ADR-0024 |
 | 0x16 | GROUP_RESEND | §10.6 | ADR-0024 |
 | 0x17 | GROUP_SYNC | §10.7 | review of 2026-11-15, SR-12 |
-| 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed) | ADR-0021 |
+| 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed, a contact's radio took another name) | ADR-0021 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
 

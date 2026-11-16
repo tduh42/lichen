@@ -117,6 +117,8 @@ fun Message.Notice.noticeText(res: Resources, me: ByteArray?, name: (ByteArray, 
                 else -> res.getString(R.string.notice_timer, who, timerLabel(res, seconds))
             }
         }
+        // The name shown before (SR-30): a verified contact keeps it, the line says what changed.
+        12 -> res.getString(R.string.notice_node_renamed, actorName, text)
         else -> res.getString(R.string.notice_changed)
     }
 }

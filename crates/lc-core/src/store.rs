@@ -1146,6 +1146,15 @@ impl Store {
         )
     }
 
+    /// Whether `chat` holds any message: a conversation the user has.
+    pub fn has_messages(&self, chat: &Chat) -> Result<bool, Error> {
+        self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE chat_kind = ?1 AND chat = ?2)",
+            params![chat.kind(), chat.bytes()],
+            |r| r.get(0),
+        )
+    }
+
     /// The content hashes announced in `chat` (§14.1): what to stop offering, or to remove
     /// from downloads, when the conversation is deleted.
     pub fn announced_hashes(&self, chat: &Chat) -> Result<Vec<[u8; 32]>, Error> {

@@ -82,6 +82,60 @@ impl Inner {
         self.nicknames.insert(*node, name);
     }
 
+    /// Contacts whose radio now advertises another name than the one last saved: a line in
+    /// each conversation we have with them, lichen or MeshCore, so the change is seen even
+    /// when the name shown stays (a verified contact keeps its own, SR-30). Compared with the
+    /// stored names, a rename made while the app was closed shows at the next contact list.
+    pub(crate) fn note_renames(&mut self) {
+        let Some(saved) = self.store.as_ref().and_then(|s| s.contacts().ok()) else {
+            return;
+        };
+        let before: HashMap<PubKey, String> = saved.into_iter().map(|c| (c.key, c.name)).collect();
+        let renamed: Vec<(PubKey, String, String)> = self
+            .core
+            .contacts()
+            .filter_map(|c| {
+                let old = before.get(&c.key)?.trim();
+                let new = c.name.trim();
+                (!old.is_empty() && !new.is_empty() && old != new)
+                    .then(|| (c.key, old.to_owned(), new.to_owned()))
+            })
+            .collect();
+        for (node, old, new) in renamed {
+            let shown = self.nicknames.get(&node).cloned().unwrap_or(old);
+            for chat in [Chat::Contact(node), Chat::Mesh(node)] {
+                let ours = self
+                    .store
+                    .as_ref()
+                    .and_then(|s| s.has_messages(&chat).ok())
+                    .unwrap_or(false);
+                if !ours {
+                    continue;
+                }
+                self.record(store::Message {
+                    id: 0,
+                    chat,
+                    outgoing: false,
+                    author: None,
+                    content: Content::Notice(lc_core::content::Notice {
+                        kind: lc_core::content::notice::NODE_RENAMED,
+                        actor: node,
+                        actor_name: shown.clone(),
+                        subjects: Vec::new(),
+                        text: new.clone(),
+                    }),
+                    at_ms: unix_ms(),
+                    status: Status::Received,
+                    fragments: 0,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                    msg_ref: None,
+                });
+            }
+        }
+    }
+
     /// Opens the database of our identity (or one in memory) and restores contacts, groups
     /// and shares.
     pub(crate) fn open_store(&mut self, identity: &PubKey) {

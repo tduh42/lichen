@@ -64,7 +64,8 @@ pub enum Message {
     /// A membership change in a group, recorded by this phone (ADR-0021): `kind` is one of
     /// `lc_core::content::notice` (1 created, 2 added us, 3 joined, 4 left, 5 removed, 6 no
     /// longer in the group, 7 removed us, 8 closed, 9 renamed to `text`, 10 we left), or a
-    /// disappearing-message timer set to `text` seconds, "0" for off (11, §6.5).
+    /// disappearing-message timer set to `text` seconds, "0" for off (11, §6.5), or a contact's
+    /// radio now advertising the name `text`, `actor_name` being the name shown before (12).
     Notice {
         kind: u8,
         /// Who did it (a node, ours when we did), and their name then.
