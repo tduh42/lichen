@@ -1709,12 +1709,17 @@ class AppModel(val app: Application) {
         }
     }
 
-    private fun keep(bytes: ByteArray, hash: ByteArray, name: String): File {
+    /** Where content of `hash` named `name` is kept: `downloads/<hash>.<extension>`. */
+    private fun downloadFile(hash: ByteArray, name: String): File {
         // The name comes from whoever offered the file: only a plain extension is kept, so a
         // separator or a control character can never reach the path (review of 2026-11-15, SR-24).
         val ext = name.substringAfterLast('.', "").takeIf { e -> e.length in 1..10 && e.all { it.isLetterOrDigit() && it.code < 128 } }
             ?.lowercase() ?: "bin"
-        val f = File(folder("downloads"), "${hash.hex()}.$ext")
+        return File(folder("downloads"), "${hash.hex()}.$ext")
+    }
+
+    private fun keep(bytes: ByteArray, hash: ByteArray, name: String): File {
+        val f = downloadFile(hash, name)
         f.writeBytes(bytes)
         downloads[hash.hex()] = f
         return f
@@ -1792,12 +1797,11 @@ class AppModel(val app: Application) {
                         if (p.transport.toInt() == 2) {
                             b.startTor(folder("tor-state").path, folder("tor-cache").path, false, 180u)
                         }
-                        val bytes = b.fetch(p.transport, p.key, a.hash, a.size.toULong())
-                        try {
-                            keep(bytes, a.hash, a.name)
-                        } catch (e: java.io.IOException) {
-                            break
-                        }
+                        // Straight to the file, verified before it appears: the content never
+                        // sits in memory or crosses the bindings (review of 2026-11-15, SR-33).
+                        val f = downloadFile(a.hash, a.name)
+                        b.fetchToFile(p.transport, p.key, a.hash, a.size.toULong(), f.path)
+                        downloads[h] = f
                         return@launch
                     } catch (e: BridgeException) {
                         failure = e.display(res)
