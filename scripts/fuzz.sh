@@ -8,6 +8,9 @@ targets=("$@")
 if [ "${#targets[@]}" -eq 0 ]; then
   while IFS= read -r t; do targets+=("$t"); done < <(cd fuzz && cargo +nightly fuzz list)
 fi
+# The toolchain's own host: a cargo-fuzz binary built for musl (CI installs a prebuilt one) would
+# otherwise build for musl, which the sanitizers do not support.
+host="$(rustc +nightly -vV | sed -n 's/^host: //p')"
 for t in "${targets[@]}"; do
   echo "-- $t (${secs} s)"
   mkdir -p "fuzz/corpus/$t"
@@ -15,5 +18,5 @@ for t in "${targets[@]}"; do
   if [ "$t" = snapshot_restore ]; then
     cargo test -q -p lc-core --release --test fuzz_seeds -- --ignored --nocapture | grep seeds || true
   fi
-  (cd fuzz && cargo +nightly fuzz run "$t" "corpus/$t" -- -max_total_time="$secs" -print_final_stats=1)
+  (cd fuzz && cargo +nightly fuzz run --target "$host" "$t" "corpus/$t" -- -max_total_time="$secs" -print_final_stats=1)
 done
