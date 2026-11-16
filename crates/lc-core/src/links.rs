@@ -286,8 +286,7 @@ fn coord(chars: &[char], i: usize) -> Option<Coord> {
         let m = space(chars, j);
         if decimals == 0
             && let Some((min, after, d)) = number(chars, m, 2)
-            && min >= 0.0
-            && min < 60.0
+            && (0.0..60.0).contains(&min)
             && matches!(chars.get(after), Some('\'' | '′' | '’'))
         {
             value += min / 60.0;
@@ -295,8 +294,7 @@ fn coord(chars: &[char], i: usize) -> Option<Coord> {
             j = after + 1;
             let s = space(chars, j);
             if let Some((sec, after, d)) = number(chars, s, 2)
-                && sec >= 0.0
-                && sec < 60.0
+                && (0.0..60.0).contains(&sec)
             {
                 let close = match (chars.get(after), chars.get(after + 1)) {
                     (Some('"' | '″' | '”'), _) => Some(after + 1),
