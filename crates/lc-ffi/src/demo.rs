@@ -779,6 +779,9 @@ impl DemoNetwork {
         });
         let mut net = Net::new(radio, 5, 42);
         let app = net.add_external_companion(1, "ThinkNode M5");
+        // A board with a GPS, off as the firmware ships it (protocol §1.1).
+        net.nodes[app].settings.gps = Some(false);
+        net.nodes[app].settings.autoadd = (0x02 | 0x01, 0);
         let hub = net.add_repeater(10, "hub");
         let crest = net.add_repeater(11, "crest");
         let camille = net.add_companion(2, "Camille");

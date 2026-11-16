@@ -68,6 +68,8 @@ final class AppModel {
         didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
     }
     var contacts: [ContactInfo] = []
+    /// What the radio reported of its settings (protocol §1.1), read again after each change.
+    var radioSettings: RadioSettings?
     /// The radio's MeshCore channels (§15.3).
     var channels: [MeshChannel] = []
     #if DEBUG
@@ -631,6 +633,8 @@ final class AppModel {
             #endif
         case let .identityConflict(node, identity):
             conflicts[node] = identity
+        case .radioSettings:
+            radioSettings = core.radioSettings()
         case .contactsUpdated:
             contacts = core.contacts().filter(\.person)
             #if DEBUG
@@ -2100,6 +2104,7 @@ extension LichenError {
         case .NotReferable: return String(localized: "This message is from before replies existed: it cannot be answered.")
         case .NoClock: return String(localized: "The phone's clock is not set yet.")
         case .Expired: return String(localized: "This invitation has expired: ask for a new one.")
+        case .InvalidSetting: return String(localized: "The radio does not take this setting.")
         }
     }
 }

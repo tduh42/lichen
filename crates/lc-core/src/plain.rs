@@ -868,6 +868,10 @@ mod tests {
                 "0d0eaf2840e201003135204f6374203230323600456c6563726f77205468696e6b4e6f6465204d35000000000000000000000000000000000000000076312e31382e30000000000000000000000000000000",
             )],
             64 => vec![vec![0x1c]],
+            // The radio's settings (§1.1): no board settings, auto-add off, a battery.
+            40 => vec![vec![21]],
+            59 => vec![vec![25, 0, 0]],
+            20 => vec![vec![12, 0xAC, 0x0F]],
             4 => vec![
                 vec![2, 1, 0, 0, 0],
                 contact(BOB, "Bob"),
