@@ -1,6 +1,7 @@
-# Every push to main and every pull request: the same checks as scripts/check.sh, plus the
-# Android build. Linux runners only; the iOS build stays local for now. A push to main that
-# passes both jobs publishes its APK as the release "latest".
+# Every pull request and every push to main: the same checks as scripts/check.sh, plus the
+# Android build; main only takes a pull request once both pass. Linux runners only; the iOS
+# build stays local for now. A push to main that passes both jobs publishes its APK as the
+# release "latest".
 # Actions are pinned by commit; the tag is in the comment.
 name: check
 
@@ -39,8 +40,6 @@ jobs:
     name: Android (core, lint, unit tests, release APK)
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # The core is built twice (device and host): on main only, to spare runner minutes.
-    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

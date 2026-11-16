@@ -72,7 +72,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 
 ## 5. Roadmap
 
-Each milestone is committed once finished and tested. Milestone commits are pushed (remote: `github.com/tduh42/lichen`, public); CI runs `scripts/check.sh` and the Android build on every push (`.github/workflows/`), and a push to `main` that passes both publishes the signed APK as the release `latest` (key in `~/.config/lichen/`, password in the Keychain, both in the repo's Actions secrets).
+Every change lands through a pull request (remote: `github.com/tduh42/lichen`, public): one branch per topic, CI (`scripts/check.sh` and the Android build, `.github/workflows/check.yml`) must pass before `main` takes it, and it is squash-merged, the PR description being the commit message. A merge to `main` publishes the signed APK as the release `latest` (key in `~/.config/lichen/`, password in the Keychain, both in the repo's Actions secrets). See `CONTRIBUTING.md`.
 
 - **L0** repository, normative spec, ADRs; **L1** `lc-meshcore` + `lc-proto`; **L2** `lc-core` (direct messages), fake network, `lc-cli`;
 - **L3** groups; **L4** `lc-ffi` + iOS app; **L5** location and map; **L6** media over LoRa;
