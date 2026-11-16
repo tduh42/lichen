@@ -77,3 +77,43 @@ fn snapshot_seeds() {
     std::fs::write(dir.join("invitation"), invitation).unwrap();
     println!("{} seeds in {}", written + 1, dir.display());
 }
+
+/// Seeds for the `group_open` fuzz target (SR-37): well-formed group envelopes of every shape
+/// (fragment index and total, copy, padded or not, short and full bodies), sealed under a key
+/// the target does not hold, so it starts past the parser and checks that none is accepted.
+#[test]
+#[ignore]
+fn group_open_seeds() {
+    use lc_proto::group::{GroupHeader, PAYLOAD_MAX, seal};
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/group_open");
+    std::fs::create_dir_all(&dir).unwrap();
+    let key = [42u8; 32];
+    let mut written = 0;
+    for (total, index) in [(1u8, 0u8), (2, 0), (2, 1), (3, 2)] {
+        for copy in 0..2u8 {
+            for len in [0usize, 1, 7, 59, 100, PAYLOAD_MAX] {
+                let h = GroupHeader {
+                    gid_hash: 0xBEEF,
+                    sender: 3 + index,
+                    key_epoch: copy,
+                    counter: 1000 + u32::from(index),
+                    index,
+                    total,
+                    copy,
+                };
+                let plain: Vec<u8> = (0..len).map(|i| i as u8).collect();
+                let mut out = [0u8; 256];
+                if let Ok(n) = seal(&key, &h, &plain, &mut out) {
+                    std::fs::write(
+                        dir.join(format!("env-{total}-{index}-{copy}-{len}")),
+                        &out[..n],
+                    )
+                    .unwrap();
+                    written += 1;
+                }
+            }
+        }
+    }
+    assert!(written > 20, "{written}");
+    println!("{written} seeds in {}", dir.display());
+}
