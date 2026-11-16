@@ -10,8 +10,9 @@ pub const TYPE_MESSAGE: u8 = 0x02;
 pub const TYPE_MESSAGE_PADDED: u8 = 0x03;
 /// Header length: channel hash, type, gid hash, sender, key epoch, counter, frag.
 pub const HEADER_LEN: usize = 11;
-/// Largest envelope: fits `LOG_RX_DATA` after 8 hops with transport codes (171 − 8 − 4).
-pub const PAYLOAD_MAX: usize = 159;
+/// Largest envelope: its `LOG_RX_DATA` push still crosses a Bluetooth link whole after 8 hops
+/// with transport codes (173 − 3 log header − 1 − 4 − 1 − 8; ADR-0031).
+pub const PAYLOAD_MAX: usize = 156;
 /// Largest plaintext per fragment (room kept for the pad byte).
 pub const FRAGMENT_PLAIN_MAX: usize = PAYLOAD_MAX - HEADER_LEN - TAG_LEN - 1;
 /// Fragments per message.

@@ -21,7 +21,7 @@
 <text x="354.66666666666663" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#ABABA3" text-anchor="middle">1 B</text>
 <rect x="387.77777777777777" y="30" width="229.33333333333334" height="54" rx="8" fill="#3A2A1C" />
 <text x="502.44444444444446" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#F4F4F0" text-anchor="middle">ciphertext</text>
-<text x="502.44444444444446" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#ABABA3" text-anchor="middle">1–149 B</text>
+<text x="502.44444444444446" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#ABABA3" text-anchor="middle">1–146 B</text>
 <rect x="621.1111111111111" y="30" width="104.88888888888887" height="54" rx="8" fill="#1B3324" />
 <text x="673.5555555555555" y="54" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" font-weight="500" fill="#F4F4F0" text-anchor="middle">tag</text>
 <text x="673.5555555555555" y="72" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" font-weight="400" fill="#ABABA3" text-anchor="middle">16 B</text>

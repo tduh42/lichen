@@ -380,3 +380,16 @@ Times grow by 0 to 4 %, as the frames do; delivery is within the spread of 50 ru
 | 20 % | with recovery | 93.1 % / 92.5 % | 1344 / 1214 | 1795 / 1914 |
 
 Within the spread of 40 seeds: flooded frames are longer, not more numerous, for posts that still fit their fragments.
+
+## 2026-11-16 — Frames that cross Bluetooth whole (ADR-0031)
+
+Field finding: a photo to a phone on a stock Heltec V4 over Bluetooth never got its acknowledgement, a text did. An ESP32 companion's notification holds 173 bytes and a longer frame arrives cut short; a full fragment was pushed in 176 bytes. The fake network now cuts every push to an app at 173 bytes, as on an ESP32: five transfer tests in `tests/fakenet.rs` failed with the old sizes and pass with the new ones.
+
+| | Before | Now |
+|---|---|---|
+| Fragment data, up to 2 path bytes | 149 | 146 |
+| Largest datagram | 9,536 | 9,344 |
+| Group fragment plaintext | 131 | 128 |
+| Photo preview | 426 | 417 (3 fragments) |
+
+Earlier fake-network figures in this log were measured with 149-byte fragments; a large transfer now takes about 2 % more fragments.

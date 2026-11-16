@@ -26,6 +26,7 @@ Facts that constrain the protocol:
 9. A stock node only tries to decrypt a `GRP_DATA` payload whose ciphertext (after its 2-byte MAC) is a non-empty multiple of 16 bytes. lichen's flooded payloads never have that length, so stock nodes reject them before any MAC check, whatever channels they follow.
 6. The companion does not report when a frame has left: `SEND_RAW_DATA` answers OK as soon as it is queued. Pacing is our job (§7.3).
 7. Hash of an identity = `pub[0]` (A:§3).
+10. **Over Bluetooth, a frame from an ESP32 companion is ≤ 173 bytes whole** (ADR-0031). The firmware sets the ATT MTU to `MAX_FRAME_SIZE` (176) (`src/helpers/esp32/SerialBLEInterface.cpp` at 81dbae5) and sends each frame as one notification, which holds MTU − 3 bytes; a longer one reaches the app cut short (arduino-esp32 `BLECharacteristic::notify`, "Truncating to %d bytes"). The receiving app's link is unknown to the sender, so everything lichen sends must arrive in pushes of ≤ 173 bytes: `RAW_DATA` payload ≤ 169, `LOG_RX_DATA` raw frame ≤ 170. Writes from the app go with response, which Bluetooth carries in several pieces.
 
 ## 2. Identity and static secret (ADR-0013)
 
@@ -52,7 +53,7 @@ A lichen frame is the payload of a `RAW_CUSTOM` packet.
 
 | `kind` | Name | `index` | `total` | `attempt` | Body after the header |
 |---|---|---|---|---|---|
-| 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..149) ‖ AEAD tag (16)` |
+| 0 | DATA | 0..total−1 | 1..64 | round (0, 1, …) | `ciphertext (1..146) ‖ AEAD tag (16)` |
 | 1 | ACK | 0 | `total` of the acknowledged datagram | ACK sequence for this `tag` | `ciphertext (1..9, §7.2) ‖ tag (16)` |
 | 2 | ABORT | 0: "I give up my datagram"; 1: "I refuse yours" | `total` of the datagram | sequence | `ciphertext (1) ‖ tag (16)` |
 | 3 | CONTROL | 0: HELLO; 1: HELLO_ACK; 2: PATH_REPLY; 3: INTRO; 4: INTRO_ACK; 5: INTRO_FIN; others reserved, ignored | 1 | try | §4 |
@@ -62,11 +63,11 @@ Decoding (otherwise silently dropped): length ≥ 7 + 1 + 16; `total` ∈ 1..64;
 ### 3.2 Useful size (ADR-0002)
 
 ```
-payload_max(path_bytes) = min(172, 174 − path_bytes)
+payload_max(path_bytes) = min(169, 171 − path_bytes)   (whole over Bluetooth, §1 fact 10)
 chunk(path_bytes)       = payload_max − 23            (7 header + 16 tag)
 ```
 
-A datagram is at most `64 × chunk` bytes (9,536 bytes up to 2 path bytes). All its fragments are `chunk` bytes long except the last (1..`chunk`). The chunk is fixed when the first fragment is sent; if the path grows during the transfer so that a fragment no longer fits, the datagram is abandoned and resent under a new `tag`.
+A datagram is at most `64 × chunk` bytes (9,344 bytes up to 2 path bytes). All its fragments are `chunk` bytes long except the last (1..`chunk`). The chunk is fixed when the first fragment is sent; if the path grows during the transfer so that a fragment no longer fits, the datagram is abandoned and resent under a new `tag`.
 
 ## 4. Handshake
 
@@ -475,7 +476,7 @@ nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  k
 ```
 
 - **Length rule** (§1 fact 9): a stock node reads a 2-byte MAC after the channel hash, so the rest of the payload must not be a non-empty multiple of 16. When `len(payload) − 3` would be one, the sender appends the pad byte and uses type 0x03 (the type byte is in the AAD).
-- **Size**: `len(payload) ≤ 159`, so that the frame still fits `LOG_RX_DATA` (173 bytes) after 8 hops with transport codes (`171 − 8 − 4`). A fragment carries at most 131 bytes of plaintext.
+- **Size**: `len(payload) ≤ 156`, so that its `LOG_RX_DATA` push still crosses a Bluetooth link whole after 8 hops with transport codes (`173 − 3 − 1 − 4 − 1 − 8`, §1 fact 10). A fragment carries at most 128 bytes of plaintext.
 - **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 62 bytes in one fragment, 193 in two. The signature is what authenticates a group message; the tag keeps frames that are not from a holder of the sender key away from it.
 - **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces. Messages (what the user sends: texts, replies, reactions, announcements) take counters from 0 to 2^31 − 1; what the core sends by itself (positions, search packets) takes counters from 2^31, each range increasing on its own (ADR-0024). A receiver keeps one replay window per range, so a gap among message counters is a lost message (§10.6), never a stale position. The `next_counter` of SENDER_KEY counts messages.
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
@@ -515,7 +516,7 @@ Group messages are flooded twice and never acknowledged (§10.3): when both copi
 
 ```
 GROUP_MISSING (0x15) = gid (16) ‖ author id (32) ‖ key_epoch (1) ‖ n (1, 1..8) ‖ n × counter u32
-GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..159) ‖ envelope payload)
+GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..156) ‖ envelope payload)
 ```
 
 **Asking.** 20 seconds after a gap is seen, plus `U[0, 20 s)` (the second copy and slower flood paths arrive meanwhile, and members who lost the same message do not ask at once), the receiver sends GROUP_MISSING for the counters still missing under one author and key: to the author when a session with it is open, otherwise to the group's admin, which has a session with every member (§10.2); to the author when the receiver is the admin. If no GROUP_RESEND arrives within 2 minutes, or one from another member than the author lacks some of the counters, it asks the other one once; then it gives up. GROUP_MISSING is an internal datagram, deferred by the airtime budget like text (§9).

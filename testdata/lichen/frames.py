@@ -146,13 +146,13 @@ def main():
     k1, k2 = bytes([1]) * 32, bytes([2]) * 32  # A's send key, B's send key
     a, b = 0xA1, 0xB2
 
-    # A short datagram, then the 8 fragments of 149 bytes of a long one.
+    # A short datagram, then the 8 fragments of 146 bytes of a long one (ADR-0031).
     hello = b"\x01" + struct.pack("<I", 1_793_000_000) + "Salut Léa, on se retrouve au col ?".encode()
     table("data", key=k1, dst=b, src=a, tag=0, index=0, total=1, attempt=0, plain=hello,
           frame=session_frame(k1, header(b, a, 0, DATA, 0, 1, 0), hello))
-    long = bytes((7 * i + 3) % 256 for i in range(8 * 149))
+    long = bytes((7 * i + 3) % 256 for i in range(8 * 146))
     for i in range(8):
-        part = long[149 * i:149 * (i + 1)]
+        part = long[146 * i:146 * (i + 1)]
         table("data", key=k1, dst=b, src=a, tag=1, index=i, total=8, attempt=0, plain=part,
               frame=session_frame(k1, header(b, a, 1, DATA, i, 8, 0), part))
 
@@ -169,13 +169,14 @@ def main():
           frame=session_frame(k1, header(b, a, 0, ABORT, 0, 1, 0), b"\x04"))
 
     # Group envelopes under a sender key: 24 bytes of plaintext need the pad byte (the payload
-    # would be 3 + 48 bytes), 20 do not, 131 is the largest fragment.
+    # would be 3 + 48 bytes), 20 do not, 128 is the largest fragment (ADR-0031).
     sk = bytes(range(0x40, 0x60))
-    for n in (20, 24, 131):
+    for n in (20, 24, 128):
         plain = bytes((5 * i + n) % 256 for i in range(n))
         payload = envelope(sk, 0xBEEF, 0xC3, 2, 41, 0, 1, 0, plain)
         table("envelope", key=sk, gid_hash=0xBEEF, sender=0xC3, key_epoch=2, counter=41, index=0,
               total=1, copy=0, plain=plain, padded=payload[1] == 0x03, payload=payload)
+
 
     # PROBEs: keyed by the two identities, and anonymous (keyed by the node keys).
     s = bytes(range(0x10, 0x30))

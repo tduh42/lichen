@@ -21,7 +21,7 @@ Each frame has its own one-time Poly1305 key, so one forgery does not help the n
 - **RFC 8439 as it is.** The AEAD of every frame is ChaCha20-Poly1305 with its full 16-byte tag: DATA, ACK, ABORT, HELLO, HELLO_ACK, PATH_REPLY, the introduction's sealed parts, the PROBE's MAC, group envelopes. Group envelopes too, although their Ed25519 signature is what authenticates a message: one construction everywhere.
 - **The standard implementation.** `lc-proto` uses the `chacha20poly1305` crate (no_std, in place, the tag apart, no allocation); the hand assembly is gone from the library and stays in its tests as an independent reference. The tag is compared in constant time and nothing is decrypted before it verifies.
 - **A packed ACK** (§7.2): the `COMPLETE` flag and one bit per fragment in `⌈(total + 1) / 8⌉` bytes, instead of a fixed 9 bytes. Up to 7 fragments the ACK frame is 24 bytes, exactly what it was. An ACK is sent twice, so a fixed body would have made every short message pay the 8 bytes three times.
-- **Sizes that follow:**
+- **Sizes that follow** (what we send was trimmed again by ADR-0031, to cross a Bluetooth link whole: fragment 146, datagram 9,344, group fragment 128, group text 59 / 187, preview 417):
 
   | | Before | Now |
   |---|---|---|

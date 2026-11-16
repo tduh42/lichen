@@ -245,9 +245,9 @@ footer p { max-width: 75ch; }
       </div>
     </figure>
     <div class="facts">
-      <div class="fact"><span class="v">149 B</span><span class="k">data per fragment, up to 2 path bytes</span></div>
+      <div class="fact"><span class="v">146 B</span><span class="k">data per fragment, up to 2 path bytes</span></div>
       <div class="fact"><span class="v">64</span><span class="k">fragments at most in a datagram</span></div>
-      <div class="fact"><span class="v">9,536 B</span><span class="k">largest datagram (64 × 149)</span></div>
+      <div class="fact"><span class="v">9,344 B</span><span class="k">largest datagram (64 × 146)</span></div>
     </div>
   </section>
 
@@ -369,7 +369,7 @@ footer p { max-width: 75ch; }
     </figure>
     <div class="facts">
       <div class="fact"><span class="v">97.6 %</span><span class="k">posts delivered with two floods, against 81.6 % with one (10 % loss per link)</span></div>
-      <div class="fact"><span class="v">62 / 193</span><span class="k">characters of text in one or two flooded fragments</span></div>
+      <div class="fact"><span class="v">59 / 187</span><span class="k">characters of text in one or two flooded fragments</span></div>
       <div class="fact"><span class="v">1–32</span><span class="k">members in a group: it may start with the admin alone</span></div>
       <div class="fact"><span class="v">130 s</span><span class="k">two people join by QR: every member holds every key (median of 10, fake network; 489 s before the relay)</span></div>
       <div class="fact"><span class="v">237 s</span><span class="k">a group of 5 created from contacts around one repeater, every key everywhere (median of 10; 412 s before)</span></div>
@@ -447,7 +447,7 @@ footer p { max-width: 75ch; }
     <div class="eyebrow">§13 · Media and files over LoRa</div>
     <h2>Voice, photos and files that fit the radio</h2>
     <div class="prose">
-      <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 426 bytes goes first, and the full thumbnail only when the recipient asks.</p>
+      <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 417 bytes goes first, and the full thumbnail only when the recipient asks.</p>
       <p>Media go to contacts only, never flooded. Before sending, the core estimates the airtime of the first round; when it would not fit in what is left of the hour, the send is refused with the time it would fit, and nothing is queued. A voice note is listened to before it goes, at the quality chosen for it; a photo opens full screen at the best version on the phone.</p>
       <p><b>Files</b> of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps (a 25 KB GPX track goes as 2.3 KB, 29 s of airtime), with its fragments and airtime shown first; anything larger, a PDF, goes over the Internet bridge below. The receiver opens it with the app for its type; lichen never runs it.</p>
     </div>
@@ -766,7 +766,7 @@ footer p { max-width: 75ch; }
     { name: 'kind‖index', size: '1 B', w: 1.4, cls: 'clear', desc: 'kind in bits 7-6: DATA, ACK, ABORT or CONTROL. index in bits 5-0: the fragment number, 0 to 63.' },
     { name: 'total', size: '1 B', w: 1, cls: 'clear', desc: 'Fragments in the datagram, 1 to 64.' },
     { name: 'attempt', size: '1 B', w: 1.2, cls: 'clear', desc: 'The round number for data, so a resent fragment gets a fresh nonce and fresh bytes for the duplicate filter.' },
-    { name: 'ciphertext', size: '1–149 B', w: 7, cls: 'sealed', desc: 'ChaCha20 under the session key for this direction. Nothing in it is read before the tag checks.' },
+    { name: 'ciphertext', size: '1–146 B', w: 7, cls: 'sealed', desc: 'ChaCha20 under the session key for this direction. Nothing in it is read before the tag checks.' },
     { name: 'tag', size: '16 B', w: 3.2, cls: 'tagb', desc: 'The full Poly1305 tag of RFC 8439, compared in constant time. The AAD is the whole header.' },
   ], 'Tap a field. The first seven bytes are the header, in clear and authenticated.');
 
