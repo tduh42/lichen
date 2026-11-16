@@ -90,7 +90,12 @@ fun QrScanner(found: (String) -> Unit, modifier: Modifier = Modifier) {
     }
     AndroidView(
         factory = { ctx ->
-            val preview = PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+            // FILL_CENTER scales the picture past the view's bounds: the caller clips it, which
+            // only works on a TextureView (COMPATIBLE); a SurfaceView ignores Compose's clip.
+            val preview = PreviewView(ctx).apply {
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+                scaleType = PreviewView.ScaleType.FILL_CENTER
+            }
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
                 val provider = providerFuture.get()
