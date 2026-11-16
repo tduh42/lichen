@@ -1,6 +1,6 @@
 # Response to the protocol review of 2026-11-06
 
-The review (Codex, at Tanguy's request) reported five findings on the tree as it was during the phone-identity migration. Each was checked against the current source; every fix has a regression test that fails on the old code.
+The review (Codex) reported five findings on the tree as it was during the phone-identity migration. Each was checked against the current source; every fix has a regression test that fails on the old code.
 
 | ID | Verdict | Evidence | Fix | Regression test |
 |---|---|---|---|---|

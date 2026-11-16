@@ -7,7 +7,7 @@
 
 Every lichen frame carried ChaCha20-Poly1305 with the tag cut to its first 8 bytes (ADR-0014), to save airtime. RFC 8439 §4 says "Tag truncation MUST NOT be done", so the construction was a variant, assembled by hand from the two primitives because the AEAD crates only verify full tags. ADR-0014 defended it with two claims: a forgery succeeds with about `2^-64` per attempt, and attempts are limited by the rate at which a LoRa receiver demodulates frames.
 
-A review on 2026-11-15, asked for by Tanguy, checked both.
+A review on 2026-11-15 checked both.
 
 - **A frame the attacker never saw a valid tag for** (a blind forgery): the tag is uniform, so a guess succeeds with exactly `2^-64`, assuming ChaCha20 is a pseudo-random function. That part of ADR-0014 holds.
 - **A frame the attacker heard and the receiver has not accepted** (lost, or jammed): the only proven bound for a Poly1305 tag cut to 64 bits is `⌈ℓ/16⌉ · 2^-39`, about `2^-35` for a full frame, against about `2^-98` with the whole tag.

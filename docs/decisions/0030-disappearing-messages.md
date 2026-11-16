@@ -5,7 +5,7 @@
 
 ## Context
 
-Disappearing messages were among the messenger conveniences Tanguy chose (2026-11-14). On a phone carried into the mountains, or lost, a conversation that cleans itself up is worth having. The question is whether a message carries its own lifetime, or whether a conversation has a setting both sides share.
+Disappearing messages were among the messenger conveniences chosen on 2026-11-14. On a phone carried into the mountains, or lost, a conversation that cleans itself up is worth having. The question is whether a message carries its own lifetime, or whether a conversation has a setting both sides share.
 
 ## Decision
 

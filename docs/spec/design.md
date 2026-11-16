@@ -1,6 +1,6 @@
 # Specification — Application protocol over MeshCore
 
-Nov 6, 2026 · Tanguy · English translation of [`design.fr.md`](design.fr.md). Where the two differ, the French original is the author's text; the corrections decided since are in [`protocol.md`](protocol.md) and the ADRs.
+Nov 6, 2026 · English translation of [`design.fr.md`](design.fr.md). Where the two differ, the French original is the author's text; the corrections decided since are in [`protocol.md`](protocol.md) and the ADRs.
 
 ## Context and goals
 

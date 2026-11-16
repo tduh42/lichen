@@ -1,6 +1,6 @@
 # lichen — design handoff
 
-Tanguy's design for the lichen apps (2026-11-06), for iOS (SwiftUI) and Android (Jetpack Compose). French original: [`README.fr.md`](README.fr.md). The mockups in `mockups/` are the reference for layout; this file gives the rules, the tokens and the screens.
+The design of the lichen apps (2026-11-06), for iOS (SwiftUI) and Android (Jetpack Compose). French original: [`README.fr.md`](README.fr.md). The mockups in `mockups/` are the reference for layout; this file gives the rules, the tokens and the screens.
 
 ## Contents
 

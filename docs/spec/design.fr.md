@@ -1,6 +1,6 @@
 # Spécification — Protocole applicatif sur MeshCore
 
-Nov 6, 2026 · @Tanguy
+Nov 6, 2026
 
 ## Contexte et objectifs
 

@@ -126,7 +126,7 @@ fn first_contact_introduces_both() {
 
 /// INTRO names its sender by one hash byte (§4.6). Bob's companion knows a repeater and another
 /// companion sharing Alice's byte, both sorted before her: neither is taken for her (seen in
-/// Paris, where a repeater shared the phone's node byte).
+/// the field, where a repeater shared the phone's node byte).
 #[test]
 fn introduction_picks_the_sender_among_hash_collisions() {
     let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 3);
