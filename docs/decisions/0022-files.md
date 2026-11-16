@@ -5,7 +5,7 @@
 
 ## Context
 
-Tanguy asked why a PDF, or any other file, cannot be sent. The apps sent text, voice, photos and positions only. A PDF is usually 100 KB or more: at SF8 / 62.5 kHz that is several minutes of airtime, beyond the 360 s per hour the 869.4–869.65 MHz sub-band allows (§9), and beyond one datagram (10,048 bytes, §3.2). The Internet bridge (ADR-0015) already moves any bytes checked against their BLAKE3 hash, and ANNOUNCE (§14.1) already has a "file" kind, but the apps only used it for photos.
+Why can a PDF, or any other file, not be sent? The apps sent text, voice, photos and positions only. A PDF is usually 100 KB or more: at SF8 / 62.5 kHz that is several minutes of airtime, beyond the 360 s per hour the 869.4–869.65 MHz sub-band allows (§9), and beyond one datagram (10,048 bytes, §3.2). The Internet bridge (ADR-0015) already moves any bytes checked against their BLAKE3 hash, and ANNOUNCE (§14.1) already has a "file" kind, but the apps only used it for photos.
 
 ## Decision
 

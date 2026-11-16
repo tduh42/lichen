@@ -5,7 +5,7 @@
 
 ## Context
 
-Tanguy asked for the conveniences of current messengers. Two of them change something already sent: correcting a message, and taking it back. lichen already names messages by a reference both sides compute (§6.2, ADR-0019), and reactions show how to change a message's appearance without touching the message: a small datagram naming its target, last writer wins, kept when it arrives before its target. A third one, forwarding, only reuses what the user already has.
+The conveniences of current messengers were asked for. Two of them change something already sent: correcting a message, and taking it back. lichen already names messages by a reference both sides compute (§6.2, ADR-0019), and reactions show how to change a message's appearance without touching the message: a small datagram naming its target, last writer wins, kept when it arrives before its target. A third one, forwarding, only reuses what the user already has.
 
 ## Decision
 

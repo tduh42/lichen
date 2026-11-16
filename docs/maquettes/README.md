@@ -1,8 +1,8 @@
 # Mockups (first round)
 
-**Superseded by [`../design/`](../design/)** (Tanguy's full design handoff, 2026-11-06): kept for history.
+**Superseded by [`../design/`](../design/)** (the full design handoff, 2026-11-06): kept for history.
 
-Tanguy's app mockups (2026-11-06), 390×844 screens:
+The first app mockups (2026-11-06), 390×844 screens:
 
 - `maquettes.html`: the original bundle, open it in a browser to see all eight screens;
 - `ios-*.html`, `android-*.html`: the markup of each screen, extracted from the bundle for reference (fonts removed).

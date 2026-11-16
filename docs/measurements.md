@@ -192,7 +192,7 @@ iOS simulator, demo network with iroh off and Tor on (`-demo YES -open Camille -
 
 ## 2026-11-07 — First real-radio test
 
-Paris, indoors, the two radios a few metres apart on the same desk. An iPhone 17 Pro with the lichen app, paired over Bluetooth with the ThinkNode M5 (oxymesh firmware), against the Heltec V4 (stock MeshCore companion over USB) driven by `lichen listen --echo --save`. Preset 869.618 MHz / 62.5 kHz / SF8 / CR 4/8, direct path (0 hops).
+Indoors, the two radios a few metres apart on the same desk. An iPhone 17 Pro with the lichen app, paired over Bluetooth with the ThinkNode M5 (oxymesh firmware), against the Heltec V4 (stock MeshCore companion over USB) driven by `lichen listen --echo --save`. Preset 869.618 MHz / 62.5 kHz / SF8 / CR 4/8, direct path (0 hops).
 
 | What | Frames | Result |
 |---|---|---|

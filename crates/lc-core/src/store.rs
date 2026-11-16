@@ -2153,10 +2153,10 @@ mod tests {
     fn nicknames_set_and_cleared() {
         let s = Store::in_memory().unwrap();
         let k = [7u8; 32];
-        s.set_nickname(&k, Some("  Tanguy ")).unwrap();
+        s.set_nickname(&k, Some("  Sam ")).unwrap();
         assert_eq!(
             s.nicknames().unwrap().get(&k).map(String::as_str),
-            Some("Tanguy")
+            Some("Sam")
         );
         s.set_nickname(&k, Some("Nina")).unwrap();
         assert_eq!(
