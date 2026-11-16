@@ -46,7 +46,10 @@ struct RootView: View {
             if model.lock.covered { LockCover() }
         }
         .onAppear { model.lock.attach { [model] in AnyView(LockCover().environment(model)) } }
-        .onChange(of: scenePhase, initial: true) { _, phase in model.lock.scene(phase) }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            model.lock.scene(phase)
+            model.scene(phase)
+        }
         // Notifications for messages and SOS: asked once the welcome screens are done.
         .task(id: onboarded) { if onboarded { model.notifier.requestAuthorization() } }
         .onAppear {

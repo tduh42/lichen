@@ -401,7 +401,7 @@ struct StatusBanners: View {
                     message: model.companionState == .off
                         ? String(localized: "Turn Bluetooth on to reach your radio.")
                         : String(localized: "Messages wait until the radio is back."),
-                    action: (String(localized: "Retry"), { model.companion.scan() })
+                    action: (String(localized: "Retry"), { model.retryRadio() })
                 )
             }
             // A contact speaks a newer protocol version (ADR-0029).

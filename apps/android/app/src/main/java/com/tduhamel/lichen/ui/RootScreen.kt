@@ -132,10 +132,15 @@ fun RootScreen(model: AppModel) {
             composable("search") { SearchScreen(model) }
             composable("sos") { SosScreen(model, close = { nav.popBackStack() }) }
             composable("settings") {
-                SettingsScreen(model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") })
+                SettingsScreen(
+                    model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
+                    licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
+                )
             }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
             composable("radio") { RadioSettingsScreen(model, back = { nav.popBackStack() }) }
+            composable("licences") { LicencesScreen(back = { nav.popBackStack() }) }
+            composable("report") { ReportScreen(model, back = { nav.popBackStack() }) }
             composable("contact") { ContactScreen(model, back = { nav.popBackStack() }) }
             composable("group/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
