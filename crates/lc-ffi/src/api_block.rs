@@ -25,7 +25,12 @@ impl LichenCore {
             .nicknames
             .get(&k)
             .cloned()
-            .or_else(|| i.core.contacts().find(|c| c.key == k).map(|c| c.name.clone()))
+            .or_else(|| {
+                i.core
+                    .contacts()
+                    .find(|c| c.key == k)
+                    .map(|c| c.name.clone())
+            })
             .ok_or(LichenError::UnknownContact)?;
         let identity = i.core.block(&k, now_ms);
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;

@@ -1036,7 +1036,10 @@ impl Core {
     /// known under now.
     pub fn unblock(&mut self, node: &PubKey, identity: Option<&PubKey>) {
         self.blocked_nodes.remove(node);
-        for i in [identity.copied(), self.identity_of(node)].into_iter().flatten() {
+        for i in [identity.copied(), self.identity_of(node)]
+            .into_iter()
+            .flatten()
+        {
             self.blocked_ids.remove(&i);
         }
     }

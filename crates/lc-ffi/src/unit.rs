@@ -1420,9 +1420,8 @@ mod text_links {
         let links = crate::text_links(text.into());
         assert_eq!(links.len(), 2);
         let units: Vec<u16> = text.encode_utf16().collect();
-        let span = |l: &TextLink| {
-            String::from_utf16(&units[l.start as usize..l.end as usize]).unwrap()
-        };
+        let span =
+            |l: &TextLink| String::from_utf16(&units[l.start as usize..l.end as usize]).unwrap();
         assert_eq!(span(&links[0]), "https://a.fr/x");
         assert_eq!(
             links[0].target,
@@ -1487,7 +1486,11 @@ mod block_archive {
         let core = core_with_bob();
         let chat = ChatRef::Contact { key: vec![9; 32] };
         core.set_archived(chat.clone(), true).unwrap();
-        assert!(core.chat_prefs().iter().any(|p| p.chat == chat && p.archived));
+        assert!(
+            core.chat_prefs()
+                .iter()
+                .any(|p| p.chat == chat && p.archived)
+        );
         let mut i = core.lock();
         assert!(i.on_event(&received(
             [9; 32],

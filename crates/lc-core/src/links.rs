@@ -35,9 +35,11 @@ pub fn find(text: &str) -> Vec<Span> {
         let found = if prev.is_some_and(char::is_alphanumeric) {
             None
         } else {
-            link(&chars, i)
-                .or_else(|| geo(&chars, i))
-                .or_else(|| prev.is_none_or(|p| !joins(p)).then(|| pair(&chars, i)).flatten())
+            link(&chars, i).or_else(|| geo(&chars, i)).or_else(|| {
+                prev.is_none_or(|p| !joins(p))
+                    .then(|| pair(&chars, i))
+                    .flatten()
+            })
         };
         match found {
             Some((end, found)) if end > i => {
@@ -373,8 +375,7 @@ fn pair(chars: &[char], i: usize) -> Option<(usize, Found)> {
     let lon_second = |h: Option<char>| matches!(h, None | Some('E' | 'W'));
     let (lat, lon) = if lat_first(a.hemisphere) && lon_second(b.hemisphere) {
         (a.value, b.value)
-    } else if matches!(a.hemisphere, Some('E' | 'W')) && matches!(b.hemisphere, Some('N' | 'S'))
-    {
+    } else if matches!(a.hemisphere, Some('E' | 'W')) && matches!(b.hemisphere, Some('N' | 'S')) {
         (b.value, a.value)
     } else {
         return None;

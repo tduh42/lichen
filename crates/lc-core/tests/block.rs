@@ -165,17 +165,26 @@ fn a_blocked_identity_behind_another_node() {
     net.connect(d);
     net.run_until(net.now + 20 * S, |_| false);
     let alice = net.key(a);
-    net.with_core(d, |c, now| c.send_text(&alice, "it's me, from Dave's radio", 1, now))
-        .unwrap()
-        .unwrap();
+    net.with_core(d, |c, now| {
+        c.send_text(&alice, "it's me, from Dave's radio", 1, now)
+    })
+    .unwrap()
+    .unwrap();
     net.run_until(net.now + 10 * MIN, |_| false);
     let ev = net.take_events(a);
     assert!(texts(&ev).is_empty(), "{ev:?}");
     let dave = net.key(d);
     let known = net
-        .with_core_ref(a, |c| c.contacts().find(|k| k.key == dave).and_then(|k| k.identity))
+        .with_core_ref(a, |c| {
+            c.contacts()
+                .find(|k| k.key == dave)
+                .and_then(|k| k.identity)
+        })
         .unwrap();
-    assert_eq!(known, None, "the blocked identity is not attached to Dave's node");
+    assert_eq!(
+        known, None,
+        "the blocked identity is not attached to Dave's node"
+    );
     assert!(
         !net.take_events(d)
             .iter()
@@ -214,9 +223,11 @@ fn a_blocked_members_group_posts_are_not_shown() {
     net.with_core(a, |core, now| core.block(&bob, now));
 
     let post = |net: &mut Net, i: usize, text: &str| {
-        net.with_core(i, |core, now| core.send_group_text(&gid, text, 1_793_900_000, now))
-            .unwrap()
-            .unwrap();
+        net.with_core(i, |core, now| {
+            core.send_group_text(&gid, text, 1_793_900_000, now)
+        })
+        .unwrap()
+        .unwrap();
         net.run_until(net.now + 2 * MIN, |_| false);
     };
     post(&mut net, b, "from bob");

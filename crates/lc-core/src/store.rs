@@ -1275,9 +1275,9 @@ impl Store {
 
     /// Pinned, muted and archived conversations.
     pub fn chat_prefs(&self) -> Result<Vec<ChatPref>, Error> {
-        let mut st = self.conn.prepare(
-            "SELECT chat_kind, chat, pinned_at, muted_until, archived FROM chat_prefs",
-        )?;
+        let mut st = self
+            .conn
+            .prepare("SELECT chat_kind, chat, pinned_at, muted_until, archived FROM chat_prefs")?;
         let rows = st.query_map([], |r| {
             let bytes: Vec<u8> = r.get(1)?;
             Ok(Chat::from_row(r.get(0)?, &bytes).map(|chat| ChatPref {
@@ -1336,8 +1336,12 @@ impl Store {
         )?;
         let kept = st.query_map([], |r| {
             let bytes: Vec<u8> = r.get(1)?;
-            Ok(Chat::from_row(r.get(0)?, &bytes)
-                .map(|c| (c, r.get::<_, i64>(2).unwrap_or(0).try_into().unwrap_or(0u64))))
+            Ok(Chat::from_row(r.get(0)?, &bytes).map(|c| {
+                (
+                    c,
+                    r.get::<_, i64>(2).unwrap_or(0).try_into().unwrap_or(0u64),
+                )
+            }))
         })?;
         for (chat, bytes) in kept.filter_map(|r| r.ok().flatten()) {
             match out.iter_mut().find(|u| u.chat == chat) {
@@ -1381,8 +1385,10 @@ impl Store {
     }
 
     pub fn unblock(&self, node: &PubKey) -> Result<(), Error> {
-        self.conn
-            .execute("DELETE FROM blocked WHERE node = ?1", params![node.as_slice()])?;
+        self.conn.execute(
+            "DELETE FROM blocked WHERE node = ?1",
+            params![node.as_slice()],
+        )?;
         Ok(())
     }
 
@@ -2156,7 +2162,10 @@ mod tests {
         assert_eq!(texts(s.search("au col", 10).unwrap()), ["carol au col"]);
         let list = s.conversations().unwrap();
         let group = list.iter().find(|(m, _)| m.chat == g).unwrap();
-        assert_eq!((texts(vec![group.0.clone()]), group.1), (vec!["carol au col".into()], 1));
+        assert_eq!(
+            (texts(vec![group.0.clone()]), group.1),
+            (vec!["carol au col".into()], 1)
+        );
         assert!(list.iter().any(|(m, _)| m.chat == Chat::Contact(bob)));
         s.unblock(&bob).unwrap();
         assert!(s.blocked().unwrap().is_empty());
