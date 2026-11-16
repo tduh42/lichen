@@ -365,8 +365,9 @@ fun RecordingBar(model: AppModel, chat: ChatId, onReview: (ShortArray) -> Unit, 
     val t = lichen
     val res = LocalResources.current
     val seconds = model.recorder.elapsed
+    val mode = model.recordMode(chat)
     // The chosen mode's bytes for what is recorded so far.
-    val e = model.estimate(chat, voiceDatagramLenFor(model.voiceMode.toUByte(), (seconds * 1000).toUInt()))
+    val e = model.voiceEstimate(chat, voiceDatagramLenFor(mode.toUByte(), (seconds * 1000).toUInt()))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         IconButton(
             onClick = { model.recorder.stop(keep = false) },
@@ -375,7 +376,7 @@ fun RecordingBar(model: AppModel, chat: ChatId, onReview: (ShortArray) -> Unit, 
         ) { Icon(Icons.Filled.Close, stringResource(R.string.cancel)) }
         Box(Modifier.size(10.dp).background(t.sos, CircleShape))
         Column(Modifier.weight(1f)) {
-            Text("${clock(seconds)} / ${clock(15.0)}", style = figure(15.sp), color = t.tx)
+            Text("${clock(seconds)} / ${clock(model.recorder.limit.toDouble())}", style = figure(15.sp), color = t.tx)
             e?.let {
                 Text(
                     stringResource(R.string.cost_so_far, fragmentsText(res, it.fragments.toInt()), "%.0f".format(it.airtimeMs.toDouble() / 1000)),
@@ -396,7 +397,7 @@ fun RecordingBar(model: AppModel, chat: ChatId, onReview: (ShortArray) -> Unit, 
                 // To the conversation the recording was made in.
                 val to = model.recorder.chat ?: return@IconButton
                 val pcm = model.recorder.stop(keep = true) ?: return@IconButton
-                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()), to)?.let(onError)
+                model.sendVoice(com.tduhamel.lichen.core.prepareVoice(pcm.toList(), mode.toUByte()), to)?.let(onError)
             },
             colors = IconButtonDefaults.iconButtonColors(containerColor = t.actBg, contentColor = t.actFg),
             modifier = Modifier.size(48.dp),
@@ -415,7 +416,7 @@ fun ReviewBar(model: AppModel, chat: ChatId, r: VoiceReview, change: (VoiceRevie
     val res = LocalResources.current
     val reviewing = model.player.playing == VoicePlayer.REVIEW
     val total = r.voice.durationMs.toDouble() / 1000
-    val cost = model.estimate(chat, voiceDatagramLenFor(r.mode.toUByte(), r.voice.durationMs))
+    val cost = model.voiceEstimate(chat, voiceDatagramLenFor(r.mode.toUByte(), r.voice.durationMs))
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             IconButton(
@@ -460,7 +461,9 @@ fun ReviewBar(model: AppModel, chat: ChatId, r: VoiceReview, change: (VoiceRevie
         }
         // Voice quality against time on air, for this message.
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            // In a group, only the modes whose note fits in 5 fragments (ADR-0035).
             val options = listOf(0 to R.string.voice_compact, 2 to R.string.voice_standard, 3 to R.string.voice_clear)
+                .filter { (m, _) -> !chat.group || com.tduhamel.lichen.core.groupVoiceMaxMs(m.toUByte()) >= r.voice.durationMs }
             options.forEachIndexed { i, (mode, label) ->
                 SegmentedButton(
                     selected = r.mode == mode,
@@ -475,7 +478,10 @@ fun ReviewBar(model: AppModel, chat: ChatId, r: VoiceReview, change: (VoiceRevie
         }
         cost?.let {
             Text(
-                stringResource(R.string.voice_quality_cost, fragmentsText(res, it.fragments.toInt()), "%.0f".format(it.airtimeMs.toDouble() / 1000)),
+                stringResource(
+                    if (chat.group) R.string.group_voice_cost else R.string.voice_quality_cost,
+                    fragmentsText(res, it.fragments.toInt()), "%.0f".format(it.airtimeMs.toDouble() / 1000),
+                ),
                 fontSize = 11.sp, color = t.tx2,
             )
         }

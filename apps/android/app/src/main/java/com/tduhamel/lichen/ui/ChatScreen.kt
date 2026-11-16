@@ -140,6 +140,7 @@ import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.WaitReason
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.VoiceRecorder
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.Notifications
 import com.tduhamel.lichen.model.display
@@ -1177,7 +1178,7 @@ private fun Composer(
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (!ok) {
             onError(res.getString(R.string.mic_denied))
-        } else if (!model.recorder.start(chat)) {
+        } else if (!model.recorder.start(chat, if (chat.group) AppModel.GROUP_VOICE_SECONDS else VoiceRecorder.MAX_SECONDS)) {
             onError(res.getString(R.string.mic_unavailable))
         }
     }
@@ -1210,7 +1211,8 @@ private fun Composer(
     ) {
         if (model.recorder.recording && model.recorder.chat == chat) {
             RecordingBar(model, chat, onReview = { pcm ->
-                review = VoiceReview(pcm, model.voiceMode, com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()))
+                val mode = model.recordMode(chat)
+                review = VoiceReview(pcm, mode, com.tduhamel.lichen.core.prepareVoice(pcm.toList(), mode.toUByte()))
             }, onError = onError)
             return@Column
         }
@@ -1352,14 +1354,15 @@ private fun Composer(
                     focusedPlaceholderColor = t.tx2, unfocusedPlaceholderColor = t.tx2,
                 ),
             )
-            if (chat.contactKey != null && draft.isEmpty()) {
+            // Voice notes: to a contact, or short ones to a group (ADR-0035).
+            if ((chat.contactKey != null || chat.group) && draft.isEmpty()) {
                 IconButton(
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED
                         if (!granted) {
                             askMic.launch(Manifest.permission.RECORD_AUDIO)
-                        } else if (!model.recorder.start(chat)) {
+                        } else if (!model.recorder.start(chat, if (chat.group) AppModel.GROUP_VOICE_SECONDS else VoiceRecorder.MAX_SECONDS)) {
                             onError(res.getString(R.string.mic_unavailable))
                         }
                     },

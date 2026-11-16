@@ -1302,8 +1302,11 @@ class AppModel(val app: Application) {
     /** Conversation `chat` is left: a recording made for it stops and waits for it. */
     fun keepRecording(chat: ChatId) {
         if (recorder.chat != chat) return
-        recorder.stop(keep = true)?.let { voiceDrafts[chat] = VoiceDraft(it, voiceMode) }
+        recorder.stop(keep = true)?.let { voiceDrafts[chat] = VoiceDraft(it, recordMode(chat)) }
     }
+
+    /** The Codec2 mode a new recording uses: the chosen one, 700C in a group (ADR-0035). */
+    fun recordMode(chat: ChatId): Int = if (chat.group) GROUP_VOICE_MODE else voiceMode
 
     /**
      * Makes message `id` (a search result, a quoted message) part of the loaded history: what
@@ -1750,7 +1753,13 @@ class AppModel(val app: Application) {
         return runCatching { core.estimateDatagram(key, datagramLen) }.getOrNull()
     }
 
+    /** What a voice message of `datagramLen` bytes costs: on the path to a contact, or our own
+     * floods to a group (both copies, §13.1). */
+    fun voiceEstimate(chat: ChatId, datagramLen: UInt): Estimate? =
+        if (chat.group) core.estimateGroupDatagram(datagramLen) else estimate(chat, datagramLen)
+
     fun sendVoice(voice: PreparedVoice, chat: ChatId): String? {
+        if (chat.group) return sendMedia(chat) { at, now -> core.sendGroupVoice(chat.hex.unhex(), voice, at, now) }
         val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
         return sendMedia(chat) { at, now -> core.sendVoice(key, voice, at, now) }
     }
@@ -2401,6 +2410,9 @@ class AppModel(val app: Application) {
     }
 
     companion object {
+        /** A group's voice notes (ADR-0035): Codec2 700C, 6 seconds at most (5 fragments). */
+        const val GROUP_VOICE_MODE = 0
+        const val GROUP_VOICE_SECONDS = 6
         private const val APPEARANCE = "appearance"
         private const val MY_NAME = "lichen.myName"
         private const val BACKED_UP = "lichen.phraseBackedUp"

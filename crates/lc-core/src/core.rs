@@ -1241,6 +1241,33 @@ impl Core {
         self.send_datagram(to, datagram, now)
     }
 
+    /// Floods a voice note (a VOICE datagram, `content_type ‖ body`) to group `gid` (§13.1,
+    /// ADR-0035): 5 fragments at most, and refused, not queued, when its floods do not fit in
+    /// the airtime left this hour (§13.4).
+    pub fn send_group_voice(
+        &mut self,
+        gid: &GroupId,
+        datagram: &[u8],
+        now: Millis,
+    ) -> Result<MsgId, Error> {
+        if datagram.first() != Some(&lc_proto::content::VOICE) {
+            return Err(Error::Invalid);
+        }
+        if !self.groups.contains_key(gid) {
+            return Err(Error::UnknownGroup);
+        }
+        let (fragments, airtime) = self.estimate_group_send(datagram.len());
+        if fragments > lc_proto::group::VOICE_MAX_FRAGMENTS {
+            return Err(Error::TooLarge);
+        }
+        let queued = self.queued_airtime();
+        let at = self.budget.opportunity_after(now, queued, airtime);
+        if at > now {
+            return Err(Error::OverBudget { wait_ms: at - now });
+        }
+        self.send_group(gid, datagram, true, now)
+    }
+
     /// Airtime (first round) of every datagram queued or in flight, counted whole.
     fn queued_airtime(&self) -> Millis {
         self.peers

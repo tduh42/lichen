@@ -55,9 +55,13 @@ const HELD_MAX: usize = 64;
 /// …and per group hash and sender byte: garbage under one member's byte, which nothing can
 /// check before the key comes, cannot push out the others' (review of 2026-11-15, SR-20).
 const HELD_PER_SENDER: usize = 8;
-/// Fragments kept per two-fragment message, both indices together: the sender's own, and a
-/// few that open under its key but may come from another member (SR-17).
-const PARTIAL_CANDIDATES: usize = 6;
+/// Fragments kept per message of several, beyond one per index: the sender's own, and a few
+/// that open under its key but may come from another member (SR-17).
+const PARTIAL_EXTRA: usize = 4;
+/// Combinations of kept fragments, one per index, tried against the signature at most
+/// (ADR-0035): a member injecting fragments under another's key costs a bounded number of
+/// checks.
+const COMBINATIONS_MAX: usize = 32;
 /// Group messages each member keeps to resend (§10.6), and for how long.
 const KEPT_MAX: usize = 64;
 const KEPT_MS: Millis = 3_600_000;
@@ -359,13 +363,15 @@ struct MemberKeys {
 /// Retired keys remembered per member.
 const RETIRED_MAX: usize = 8;
 
-/// One fragment of a two-fragment message, waiting for the other.
+/// One fragment of a message of several, waiting for the others.
 #[derive(Clone, Debug)]
 struct Partial {
     member: PubKey,
     epoch: u8,
     counter: u32,
     index: u8,
+    /// The fragments the message has (in the nonce: the sender's own say the same).
+    total: u8,
     data: Vec<u8>,
     /// The fragment as it was on the air (kept for §10.6).
     payload: Vec<u8>,
@@ -3464,7 +3470,13 @@ impl Core {
             sign(&prv, &signed_parts(gid, &epoch_b, &counter_b, body)).ok_or(Error::NoIdentity)?;
         let mut plain = body.to_vec();
         plain.extend_from_slice(&sig);
-        let total = group::fragments_for(plain.len()).ok_or(Error::TooLarge)?;
+        // A voice note may take 5 fragments, anything else 2 (§10.3, ADR-0035).
+        let max = if user && body.first() == Some(&content::VOICE) {
+            group::VOICE_MAX_FRAGMENTS
+        } else {
+            group::MAX_FRAGMENTS
+        };
+        let total = group::fragments_up_to(plain.len(), max).ok_or(Error::TooLarge)?;
         if user {
             g.my_counter = g
                 .my_counter
@@ -3806,52 +3818,82 @@ impl Core {
                     } else {
                         // Every member holds this sender key: a fragment that opens may still
                         // not be the sender's. Fragments of each index are kept side by side,
-                        // and the pair whose signature verifies is the message, so a fragment
-                        // injected first does not shut out the sender's own (review of
-                        // 2026-11-15, SR-17).
+                        // and the combination, one per index, whose signature verifies is the
+                        // message, so a fragment injected first does not shut out the sender's
+                        // own (review of 2026-11-15, SR-17; ADR-0035 for more than two).
                         let this = |p: &Partial| {
                             p.member == member
                                 && p.epoch == hdr.key_epoch
                                 && p.counter == hdr.counter
+                                && p.total == hdr.total
                         };
                         let (epoch_b, counter_b) = ([hdr.key_epoch], hdr.counter.to_le_bytes());
-                        let found = g
-                            .partials
-                            .iter()
-                            .filter(|p| this(p) && p.index != hdr.index)
-                            .find_map(|p| {
-                                let (whole, payloads) = if p.index == 0 {
-                                    (
-                                        [p.data.as_slice(), plain].concat(),
-                                        vec![p.payload.clone(), payload.to_vec()],
-                                    )
+                        // Per index: (plaintext, payload as heard) candidates.
+                        let choices: Vec<Vec<(&[u8], &[u8])>> = (0..hdr.total)
+                            .map(|i| {
+                                if i == hdr.index {
+                                    vec![(plain as &[u8], payload)]
                                 } else {
-                                    (
-                                        [plain, p.data.as_slice()].concat(),
-                                        vec![payload.to_vec(), p.payload.clone()],
+                                    g.partials
+                                        .iter()
+                                        .filter(|p| this(p) && p.index == i)
+                                        .map(|p| (p.data.as_slice(), p.payload.as_slice()))
+                                        .collect()
+                                }
+                            })
+                            .collect();
+                        let found = if choices.iter().any(Vec::is_empty) {
+                            None
+                        } else {
+                            let mut pick = vec![0usize; choices.len()];
+                            let mut found = None;
+                            'combinations: for _ in 0..COMBINATIONS_MAX {
+                                let parts: Vec<(&[u8], &[u8])> = pick
+                                    .iter()
+                                    .zip(&choices)
+                                    .filter_map(|(&c, options)| options.get(c).copied())
+                                    .collect();
+                                let whole: Vec<u8> =
+                                    parts.iter().flat_map(|(d, _)| d.iter().copied()).collect();
+                                if let Some((body, sig)) = whole.split_last_chunk::<SIGNATURE_LEN>()
+                                    && verify(
+                                        &member,
+                                        &signed_parts(&gid, &epoch_b, &counter_b, body),
+                                        sig,
                                     )
-                                };
-                                let (body, sig) = whole.split_last_chunk::<SIGNATURE_LEN>()?;
-                                verify(
-                                    &member,
-                                    &signed_parts(&gid, &epoch_b, &counter_b, body),
-                                    sig,
-                                )
-                                .then(|| (whole.clone(), payloads))
-                            });
+                                {
+                                    let payloads: Vec<Vec<u8>> =
+                                        parts.iter().map(|(_, p)| p.to_vec()).collect();
+                                    found = Some((whole, payloads));
+                                    break;
+                                }
+                                // The next combination, the first index turning fastest.
+                                for (c, options) in pick.iter_mut().zip(&choices) {
+                                    *c += 1;
+                                    if *c < options.len() {
+                                        continue 'combinations;
+                                    }
+                                    *c = 0;
+                                }
+                                break;
+                            }
+                            found
+                        };
                         if found.is_some() {
                             g.partials.retain(|p| !this(p));
                         } else if !g
                             .partials
                             .iter()
                             .any(|p| this(p) && p.index == hdr.index && p.data.as_slice() == plain)
-                            && g.partials.iter().filter(|p| this(p)).count() < PARTIAL_CANDIDATES
+                            && g.partials.iter().filter(|p| this(p)).count()
+                                < usize::from(hdr.total) + PARTIAL_EXTRA
                         {
                             g.partials.push(Partial {
                                 member,
                                 epoch: hdr.key_epoch,
                                 counter: hdr.counter,
                                 index: hdr.index,
+                                total: hdr.total,
                                 data: plain.to_vec(),
                                 payload: payload.to_vec(),
                                 at: now,
@@ -3873,6 +3915,13 @@ impl Core {
                         &signed_parts(&gid, &epoch_b, &counter_b, body),
                         sig,
                     ) {
+                        return;
+                    }
+                    // More than two fragments: only a voice note, five at most (ADR-0035).
+                    if hdr.total > group::MAX_FRAGMENTS
+                        && (body.first() != Some(&content::VOICE)
+                            || hdr.total > group::VOICE_MAX_FRAGMENTS)
+                    {
                         return;
                     }
                     let skipped = ks.skipped_before(hdr.counter);

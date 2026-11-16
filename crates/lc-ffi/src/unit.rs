@@ -1584,3 +1584,19 @@ mod storage {
         assert_eq!(core.chat_media(r, None, 10).unwrap().len(), 1);
     }
 }
+
+/// ADR-0035: what a group takes of a voice note, per mode: 5 fragments.
+#[cfg(test)]
+mod group_voice {
+    #[test]
+    fn the_longest_note_a_group_takes() {
+        assert_eq!(crate::group_voice_max_ms(0), 6_480);
+        assert_eq!(crate::group_voice_max_ms(1), 3_760);
+        assert_eq!(crate::group_voice_max_ms(2), 2_840);
+        assert_eq!(crate::group_voice_max_ms(3), 1_880);
+        // 6 s of 700C is what the apps record for a group.
+        let v = crate::prepare_voice(vec![0; 48_000], 0);
+        assert_eq!(v.frames, 150);
+        assert!(crate::voice_datagram_len(&v) as usize + 64 <= 5 * 128);
+    }
+}

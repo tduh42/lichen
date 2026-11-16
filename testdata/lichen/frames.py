@@ -176,6 +176,13 @@ def main():
         payload = envelope(sk, 0xBEEF, 0xC3, 2, 41, 0, 1, 0, plain)
         table("envelope", key=sk, gid_hash=0xBEEF, sender=0xC3, key_epoch=2, counter=41, index=0,
               total=1, copy=0, plain=plain, padded=payload[1] == 0x03, payload=payload)
+    # A group voice note's fragments (ADR-0035): `total` 5 sets bit 2 of `frag`; the first
+    # (full) fragment of the first copy, the last (86 bytes) of the second.
+    for index, copy, n in ((0, 0, 128), (4, 1, 86)):
+        plain = bytes((7 * i + index) % 256 for i in range(n))
+        payload = envelope(sk, 0xBEEF, 0xC3, 2, 42, index, 5, copy, plain)
+        table("envelope", key=sk, gid_hash=0xBEEF, sender=0xC3, key_epoch=2, counter=42, index=index,
+              total=5, copy=copy, plain=plain, padded=payload[1] == 0x03, payload=payload)
 
 
     # PROBEs: keyed by the two identities, and anonymous (keyed by the node keys).

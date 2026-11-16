@@ -153,7 +153,7 @@
     <string name="err_not_allowed">Only the group admin can do this.</string>
     <string name="err_invalid_key">Invalid key.</string>
     <string name="err_over_budget">Not enough airtime left this hour: it fits in %1$d min.</string>
-    <string name="err_media_in_group">Photos and voice messages go to contacts only: in a group they would have to be flooded.</string>
+    <string name="err_media_in_group">Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.</string>
     <string name="err_bad_image">This image could not be read.</string>
     <string name="err_not_a_preview">There is no full version to ask for.</string>
     <string name="err_not_searching">No search is running for this person.</string>
@@ -1130,4 +1130,6 @@
         <item quantity="one">%1$d file or photo</item>
         <item quantity="other">%1$d files or photos</item>
     </plurals>
+    <!-- Voice notes in groups (ADR-0035) -->
+    <string name="group_voice_cost">Flooded to the group: %1$s · ≈ %2$s s of our airtime; every repeater adds as much</string>
 </resources>

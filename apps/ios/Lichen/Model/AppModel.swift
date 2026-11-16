@@ -1054,7 +1054,8 @@ final class AppModel {
             return
         }
         if let pcm = recorder.stop(keep: true) {
-            voiceDrafts[chat] = VoiceDraft(pcm: pcm, mode: UInt8(voiceMode))
+            let mode: UInt8 = if case .group = chat { Self.groupVoiceMode } else { UInt8(voiceMode) }
+            voiceDrafts[chat] = VoiceDraft(pcm: pcm, mode: mode)
         }
     }
 
@@ -1412,9 +1413,26 @@ final class AppModel {
         return try? core.estimateDatagram(to: key, len: datagramLen)
     }
 
+    /// What a voice message of `len` bytes costs: on the path to a contact, or our own floods
+    /// to a group (both copies, §13.1).
+    func voiceEstimate(_ chat: ChatID, datagramLen: UInt32) -> Estimate? {
+        if case .group = chat { return core.estimateGroupDatagram(len: datagramLen) }
+        return estimate(chat, datagramLen: datagramLen)
+    }
+
+    /// A group's voice notes (ADR-0035): Codec2 700C, 6 seconds at most (5 fragments).
+    static let groupVoiceMode: UInt8 = 0
+    static let groupVoiceSeconds: TimeInterval = 6
+
     func sendVoice(_ voice: PreparedVoice, to chat: ChatID) -> String? {
-        guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
-        return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
+        switch chat {
+        case let .contact(key):
+            return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
+        case let .group(gid):
+            return sendMedia(chat) { try core.sendGroupVoice(gid: gid, voice: voice, sentAt: $0, nowMs: $1) }
+        case .mesh, .channel:
+            return LichenError.MediaInGroup.display
+        }
     }
 
     /// A small file over LoRa (§13.2, ADR-0022), compressed when smaller (ADR-0023): up to 8 KB
@@ -2519,7 +2537,7 @@ extension LichenError {
             let minutes = max(1, Int((Double(waitS) / 60).rounded(.up)))
             return String(localized: "Not enough airtime left this hour: it fits in \(minutes) min.")
         case .MediaInGroup:
-            return String(localized: "Photos and voice messages go to contacts only: in a group they would have to be flooded.")
+            return String(localized: "Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.")
         case .BadImage: return String(localized: "This image could not be read.")
         case .NotAPreview: return String(localized: "There is no full version to ask for.")
         case .NotSearching: return String(localized: "No search is running for this person.")

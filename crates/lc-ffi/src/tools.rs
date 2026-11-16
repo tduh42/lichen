@@ -169,6 +169,20 @@ pub fn voice_datagram_len(voice: &PreparedVoice) -> u32 {
     8 + voice.data.len() as u32
 }
 
+/// The longest voice note a group takes in `mode` (§13.1, ADR-0035): what fits in 5 fragments
+/// with its header and signature. 6,480 ms in 700C.
+#[uniffi::export]
+pub fn group_voice_max_ms(mode: u8) -> u32 {
+    let mode = lc_media::voice::Mode::from_code(mode).unwrap_or(lc_media::voice::ENCODE_MODE);
+    // content_type ‖ ts ‖ mode ‖ frames ‖ data ‖ signature, in 5 fragments.
+    let room = lc_proto::group::VOICE_MESSAGE_MAX - 8 - lc_proto::group::SIGNATURE_LEN;
+    let frames = (0..=lc_media::voice::MAX_FRAMES)
+        .rev()
+        .find(|&f| lc_media::voice::data_len(mode, f) <= room)
+        .unwrap_or(0);
+    u32::from(frames) * lc_media::voice::FRAME_MS
+}
+
 /// Bytes of a VOICE datagram of `duration_ms` in `mode` (the cost while recording).
 #[uniffi::export]
 pub fn voice_datagram_len_for(mode: u8, duration_ms: u32) -> u32 {

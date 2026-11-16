@@ -1308,9 +1308,12 @@ private struct Composer: View {
                         .padding(.vertical, 9)
                         .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22))
                         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.line))
-                    if isContact && draft.isEmpty {
+                    // Voice notes: to a contact, or short ones to a group (ADR-0035).
+                    if (isContact || isGroupChat) && draft.isEmpty {
                         Button {
-                            Task { await model.recorder.start(for: chat) }
+                            Task {
+                                await model.recorder.start(for: chat, maxSeconds: isGroupChat ? AppModel.groupVoiceSeconds : VoiceRecorder.maxSeconds)
+                            }
                         } label: {
                             Image(systemName: "mic")
                                 .font(.system(.title3, weight: .semibold))
@@ -1502,11 +1505,19 @@ private struct Composer: View {
         return false
     }
 
+    private var isGroupChat: Bool {
+        if case .group = chat { return true }
+        return false
+    }
+
+    /// The Codec2 mode a new recording uses: the chosen one, 700C in a group (ADR-0035).
+    private var recordMode: UInt8 { isGroupChat ? AppModel.groupVoiceMode : UInt8(model.voiceMode) }
+
     /// While recording: time, cost so far, cancel, send.
     private var recordingBar: some View {
         let seconds = model.recorder.elapsed
         // The chosen mode's bytes for what is recorded so far.
-        let estimate = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: UInt8(model.voiceMode), durationMs: UInt32(seconds * 1000)))
+        let estimate = model.voiceEstimate(chat, datagramLen: voiceDatagramLenFor(mode: recordMode, durationMs: UInt32(seconds * 1000)))
         return HStack(spacing: 12) {
             Button {
                 _ = model.recorder.stop(keep: false)
@@ -1520,7 +1531,7 @@ private struct Composer: View {
             .accessibilityLabel("Cancel")
             Circle().fill(Theme.sos).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(clock(seconds)) / \(clock(VoiceRecorder.maxSeconds))")
+                Text("\(clock(seconds)) / \(clock(model.recorder.limit))")
                     .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 if let e = estimate {
                     Text("\(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of airtime")
@@ -1532,7 +1543,7 @@ private struct Composer: View {
             Button {
                 // Stop and listen before sending.
                 guard let pcm = model.recorder.stop(keep: true) else { return }
-                let mode = UInt8(model.voiceMode)
+                let mode = recordMode
                 review = Review(pcm: pcm, mode: mode, voice: prepareVoice(pcm: pcm, mode: mode))
             } label: {
                 Image(systemName: "stop.fill")
@@ -1545,7 +1556,7 @@ private struct Composer: View {
             Button {
                 // To the conversation the recording was made in.
                 guard let to = model.recorder.chat, let pcm = model.recorder.stop(keep: true) else { return }
-                let voice = prepareVoice(pcm: pcm, mode: UInt8(model.voiceMode))
+                let voice = prepareVoice(pcm: pcm, mode: recordMode)
                 if let e = model.sendVoice(voice, to: to) { error = e }
             } label: {
                 Image(systemName: "arrow.up")
@@ -1563,8 +1574,9 @@ private struct Composer: View {
     /// sound), choose its quality against its airtime, drop it or send it.
     private func reviewBar(_ r: Review) -> some View {
         let reviewing = model.player.playing == VoicePlayer.review
-        let modes: [UInt8] = [0, 2, 3]
-        let cost = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: r.mode, durationMs: r.voice.durationMs))
+        // In a group, only the modes whose note fits in 5 fragments (ADR-0035).
+        let modes: [UInt8] = [0, 2, 3].filter { !isGroupChat || groupVoiceMaxMs(mode: $0) >= r.voice.durationMs }
+        let cost = model.voiceEstimate(chat, datagramLen: voiceDatagramLenFor(mode: r.mode, durationMs: r.voice.durationMs))
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Button(role: .destructive) {
@@ -1617,7 +1629,9 @@ private struct Composer: View {
             }
             .pickerStyle(.segmented)
             if let e = cost {
-                Text("Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s")
+                Text(isGroupChat
+                     ? String(localized: "Flooded to the group: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of our airtime; every repeater adds as much")
+                     : String(localized: "Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s"))
                     .font(.system(.caption2))
                     .foregroundStyle(Theme.tx2)
             }

@@ -157,7 +157,7 @@
     <string name="err_not_allowed">Seul l\'administrateur du groupe peut faire ça.</string>
     <string name="err_invalid_key">Clé invalide.</string>
     <string name="err_over_budget">Plus assez de temps d\'antenne cette heure : ça passera dans %1$d min.</string>
-    <string name="err_media_in_group">Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder.</string>
+    <string name="err_media_in_group">Les photos et les fichiers vont seulement aux contacts : dans un groupe, il faudrait les inonder. Les messages vocaux courts peuvent aller à un groupe.</string>
     <string name="err_bad_image">Impossible de lire cette image.</string>
     <string name="err_not_a_preview">Il n\'y a pas de version complète à demander.</string>
     <string name="err_not_searching">Aucune recherche en cours pour cette personne.</string>
@@ -1140,4 +1140,6 @@
         <item quantity="many">%1$d fichiers ou photos</item>
         <item quantity="other">%1$d fichiers ou photos</item>
     </plurals>
+    <!-- Voice notes in groups (ADR-0035) -->
+    <string name="group_voice_cost">Diffusé au groupe : %1$s · ≈ %2$s s de notre temps d’antenne ; chaque répéteur en ajoute autant</string>
 </resources>
