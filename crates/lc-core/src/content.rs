@@ -217,6 +217,10 @@ pub mod notice {
     pub const WE_LEFT: u8 = 10;
     /// The actor set messages to disappear after `text` seconds ("0": they stay), §6.5.
     pub const TIMER: u8 = 11;
+    /// The actor's radio now advertises the name `text`; `actor_name` is the name shown
+    /// before. A verified contact keeps the name it was verified under (review of
+    /// 2026-11-15, SR-30): the notice is how the user learns of the change.
+    pub const NODE_RENAMED: u8 = 12;
 }
 
 fn put_short(v: &mut Vec<u8>, s: &str) {

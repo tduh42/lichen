@@ -2039,6 +2039,8 @@ extension Message {
             let after = timerLabel(seconds)
             return mine ? String(localized: "You set messages to disappear after \(after)")
                 : String(localized: "\(who) set messages to disappear after \(after)")
+        // The name shown before (SR-30): a verified contact keeps it, the line says what changed.
+        case 12: return String(localized: "\(actorName)'s radio is now called “\(text)”")
         default: return String(localized: "The group changed")
         }
     }
