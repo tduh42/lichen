@@ -781,6 +781,73 @@ mod names {
         assert_eq!((c.name.as_str(), c.verified), ("Camille", true));
         assert_eq!(c.node_name, "Julien");
     }
+
+    /// The rename notices of `chat`: the name shown before, the new name.
+    fn renames(core: &LichenCore, chat: ChatRef) -> Vec<(String, String)> {
+        core.history(chat, None, 50)
+            .unwrap()
+            .into_iter()
+            .filter_map(|m| match m.message {
+                Message::Notice {
+                    kind: 12,
+                    actor_name,
+                    text,
+                    ..
+                } => Some((actor_name, text)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The rest of SR-30: the name shown stays, but the conversation says that the radio now
+    /// goes by another one; only conversations we have get the line, once per change.
+    #[test]
+    fn a_rename_is_noted_in_the_conversation() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![146; 32], None).unwrap();
+        let card = lc_core::identity::Card {
+            identity: [7; 32],
+            node: [70; 32],
+            name: "Camille".into(),
+        }
+        .encode();
+        core.add_contact_card(card, true).unwrap();
+        {
+            let mut i = core.lock();
+            // A stranger's radio, no conversation with it.
+            i.core.add_contact([71; 32], "Lucie", None);
+            i.save_contacts();
+            i.record(store::Message {
+                id: 0,
+                chat: Chat::Contact([70; 32]),
+                outgoing: false,
+                author: None,
+                content: Content::Text {
+                    sent_at: 1,
+                    text: "hello".into(),
+                },
+                at_ms: unix_ms(),
+                status: Status::Received,
+                fragments: 0,
+                airtime_ms: 0,
+                snr4: None,
+                read: true,
+                msg_ref: None,
+            })
+            .unwrap();
+            i.core.add_contact([70; 32], "Julien", None);
+            i.core.add_contact([71; 32], "Lucie 2", None);
+            i.save_contacts();
+            // Saved: no second line for the same change.
+            i.save_contacts();
+        }
+        let camille = ChatRef::Contact { key: vec![70; 32] };
+        assert_eq!(
+            renames(&core, camille),
+            vec![("Camille".to_owned(), "Julien".to_owned())]
+        );
+        assert!(renames(&core, ChatRef::Contact { key: vec![71; 32] }).is_empty());
+        assert!(renames(&core, ChatRef::Mesh { key: vec![70; 32] }).is_empty());
+    }
 }
 
 /// Review of 2026-11-15, SR-28: a deleted announcement's offer and download go too. The app

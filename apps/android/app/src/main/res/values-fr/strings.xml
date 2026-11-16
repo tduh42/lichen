@@ -689,6 +689,7 @@
     <string name="timer_note_plain">Sur ce téléphone seulement : les applis MeshCore gardent leur copie. Une capture d’écran peut aussi garder les messages.</string>
     <string name="notice_you_timer">Tu as réglé les messages pour disparaître après %s</string>
     <string name="notice_timer">%1$s a réglé les messages pour disparaître après %2$s</string>
+    <string name="notice_node_renamed">La radio de %1$s s’appelle maintenant « %2$s »</string>
     <string name="notice_you_timer_off">Tu as désactivé les messages éphémères</string>
     <string name="notice_timer_off">%s a désactivé les messages éphémères</string>
     <string name="notice_changed">Le groupe a changé</string>

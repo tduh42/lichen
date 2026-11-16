@@ -321,6 +321,16 @@
         }
       }
     },
+    "%@'s radio is now called “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio de %1$@ s’appelle maintenant « %2$@ »"
+          }
+        }
+      }
+    },
     "%@, %u": {
       "localizations": {
         "fr": {
