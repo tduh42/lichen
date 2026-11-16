@@ -11,6 +11,15 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.font.FontStyle
 import com.tduhamel.lichen.core.QuoteKind
+import com.tduhamel.lichen.core.TextTarget
+import com.tduhamel.lichen.core.textLinks
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import com.tduhamel.lichen.core.ChatRef
 import com.tduhamel.lichen.core.Quote
 import androidx.compose.material.icons.filled.Close
@@ -630,6 +639,17 @@ private fun MessageBubble(
                         selecting = true
                     },
                 )
+                // Coordinates in the text (ADR-0034).
+                places(text).firstOrNull()?.let { (lat, lon) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.show_on_map)) },
+                        leadingIcon = { Icon(Icons.Outlined.Map, null) },
+                        onClick = {
+                            menu = false
+                            model.showOnMap(lat, lon)
+                        },
+                    )
+                }
             }
             if (cancellable) {
                 DropdownMenuItem(
@@ -730,10 +750,12 @@ private fun MessageBubble(
                 Text(stringResource(R.string.message_deleted), fontSize = 16.sp, color = t.tx2, fontStyle = FontStyle.Italic)
             }
         } else if (!MediaContent(model, m)) {
+            val color = if (m.outgoing) t.actFg else t.tx
             Text(
-                m.message.display(res),
+                // Links open in the browser when tapped, places on the map (ADR-0034).
+                if (text != null) linked(model, text, color) else AnnotatedString(m.message.display(res)),
                 fontSize = 16.sp,
-                color = if (m.outgoing) t.actFg else t.tx,
+                color = color,
                 modifier = Modifier
                     .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -765,6 +787,31 @@ private fun MessageBubble(
     }
     if (selecting && text != null) SelectTextDialog(text) { selecting = false }
 }
+
+/** A message's text with its links and places tappable (ADR-0034): a link opens in the
+ * browser when the user taps it (nothing is fetched before, no preview), a place on lichen's
+ * map. Only `http` and `https` addresses are links. */
+@Composable
+private fun linked(model: AppModel, text: String, color: Color): AnnotatedString = remember(text, color) {
+    buildAnnotatedString {
+        append(text)
+        val style = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline))
+        for (l in textLinks(text)) {
+            val start = l.start.toInt()
+            val end = l.end.toInt()
+            if (start < 0 || end > text.length || start >= end) continue
+            when (val target = l.target) {
+                is TextTarget.Web -> addLink(LinkAnnotation.Url(target.url, style), start, end)
+                is TextTarget.Place ->
+                    addLink(LinkAnnotation.Clickable("place", style) { model.showOnMap(target.lat, target.lon) }, start, end)
+            }
+        }
+    }
+}
+
+/** The places written in `text`. */
+private fun places(text: String): List<Pair<Double, Double>> =
+    textLinks(text).mapNotNull { (it.target as? TextTarget.Place)?.let { p -> p.lat to p.lon } }
 
 /** The reactions offered (§6.2). */
 private val ReactionChoices = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")

@@ -71,6 +71,12 @@ import kotlinx.coroutines.withContext
 /** The app's appearance setting: the system's by default. */
 enum class Appearance { SYSTEM, DARK, LIGHT }
 
+/** A place from a message's text, shown on the map; `version` tells a new request apart. */
+data class MapPin(val lat: Double, val lon: Double, val version: Int) {
+    /** "45.12340, 5.67890". */
+    val label: String get() = String.format(java.util.Locale.ROOT, "%.5f, %.5f", lat, lon)
+}
+
 /** The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
  * The Kotlin counterpart of the iOS app's `AppModel`; everything runs on the main thread. */
 class AppModel(val app: Application) {
@@ -316,6 +322,19 @@ class AppModel(val app: Application) {
     /** The person (hex) the Search tab shows; `openSearch` asks the tab to open on them. */
     var searchTarget by mutableStateOf<String?>(null)
     var openSearch by mutableStateOf<String?>(null)
+
+    /** A place written in a message (ADR-0034), on the map until dismissed; `openMap` asks for
+     * the Map tab. */
+    var mapPin by mutableStateOf<MapPin?>(null)
+    var openMap by mutableStateOf(false)
+
+    /** Shows a place from a message's text on lichen's own map: nothing is fetched but its
+     * tiles (offline areas included). */
+    fun showOnMap(lat: Double, lon: Double) {
+        mapPin = MapPin(lat, lon, (mapPin?.version ?: 0) + 1)
+        tab = Tab.MAP
+        openMap = true
+    }
 
     /** Searches we run (protocol.md §11); `searchVersion` changes with their estimates. */
     var searches by mutableStateOf(listOf<SearchState>())

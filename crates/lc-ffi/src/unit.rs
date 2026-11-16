@@ -1408,5 +1408,31 @@ mod backup {
         .unwrap();
         assert!(!locked.storage_ok());
         let _ = std::fs::remove_dir_all(d);
+/// Links and places come with UTF-16 offsets, what the apps' strings count (ADR-0034).
+#[cfg(test)]
+mod text_links {
+    use super::*;
+
+    #[test]
+    fn offsets_count_utf16_units() {
+        // "é" is one unit, "🏔" two.
+        let text = "é🏔 https://a.fr/x, 45.1234, 5.6789";
+        let links = crate::text_links(text.into());
+        assert_eq!(links.len(), 2);
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let span = |l: &TextLink| {
+            String::from_utf16(&units[l.start as usize..l.end as usize]).unwrap()
+        };
+        assert_eq!(span(&links[0]), "https://a.fr/x");
+        assert_eq!(
+            links[0].target,
+            TextTarget::Web {
+                url: "https://a.fr/x".into()
+            }
+        );
+        assert_eq!(span(&links[1]), "45.1234, 5.6789");
+        assert!(matches!(links[1].target, TextTarget::Place { lat, lon }
+            if (lat - 45.1234).abs() < 1e-9 && (lon - 5.6789).abs() < 1e-9));
+        assert!(crate::text_links("nothing here".into()).is_empty());
     }
 }

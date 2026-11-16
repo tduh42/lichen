@@ -103,6 +103,12 @@ fun RootScreen(model: AppModel) {
                 map = { tab("map") },
             )
         }
+        // A place in a message (ADR-0034): the Map tab, on it.
+        LaunchedEffect(model.openMap) {
+            if (!model.openMap) return@LaunchedEffect
+            model.openMap = false
+            tab("map")
+        }
         // An SOS notification, or the debug extra `screen search`: the Search tab on them.
         LaunchedEffect(model.openSearch) {
             val who = model.openSearch ?: return@LaunchedEffect

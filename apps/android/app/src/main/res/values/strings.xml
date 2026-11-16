@@ -1077,4 +1077,6 @@
     <string name="meshcore_room_login">MeshCore room server · %1$s</string>
     <string name="waiting_room_ack">Waiting for the room’s acknowledgement</string>
     <string name="kept_by_room">Kept by the room · %1$s s of airtime</string>
+    <!-- Places in messages (ADR-0034) -->
+    <string name="remove_pin">Remove the pin</string>
 </resources>

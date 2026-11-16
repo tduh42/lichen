@@ -1637,6 +1637,16 @@ final class AppModel {
         pump()
     }
 
+    /// A place written in a message (ADR-0034), on the map until dismissed.
+    var mapPin: MapPin?
+
+    /// Shows a place from a message's text on the map: lichen's own map, nothing fetched but
+    /// its tiles (offline areas included).
+    func showOnMap(lat: Double, lon: Double) {
+        mapPin = MapPin(lat: lat, lon: lon, version: (mapPin?.version ?? 0) + 1)
+        tab = .map
+    }
+
     func setSos(_ on: Bool) {
         core.setSos(on: on, nowMs: now())
         sos = core.sos()
@@ -2154,6 +2164,16 @@ final class AppModel {
     }
 
     var totalUnread: Int { conversations.reduce(0) { $0 + Int($1.unread) } }
+}
+
+/// A place from a message's text, shown on the map; `version` tells a new request apart.
+struct MapPin: Equatable {
+    let lat: Double
+    let lon: Double
+    let version: Int
+
+    /// "45.12340, 5.67890".
+    var label: String { String(format: "%.5f, %.5f", lat, lon) }
 }
 
 extension Data {

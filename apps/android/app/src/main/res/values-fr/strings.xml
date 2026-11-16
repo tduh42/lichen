@@ -1084,4 +1084,6 @@
     <string name="meshcore_room_login">Serveur de salon MeshCore · %1$s</string>
     <string name="waiting_room_ack">En attente de l’accusé du salon</string>
     <string name="kept_by_room">Gardé par le salon · %1$s s de temps d’antenne</string>
+    <!-- Places in messages (ADR-0034) -->
+    <string name="remove_pin">Retirer le repère</string>
 </resources>

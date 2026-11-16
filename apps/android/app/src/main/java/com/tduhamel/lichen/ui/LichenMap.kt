@@ -82,7 +82,8 @@ data class MapItem(
     val color: Int,
     val dark: Boolean,
 ) {
-    enum class Kind { ME, PEER, SOS, NODE }
+    /** `NODE`: a mesh node (ADR-0041 to ADR-0044); `PLACE`: coordinates from a message (ADR-0034). */
+    enum class Kind { ME, PEER, SOS, NODE, PLACE }
 }
 
 /** A search estimate on the map: the heat grid as an image over its bounds, and the 68 % and
@@ -112,6 +113,8 @@ fun LichenMap(
     modifier: Modifier = Modifier,
     overlay: MapOverlay? = null,
     margins: IntArray = intArrayOf(95, 140, 95, 70),
+    /** A place to centre on, once per version (after any `recenter`). */
+    focus: com.tduhamel.lichen.model.MapPin? = null,
     onCamera: (LatLngBounds, Double) -> Unit,
 ) {
     val context = LocalContext.current
@@ -196,7 +199,7 @@ fun LichenMap(
             if (s.getImage(icon) == null) s.addImage(icon, markerBitmap(item, density))
             Feature.fromGeometry(Point.fromLngLat(item.lon, item.lat)).apply {
                 addStringProperty("icon", icon)
-                addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0; MapItem.Kind.NODE -> -1 })
+                addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 3; MapItem.Kind.PLACE -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0; MapItem.Kind.NODE -> -1 })
             }
         }
         val circles = items.filter { it.radius >= 25 }.map { item ->
@@ -240,6 +243,12 @@ fun LichenMap(
         val m = map ?: return@LaunchedEffect
         if (loaded == null || items.isEmpty()) return@LaunchedEffect
         fit(m, items, overlay, margins, context.resources.displayMetrics.density)
+    }
+    LaunchedEffect(focus?.version, loaded) {
+        val m = map ?: return@LaunchedEffect
+        val f = focus ?: return@LaunchedEffect
+        if (loaded == null) return@LaunchedEffect
+        m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(f.lat, f.lon), max(m.cameraPosition.zoom, 14.0)), 600)
     }
 }
 
@@ -304,7 +313,10 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
         c.drawCircle(cx, cy, r + (if (item.kind == MapItem.Kind.ME) 3 else 2) * density, ring)
         c.drawCircle(cx, cy, r, fill)
     }
-    if (item.kind != MapItem.Kind.ME) {
+    if (item.kind == MapItem.Kind.PLACE) {
+        // A pin: a white dot in the disc.
+        c.drawCircle(cx, cy, r * 0.32f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE })
+    } else if (item.kind != MapItem.Kind.ME) {
         val initials = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 12 * density
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)

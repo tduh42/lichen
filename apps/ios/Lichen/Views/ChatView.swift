@@ -768,6 +768,12 @@ private struct MessageView: View {
         if case let .text(_, text) = message.message {
             Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") }
             Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") }
+            // Coordinates in the text (ADR-0034).
+            if let place = LinkedText.places(in: text).first {
+                Button { model.showOnMap(lat: place.lat, lon: place.lon) } label: {
+                    Label("Show on the map", systemImage: "map")
+                }
+            }
         }
         if case let .waiting(_, started, _) = message.status, !started {
             Button(role: .destructive) { error = model.cancel(message) } label: {
@@ -859,6 +865,14 @@ private struct MessageView: View {
                     .padding(.vertical, 9)
                     .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
                     .foregroundStyle(Theme.tx2)
+            case let .text(_, text):
+                // Links open in the browser when tapped, places on the map (ADR-0034).
+                LinkedText(text: text, outgoing: message.outgoing)
+                    .font(.system(.callout))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(message.outgoing ? Theme.actBg : Theme.s2, in: RoundedRectangle(cornerRadius: 18))
+                    .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
             default:
                 Text(message.message.display)
                     .font(.system(.callout))
@@ -2168,6 +2182,58 @@ private struct BridgeSection: View {
             } else {
                 content
             }
+        }
+    }
+}
+
+/// A message's text with its links and places tappable (ADR-0034): a link opens in the
+/// browser when the user taps it (nothing is fetched before, no preview), a place opens
+/// lichen's map. Only `http` and `https` addresses are links.
+struct LinkedText: View {
+    let text: String
+    let outgoing: Bool
+    @Environment(AppModel.self) private var model
+
+    /// The scheme of the in-app links that stand for places; never registered with the system.
+    private static let placeScheme = "lichen-place"
+
+    var body: some View {
+        Text(Self.attributed(text))
+            .tint(outgoing ? Theme.actFg : Theme.tx)
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == Self.placeScheme else {
+                    return url.scheme == "https" || url.scheme == "http" ? .systemAction : .discarded
+                }
+                let parts = url.absoluteString.dropFirst(Self.placeScheme.count + 1).split(separator: ",")
+                if parts.count == 2, let lat = Double(parts[0]), let lon = Double(parts[1]) {
+                    model.showOnMap(lat: lat, lon: lon)
+                }
+                return .handled
+            })
+    }
+
+    static func attributed(_ text: String) -> AttributedString {
+        var a = AttributedString(text)
+        for l in textLinks(text: text) {
+            let range = NSRange(location: Int(l.start), length: Int(l.end - l.start))
+            guard let r = Range(range, in: a) else { continue }
+            switch l.target {
+            case let .web(url):
+                guard let u = URL(string: url) else { continue }
+                a[r].link = u
+            case let .place(lat, lon):
+                a[r].link = URL(string: "\(placeScheme):\(lat),\(lon)")
+            }
+            a[r].underlineStyle = .single
+        }
+        return a
+    }
+
+    /// The places written in `text`.
+    static func places(in text: String) -> [(lat: Double, lon: Double)] {
+        textLinks(text: text).compactMap {
+            if case let .place(lat, lon) = $0.target { return (lat, lon) }
+            return nil
         }
     }
 }

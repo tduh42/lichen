@@ -30,6 +30,58 @@ pub fn gif_link(text: String) -> Option<GifLink> {
     lc_core::content::gif_link(&text).map(|(id, title)| GifLink { id, title })
 }
 
+/// Where a span of a message's text leads (ADR-0034).
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum TextTarget {
+    /// An `http` or `https` address, opened in the browser when the user taps it; nothing is
+    /// fetched before (no preview).
+    Web { url: String },
+    /// Coordinates (WGS 84 degrees), shown on the app's map.
+    Place { lat: f64, lon: f64 },
+}
+
+/// A link or a place in a text, by UTF-16 offsets: what Swift's `NSRange` and Kotlin's strings
+/// count.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct TextLink {
+    pub start: u32,
+    pub end: u32,
+    pub target: TextTarget,
+}
+
+/// The links and places in `text`, in order (ADR-0034).
+#[uniffi::export]
+pub fn text_links(text: String) -> Vec<TextLink> {
+    let spans = lc_core::links::find(&text);
+    // Byte offsets to UTF-16 offsets, in one pass: the spans are in order.
+    let mut out = Vec::with_capacity(spans.len());
+    let mut unit = 0u32;
+    let mut chars = text.char_indices().peekable();
+    let mut advance = |to: usize| {
+        while let Some(&(at, c)) = chars.peek() {
+            if at >= to {
+                break;
+            }
+            unit += c.len_utf16() as u32;
+            chars.next();
+        }
+        unit
+    };
+    for s in spans {
+        let start = advance(s.start);
+        let end = advance(s.end);
+        out.push(TextLink {
+            start,
+            end,
+            target: match s.found {
+                lc_core::links::Found::Link(url) => TextTarget::Web { url },
+                lc_core::links::Found::Place { lat, lon } => TextTarget::Place { lat, lon },
+            },
+        });
+    }
+    out
+}
+
 /// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report
 /// title.pdf" becomes "Very long rep….pdf". A name received from someone else is only a label:
 /// path separators and control characters are dropped, and so are leading dots and spaces, so
