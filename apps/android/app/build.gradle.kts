@@ -9,6 +9,15 @@ val hostCore: String = rootDir.resolve("../../target/release").canonicalPath
 // One version for the core and both apps: the repository's VERSION file.
 val lichenVersion: String = rootDir.resolve("../../VERSION").readText().trim()
 
+// CI numbers each build (the commit count) so a newer APK installs as an update.
+val lichenVersionCode: Int = providers.environmentVariable("LICHEN_VERSION_CODE").orNull?.toIntOrNull() ?: 1
+
+// The lasting release key (CI: the published APKs). Every APK must carry the same key, or
+// Android refuses it as an update and the user would have to uninstall, losing the identity.
+// Without it, a local release build is signed with the debug key, to try it on the emulator.
+val releaseKeystore: String? = providers.environmentVariable("LICHEN_KEYSTORE").orNull
+val releaseKeystorePassword: String? = providers.environmentVariable("LICHEN_KEYSTORE_PASSWORD").orNull
+
 android {
     namespace = "com.tduhamel.lichen"
     compileSdk = 37
@@ -22,13 +31,25 @@ android {
         // Android 12: AVIF decoding by the system (ADR-0012), the Bluetooth permissions.
         minSdk = 31
         targetSdk = 37
-        versionCode = 1
+        versionCode = lichenVersionCode
         versionName = lichenVersion
         ndk { abiFilters += "arm64-v8a" }
     }
 
+    signingConfigs {
+        if (releaseKeystore != null && releaseKeystorePassword != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = releaseKeystorePassword
+                keyAlias = "lichen"
+                keyPassword = releaseKeystorePassword
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

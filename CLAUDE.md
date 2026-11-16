@@ -72,7 +72,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 
 ## 5. Roadmap
 
-Each milestone is committed once finished and tested. Milestone commits are pushed (remote: `github.com/tduh42/lichen`, public); CI runs `scripts/check.sh` and the Android build on every push (`.github/workflows/`).
+Each milestone is committed once finished and tested. Milestone commits are pushed (remote: `github.com/tduh42/lichen`, public); CI runs `scripts/check.sh` and the Android build on every push (`.github/workflows/`), and a push to `main` that passes both publishes the signed APK as the release `latest` (key in `~/.config/lichen/`, password in the Keychain, both in the repo's Actions secrets).
 
 - **L0** repository, normative spec, ADRs; **L1** `lc-meshcore` + `lc-proto`; **L2** `lc-core` (direct messages), fake network, `lc-cli`;
 - **L3** groups; **L4** `lc-ffi` + iOS app; **L5** location and map; **L6** media over LoRa;
@@ -114,6 +114,8 @@ python3 -I apps/ios/sync-strings.py                                       # Stri
 swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appiconset   # app icons
 scripts/build-android-core.sh                                             # Android core (arm64) + Kotlin bindings
 (cd apps/android && ./gradlew lintDebug testDebugUnitTest assembleDebug)  # lint, JVM tests on the host core, APK
+(cd apps/android && ./gradlew assembleRelease)   # R8 build; signed with the release key when LICHEN_KEYSTORE and
+                                  # LICHEN_KEYSTORE_PASSWORD are set (CI), else the debug key; LICHEN_VERSION_CODE numbers it
 $ANDROID_HOME/emulator/emulator -avd lichen-pixel -allow-host-audio &   # with a window, the Mac's audio and mic
 adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.tduhamel.lichen/.MainActivity --ez demo true --es open Camille   # debug extras

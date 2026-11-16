@@ -196,6 +196,10 @@ Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings 
 
 ## Android app
 
+**Download:** [`lichen.apk`](https://github.com/tduh42/lichen/releases/latest/download/lichen.apk), from the [latest release](https://github.com/tduh42/lichen/releases/latest). CI builds it from `main` after every push that passes the checks, signs it with lichen's release key (each build updates the previous one) and lists the APK's SHA-256 and the certificate's fingerprint in the release notes. Android 12 or later, 64-bit ARM.
+
+To build it yourself:
+
 ```sh
 scripts/build-android-core.sh                                  # Rust core (arm64, cargo-ndk) + Kotlin bindings
 cd apps/android && ./gradlew assembleDebug                     # app/build/outputs/apk/debug/app-debug.apk
