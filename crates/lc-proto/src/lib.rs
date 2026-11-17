@@ -92,4 +92,10 @@ pub mod content {
     pub const GROUP_RESEND: u8 = 0x16;
     /// §10.7: a member asks the admin for the keys.
     pub const GROUP_SYNC: u8 = 0x17;
+    /// §10.8: the admin names a successor in a state it signs (ADR-0038).
+    pub const GROUP_HANDOVER: u8 = 0x18;
+    /// §10.6: an author's last message, flooded after a burst (group messages only, ADR-0040).
+    pub const GROUP_DIGEST: u8 = 0x19;
+    /// §10.7: the admin asks a member for its current sender key (ADR-0038).
+    pub const GROUP_KEY_REQUEST: u8 = 0x1A;
 }

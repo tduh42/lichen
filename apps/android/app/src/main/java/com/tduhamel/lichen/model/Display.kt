@@ -127,6 +127,12 @@ fun Message.Notice.noticeText(res: Resources, me: ByteArray?, name: (ByteArray, 
         }
         // The name shown before (SR-30): a verified contact keeps it, the line says what changed.
         12 -> res.getString(R.string.notice_node_renamed, actorName, text)
+        // A handover (§10.8): the former admin acts, the successor is the subject.
+        40 -> when {
+            mine -> res.getString(R.string.notice_you_made_admin, names)
+            me != null && subjects.firstOrNull()?.node?.contentEquals(me) == true -> res.getString(R.string.notice_made_you_admin, who)
+            else -> res.getString(R.string.notice_made_admin, who, names)
+        }
         else -> res.getString(R.string.notice_changed)
     }
 }

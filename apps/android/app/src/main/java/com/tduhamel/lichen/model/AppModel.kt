@@ -2221,6 +2221,20 @@ class AppModel(val app: Application) {
         e.display(res)
     }
 
+    /**
+     * Hands a group we run to `member` (protocol.md §10.8): "Make admin", or, with `leave`, how
+     * the admin leaves without closing the group.
+     */
+    fun handOver(gid: ByteArray, member: ByteArray, leave: Boolean): String? = try {
+        core.handOver(gid, member, leave, now())
+        groups = core.groups()
+        if (leave) shares = core.shares()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
     /** Renames a group we administer; its members see the change. */
     fun renameGroup(gid: ByteArray, name: String): String? = try {
         core.renameGroup(gid, name.trim(), now())

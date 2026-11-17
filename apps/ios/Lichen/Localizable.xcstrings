@@ -91,12 +91,12 @@
         }
       }
     },
-    "%@ becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.": {
+    "%@ becomes a verified contact: you scanned their code in person. You read what the group sends from now on, not what came before.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ devient un contact vérifié : tu as scanné son code en personne. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
+            "value": "%@ devient un contact vérifié : tu as scanné son code en personne. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède."
           }
         }
       }
@@ -191,6 +191,26 @@
         }
       }
     },
+    "%@ made %@ admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ a confié le groupe à %2$@"
+          }
+        }
+      }
+    },
+    "%@ made you admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ t’a confié le groupe"
+          }
+        }
+      }
+    },
     "%@ reacted %@ to “%@”": {
       "localizations": {
         "fr": {
@@ -277,6 +297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ a désactivé les messages éphémères"
+          }
+        }
+      }
+    },
+    "%@ will run the group: invite, remove, rename. You stay a member.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ gérera le groupe : inviter, retirer, renommer. Tu restes membre."
           }
         }
       }
@@ -1671,12 +1701,12 @@
         }
       }
     },
-    "Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.": {
+    "Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers cannot read what was sent before they joined.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Toute personne qui le scanne pendant qu'il est affiché peut rejoindre le groupe : tu peux la retirer du groupe. Les nouveaux venus peuvent lire les messages enregistrés sous les clés actuelles."
+            "value": "Toute personne qui le scanne pendant qu’il est affiché peut rejoindre le groupe : tu peux la retirer du groupe. Les nouveaux venus ne peuvent pas lire ce qui a été envoyé avant leur arrivée."
           }
         }
       }
@@ -2021,12 +2051,12 @@
         }
       }
     },
-    "Close the group": {
+    "Close the group for everyone": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Fermer le groupe"
+            "value": "Fermer le groupe pour tous"
           }
         }
       }
@@ -3731,6 +3761,16 @@
         }
       }
     },
+    "Hand over to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confier le groupe à %@"
+          }
+        }
+      }
+    },
     "Hands": {
       "localizations": {
         "fr": {
@@ -4701,6 +4741,36 @@
         }
       }
     },
+    "Make %@ admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confier le groupe à %@"
+          }
+        }
+      }
+    },
+    "Make admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confier le groupe"
+          }
+        }
+      }
+    },
+    "Make admin?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confier le groupe ?"
+          }
+        }
+      }
+    },
     "Map": {
       "localizations": {
         "fr": {
@@ -5181,12 +5251,12 @@
         }
       }
     },
-    "New members get the current keys: they can read messages recorded before they joined.": {
+    "New members cannot read what was sent before they joined: every key steps forward as they arrive.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les nouveaux membres reçoivent les clés actuelles : ils peuvent lire les messages enregistrés avant leur arrivée."
+            "value": "Les nouveaux membres ne peuvent pas lire ce qui a été envoyé avant leur arrivée : chaque clé avance d’un cran quand ils arrivent."
           }
         }
       }
@@ -6081,12 +6151,12 @@
         }
       }
     },
-    "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys.": {
+    "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. You read what the group sends from now on, not what came before.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
+            "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède."
           }
         }
       }
@@ -8281,6 +8351,16 @@
         }
       }
     },
+    "The one you choose can invite, remove and rename, and you leave. Closing the group ends it on every phone; the messages already received stay.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La personne choisie pourra inviter, retirer et renommer, et tu pars. Fermer le groupe le termine sur chaque téléphone ; les messages déjà reçus restent."
+          }
+        }
+      }
+    },
     "The phone's clock is not set yet.": {
       "localizations": {
         "fr": {
@@ -9491,6 +9571,16 @@
         }
       }
     },
+    "Who runs the group after you?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui gère le groupe après toi ?"
+          }
+        }
+      }
+    },
     "Whoever scans it joins": {
       "localizations": {
         "fr": {
@@ -9647,6 +9737,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu as quitté le groupe"
+          }
+        }
+      }
+    },
+    "You made %@ admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as confié le groupe à %@"
           }
         }
       }

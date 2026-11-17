@@ -558,8 +558,16 @@
     <string name="close_group_q">Close the group?</string>
     <string name="leave_group_note">You stop receiving its messages and your location shares with it stop. What you received stays on this phone.</string>
     <string name="close_group_note">Every member stops receiving it. The messages already received stay on each phone.</string>
+    <string name="close_group_everyone">Close the group for everyone</string>
+    <string name="who_runs_q">Who runs the group after you?</string>
+    <string name="hand_over_note">The one you choose can invite, remove and rename, and you leave. Closing the group ends it on every phone; the messages already received stay.</string>
+    <string name="hand_over_to">Hand over to %1$s</string>
+    <string name="make_admin">Make admin</string>
+    <string name="make_admin_q">Make admin?</string>
+    <string name="make_admin_named">Make %1$s admin</string>
+    <string name="make_admin_note">%1$s will run the group: invite, remove, rename. You stay a member.</string>
     <string name="invite_none">Contacts appear here once their identity is known: scan their code or exchange a message.</string>
-    <string name="invite_note">New members get the current keys: they can read messages recorded before they joined.</string>
+    <string name="invite_note">New members cannot read what was sent before they joined: every key steps forward as they arrive.</string>
     <!-- Outbox (protocol.md §6.1) -->
     <string name="debug_offline_text">Written while my radio is off</string>
     <string name="debug_offline_group">On my way, radio off for now</string>
@@ -648,7 +656,7 @@
     <string name="new_code">New code</string>
     <string name="invite_scan_hint">In lichen: Add a contact › Scan. They join %1$s and you become a verified contact for them.</string>
     <string name="joined_header">Joined</string>
-    <string name="invite_warning">Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.</string>
+    <string name="invite_warning">Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers cannot read what was sent before they joined.</string>
     <string name="invitation_code_for">Invitation code for %1$s</string>
     <string name="join_group">Join a group</string>
     <string name="join_q">Join %1$s?</string>
@@ -656,8 +664,8 @@
     <string name="the_admin">the admin</string>
     <string name="the_group">the group</string>
     <string name="join">Join</string>
-    <string name="join_note">%1$s becomes a verified contact: you scanned their code in person. Members can read what was sent under the group\'s current keys.</string>
-    <string name="join_note_pasted">Pasted, not scanned: %1$s is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group\'s current keys.</string>
+    <string name="join_note">%1$s becomes a verified contact: you scanned their code in person. You read what the group sends from now on, not what came before.</string>
+    <string name="join_note_pasted">Pasted, not scanned: %1$s is added without being verified. Compare safety numbers with them to verify. You read what the group sends from now on, not what came before.</string>
     <string name="asking_admin">Asking %1$s to add you…</string>
     <string name="asking_note">Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.</string>
     <string name="already_in">You are already in %1$s</string>
@@ -693,6 +701,9 @@
     <string name="notice_you_timer">You set messages to disappear after %s</string>
     <string name="notice_timer">%1$s set messages to disappear after %2$s</string>
     <string name="notice_node_renamed">%1$s\'s radio is now called “%2$s”</string>
+    <string name="notice_you_made_admin">You made %1$s admin</string>
+    <string name="notice_made_you_admin">%1$s made you admin</string>
+    <string name="notice_made_admin">%1$s made %2$s admin</string>
     <string name="notice_you_timer_off">You turned off disappearing messages</string>
     <string name="notice_timer_off">%s turned off disappearing messages</string>
     <string name="notice_changed">The group changed</string>
