@@ -52,6 +52,8 @@ const SEEN_PROBES: usize = 64;
 /// Times a path is looked for again after a handshake failed over one only a probe gave,
 /// before the messages fail (second read of 2026-11-17, N4).
 const REPROBES: u8 = 2;
+/// Contact lookups a companion's pushes can have waiting at once (N12).
+const LOOKUPS_MAX: usize = 32;
 /// Wait for a PATH_REPLY: uniform in `[PROBE_WAIT_MS, 2 × PROBE_WAIT_MS)`.
 const PROBE_WAIT_MS: Millis = 20_000;
 /// How long a received datagram is remembered to drop identical resends (§6).
@@ -1547,10 +1549,7 @@ impl Core {
             Response::PathDiscoveryResponse {
                 prefix, out_path, ..
             } => self.on_path_discovered(prefix, OwnedPath::from_path(out_path)),
-            Response::Advert { key } | Response::PathUpdated { key } => {
-                let key = *key;
-                self.command(&Command::GetContactByKey { key: &key }, Expect::Contact);
-            }
+            Response::Advert { key } | Response::PathUpdated { key } => self.look_up(*key),
             Response::LogRxData { snr4, rssi, raw } => self.on_log_rx(raw, snr4, rssi, now),
             Response::MsgWaiting => self.plain_sync(),
             Response::SendConfirmed { ack, .. } => self.on_send_confirmed(ack),
@@ -1665,6 +1664,26 @@ impl Core {
     }
 
     // ----- companion plumbing ----------------------------------------------------------
+
+    /// Asks the companion for contact `key` after one of its pushes. A radio can push as many
+    /// as it likes: a key already waiting is not asked again, and at most [`LOOKUPS_MAX`] wait
+    /// (second read of 2026-11-17, N12); the next contact sync picks up the rest.
+    fn look_up(&mut self, key: PubKey) {
+        let mut buf = [0u8; lc_meshcore::FRAME_MAX];
+        let Ok(n) = (Command::GetContactByKey { key: &key }).encode(&mut buf) else {
+            return;
+        };
+        let frame = buf.get(..n).unwrap_or(&[]);
+        let waiting = self.commands.iter().filter(|(_, e)| *e == Expect::Contact);
+        let (mut same, mut count) = (false, 0);
+        for (c, _) in waiting {
+            same |= c.as_slice() == frame;
+            count += 1;
+        }
+        if !same && count < LOOKUPS_MAX {
+            self.commands.push_back((frame.to_vec(), Expect::Contact));
+        }
+    }
 
     pub(crate) fn command(&mut self, cmd: &Command<'_>, expect: Expect) {
         let mut buf = [0u8; lc_meshcore::FRAME_MAX];
@@ -3322,6 +3341,27 @@ mod tests {
         core.on_companion_frame(&channel_info(2, "#hike", [3; 16]), 30);
         assert_eq!(core.awaiting, None, "answered");
         assert_eq!(names(&core), vec!["#hike".to_owned()]);
+    }
+
+    /// Second read of 2026-11-17, N12: a radio pushing adverts without end does not grow the
+    /// command queue: a key already waiting is not asked again, and the lookups are capped.
+    #[test]
+    fn pushed_adverts_do_not_grow_the_queue() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        let push = |code: u8, k: u16| {
+            let mut f = vec![code];
+            f.extend_from_slice(&k.to_le_bytes());
+            f.extend_from_slice(&[7; 30]);
+            f
+        };
+        for _ in 0..50 {
+            core.on_companion_frame(&push(0x80, 1), 0);
+        }
+        assert_eq!(core.commands.len(), 1, "the same key once");
+        for k in 2..10_000u16 {
+            core.on_companion_frame(&push(if k % 2 == 0 { 0x80 } else { 0x81 }, k), 0);
+        }
+        assert_eq!(core.commands.len(), LOOKUPS_MAX);
     }
 
     /// Review of 2026-11-15, SR-07: after a secret is drawn, the generator is a new one, keyed

@@ -767,6 +767,9 @@ impl Store {
                 params![now_ms],
             )?;
         }
+        if n > 0 {
+            self.scrub();
+        }
         Ok(n)
     }
 
@@ -1367,6 +1370,7 @@ impl Store {
                 params![chat.kind(), chat.bytes()],
             )?;
         }
+        self.scrub();
         Ok(n)
     }
 
@@ -1508,7 +1512,9 @@ impl Store {
                 .execute("DELETE FROM media WHERE id = ?1", params![media.as_slice()])?;
         }
         let sent_at = m.content.sent_at().unwrap_or(0);
-        self.set_content(id, &Content::Deleted { sent_at })
+        let m = self.set_content(id, &Content::Deleted { sent_at })?;
+        self.scrub();
+        Ok(m)
     }
 
     /// Deletes message `id` from this phone only (§6.4), with its media, reactions and
@@ -1730,7 +1736,19 @@ impl Store {
     pub fn delete_message(&self, id: i64) -> Result<(), Error> {
         self.conn
             .execute("DELETE FROM messages WHERE id = ?1", params![id])?;
+        self.scrub();
         Ok(())
+    }
+
+    /// After a delete: `secure_delete` overwrites the freed pages in the database file, but the
+    /// write-ahead log still holds the pages as they were until a checkpoint, which the
+    /// phone may not run for a long time. One now, truncating the log, leaves nothing deleted to
+    /// read back (second read of 2026-11-17, N13). A checkpoint a reader blocks is left for
+    /// the next delete.
+    fn scrub(&self) {
+        let _ = self
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
     }
 
     /// When unfinished message `id` stops waiting (Unix ms; `None`: never), §6.1.
@@ -1863,6 +1881,48 @@ mod tests {
         assert!(s.amendment_for(&here).unwrap().is_some());
         assert_eq!(s.reactions_for(&chat, &[1; 8]).unwrap().len(), 1);
         assert_eq!(s.pending_amendments().unwrap().len(), 1);
+    }
+
+    /// Second read of 2026-11-17, N13: deleted text is not left in the write-ahead log either,
+    /// while the app runs and no checkpoint has happened: deleted for me, deleted for everyone
+    /// (a tombstone), or with its conversation.
+    #[test]
+    fn deleted_text_leaves_the_log_too() {
+        let dir = std::env::temp_dir().join(format!("lichen-store-wal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("db.sqlite");
+        let secrets = [
+            "meet me behind the old mill at nine",
+            "the code to the gate is 4471",
+            "bring the second map, not the first",
+        ];
+        let s = Store::open(&path).unwrap();
+        let chat = Chat::Contact([3; 32]);
+        let ids: Vec<i64> = secrets
+            .iter()
+            .zip(1..)
+            .map(|(t, n)| s.insert(&text(chat, false, t, n)).unwrap().id)
+            .collect();
+        let other = Chat::Contact([4; 32]);
+        s.insert(&text(other, false, "a third one, elsewhere", 9))
+            .unwrap();
+        s.delete_for_me(ids[0]).unwrap();
+        s.tombstone(ids[1]).unwrap();
+        s.delete_chat(&chat).unwrap();
+        // Read while the store is open: closing it would checkpoint by itself.
+        let mut bytes = Vec::new();
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            bytes.extend(std::fs::read(entry.unwrap().path()).unwrap());
+        }
+        for t in secrets {
+            assert!(
+                !bytes.windows(t.len()).any(|w| w == t.as_bytes()),
+                "{t:?} is still in the files"
+            );
+        }
+        drop(s);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Review of 2026-11-15, SR-28: a deleted message leaves nothing to read back in the file.
