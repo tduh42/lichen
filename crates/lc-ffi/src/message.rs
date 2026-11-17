@@ -109,13 +109,7 @@ pub(crate) fn shown_name(name: &str) -> String {
     name.chars().filter(|c| !is_bidi_control(*c)).collect()
 }
 
-/// Unicode's bidirectional formatting characters.
-pub(crate) const fn is_bidi_control(c: char) -> bool {
-    matches!(
-        c,
-        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
-    )
-}
+pub(crate) use lc_core::identity::is_bidi_control;
 
 impl From<Content> for Message {
     fn from(c: Content) -> Self {
