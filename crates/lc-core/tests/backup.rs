@@ -253,6 +253,7 @@ fn exported(name: &str) -> (Phone, PathBuf, backup::Summary) {
     std::fs::write(p.downloads.join("ab.pdf"), b"%PDF-1.7").unwrap();
     // Neither a hidden file nor a folder is a download.
     std::fs::write(p.downloads.join(".partial"), b"x").unwrap();
+    std::fs::write(p.downloads.join(format!("{PHOTO}.part")), b"half a photo").unwrap();
     std::fs::create_dir_all(p.downloads.join("sub")).unwrap();
     let out = p.dir.join("lichen.backup");
     let summary = backup::export(
@@ -302,6 +303,10 @@ fn round_trip() {
         b"%PDF-1.7"
     );
     assert!(!new.downloads.join(".partial").exists());
+    assert!(
+        !new.downloads.join(format!("{PHOTO}.part")).exists(),
+        "still downloading"
+    );
 
     let s = Store::open(&new.db).unwrap();
     let c = s.contacts().unwrap();

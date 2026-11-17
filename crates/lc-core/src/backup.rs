@@ -473,6 +473,8 @@ fn write(
                 .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
                 .filter_map(|e| e.file_name().into_string().ok())
                 .filter(|n| valid_file_name(n))
+                // Still downloading (`<file>.part`, lc-bridge): not a medium yet.
+                .filter(|n| !n.ends_with(".part"))
                 .collect(),
             Err(e) if e.kind() == io::ErrorKind::NotFound => Vec::new(),
             Err(e) => return Err(e.into()),

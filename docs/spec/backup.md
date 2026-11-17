@@ -53,7 +53,7 @@ entry = kind (1) ‖ name_len (1) ‖ name (name_len bytes of UTF-8) ‖ size u6
 |---|---|---|
 | 0x00 END | empty | empty: the last entry; nothing follows it |
 | 0x01 DATABASE | empty | the phone's store (ADR-0010), a SQLite 3 database, exactly once |
-| 0x02 FILE | the file's name in the app's `downloads` folder | the file: a medium fetched over the Internet bridge (§14), or one we offered |
+| 0x02 FILE | the file's name in the app's `downloads` folder | the file: a medium fetched over the Internet bridge (§14), or one we offered; not one still downloading (`….part`) |
 | 0x03 SETTINGS | empty | the app's settings (§4), at most once, at most 65,536 bytes |
 
 A FILE name is 1 to 128 bytes of `A`–`Z`, `a`–`z`, `0`–`9`, `.`, `_`, `-`, not starting with `.`:
