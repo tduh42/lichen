@@ -354,6 +354,10 @@ final class AppModel {
         shares = core.shares()
         positions = core.positions(nowMs: now())
         updateLocator()
+        // No download runs yet: those an earlier run left unfinished, and those no stored
+        // message announces any more, go (second read of 2026-11-17, N14). The core does
+        // nothing without this identity's database on disk.
+        if let dir = Self.folder("downloads") { _ = core.sweepDownloads(dir: dir.path) }
         loadDownloads()
         startBridge()
         #if DEBUG

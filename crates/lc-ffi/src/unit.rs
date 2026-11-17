@@ -1886,3 +1886,82 @@ mod requests {
         );
     }
 }
+
+/// Second read of 2026-11-17, N14: at launch, the downloads folder keeps only what a stored
+/// message still announces; unfinished `.part` files go, files lichen did not name stay, and
+/// nothing goes without this identity's database on disk (the demo's is in memory).
+#[cfg(test)]
+mod sweep {
+    use super::*;
+    use lc_core::content::Announce;
+
+    fn announced(core: &LichenCore, hash: [u8; 32]) {
+        core.lock().record(store::Message {
+            id: 0,
+            chat: Chat::Contact([9; 32]),
+            outgoing: false,
+            author: None,
+            content: Content::Announce(Announce {
+                sent_at: 1,
+                media_id: [0; 8],
+                kind: 1,
+                hash,
+                size: 2_000,
+                providers: vec![(1, [5; 32])],
+                name: "photo.jpg".into(),
+            }),
+            at_ms: unix_ms(),
+            status: Status::Received,
+            fragments: 0,
+            airtime_ms: 0,
+            snr4: None,
+            read: true,
+            msg_ref: None,
+        });
+    }
+
+    #[test]
+    fn orphan_downloads_go_at_launch() {
+        let root = std::env::temp_dir().join(format!("lichen-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let downloads = root.join("downloads");
+        std::fs::create_dir_all(&downloads).unwrap();
+        let hex = |b: u8| format!("{b:02x}").repeat(32);
+        let kept = format!("{}.jpg", hex(0x66));
+        let orphan = format!("{}.png", hex(0x77));
+        let part = format!("{}.jpg.part", hex(0x66));
+        for name in [
+            &kept,
+            &orphan,
+            &part,
+            &"notes.txt".to_owned(),
+            &format!("{}.bin", "zz".repeat(32)),
+        ] {
+            std::fs::write(downloads.join(name), b"x").unwrap();
+        }
+        let dir = downloads.to_string_lossy().into_owned();
+
+        // In memory (the demo): nothing is touched.
+        let demo = LichenCore::new("t".into(), vec![1; 32], vec![171; 32], None).unwrap();
+        assert_eq!(demo.sweep_downloads(dir.clone()), 0);
+
+        let data = Some(root.join("data").to_string_lossy().into_owned());
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![171; 32], data).unwrap();
+        announced(&core, [0x66; 32]);
+        assert_eq!(core.sweep_downloads(dir), 2);
+        let mut left: Vec<String> = std::fs::read_dir(&downloads)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let mut expected = vec![
+            kept,
+            "notes.txt".to_owned(),
+            format!("{}.bin", "zz".repeat(32)),
+        ];
+        expected.sort();
+        assert_eq!(left, expected);
+        drop(core);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

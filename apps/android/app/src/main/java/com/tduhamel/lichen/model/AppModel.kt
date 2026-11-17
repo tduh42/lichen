@@ -545,6 +545,10 @@ class AppModel(val app: Application) {
         refreshAll()
         Notifications.channels(app)
         if (ble.permitted()) ble.start()
+        // No download runs yet: those an earlier run left unfinished, and those no stored
+        // message announces any more, go (second read of 2026-11-17, N14). The core does
+        // nothing without this identity's database on disk.
+        core.sweepDownloads(folder("downloads").path)
         loadDownloads()
         startBridge()
         shares = core.shares()
