@@ -256,6 +256,113 @@ async fn offers_survive_a_restart() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Second read of 2026-11-17, N17: an offer is served from its file as it is read, a chunk at
+/// a time, not loaded whole first (eight requests for a 64 MiB offer held 512 MiB). A reader
+/// that pauses keeps the provider from reading far ahead: bytes changed on disk meanwhile go
+/// out as changed when their turn comes, and the hash check on the way withholds the last
+/// chunk, so the answer is cut short instead of finishing. (Before, the whole content was in
+/// memory from the start and went out whole, unchanged.)
+#[tokio::test]
+async fn an_offer_is_served_from_its_file_as_it_goes() {
+    use std::io::{Seek, SeekFrom, Write};
+    let dir = std::env::temp_dir().join(format!("lc-bridge-stream-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let a = Bridge::start(
+        derive_key(&[9; 32], "lichen/1 iroh"),
+        Some(dir.clone()),
+        Network::Local,
+    )
+    .await
+    .unwrap();
+    // Far more than QUIC lets a provider send ahead of a reader that stops (10 MB).
+    let size: usize = 24 << 20;
+    let blob: Vec<u8> = (0..size).map(|i| (i % 241) as u8).collect();
+    let (h, _) = a.offer(blob.clone()).unwrap();
+    let endpoint = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .bind()
+        .await
+        .unwrap();
+    let conn = endpoint
+        .connect(a.addr().unwrap(), lc_bridge::ALPN)
+        .await
+        .unwrap();
+    let (mut send, mut recv) = conn.open_bi().await.unwrap();
+    let mut req = vec![1u8];
+    req.extend_from_slice(&h);
+    send.write_all(&req).await.unwrap();
+    let _ = send.finish();
+    let mut head = [0u8; 9];
+    recv.read_exact(&mut head).await.unwrap();
+    assert_eq!(head[0], 0);
+    assert_eq!(head[1..], (size as u64).to_le_bytes());
+    let mut got = vec![0u8; 64 << 10];
+    recv.read_exact(&mut got).await.unwrap();
+    // Changed on disk, well past what can have been read yet.
+    let mut f = std::fs::File::options()
+        .write(true)
+        .open(dir.join(hex::encode(h)))
+        .unwrap();
+    let at: usize = 20 << 20;
+    f.seek(SeekFrom::Start(at as u64)).unwrap();
+    f.write_all(&[0xFF; 16]).unwrap();
+    drop(f);
+    let mut changed = blob.clone();
+    changed[at..at + 16].fill(0xFF);
+    let mut buf = vec![0u8; 64 << 10];
+    while let Ok(Some(n)) = recv.read(&mut buf).await {
+        got.extend_from_slice(&buf[..n]);
+    }
+    assert!(got.len() < size, "the changed file went out whole");
+    assert!(
+        got.len() > at + 16,
+        "cut short before the change: {}",
+        got.len()
+    );
+    assert!(
+        got[..] == changed[..got.len()],
+        "not read from the file as it went"
+    );
+    endpoint.close().await;
+    a.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// N17: eight requests at once for an offer on disk, each streamed from its own reading of
+/// the file: all complete and match.
+#[tokio::test]
+async fn eight_requests_at_once_from_the_file() {
+    let dir = std::env::temp_dir().join(format!("lc-bridge-eight-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let a = Bridge::start(
+        derive_key(&[10; 32], "lichen/1 iroh"),
+        Some(dir.join("offers")),
+        Network::Local,
+    )
+    .await
+    .unwrap();
+    let b = Bridge::start(derive_key(&[11; 32], "lichen/1 iroh"), None, Network::Local)
+        .await
+        .unwrap();
+    let photo: Vec<u8> = (0..(3 << 20) + 17)
+        .map(|i: u32| (i * 13 % 251) as u8)
+        .collect();
+    let (h, size) = a.offer(photo.clone()).unwrap();
+    let addr = a.addr().unwrap();
+    let paths: Vec<_> = (0..8).map(|i| dir.join(format!("copy{i}"))).collect();
+    let fetches = paths
+        .iter()
+        .map(|p| b.fetch_from_to_file(addr.clone(), h, size, p));
+    for r in futures::future::join_all(fetches).await {
+        assert_eq!(r, Ok(size));
+    }
+    for p in &paths {
+        assert_eq!(std::fs::read(p).unwrap(), photo);
+    }
+    a.shutdown().await;
+    b.shutdown().await;
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[tokio::test]
 async fn transports_must_be_started() {
     let b = Bridge::new(None).unwrap();

@@ -373,14 +373,11 @@ fn a_restored_phone_joins_again_and_is_heard() {
 
 /// Review of 2026-11-15, SR-12, §10.7: for 35 minutes dave's radio loses every session data
 /// frame while the admin removes carol and everyone draws a new key: the new state and keys
-/// are tried, fail and wait for the hourly resend. An envelope under a key epoch newer than
-/// the one he holds does not make him ask the admin (review of 2026-11-17: anyone can forge
-/// such a clear header and make every member ask, the admin answer each with every key); the
-/// hourly resends reach him, the admin's state and bob's new key, and he reads bob again. A
-/// member that holds no key at all of a sender still asks
-/// (`group::tests::a_member_without_a_key_asks_the_admin`).
+/// are tried, fail and wait for the hourly resend. Then he holds bob's next post under a key
+/// epoch newer than the one he has, asks the admin once for that epoch (follow-up to N8 of the
+/// second read of 2026-11-17), and reads it minutes later, not an hour.
 #[test]
-fn a_member_who_missed_a_rotation_reads_at_the_next_resend() {
+fn a_member_who_missed_a_rotation_asks_and_reads() {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     let (mut net, m, j, gid) = setup(24, 1);
@@ -420,17 +417,6 @@ fn a_member_who_missed_a_rotation_reads_at_the_next_resend() {
     let unreached = |net: &Net| net.with_core_ref(alice, |c| c.unreached(&gid)).unwrap();
     assert_eq!(unreached(&net), vec![dave_node]);
     away.store(false, Ordering::Relaxed);
-    let bob_unreached = |net: &Net| net.with_core_ref(bob, |c| c.unreached(&gid)).unwrap();
-    let start = net.now;
-    assert!(
-        net.run_until(net.now + 70 * MIN, |n| unreached(n).is_empty()
-            && bob_unreached(n).is_empty()),
-        "the hourly resends never reached dave"
-    );
-    println!(
-        "state and keys {} s after the radio came back",
-        (net.now - start) / 1000
-    );
     for &x in &everyone {
         net.take_events(x);
     }
@@ -439,10 +425,14 @@ fn a_member_who_missed_a_rotation_reads_at_the_next_resend() {
     })
     .unwrap()
     .unwrap();
-    let got = net.run_until(net.now + 5 * MIN, |n| {
+    let start = net.now;
+    let got = net.run_until(net.now + 6 * MIN, |n| {
         group_texts(&n.take_events(dave)).contains(&"after the rotation".to_owned())
     });
     assert!(got, "dave still cannot read bob");
+    println!("read {} s after the post", (net.now - start) / 1000);
+    // His request answered, nothing waits for him any more.
+    assert!(net.run_until(net.now + 5 * MIN, |n| unreached(n).is_empty()));
 }
 
 /// Second read of 2026-11-17, N1: an invitation pasted from a message proves nothing. One that
