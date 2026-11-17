@@ -79,26 +79,28 @@ struct StickerView: View {
     @State private var looked = false
 
     var body: some View {
-        Group {
-            if let a = animation ?? Stickers.shared.cached(emoji) {
-                LottieView(animation: a)
-                    .playing(loopMode: .repeat(3))
-                    .resizable()
-                    .id(replay)
-            } else if looked {
-                Text(verbatim: emoji).font(.system(size: size * 0.7))
-            } else {
-                Color.clear
+        Button { replay += 1 } label: {
+            Group {
+                if let a = animation ?? Stickers.shared.cached(emoji) {
+                    LottieView(animation: a)
+                        .playing(loopMode: .repeat(3))
+                        .resizable()
+                        .id(replay)
+                } else if looked {
+                    Text(verbatim: emoji).font(.system(size: size * 0.7))
+                } else {
+                    Color.clear
+                }
             }
+            .frame(width: size, height: size)
         }
-        .frame(width: size, height: size)
+        .buttonStyle(.row)
         .task(id: emoji) {
             animation = await Stickers.shared.animation(emoji)
             looked = true
         }
-        .contentShape(Rectangle())
-        .onTapGesture { replay += 1 }
         .accessibilityLabel(Text("Sticker \(emoji)"))
+        .accessibilityHint("Plays it again")
     }
 }
 
@@ -293,11 +295,13 @@ struct GifCard: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(width: 220, height: Self.height(width, height))
+                // 220 points wide at the default text size, larger with it.
+                .aspectRatio(220 / Self.height(width, height), contentMode: .fit)
+                .mediaWidth(220)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(Text(title.isEmpty ? String(localized: "GIF") : String(localized: "GIF: \(title)")))
-                Text(verbatim: "GIPHY").font(.system(.caption2, weight: .semibold)).foregroundStyle(Theme.tx2)
+                Text(verbatim: "GIPHY").font(.system(.caption, weight: .semibold)).foregroundStyle(Theme.tx2)
             }
             .task(id: id) {
                 if provider == 1, data == nil, let cached = model.cachedGif(id) {

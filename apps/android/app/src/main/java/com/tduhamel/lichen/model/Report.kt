@@ -54,6 +54,7 @@ fun AppModel.problemReport(): String {
         "Tor: ${if (torEnabled) "on" else "off"} (${torStatus.name.lowercase()})",
         "GIFs: " + if (gifAutoLoad) "load automatically" else "tap to load",
         "voice mode: $voiceMode",
+        "radio details: " + if (radioDetails) "shown" else "behind a tap",
         "app lock: " + if (lock.enabled) "on" else "off",
         "language: ${java.util.Locale.getDefault().toLanguageTag()}",
     )

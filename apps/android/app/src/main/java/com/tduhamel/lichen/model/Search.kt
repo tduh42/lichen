@@ -63,8 +63,8 @@ fun AppModel.heardSos(from: ByteArray, group: ByteArray?, position: PeerPosition
     }
     incidents = incidents + (key to SosIncident(from, group, position, battery, now, now, false))
     if (searchTarget?.let { incidents[it]?.state() } != SosIncident.State.ACTIVE) searchTarget = key
-    // Debug extra `screen search`: straight to the search, for screenshots.
-    if (debugScreen == "search") {
+    // Debug extra `screen locate`: straight to the search, for screenshots.
+    if (debugScreen == "locate") {
         startSearch(from)
         openSearch = key
         return
@@ -88,7 +88,7 @@ val AppModel.activeIncidents: List<SosIncident>
 
 // ----- searching (protocol.md §11) -----
 
-/** The people the Search tab can show (hex): incidents not ended, and every search we run. */
+/** The people the Locate tab can show (hex): incidents not ended, and every search we run. */
 val AppModel.searchTargets: List<String>
     get() {
         val out = activeIncidents.map { it.from.hex() }.toMutableList()

@@ -22,13 +22,16 @@ struct AirtimeMeter: View {
     let usedMs: UInt64
     let limitMs: UInt64
     var large = false
+    /// The figure's sizes, following Dynamic Type.
+    @ScaledMetric(relativeTo: .largeTitle) private var bigFigure: CGFloat = 40
+    @ScaledMetric(relativeTo: .title3) private var smallFigure: CGFloat = 20
 
     var body: some View {
         VStack(alignment: .leading, spacing: large ? 10 : 8) {
             if large {
                 HStack(alignment: .lastTextBaseline) {
                     Text("\(seconds(left)) s")
-                        .font(Theme.figure(40))
+                        .font(.system(size: bigFigure, weight: .bold).monospacedDigit())
                         .foregroundStyle(Theme.tx)
                     Spacer()
                     Text("of \(seconds(limitMs)) s / hour")
@@ -41,7 +44,7 @@ struct AirtimeMeter: View {
                         .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                     Spacer()
-                    Text("\(seconds(left)) s").font(Theme.figure(20)).foregroundStyle(Theme.tx)
+                    Text("\(seconds(left)) s").font(.system(size: smallFigure, weight: .bold).monospacedDigit()).foregroundStyle(Theme.tx)
                         + Text(" / \(seconds(limitMs)) s").font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 }
             }

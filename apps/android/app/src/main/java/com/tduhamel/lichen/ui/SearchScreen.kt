@@ -89,7 +89,7 @@ import com.tduhamel.lichen.model.unhex
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** "Search" (mockup `recherche`): follow an SOS, and search for a group member by radio
+/** "Locate" (mockup `recherche`): follow an SOS, and search for a group member by radio
  * (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and how
  * far, the receptions everyone shared, and the actions (ping, bearing, lower power). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -309,7 +309,7 @@ private fun Pointer(model: AppModel, estimate: SearchEstimate?, incident: SosInc
             if (unknownWay || goal == null) {
                 Icon(Icons.Outlined.QuestionMark, null, tint = t.sos, modifier = Modifier.size(30.dp))
             } else {
-                Icon(Icons.Filled.Navigation, null, tint = t.sos, modifier = Modifier.size(30.dp).rotate((relative ?: d?.second ?: 0.0).toFloat()))
+                Icon(Icons.Filled.Navigation, stringResource(R.string.direction_arrow), tint = t.sos, modifier = Modifier.size(30.dp).rotate((relative ?: d?.second ?: 0.0).toFloat()))
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -439,6 +439,7 @@ private fun BearingSheet(model: AppModel, target: ByteArray, dismiss: () -> Unit
             Text(stringResource(R.string.add_bearing), fontSize = 22.sp, color = t.tx)
             Text(stringResource(R.string.bearing_intro), fontSize = 14.sp, color = t.tx2)
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Decorative: the bearing is written below it.
                 Icon(Icons.Filled.Navigation, null, tint = t.sos, modifier = Modifier.size(44.dp))
                 Text("${direction.roundToInt()}°", style = figure(40.sp), color = t.tx)
                 Text(

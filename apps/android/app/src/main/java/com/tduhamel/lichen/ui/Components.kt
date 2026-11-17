@@ -27,6 +27,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
@@ -297,3 +299,12 @@ fun ChirpMark(color: Color, modifier: Modifier = Modifier) {
 /** A gap of `h`. */
 @Composable
 fun Gap(h: Dp) = Spacer(Modifier.height(h).width(h))
+
+/** A media card's width in a conversation: `base` at the default text size, growing with the
+ * system's font size like the text around it, but never wider than the bubble's room. */
+@Composable
+fun mediaWidth(base: Dp = 250.dp): Dp {
+    val density = LocalDensity.current
+    val room = with(density) { LocalWindowInfo.current.containerSize.width.toDp() } - 92.dp
+    return minOf(base * density.fontScale.coerceAtLeast(1f), room.coerceAtLeast(base))
+}

@@ -6,7 +6,7 @@
     <!-- Tabs -->
     <string name="tab_messages">Messages</string>
     <string name="tab_map">Map</string>
-    <string name="tab_search">Search</string>
+    <string name="tab_search">Locate</string>
     <string name="tab_settings">Settings</string>
 
     <!-- Conversations -->
@@ -156,7 +156,7 @@
     <string name="err_media_in_group">Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.</string>
     <string name="err_bad_image">This image could not be read.</string>
     <string name="err_not_a_preview">There is no full version to ask for.</string>
-    <string name="err_not_searching">No search is running for this person.</string>
+    <string name="err_not_searching">You are not locating this person.</string>
     <string name="err_too_soon">Possible again in %1$d s.</string>
     <string name="err_no_position">Your position is not known yet.</string>
     <string name="fail_no_path">no path found</string>
@@ -335,7 +335,7 @@
     <string name="mic_unavailable">The microphone could not be opened: another app may be using it.</string>
     <!-- Location, map, SOS, search (L9d) -->
     <string name="sos">SOS</string>
-    <string name="searching_for_you">%1$s is searching for you</string>
+    <string name="searching_for_you">%1$s is locating you</string>
     <string name="sos_on">SOS on</string>
     <string name="map_layers">Map layers</string>
     <string name="map_style">Map style</string>
@@ -396,13 +396,13 @@
     <string name="beacon">Beacon</string>
     <string name="beacon_note">Every 2 minutes, until they stop it</string>
     <string name="active">active</string>
-    <string name="start_search">Start the search</string>
+    <string name="start_search">Start locating</string>
     <string name="reply">Reply</string>
     <string name="show_on_map">Show on the map</string>
     <string name="dismiss">Dismiss</string>
-    <string name="search_name">Search · %1$s</string>
-    <string name="no_search">No search under way</string>
-    <string name="no_search_note">When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and tap them.</string>
+    <string name="search_name">Locate · %1$s</string>
+    <string name="no_search">Nobody being located</string>
+    <string name="no_search_note">When a member of your groups sends an SOS, follow it here, with or without their GPS. To locate someone else, open a group and tap them.</string>
     <string name="ping">Ping</string>
     <string name="add_bearing">Add a bearing</string>
     <string name="lower_power">Lower power</string>
@@ -441,7 +441,7 @@
     <string name="end_to_end">End-to-end encrypted</string>
     <string name="end_to_end_note">Only you and the people you write to can read your messages. Check their key in person.</string>
     <string name="find_your_people">Find your people</string>
-    <string name="find_your_people_note">Location sharing and search mode.</string>
+    <string name="find_your_people_note">Location sharing, and locating by radio.</string>
     <string name="connect_my_radio">Connect my radio</string>
     <string name="later">Later</string>
     <string name="continue_">Continue</string>
@@ -469,35 +469,35 @@
     <string name="estimated">estimated</string>
     <string name="estimated_saturated">estimated, saturated</string>
     <string name="export">Export</string>
-    <string name="follow_search">Follow the search</string>
+    <string name="follow_search">Follow in Locate</string>
     <string name="from_compass">From the compass</string>
     <string name="heard_ago">heard %1$s</string>
     <string name="heard_cap">Heard %1$s</string>
     <string name="last_reading">Your last reading: %1$d dBm, %2$s</string>
     <string name="let_group_locate">Let this group locate me</string>
-    <string name="let_group_locate_note">Your phone answers their search pings even outside SOS</string>
+    <string name="let_group_locate_note">Your phone answers their locating pings even outside SOS</string>
     <string name="location">Location</string>
     <string name="measures_calibrated">%1$d measures · range calibrated on their GPS</string>
     <string name="measures_count">%1$d measures</string>
     <string name="no_compass">No compass: set it by hand</string>
     <string name="no_gps">No GPS position</string>
-    <string name="no_gps_note">Their phone sends beacons: search for them by radio.</string>
+    <string name="no_gps_note">Their phone sends beacons: locate them by radio.</string>
     <string name="no_measure">No measure yet</string>
     <string name="not_heard_yet">not heard yet</string>
     <string name="ping_in">Ping in %1$d s</string>
     <string name="target_unknown">Position unknown</string>
-    <string name="target_unknown_note">Start the search: every reception of their radio narrows it down.</string>
+    <string name="target_unknown_note">Start locating: every reception of their radio narrows it down.</string>
     <string name="power_10">10 dBm for 10 min</string>
     <string name="power_2">2 dBm for 10 min</string>
-    <string name="power_lowered">Your radio transmits at %1$d dBm for the search, then goes back.</string>
-    <string name="search_by_radio">Search by radio</string>
+    <string name="power_lowered">Your radio transmits at %1$d dBm while locating, then goes back.</string>
+    <string name="search_by_radio">Locate by radio</string>
     <string name="search_by_radio_note">Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.</string>
-    <string name="search_for">Search for %1$s</string>
+    <string name="search_for">Locate %1$s</string>
     <string name="search_map_label">Map: %1$s is probably within %2$s of the centre</string>
-    <string name="search_needs_group">A radio search needs a group you share with them.</string>
+    <string name="search_needs_group">Locating by radio needs a group you share with them.</string>
     <string name="searched_note">Your phone answers their pings: SOS, or you let the group locate you.</string>
     <string name="searching_note">They answer pings in SOS or when they let the group locate them.</string>
-    <string name="searching_status">Searching · %1$s%2$s</string>
+    <string name="searching_status">Locating · %1$s%2$s</string>
     <string name="silent">silent</string>
     <string name="sos_beacons_meanwhile">Meanwhile your groups get a beacon without position every 2 minutes, to locate you by radio.</string>
     <string name="sos_ended">SOS ended</string>
@@ -508,7 +508,7 @@
     <string name="sos_no_radio">Nothing goes out until your radio is back.</string>
     <string name="sos_nobody">Nobody receives it</string>
     <string name="sos_nobody_note">Share your position with a contact or join a group.</string>
-    <string name="sos_notification_no_gps">No GPS position: search for them by radio from lichen.</string>
+    <string name="sos_notification_no_gps">No GPS position: locate them by radio from lichen.</string>
     <string name="sos_sent_note">Again every 2 minutes. It leaves as soon as the radio has airtime, and nobody confirms reception: watch for answers.</string>
     <string name="sos_sent_to">Queued %1$s for %2$d conversations</string>
     <string name="sos_refused">%1$d conversations can’t get your position</string>
@@ -517,7 +517,7 @@
     <string name="sos_silent_note">Their beacons no longer reach you: move, or ask the group.</string>
     <string name="sos_starting">Starting</string>
     <string name="sos_starting_note">The first position goes out in a moment.</string>
-    <string name="stop_search">Stop the search</string>
+    <string name="stop_search">Stop locating</string>
     <string name="their_tx">Their radio transmits at %1$d dBm.</string>
     <string name="trusted_15">Trusted to ±15°.</string>
     <string name="trusted_40">Trusted to ±40° (the body shadows the signal).</string>
@@ -1147,4 +1147,36 @@
     <string name="request_note">Anyone in range can write under a radio\'s name. Accept only if you know who this is; accepting does not verify them.</string>
     <string name="request_earlier">Earlier messages: %1$d</string>
     <string name="request_blocked_name">Someone using %1$s\'s radio</string>
+    <!-- Radio details behind a tap (M5) -->
+    <string name="radio_details">Show radio details</string>
+    <string name="radio_details_note">Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.</string>
+    <string name="radio_line_hint">Show the radio’s details</string>
+    <string name="radio_line_close">Hide the radio’s details</string>
+    <plurals name="group_members">
+        <item quantity="one">Group · %1$d member</item>
+        <item quantity="other">Group · %1$d members</item>
+    </plurals>
+    <string name="state_waiting">Waiting</string>
+    <string name="state_paused">Paused</string>
+    <string name="state_sending">Sending</string>
+    <string name="state_delivered">Delivered</string>
+    <string name="state_not_delivered">Not delivered</string>
+    <string name="state_sent">Sent</string>
+    <string name="message_info">Info</string>
+    <string name="info_sent">Sent</string>
+    <string name="info_received">Received</string>
+    <string name="info_written">Written</string>
+    <string name="info_status">Status</string>
+    <string name="info_arrived_late">Arrived late, handed on by a member</string>
+    <string name="info_fragments">Fragments</string>
+    <string name="info_airtime">Airtime</string>
+    <string name="info_signal">Signal</string>
+    <string name="info_edited">Edited</string>
+    <string name="yes">Yes</string>
+    <string name="seconds_value">%1$s s</string>
+    <string name="snr_value">SNR %1$s dB</string>
+    <!-- Accessibility (M5) -->
+    <string name="chosen_option">Selected</string>
+    <string name="direction_arrow">Direction to go</string>
+    <string name="file_chosen">File chosen</string>
 </resources>

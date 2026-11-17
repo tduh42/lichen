@@ -16,7 +16,9 @@ struct ConversationsView: View {
             List {
                 Section {
                     header
-                    RadioCard()
+                    // The radio in one line; its card (airtime, transports) a tap away, or always
+                    // with Settings › Show radio details.
+                    RadioLine()
                     StatusBanners()
                     ForEach(model.invitations, id: \.gid) { InvitationCard(invitation: $0) }
                     ForEach(model.requests, id: \.identity) { RequestCard(request: $0) }
@@ -294,11 +296,11 @@ private struct ChatRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.title).font(.system(.callout, weight: .semibold)).lineLimit(1)
                     if row.pinned {
-                        Image(systemName: "pin.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "pin.fill").font(.system(.caption)).foregroundStyle(Theme.tx2)
                             .accessibilityLabel("Pinned")
                     }
                     if row.muted {
-                        Image(systemName: "bell.slash.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "bell.slash.fill").font(.system(.caption)).foregroundStyle(Theme.tx2)
                             .accessibilityLabel("Muted")
                     }
                     Spacer()
@@ -339,19 +341,79 @@ private struct ChatRow: View {
     }
 }
 
-/// Radio, airtime left this hour, transports (ADR-0007).
+/// The radio's state in one line, under the title; a tap opens its card (the airtime left, the
+/// transports) and another closes it. With Settings › Show radio details: the card.
+struct RadioLine: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage(radioDetailsKey) private var details = false
+    @State private var open = false
+
+    var body: some View {
+        if details {
+            RadioCard()
+        } else if open {
+            Button { withAnimation(.snappy) { open = false } } label: { RadioCard(folds: true) }
+                .buttonStyle(.plain)
+                .accessibilityHint("Hides the radio's details")
+        } else {
+            Button { withAnimation(.snappy) { open = true } } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
+                    Text(radioHeadline(model))
+                        .font(.system(.subheadline))
+                        .foregroundStyle(Theme.tx2)
+                        .multilineTextAlignment(.leading)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(.footnote, weight: .semibold))
+                        .foregroundStyle(Theme.tx2)
+                }
+                .padding(.horizontal, 4)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows the airtime left and the transports")
+            .accessibilityIdentifier("radioLine")
+        }
+    }
+}
+
+/// "Demo radio connected", "No radio connected"…
+@MainActor func radioHeadline(_ model: AppModel) -> String {
+    switch model.companionState {
+    case let .connected(name): return String(localized: "\(name) connected")
+    case let .connecting(name): return String(localized: "Connecting to \(name)…")
+    case .scanning: return String(localized: "Looking for nodes…")
+    case .off: return String(localized: "Bluetooth is off")
+    case .idle: return String(localized: "No radio connected")
+    }
+}
+
+/// Fragments, airtime and signal on every message, and the radio card on Messages (Settings ›
+/// Show radio details); off, they wait behind long press › Info and a tap on the radio line.
+let radioDetailsKey = "lichen.radioDetails"
+
+/// Radio, airtime left this hour, transports (ADR-0007); `folds`: a tap folds it back into its
+/// line.
 struct RadioCard: View {
+    var folds = false
     @Environment(AppModel.self) private var model
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
-                Text(headline).font(.system(.subheadline, weight: .semibold)).lineLimit(1)
+                Text(radioHeadline(model)).font(.system(.subheadline, weight: .semibold)).lineLimit(1)
                 Spacer()
                 if let r = model.radio, model.isConnected {
                     Text("BLE · SF\(r.sf) / \(bandwidth(r.bwHz))")
                         .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                }
+                if folds {
+                    Image(systemName: "chevron.up")
+                        .font(.system(.footnote, weight: .semibold))
                         .foregroundStyle(Theme.tx2)
                 }
             }
@@ -366,23 +428,14 @@ struct RadioCard: View {
                 if model.torStatus == .ready { TransportBadge(kind: .tor, label: "Tor") }
                 if !model.bridgeOnline && model.torStatus != .ready {
                     Text("No Internet bridge")
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .lineLimit(1)
                 }
             }
         }
         .card(padding: 16)
-    }
-
-    private var headline: String {
-        switch model.companionState {
-        case let .connected(name): return String(localized: "\(name) connected")
-        case let .connecting(name): return String(localized: "Connecting to \(name)…")
-        case .scanning: return String(localized: "Looking for nodes…")
-        case .off: return String(localized: "Bluetooth is off")
-        case .idle: return String(localized: "No radio connected")
-        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -537,8 +590,8 @@ struct StatusBanners: View {
                 let names = ListFormatter.localizedString(byJoining: Array(Set(model.searchedBy.map { model.name(of: $0.by) })).sorted())
                 Banner(
                     kind: .sos,
-                    title: String(localized: "\(names) is searching for you"),
-                    message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm for the search, then goes back.") }
+                    title: String(localized: "\(names) is locating you"),
+                    message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm while locating, then goes back.") }
                         ?? String(localized: "Your phone answers their pings: SOS, or you let the group locate you."),
                     action: (String(localized: "Open"), { model.openRequest = .group(gid: first.gid) })
                 )

@@ -216,6 +216,8 @@ A position fits in 13 encrypted bytes, about 30 bytes on air with the header and
 
 ## Search mode
 
+In the apps, the tab is called **Locate** (French "Localiser"): "Search" names the search through messages only.
+
 Reference scenario: no repeater left, and several group members equipped with ThinkNode M5s are looking for another member. A single packet sent by the target is received by every searcher in range: one transmission gives N measurements, fused in a particle filter.
 
 **Hardware: ThinkNode M5 (Elecrow)**

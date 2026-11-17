@@ -41,6 +41,7 @@ struct ChatView: View {
     @State private var blocking = false
     /// Chat info › Media, files and voice (ADR-0034).
     @State private var showingMedia = false
+    @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,9 +55,13 @@ struct ChatView: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    // Not lazy: pages of 100 messages, and exact heights let the view open on the
-                    // last one (a lazy stack estimates photos and voice notes, and lands short).
-                    VStack(spacing: 10) {
+                    // Lazy: only the rows on screen are built, so a long history (many earlier
+                    // pages, a search result or a quote thousands of messages back) opens and
+                    // scrolls at once (docs/measurements.md, 2026-11-17). The view opens at the
+                    // end (`defaultScrollAnchor`), and stays there while photos and stickers take
+                    // their real height (FollowBottom); a jump lands again once the rows around
+                    // it have theirs.
+                    LazyVStack(spacing: 10) {
                         if let e = model.historyError[chat] {
                             Banner(kind: .warn, title: e, action: (String(localized: "Retry"), { model.load(chat) }))
                         }
@@ -134,6 +139,9 @@ struct ChatView: View {
                     scrollToStart(proxy)
                     try? await Task.sleep(for: .milliseconds(250))
                     scrollToStart(proxy)
+                    // Far back, the first scroll lands on estimated heights: once more.
+                    try? await Task.sleep(for: .milliseconds(350))
+                    if highlight != nil || dividerBefore != nil { scrollToStart(proxy) }
                     if highlight != nil {
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { highlight = nil }
@@ -182,6 +190,9 @@ struct ChatView: View {
                     Task {
                         try? await Task.sleep(for: .milliseconds(100))
                         withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        // Once the rows around it have their real heights.
+                        try? await Task.sleep(for: .milliseconds(400))
+                        withAnimation { proxy.scrollTo(id, anchor: .center) }
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { if highlight == id { highlight = nil } }
                     }
@@ -200,13 +211,18 @@ struct ChatView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                // A contact's name: tap to rename it on this phone.
-                VStack(spacing: 2) {
+                let title = VStack(spacing: 2) {
                     Text(model.title(of: chat)).font(.system(.body, weight: .semibold))
                     Text(subtitle).font(.system(.caption)).foregroundStyle(Theme.tx2)
                 }
-                .onTapGesture { if chatKey != nil { renaming = true } }
-                .accessibilityAddTraits(chatKey == nil ? [] : .isButton)
+                // A contact's name: tap to rename it on this phone.
+                if chatKey != nil {
+                    Button { renaming = true } label: { title }
+                        .buttonStyle(.row)
+                        .accessibilityHint("Renames them on this phone")
+                } else {
+                    title
+                }
             }
             if isGroup {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -378,9 +394,10 @@ struct ChatView: View {
                         .font(.system(.caption))
                         .foregroundStyle(c.verified ? Theme.tx2 : Theme.warnFg)
                         .labelStyle(TintedIconLabel(tint: c.verified ? Theme.ok : Theme.warn))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 4)
             } else if model.secured.contains(key) {
                 Label("Encrypted session", systemImage: "lock")
                     .font(.system(.caption))
@@ -398,9 +415,10 @@ struct ChatView: View {
                     .font(.system(.caption))
                     .foregroundStyle(Theme.warnFg)
                     .labelStyle(TintedIconLabel(tint: Theme.warn))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.top, 4)
         } else if isGroup {
             Label("Signed group messages, flooded", systemImage: "lock")
                 .font(.system(.caption))
@@ -466,12 +484,15 @@ struct ChatView: View {
             // Renamed: the node's own name first.
             let hops = [c.flatMap { $0.nodeName != $0.name ? $0.nodeName : nil }, hopsBadge(c?.hops)]
                 .compactMap { $0 }.joined(separator: " · ")
-            if let snr = model.lastSnr[key] {
+            // The signal is a radio detail (Settings › Show radio details).
+            if radioDetails, let snr = model.lastSnr[key] {
                 return String(localized: "\(hops) · SNR \(String(format: "%.0f", snr)) dB")
             }
             return hops
         case let .group(gid):
             guard let g = model.groups.first(where: { $0.gid == gid }) else { return "" }
+            // What it is and how many; the flood and the keys are radio details.
+            if !radioDetails { return String(localized: "Group · \(g.members.count) members") }
             let others = max(g.members.count - 1, 0)
             if Int(g.keysKnown) < others {
                 return String(localized: "\(g.members.count) members · keys \(Int(g.keysKnown))/\(others)")
@@ -738,6 +759,9 @@ private struct MessageView: View {
     /// Deleting for everyone (true) or for this phone (false), to confirm.
     @State private var deleting: Bool?
     @State private var forwarding = false
+    /// Long press › Info: when, how it went, fragments, airtime, signal.
+    @State private var info = false
+    @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
@@ -751,6 +775,7 @@ private struct MessageView: View {
             bubble
                 .contextMenu { actions }
                 .sheet(isPresented: $forwarding) { ForwardSheet(message: message) }
+                .sheet(isPresented: $info) { MessageInfoSheet(message: message, isGroup: isGroup) }
                 .confirmationDialog(deleting == true ? String(localized: "Delete for everyone?") : String(localized: "Delete for you?"),
                                     isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                                     titleVisibility: .visible) {
@@ -768,18 +793,27 @@ private struct MessageView: View {
                 ReactionChips(message: message, error: $error)
             }
             if message.outgoing, !isGroup, case let .sending(sent, total) = message.status, total > 1 {
-                FragmentProgress(sent: Int(sent), total: Int(total))
-                    .frame(width: 220)
-                    .padding(.top, 2)
+                // A long message's progress; its fragments are a radio detail.
+                if radioDetails {
+                    FragmentProgress(sent: Int(sent), total: Int(total))
+                        .frame(width: 220)
+                        .padding(.top, 2)
+                } else {
+                    Bar(fraction: Double(sent) / Double(total))
+                        .frame(width: 120)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                }
             }
-            // When it was sent (ours) or received, then how it went.
+            // When it was sent (ours) or received, then how it went: a word, or with the radio
+            // details, the fragments and the airtime.
             HStack(spacing: 4) {
                 if message.isWaiting {
                     Image(systemName: "clock").accessibilityHidden(true)
                 }
                 Text(footer)
             }
-            .font(.system(.caption2))
+            .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
         }
         .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
@@ -792,6 +826,14 @@ private struct MessageView: View {
         .sheet(isPresented: $selecting) {
             if case let .text(_, text) = message.message { SelectTextSheet(text: text) }
         }
+        #if DEBUG
+        .onChange(of: message.status, initial: true) {
+            if debugInfo, case .delivered = message.status {
+                model.debugScreen = nil
+                info = true
+            }
+        }
+        #endif
     }
 
     private var isText: Bool {
@@ -864,6 +906,7 @@ private struct MessageView: View {
                 Label("Delete for everyone", systemImage: "trash")
             }
         }
+        Button { info = true } label: { Label("Info", systemImage: "info.circle") }
         Button(role: .destructive) { deleting = false } label: {
             Label("Delete for me", systemImage: "trash.slash")
         }
@@ -873,7 +916,8 @@ private struct MessageView: View {
         let time = message.date.formatted(date: .omitted, time: .shortened)
         let edited = message.edited ? String(localized: "edited") : nil
         if message.outgoing {
-            return ([time, edited] + [caption]).compactMap { $0 }.joined(separator: " · ")
+            let status = radioDetails ? message.caption(isGroup: isGroup) : message.statusWord
+            return [time, edited, status].compactMap { $0 }.joined(separator: " · ")
         }
         if let edited { return "\(time) · \(edited)" }
         // Lost on the air and handed on by a member (§10.6): shown where it arrived.
@@ -942,7 +986,37 @@ private struct MessageView: View {
         }
     }
 
-    private var caption: String? {
+    #if DEBUG
+    /// -screen info: the Info sheet of the first message of ours.
+    private var debugInfo: Bool { model.debugScreen == "info" && message.outgoing }
+    #endif
+}
+
+extension StoredMessage {
+    /// How one of ours went, in a word: the details are in long press › Info.
+    var statusWord: String? {
+        switch status {
+        case .received: return nil
+        case let .waiting(reason, started, _):
+            if case .radio = reason, started { return String(localized: "Paused") }
+            return String(localized: "Waiting")
+        case .sending: return String(localized: "Sending")
+        case .delivered: return String(localized: "Delivered")
+        case .failed: return String(localized: "Not delivered")
+        case .flooded: return String(localized: "Sent")
+        }
+    }
+
+    /// Info's status: delivered in a word (its fragments and airtime have their own rows),
+    /// else why it waits, how far it went, why it failed.
+    func infoStatus(isGroup: Bool) -> String? {
+        if case .delivered = status { return statusWord }
+        return caption(isGroup: isGroup)
+    }
+
+    /// How one of ours went, in full: why it waits, its fragments and airtime.
+    func caption(isGroup: Bool) -> String? {
+        let message = self
         switch message.status {
         case .received: return nil
         case let .waiting(reason, started, expiresAtMs):
@@ -977,7 +1051,7 @@ private struct MessageView: View {
         }
     }
 
-    private var airtime: String { String(format: "%.1f", Double(message.airtimeMs) / 1000) }
+    var airtime: String { String(format: "%.1f", Double(airtimeMs) / 1000) }
 
     /// "24 h", "35 min": how long a waiting text still has before it expires (§6.1).
     private func timeLeft(_ expiresAtMs: Int64) -> String {
@@ -986,10 +1060,65 @@ private struct MessageView: View {
     }
 }
 
+/// Long press › Info: when it was sent or received (and written, when earlier), how it went, its
+/// fragments, airtime and signal.
+private struct MessageInfoSheet: View {
+    let message: StoredMessage
+    let isGroup: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent(message.outgoing ? String(localized: "Sent") : String(localized: "Received"),
+                                   value: message.date.formatted(date: .abbreviated, time: .shortened))
+                    if let written {
+                        LabeledContent(String(localized: "Written"), value: written.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if let status = message.infoStatus(isGroup: isGroup) {
+                        LabeledContent(String(localized: "Status"), value: status)
+                    } else if message.late {
+                        LabeledContent(String(localized: "Status"), value: String(localized: "Arrived late, handed on by a member"))
+                    }
+                    if message.fragments > 0 {
+                        LabeledContent(String(localized: "Fragments"), value: String(Int(message.fragments)))
+                    }
+                    if message.airtimeMs > 0 {
+                        LabeledContent(String(localized: "Airtime"), value: String(localized: "\(message.airtime) s"))
+                    }
+                    if let snr = message.snrDb {
+                        LabeledContent(String(localized: "Signal"), value: String(localized: "SNR \(String(format: "%.0f", snr)) dB"))
+                    }
+                    if message.edited {
+                        LabeledContent(String(localized: "Edited"), value: String(localized: "Yes"))
+                    }
+                }
+                .listRowBackground(Theme.s1)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
+            .navigationTitle("Info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// When its author wrote it, if not when it arrived.
+    private var written: Date? {
+        message.late ? (message.writtenEarlier ?? message.message.date) : message.writtenEarlier
+    }
+}
+
 /// Play button (LoRa orange), waveform, length, codec (mockup `chat`).
 struct VoiceNote: View {
     let message: StoredMessage
     @Environment(AppModel.self) private var model
+    /// The waveform's width: 110 points at the default text size, larger with it.
+    @ScaledMetric(relativeTo: .body) private var waveWidth: CGFloat = 110
 
     var body: some View {
         if case let .voice(_, mode, _, durationMs, data) = message.message {
@@ -1023,10 +1152,10 @@ struct VoiceNote: View {
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0).onChanged { v in
                         guard playable else { return }
-                        let f = v.location.x / 110
+                        let f = v.location.x / wave
                         if playing { model.player.seek(f) } else { model.player.play(message, from: f) }
                     })
-                    .frame(width: 110)
+                    .frame(width: wave)
                     .accessibilityElement()
                     .accessibilityLabel("Position")
                     .accessibilityValue(clock(playing ? model.player.position : 0))
@@ -1039,7 +1168,7 @@ struct VoiceNote: View {
                     Text(playing ? "\(clock(model.player.position)) / \(clock(total))" : clock(total))
                         .font(.system(.footnote, weight: .semibold).monospacedDigit())
                     Text(codecName(mode))
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .opacity(0.7)
                 }
             }
@@ -1050,6 +1179,9 @@ struct VoiceNote: View {
             .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
         }
     }
+
+    /// At most 170 points: the play button and the length stay beside it.
+    private var wave: CGFloat { min(waveWidth, 170) }
 }
 
 /// An image over LoRa: the preview or the full thumbnail, and how to get the full one.
@@ -1067,36 +1199,41 @@ private struct ImageCard: View {
                       let url = model.downloads[hash] else { return nil }
                 return DecodedImages.shared.image(url: url, maxPixel: 2048)
             }
+            let ratio = CGFloat(max(width, 1)) / CGFloat(max(height, 1))
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .bottomLeading) {
-                    if let fetched {
-                        Image(uiImage: fetched)
-                            .resizable()
-                            .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                    } else if let ui = DecodedImages.shared.image(data: data, maxPixel: 480) {
-                        Image(uiImage: ui)
-                            .resizable()
-                            .interpolation(.medium)
-                            .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                            .blur(radius: full ? 0 : 1.5)
-                    } else {
-                        Theme.s2
-                    }
-                    if !full && fetched == nil {
-                        Text("LoRa preview · \(data.count) bytes")
-                            .font(.system(.caption2))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Theme.bg.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
-                            .padding(8)
-                    }
-                }
-                .frame(width: 250, height: 250 * CGFloat(max(height, 1)) / CGFloat(max(width, 1)))
-                .clipped()
                 // Full screen, zoomable.
-                .contentShape(Rectangle())
-                .onTapGesture { viewing = true }
-                .accessibilityAddTraits(.isButton)
+                Button { viewing = true } label: {
+                    Color.clear
+                        .aspectRatio(ratio, contentMode: .fit)
+                        .overlay {
+                            if let fetched {
+                                Image(uiImage: fetched)
+                                    .resizable()
+                                    .aspectRatio(ratio, contentMode: .fill)
+                            } else if let ui = DecodedImages.shared.image(data: data, maxPixel: 480) {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .interpolation(.medium)
+                                    .aspectRatio(ratio, contentMode: .fill)
+                                    .blur(radius: full ? 0 : 1.5)
+                            } else {
+                                Theme.s2
+                            }
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            if !full && fetched == nil {
+                                Text("LoRa preview · \(data.count) bytes")
+                                    .font(.system(.caption))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Theme.bg.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+                                    .padding(8)
+                            }
+                        }
+                        .clipped()
+                }
+                .buttonStyle(.row)
+                .accessibilityLabel(full || fetched != nil ? String(localized: "Photo") : String(localized: "Photo, LoRa preview"))
                 .accessibilityHint("Opens the photo full screen")
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -1108,7 +1245,7 @@ private struct ImageCard: View {
                     }
                     HStack(spacing: 6) {
                         TransportBadge(kind: .lora, label: full ? String(localized: "LoRa · full thumbnail") : String(localized: "LoRa · preview"))
-                        if !full && !message.outgoing { Text("full one on request").font(.system(.caption2)).foregroundStyle(Theme.tx2) }
+                        if !full && !message.outgoing { Text("full one on request").font(.system(.caption)).foregroundStyle(Theme.tx2) }
                     }
                     if let announce {
                         BridgeSection(announce: announce, standalone: false)
@@ -1127,7 +1264,7 @@ private struct ImageCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
-            .frame(width: 250)
+            .mediaWidth()
             .background(Theme.s1)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
@@ -1259,16 +1396,16 @@ private struct Composer: View {
             }
             if case .channel = chat, !model.isConnected {
                 Label("Radio not connected: channel posts need it", systemImage: "antenna.radiowaves.left.and.right.slash")
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .padding(.leading, 52)
             } else if !model.isConnected {
                 Label("Radio not connected: messages wait for it, up to 24 h", systemImage: "clock")
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .padding(.leading, 52)
             } else if let line = costLine {
-                Text(line).font(.system(.caption2)).foregroundStyle(Theme.tx2).padding(.leading, 52)
+                Text(line).font(.system(.caption)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
             if model.recorder.recording, model.recorder.chat == chat {
                 recordingBar
@@ -1535,7 +1672,7 @@ private struct Composer: View {
                     .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 if let e = estimate {
                     Text("\(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of airtime")
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                 }
             }
@@ -1632,7 +1769,7 @@ private struct Composer: View {
                 Text(isGroupChat
                      ? String(localized: "Flooded to the group: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of our airtime; every repeater adds as much")
                      : String(localized: "Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s"))
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
             }
         }
@@ -1834,20 +1971,32 @@ private struct SendPhotoSheet: View {
                                 .padding(12)
                         }
                     SectionLabel("How to send it to \(model.title(of: chat))")
-                    option(
-                        title: String(localized: "LoRa preview"),
-                        detail: isGroup
-                            ? String(localized: "Contacts only: never flooded to a group")
-                            : String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
-                        badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
-                    )
-                    .onTapGesture { if !isGroup { mode = .lora } }
-                    option(title: String(localized: "Full resolution via iroh"), detail: irohDetail,
-                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
-                    .onTapGesture { if irohOK { mode = .iroh } }
-                    option(title: String(localized: "Full resolution via Tor"), detail: torDetail,
-                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
-                    .onTapGesture { if torOK { mode = .tor } }
+                    Button { mode = .lora } label: {
+                        option(
+                            title: String(localized: "LoRa preview"),
+                            detail: isGroup
+                                ? String(localized: "Contacts only: never flooded to a group")
+                                : String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
+                            badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
+                        )
+                    }
+                    .buttonStyle(.row)
+                    .disabled(isGroup)
+                    .accessibilityAddTraits(chosen == .lora ? .isSelected : [])
+                    Button { mode = .iroh } label: {
+                        option(title: String(localized: "Full resolution via iroh"), detail: irohDetail,
+                               badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!irohOK)
+                    .accessibilityAddTraits(chosen == .iroh ? .isSelected : [])
+                    Button { mode = .tor } label: {
+                        option(title: String(localized: "Full resolution via Tor"), detail: torDetail,
+                               badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!torOK)
+                    .accessibilityAddTraits(chosen == .tor ? .isSelected : [])
                     option(title: String(localized: "Thumbnail now, full resolution later"),
                            detail: String(localized: "Sent when the Internet comes back"),
                            badge: costBadge, kind: .lora, selected: false, enabled: false)
@@ -2063,16 +2212,28 @@ private struct SendFileSheet: View {
                         }
                     }
                     SectionLabel("How to send it to \(model.title(of: chat))")
-                    option(title: String(localized: "Over LoRa"), detail: loraDetail,
-                           badge: lora.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa",
-                           kind: .lora, selected: chosen == .lora, enabled: loraOK)
-                        .onTapGesture { if loraOK { mode = .lora } }
-                    option(title: String(localized: "Via iroh"), detail: irohDetail,
-                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
-                        .onTapGesture { if irohOK { mode = .iroh } }
-                    option(title: String(localized: "Via Tor"), detail: torDetail,
-                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
-                        .onTapGesture { if torOK { mode = .tor } }
+                    Button { mode = .lora } label: {
+                        option(title: String(localized: "Over LoRa"), detail: loraDetail,
+                               badge: lora.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa",
+                               kind: .lora, selected: chosen == .lora, enabled: loraOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!loraOK)
+                    .accessibilityAddTraits(chosen == .lora ? .isSelected : [])
+                    Button { mode = .iroh } label: {
+                        option(title: String(localized: "Via iroh"), detail: irohDetail,
+                               badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!irohOK)
+                    .accessibilityAddTraits(chosen == .iroh ? .isSelected : [])
+                    Button { mode = .tor } label: {
+                        option(title: String(localized: "Via Tor"), detail: torDetail,
+                               badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!torOK)
+                    .accessibilityAddTraits(chosen == .tor ? .isSelected : [])
                     if chosen == nil {
                         Banner(kind: .warn, title: String(localized: "This file cannot go over LoRa"),
                                message: String(localized: "Up to 8 KB fit in a LoRa message, once compressed. Turn on iroh or Tor in Settings to send larger files over the Internet."))
@@ -2148,17 +2309,17 @@ private struct FileCard: View {
 
     var body: some View {
         if case let .file(_, name, data) = message.message {
-            FileRow(name: name, size: data.count, badge: TransportBadge(kind: .lora, label: "LoRa"))
-                .padding(12)
-                .frame(width: 250, alignment: .leading)
-                .background(Theme.s1)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
-                .contentShape(Rectangle())
-                .onTapGesture { opened = model.openable(name: name, data: data) }
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Opens the file")
-                .quickLookPreview($opened)
+            Button { opened = model.openable(name: name, data: data) } label: {
+                FileRow(name: name, size: data.count, badge: TransportBadge(kind: .lora, label: "LoRa"))
+                    .padding(12)
+                    .mediaWidth()
+                    .background(Theme.s1)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+            }
+            .buttonStyle(.row)
+            .accessibilityHint("Opens the file")
+            .quickLookPreview($opened)
         }
     }
 }
@@ -2204,16 +2365,22 @@ private struct BridgeSection: View {
             let content = VStack(alignment: .leading, spacing: 8) {
                 if isFile {
                     // A file (ADR-0022): opened with QuickLook once here.
-                    FileRow(name: name, size: Int(size), badge: EmptyView())
-                        .contentShape(Rectangle())
-                        .onTapGesture { if let file { opened = model.openable(name: name, file: file) } }
-                        .quickLookPreview($opened)
+                    Button { if let file { opened = model.openable(name: name, file: file) } } label: {
+                        FileRow(name: name, size: Int(size), badge: EmptyView())
+                    }
+                    .buttonStyle(.row)
+                    .disabled(file == nil)
+                    .accessibilityHint(file == nil ? "" : String(localized: "Opens the file"))
+                    .quickLookPreview($opened)
                 } else if standalone, let file, let ui = DecodedImages.shared.image(url: file, maxPixel: 2048) {
-                    Image(uiImage: ui).resizable().scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .onTapGesture { viewing = true }
-                        .accessibilityAddTraits(.isButton)
-                        .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
+                    Button { viewing = true } label: {
+                        Image(uiImage: ui).resizable().scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.row)
+                    .accessibilityLabel("Photo")
+                    .accessibilityHint("Opens the photo full screen")
+                    .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
                 }
                 if !isFile {
                     HStack {
@@ -2233,7 +2400,7 @@ private struct BridgeSection: View {
                     }
                     if file != nil {
                         Label("hash verified", systemImage: "checkmark.seal")
-                            .font(.system(.caption2))
+                            .font(.system(.caption))
                             .foregroundStyle(Theme.ok)
                     }
                     if isFile, let file {
@@ -2281,7 +2448,7 @@ private struct BridgeSection: View {
             if standalone {
                 content
                     .padding(12)
-                    .frame(width: 250)
+                    .mediaWidth()
                     .background(Theme.s1)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))

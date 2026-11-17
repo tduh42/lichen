@@ -140,7 +140,9 @@ fun RestoreBackupSheet(model: AppModel, dismiss: () -> Unit, restored: () -> Uni
                         )
                     }
                     Icon(
-                        if (file == null) Icons.Outlined.FileOpen else Icons.Outlined.CheckCircle, null,
+                        // The open-file icon is decorative (the row says it); the tick says "chosen".
+                        if (file == null) Icons.Outlined.FileOpen else Icons.Outlined.CheckCircle,
+                        if (file == null) null else stringResource(R.string.file_chosen),
                         tint = if (file == null) t.tx2 else t.ok, modifier = Modifier.padding(end = 16.dp),
                     )
                 }
