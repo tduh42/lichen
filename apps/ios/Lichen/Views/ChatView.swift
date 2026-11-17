@@ -77,7 +77,7 @@ struct ChatView: View {
                                 // Shown inside its LoRa preview's card: only its place here.
                                 Color.clear.frame(height: 0).id(m.id)
                             } else {
-                                MessageView(message: m, isGroup: isGroup || isChannel, error: $error, highlighted: highlight == m.id,
+                                MessageView(message: m, isGroup: isGroup || isChannel || isRoom, error: $error, highlighted: highlight == m.id,
                                             reply: { replyTo = m; editing = nil },
                                             edit: {
                                                 editing = m
@@ -220,6 +220,7 @@ struct ChatView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { plainInfo = true } label: { Image(systemName: "info.circle") }
                         .accessibilityLabel(isChannel ? String(localized: "Channel details")
+                                            : isRoom ? String(localized: "Room details")
                                             : String(localized: "About MeshCore chats"))
                 }
             }
@@ -281,12 +282,18 @@ struct ChatView: View {
     private var chatKey: Data? {
         switch chat {
         case let .contact(key), let .mesh(key): key
-        case .group, .channel: nil
+        case .group, .channel, .room: nil
         }
     }
 
     private var isChannel: Bool {
         if case .channel = chat { return true }
+        return false
+    }
+
+    /// A room server's posts (protocol.md §15.8).
+    private var isRoom: Bool {
+        if case .room = chat { return true }
         return false
     }
 
@@ -354,6 +361,7 @@ struct ChatView: View {
             // Not lichen-encrypted, said where the lock would be (§15.6).
             Button { plainInfo = true } label: {
                 Label(isChannel ? String(localized: "MeshCore channel · not lichen-encrypted")
+                                : isRoom ? String(localized: "MeshCore room · not lichen-encrypted")
                                 : String(localized: "MeshCore · not lichen-encrypted"),
                       systemImage: "lock.slash")
                     .font(.system(.caption))
@@ -416,6 +424,9 @@ struct ChatView: View {
             return String(localized: "MeshCore · \(hops)")
         case let .channel(id):
             return model.channels.first { $0.id == id }?.kind.label ?? String(localized: "MeshCore channel")
+        case let .room(key):
+            let login = model.server(key)?.login ?? .out
+            return String(localized: "MeshCore room server · \(login.label)")
         }
     }
 }
@@ -878,11 +889,13 @@ private struct MessageView: View {
         case let .sending(sent, total):
             if case .channel = message.chat { return String(localized: "Sending to the channel") }
             if case .mesh = message.chat { return String(localized: "Waiting for their radio's acknowledgement") }
+            if case .room = message.chat { return String(localized: "Waiting for the room's acknowledgement") }
             if isGroup { return String(localized: "Sending to the group") }
             return total > 1 ? String(localized: "Waiting for the acknowledgement") :
                 String(localized: "Sending \(min(Int(sent), Int(total))) / \(Int(total)) fragments")
         case .delivered:
             if case .mesh = message.chat { return String(localized: "Delivered · \(airtime) s of airtime") }
+            if case .room = message.chat { return String(localized: "Kept by the room · \(airtime) s of airtime") }
             return String(localized: "Delivered · \(Int(message.fragments)) fragments · \(airtime) s of airtime")
         case let .failed(reason):
             return String(localized: "Not delivered: \(reason.display)")

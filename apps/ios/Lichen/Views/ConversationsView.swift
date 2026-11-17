@@ -421,6 +421,14 @@ struct StatusBanners: View {
                     action: (String(localized: "Open"), { model.openRequest = .group(gid: first.gid) })
                 )
             }
+            // The radio's battery (ADR-0042).
+            if model.radioBatteryLow, let pct = model.radioSettings?.batteryPercent {
+                Banner(
+                    kind: .warn,
+                    title: String(localized: "Radio battery low: \(Int(pct)) %"),
+                    message: String(localized: "Charge it soon: messages wait while it is off.")
+                )
+            }
             if model.isConnected && model.airtimeLeftMs < 10_000 {
                 Banner(
                     kind: .lora,

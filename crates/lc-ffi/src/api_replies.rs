@@ -36,7 +36,9 @@ impl LichenCore {
         let datagram = content.encode();
         let (id, estimate) = match c {
             // Lichen content never goes into a plain MeshCore chat (§15).
-            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => {
+                return Err(LichenError::NotAllowed);
+            }
             Chat::Contact(k) => (
                 i.core.send_datagram(&k, datagram.clone(), now_ms)?,
                 i.core.estimate_send(&k, datagram.len()),
@@ -198,7 +200,7 @@ impl LichenCore {
             (Message::Text { text, .. }, Chat::Group(g)) => {
                 self.send_group_text(g.to_vec(), text, sent_at, now_ms)
             }
-            (Message::Text { text, .. }, Chat::Mesh(_) | Chat::Channel(_)) => {
+            (Message::Text { text, .. }, Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_)) => {
                 self.send_plain(to, text, sent_at, now_ms)
             }
             (Message::Sticker { emoji, .. }, Chat::Contact(_) | Chat::Group(_)) => {
@@ -274,7 +276,9 @@ impl LichenCore {
         let len = 1 + 4 + 8 + 4;
         let (fragments, airtime_ms) = match c {
             // Lichen content never goes into a plain MeshCore chat (§15).
-            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => {
+                return Err(LichenError::NotAllowed);
+            }
             Chat::Contact(k) => i.core.estimate_send(&k, len),
             Chat::Group(_) => i.core.estimate_group_send(len),
         };

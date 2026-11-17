@@ -67,7 +67,8 @@ enum class MapStyle(val key: String) {
     val url: String get() = "https://tiles.openfreemap.org/styles/$key"
 }
 
-/** Something drawn on the map: us, or someone's position with its circle of uncertainty. */
+/** Something drawn on the map: us, or someone's position with its circle of uncertainty, or a
+ * MeshCore node at the position it advertises (protocol.md §16.1). */
 data class MapItem(
     val id: String,
     val kind: Kind,
@@ -81,7 +82,7 @@ data class MapItem(
     val color: Int,
     val dark: Boolean,
 ) {
-    enum class Kind { ME, PEER, SOS }
+    enum class Kind { ME, PEER, SOS, NODE }
 }
 
 /** A search estimate on the map: the heat grid as an image over its bounds, and the 68 % and
@@ -195,7 +196,7 @@ fun LichenMap(
             if (s.getImage(icon) == null) s.addImage(icon, markerBitmap(item, density))
             Feature.fromGeometry(Point.fromLngLat(item.lon, item.lat)).apply {
                 addStringProperty("icon", icon)
-                addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0 })
+                addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0; MapItem.Kind.NODE -> -1 })
             }
         }
         val circles = items.filter { it.radius >= 25 }.map { item ->
@@ -243,7 +244,9 @@ fun LichenMap(
 }
 
 /** Every marker with its whole circle of uncertainty, never closer than street level. */
-private fun fit(m: MapLibreMap, items: List<MapItem>, overlay: MapOverlay?, margins: IntArray, density: Float) {
+private fun fit(m: MapLibreMap, all: List<MapItem>, overlay: MapOverlay?, margins: IntArray, density: Float) {
+    // People first: nodes count only when nobody else is on the map.
+    val items = all.filter { it.kind != MapItem.Kind.NODE }.ifEmpty { all }
     val first = items.first()
     if (items.size == 1 && first.radius < 500 && overlay == null) {
         m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(first.lat, first.lon), max(m.cameraPosition.zoom, 13.0)), 600)
@@ -292,8 +295,15 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
     val ring = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (item.dark) 0xFF0E0E0D.toInt() else android.graphics.Color.WHITE }
     val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = item.color }
     val r = avatar / 2
-    c.drawCircle(cx, cy, r + (if (item.kind == MapItem.Kind.ME) 3 else 2) * density, ring)
-    c.drawCircle(cx, cy, r, fill)
+    if (item.kind == MapItem.Kind.NODE) {
+        // A node: a rounded square.
+        val o = r + 2 * density
+        c.drawRoundRect(RectF(cx - o, cy - o, cx + o, cy + o), 9 * density, 9 * density, ring)
+        c.drawRoundRect(RectF(cx - r, cy - r, cx + r, cy + r), 8 * density, 8 * density, fill)
+    } else {
+        c.drawCircle(cx, cy, r + (if (item.kind == MapItem.Kind.ME) 3 else 2) * density, ring)
+        c.drawCircle(cx, cy, r, fill)
+    }
     if (item.kind != MapItem.Kind.ME) {
         val initials = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textSize = 12 * density

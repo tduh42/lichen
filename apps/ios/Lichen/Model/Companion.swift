@@ -35,6 +35,9 @@ final class Companion: NSObject {
         didSet { onState?(state) }
     }
 
+    /// The radio connected or being connected to (saved radios, ADR-0042).
+    var currentId: UUID? { peripheral?.identifier }
+
     override init() {
         super.init()
         central = CBCentralManager(

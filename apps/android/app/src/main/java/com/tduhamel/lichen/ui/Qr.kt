@@ -65,11 +65,12 @@ fun QrImage(text: String, label: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * The camera, reporting the first lichen code it reads (ZXing on the luminance plane). Asks for
+ * The camera, reporting the first code it reads that starts with one of [prefixes] (ZXing on the
+ * luminance plane): lichen codes by default, a MeshCore channel's for channels (§15.3). Asks for
  * the camera permission; without it nothing shows (the code can be pasted instead).
  */
 @Composable
-fun QrScanner(found: (String) -> Unit, modifier: Modifier = Modifier) {
+fun QrScanner(found: (String) -> Unit, modifier: Modifier = Modifier, prefixes: List<String> = listOf("lichen:")) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val view = LocalView.current
@@ -106,7 +107,7 @@ fun QrScanner(found: (String) -> Unit, modifier: Modifier = Modifier) {
                 analysis.setAnalyzer(executor) { image ->
                     val text = decode(reader, image)
                     image.close()
-                    if (text != null && text.startsWith("lichen:")) {
+                    if (text != null && prefixes.any { text.lowercase().startsWith(it) }) {
                         preview.post {
                             if (!reported) {
                                 reported = true

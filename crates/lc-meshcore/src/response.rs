@@ -167,6 +167,42 @@ pub enum Response<'a> {
         mask: u8,
         max_hops: u8,
     },
+    /// Push `LOGIN_SUCCESS`: server `prefix` let us in. `admin` is the legacy flag (a room
+    /// server says 2 for a read-only guest); newer servers add their clock, our permissions
+    /// (role in bits 0–1: 0 guest, 1 read only, 2 read and write, 3 admin) and their
+    /// firmware level.
+    LoginSuccess {
+        admin: u8,
+        prefix: &'a [u8; 6],
+        server_time: Option<u32>,
+        permissions: Option<u8>,
+        fw_level: Option<u8>,
+    },
+    /// Push `LOGIN_FAIL`: server `prefix` answered something else than a welcome.
+    LoginFail {
+        prefix: &'a [u8; 6],
+    },
+    /// Push `STATUS_RESPONSE`: server `prefix`'s statistics ([`crate::server::ServerStatus`]).
+    StatusResponse {
+        prefix: &'a [u8; 6],
+        data: &'a [u8],
+    },
+    /// Push `BINARY_RESPONSE`: the answer to request `tag` (`SEND_BINARY_REQ`).
+    BinaryResponse {
+        tag: u32,
+        data: &'a [u8],
+    },
+    /// Push `TRACE_DATA`: a trace reached the end of its path (§16.3). `hashes` is the path
+    /// traced (`1 << (flags & 3)` bytes each), `snrs` the SNR × 4 at which each hop heard it,
+    /// `final_snr4` ours of the last transmission.
+    TraceData {
+        flags: u8,
+        tag: u32,
+        auth: u32,
+        hashes: &'a [u8],
+        snrs: &'a [u8],
+        final_snr4: i8,
+    },
     /// A code lichen does not interpret.
     Other {
         code: u8,
@@ -363,6 +399,55 @@ impl<'a> Response<'a> {
                 }
             }
             resp::NEW_ADVERT => Response::NewAdvert(contact(&mut r)?),
+            resp::LOGIN_SUCCESS => {
+                let admin = r.u8().ok_or(t)?;
+                let prefix = r.array::<6>().ok_or(t)?;
+                Response::LoginSuccess {
+                    admin,
+                    prefix,
+                    server_time: r.u32(),
+                    permissions: r.u8(),
+                    fw_level: r.u8(),
+                }
+            }
+            resp::LOGIN_FAIL => {
+                let _reserved = r.u8().ok_or(t)?;
+                Response::LoginFail {
+                    prefix: r.array::<6>().ok_or(t)?,
+                }
+            }
+            resp::STATUS_RESPONSE => {
+                let _reserved = r.u8().ok_or(t)?;
+                Response::StatusResponse {
+                    prefix: r.array::<6>().ok_or(t)?,
+                    data: r.rest(),
+                }
+            }
+            resp::BINARY_RESPONSE => {
+                let _reserved = r.u8().ok_or(t)?;
+                Response::BinaryResponse {
+                    tag: r.u32().ok_or(t)?,
+                    data: r.rest(),
+                }
+            }
+            resp::TRACE_DATA => {
+                let _reserved = r.u8().ok_or(t)?;
+                let len = usize::from(r.u8().ok_or(t)?);
+                let flags = r.u8().ok_or(t)?;
+                let tag = r.u32().ok_or(t)?;
+                let auth = r.u32().ok_or(t)?;
+                let hashes = r.bytes(len).ok_or(t)?;
+                let snrs = r.bytes(len >> (flags & 3)).ok_or(t)?;
+                let final_snr4 = r.i8().ok_or(t)?;
+                Response::TraceData {
+                    flags,
+                    tag,
+                    auth,
+                    hashes,
+                    snrs,
+                    final_snr4,
+                }
+            }
             resp::PATH_DISCOVERY_RESPONSE => {
                 let _reserved = r.u8().ok_or(t)?;
                 let prefix = r.array::<6>().ok_or(t)?;

@@ -10,6 +10,7 @@ extension ChatRef {
         case let .group(gid): "g" + gid.hex
         case let .mesh(key): "m" + key.hex
         case let .channel(id): "h" + id.hex
+        case let .room(key): "r" + key.hex
         }
     }
 }

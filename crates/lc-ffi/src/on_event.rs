@@ -287,7 +287,9 @@ impl Inner {
             // A plain MeshCore message (§15.1): a channel post is kept as it came.
             Event::PlainReceived(m) => {
                 let text = match (&m.chat, &m.label) {
-                    (PlainChat::Channel(_), Some(label)) => format!("{label}: {}", m.text),
+                    (PlainChat::Channel(_) | PlainChat::Room(_), Some(label)) => {
+                        format!("{label}: {}", m.text)
+                    }
                     _ => m.text.clone(),
                 };
                 self.record(store::Message {

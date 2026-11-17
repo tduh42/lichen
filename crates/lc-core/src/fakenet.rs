@@ -32,6 +32,16 @@
 //! `GET_CHANNEL` and `SET_CHANNEL`. A companion without an app (someone with a stock client)
 //! is driven with [`Net::send_plain_text`] and [`Net::post_on_channel`].
 //!
+//! **Mesh tools** (§15.8, §16), simplified (answers without airtime on the channel, after the
+//! time of the round trip along the shortest route): `GET_CONTACTS` records carry the position
+//! a node advertises ([`Node::advert_position`]) and the time; [`Net::hear_advert`] pushes
+//! `NEW_ADVERT`; `SEND_TRACE_PATH` walks the links, each repeater named by the next hash
+//! appending its SNR; repeaters and room servers ([`Net::add_room`]) answer `SEND_LOGIN` with
+//! their admin or guest password (a wrong one gets no answer), `SEND_STATUS_REQ`,
+//! `GET_NEIGHBOURS` and their admin's commands (`ver`, `clock`, `get name`, `neighbors`,
+//! `advert`); a room keeps its posts, sends them to whoever logs in, acknowledges a post from
+//! a client allowed to write and sends it to the others.
+//!
 //! Debugging: `LICHEN_TRACE=1` prints the lichen frames each companion hands over and receives,
 //! `LICHEN_TRACE_AIR=1` the fate of every reception (ok, lost, collision, half duplex).
 
@@ -57,6 +67,8 @@ use crate::core::{Config, Core, Event, OwnedPath, PubKey, contact_kind};
 pub enum Role {
     Companion,
     Repeater,
+    /// A room server (§15.8): it keeps posts and sends them to the clients logged in.
+    Room,
 }
 
 /// A fake companion's settings (protocol §1.1): what `SELF_INFO`, `GET_CUSTOM_VARS`,
@@ -115,6 +127,15 @@ pub struct Node {
     pub inbox: VecDeque<Vec<u8>>,
     /// Direct messages sent and not acknowledged yet: their ACK tag and when they left.
     acks: Vec<(u32, Millis)>,
+    /// The position its adverts carry (degrees × 10⁶), when it advertises one (§16.1).
+    pub advert_position: Option<(i32, i32)>,
+    /// A repeater's or room server's passwords: admin, guest (§16.5).
+    pub passwords: Option<(String, String)>,
+    /// The companions logged in to this server, with their role (0 guest, 2 read and write,
+    /// 3 admin).
+    pub clients: Vec<(usize, u8)>,
+    /// A room server's posts: author's key, Unix seconds, text.
+    pub posts: Vec<(PubKey, u32, String)>,
 }
 
 /// Channel slots of a simulated companion.
@@ -135,6 +156,8 @@ enum Ev {
     AppWake(usize),
     TryTx(usize),
     TxEnd(u64),
+    /// A push computed ahead (mesh tools: a trace, a server's answer), by its id.
+    Push(u64),
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +197,17 @@ pub struct Net {
     /// Frames a node does not hear, by receiver and raw frame: a scripted loss (the demo's
     /// lost group post, §10.6).
     pub deaf: Option<Deaf>,
+    /// Pushes due later (`Ev::Push`): id, companion, frame; a frame queued for
+    /// `SYNC_NEXT_MESSAGE` when `queued`.
+    later: Vec<Later>,
+}
+
+#[derive(Debug)]
+struct Later {
+    id: u64,
+    to: usize,
+    frame: Vec<u8>,
+    queued: bool,
 }
 
 /// See [`Net::deaf`].
@@ -242,6 +276,7 @@ impl Net {
             stats: Stats::default(),
             geometry: Geometry::default(),
             deaf: None,
+            later: Vec::new(),
         }
     }
 
@@ -284,6 +319,10 @@ impl Net {
             settings: FakeSettings::default(),
             inbox: VecDeque::new(),
             acks: Vec::new(),
+            advert_position: None,
+            passwords: None,
+            clients: Vec::new(),
+            posts: Vec::new(),
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -291,6 +330,45 @@ impl Net {
 
     pub fn add_repeater(&mut self, seed: u8, name: &str) -> usize {
         self.add(seed, name, Role::Repeater)
+    }
+
+    /// A room server (§15.8) with its admin and guest passwords.
+    pub fn add_room(&mut self, seed: u8, name: &str, admin: &str, guest: &str) -> usize {
+        let i = self.add(seed, name, Role::Room);
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.passwords = Some((admin.to_owned(), guest.to_owned()));
+        }
+        i
+    }
+
+    /// Repeater or room server `i` takes these passwords (§16.5).
+    pub fn set_passwords(&mut self, i: usize, admin: &str, guest: &str) {
+        if let Some(n) = self.nodes.get_mut(i) {
+            n.passwords = Some((admin.to_owned(), guest.to_owned()));
+        }
+    }
+
+    /// Someone posts `text` in room `room` at `ts` (Unix seconds), as a stock client logged
+    /// in there would.
+    pub fn room_post(&mut self, room: usize, author: usize, text: &str, ts: u32) {
+        let key = self.key(author);
+        if let Some(n) = self.nodes.get_mut(room) {
+            n.posts.push((key, ts, text.to_owned()));
+        }
+        let clients: Vec<usize> = self
+            .nodes
+            .get(room)
+            .map(|n| {
+                n.clients
+                    .iter()
+                    .map(|(c, _)| *c)
+                    .filter(|&c| c != author)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for c in clients {
+            self.push_post(room, c, key, ts, text, 2_000);
+        }
     }
 
     /// A companion with an app attached (not connected yet).
@@ -438,6 +516,16 @@ impl Net {
         }
     }
 
+    /// `a` and `b` no longer hear each other.
+    pub fn unlink(&mut self, a: usize, b: usize) {
+        if let Some(v) = self.neighbors.get_mut(a) {
+            v.retain(|&x| x != b);
+        }
+        if let Some(v) = self.neighbors.get_mut(b) {
+            v.retain(|&x| x != a);
+        }
+    }
+
     /// Links consecutive nodes.
     pub fn chain(&mut self, nodes: &[usize]) {
         for w in nodes.windows(2) {
@@ -570,10 +658,19 @@ impl Net {
     pub fn know(&mut self, a: usize, b: usize, with_path: bool) {
         let path = if with_path { self.route(a, b) } else { None };
         let (key, name) = (self.key(b), self.nodes.get(b).map(|n| n.name.clone()));
+        let kind = self.kind(b);
         if let Some(n) = self.nodes.get_mut(a) {
             n.contacts.retain(|(k, ..)| *k != key);
-            n.contacts
-                .push((key, name.unwrap_or_default(), path, contact_kind::CHAT));
+            n.contacts.push((key, name.unwrap_or_default(), path, kind));
+        }
+    }
+
+    /// The MeshCore type node `i` advertises.
+    fn kind(&self, i: usize) -> u8 {
+        match self.nodes.get(i).map(|n| n.role) {
+            Some(Role::Repeater) => contact_kind::REPEATER,
+            Some(Role::Room) => contact_kind::ROOM,
+            _ => contact_kind::CHAT,
         }
     }
 
@@ -718,6 +815,16 @@ impl Net {
                 }
                 Ev::TryTx(i) => self.try_tx(i),
                 Ev::TxEnd(id) => self.tx_end(id),
+                Ev::Push(id) => {
+                    if let Some(pos) = self.later.iter().position(|l| l.id == id) {
+                        let l = self.later.remove(pos);
+                        if l.queued {
+                            self.queue_plain(l.to, l.frame);
+                        } else {
+                            self.push_to_app(l.to, &l.frame);
+                        }
+                    }
+                }
             }
         }
         self.now = deadline;
@@ -779,7 +886,10 @@ impl Net {
         self.wake(i, now);
     }
 
+    /// A `CONTACT` (or `NEW_ADVERT`) record: the node's advertised position when it has one,
+    /// heard and advertised now.
     fn contact_frame(
+        &self,
         code: u8,
         key: &PubKey,
         name: &str,
@@ -802,8 +912,408 @@ impl Net {
         let b = name.as_bytes();
         n[..b.len().min(31)].copy_from_slice(&b[..b.len().min(31)]);
         v.extend_from_slice(&n);
-        v.extend_from_slice(&[0u8; 16]);
+        let unix = ((EPOCH_MS + self.now) / 1000) as u32;
+        let (lat, lon) = self
+            .nodes
+            .iter()
+            .find(|n| n.key == *key)
+            .and_then(|n| n.advert_position)
+            .unwrap_or((0, 0));
+        v.extend_from_slice(&unix.to_le_bytes());
+        v.extend_from_slice(&lat.to_le_bytes());
+        v.extend_from_slice(&lon.to_le_bytes());
+        v.extend_from_slice(&unix.to_le_bytes());
         v
+    }
+
+    /// Pushes `frame` to the app of companion `to` in `delay` ms (queued for
+    /// `SYNC_NEXT_MESSAGE` with a `MSG_WAITING` when `queued`).
+    fn push_later(&mut self, to: usize, frame: Vec<u8>, delay: Millis, queued: bool) {
+        self.seq += 1;
+        let id = self.seq;
+        self.later.push(Later {
+            id,
+            to,
+            frame,
+            queued,
+        });
+        self.schedule(self.now + delay, Ev::Push(id));
+    }
+
+    /// The neighbour of `from` that a hop hash names: a repeater whose key starts with it.
+    fn hop(&self, from: usize, hash: &[u8]) -> Option<usize> {
+        self.neighbors.get(from)?.iter().copied().find(|&j| {
+            self.nodes
+                .get(j)
+                .is_some_and(|n| n.role == Role::Repeater && n.key.starts_with(hash))
+        })
+    }
+
+    /// SNR × 4 at `r` of a transmission from `t` (its mean on the plane; 10 dB unplaced).
+    fn snr4(&self, t: usize, r: usize) -> i8 {
+        self.mean_snr(t, r).map_or(40, |snr| {
+            (snr.min(SNR_MAX_DB) * 4.0).round().clamp(-128.0, 127.0) as i8
+        })
+    }
+
+    /// `SEND_TRACE_PATH` (§16.3), simplified: the trace walks the simulated links without
+    /// airtime on the channel; each repeater named by the next hash, a neighbour of the last
+    /// sender, appends the SNR it heard it at, and the end of the path is heard back by the
+    /// companion when it is in range. Lost otherwise (no push).
+    fn trace(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let (Some(tag), Some(&flags), Some(path)) =
+            (frame.get(1..5), frame.get(9), frame.get(10..))
+        else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let size = 1usize << (flags & 3);
+        if path.is_empty() || path.len() % size != 0 {
+            return vec![vec![resp::ERR, 6]];
+        }
+        let mut at = i;
+        let mut snrs = Vec::new();
+        let mut delay = 0;
+        let mut reached = true;
+        for hash in path.chunks(size) {
+            delay += self.airtime(11 + path.len() + snrs.len()) + 50;
+            match self.hop(at, hash) {
+                Some(next) => {
+                    snrs.push(self.snr4(at, next) as u8);
+                    at = next;
+                }
+                None => {
+                    reached = false;
+                    break;
+                }
+            }
+        }
+        delay += self.airtime(11 + path.len() + snrs.len());
+        let back = self.neighbors.get(at).is_some_and(|v| v.contains(&i));
+        let mut sent = vec![resp::SENT, 0];
+        sent.extend_from_slice(tag);
+        sent.extend_from_slice(
+            &u32::try_from(delay * 2 + 1_000)
+                .unwrap_or(u32::MAX)
+                .to_le_bytes(),
+        );
+        if reached && back {
+            let mut push = vec![resp::TRACE_DATA, 0, path.len() as u8, flags];
+            push.extend_from_slice(tag);
+            push.extend_from_slice(frame.get(5..9).unwrap_or(&[0; 4]));
+            push.extend_from_slice(path);
+            push.extend_from_slice(&snrs);
+            push.push(self.snr4(at, i) as u8);
+            self.push_later(i, push, delay, false);
+        }
+        vec![sent]
+    }
+
+    // ----- servers (§15.8, §16.5), simplified: answers without airtime ----------------
+
+    /// The server in `i`'s contacts whose key starts with `prefix`.
+    fn server(&self, i: usize, prefix: &[u8]) -> Option<usize> {
+        let node = self.nodes.get(i)?;
+        if !node.contacts.iter().any(|(k, ..)| k.starts_with(prefix)) || prefix.is_empty() {
+            return None;
+        }
+        self.nodes
+            .iter()
+            .position(|n| n.key.starts_with(prefix) && n.role != Role::Companion)
+    }
+
+    /// Time to a server and back along the shortest route, if there is one.
+    fn round_trip(&self, i: usize, j: usize) -> Option<Millis> {
+        let hops = Millis::from(self.route(i, j)?.hops());
+        Some((hops + 1) * 2 * (self.airtime(60) + 150))
+    }
+
+    /// `SENT` for a request to a server, with the companion's estimate.
+    fn sent(&self, tag: &[u8], estimate: Option<Millis>) -> Vec<u8> {
+        let mut v = vec![resp::SENT, 0];
+        v.extend_from_slice(tag.get(..4).unwrap_or(&[0; 4]));
+        let t = estimate.map_or(8_000, |t| t * 2 + 2_000);
+        v.extend_from_slice(&u32::try_from(t).unwrap_or(u32::MAX).to_le_bytes());
+        v
+    }
+
+    /// The role companion `i` has on server `j`.
+    fn role_on(&self, i: usize, j: usize) -> Option<u8> {
+        let n = self.nodes.get(j)?;
+        n.clients.iter().find(|(c, _)| *c == i).map(|(_, r)| *r)
+    }
+
+    /// Room `room` sends a post to client `c`: a signed text, queued by its companion.
+    fn push_post(
+        &mut self,
+        room: usize,
+        c: usize,
+        author: PubKey,
+        ts: u32,
+        text: &str,
+        delay: Millis,
+    ) {
+        let key = self.key(room);
+        let mut f = vec![resp::CONTACT_MSG, 40, 0, 0];
+        f.extend_from_slice(&key[..6]);
+        f.extend_from_slice(&[0xFF, lc_meshcore::codes::txt::SIGNED_PLAIN]);
+        f.extend_from_slice(&ts.to_le_bytes());
+        f.extend_from_slice(&author[..4]);
+        f.extend_from_slice(text.as_bytes());
+        self.push_later(c, f, delay, true);
+    }
+
+    fn fake_login(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let (Some(k), pw) = (frame.get(1..33), frame.get(33..).unwrap_or(&[])) else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let Some(j) = self.server(i, k) else {
+            return vec![vec![resp::ERR, 2]];
+        };
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(k, rt);
+        let Some(n) = self.nodes.get(j) else {
+            return vec![sent];
+        };
+        let room = n.role == Role::Room;
+        let role = match &n.passwords {
+            Some((admin, _)) if admin.as_bytes() == pw => 3,
+            Some((_, guest)) if guest.as_bytes() == pw => {
+                if room {
+                    2
+                } else {
+                    0
+                }
+            }
+            // A wrong password gets no answer.
+            _ => return vec![sent],
+        };
+        let Some(rt) = rt else {
+            return vec![sent];
+        };
+        let (key, posts) = (n.key, n.posts.clone());
+        if let Some(n) = self.nodes.get_mut(j) {
+            n.clients.retain(|(c, _)| *c != i);
+            n.clients.push((i, role));
+        }
+        let mut push = vec![resp::LOGIN_SUCCESS, u8::from(role == 3)];
+        push.extend_from_slice(&key[..6]);
+        push.extend_from_slice(&(((EPOCH_MS + self.now) / 1000) as u32).to_le_bytes());
+        push.extend_from_slice(&[role, 2]);
+        self.push_later(i, push, rt, false);
+        // A room then sends the posts this client has not seen (here: all but its own).
+        let me = self.key(i);
+        for (n, (author, ts, text)) in posts.iter().filter(|(a, ..)| *a != me).enumerate() {
+            self.push_post(j, i, *author, *ts, text, rt + 1_000 * (n as Millis + 1));
+        }
+        vec![sent]
+    }
+
+    /// A server's statistics, as `RepeaterStats` (56 bytes) or a room's `ServerStats` (52).
+    fn fake_stats(&self, j: usize) -> Vec<u8> {
+        let Some(n) = self.nodes.get(j) else {
+            return Vec::new();
+        };
+        let mut v = Vec::new();
+        v.extend_from_slice(&4_100u16.to_le_bytes());
+        v.extend_from_slice(&0u16.to_le_bytes());
+        v.extend_from_slice(&n.noise_dbm.to_le_bytes());
+        v.extend_from_slice(&i16::from(n.last_rx.1).to_le_bytes());
+        let sent = u32::try_from(n.tx_frames).unwrap_or(u32::MAX);
+        let air = u32::try_from(n.tx_airtime_ms / 1000).unwrap_or(u32::MAX);
+        let up = u32::try_from(self.now / 1000 + 3_600).unwrap_or(u32::MAX);
+        for x in [
+            sent * 3,
+            sent,
+            air,
+            up,
+            sent / 2,
+            sent - sent / 2,
+            sent * 2,
+            sent,
+        ] {
+            v.extend_from_slice(&x.to_le_bytes());
+        }
+        v.extend_from_slice(&0u16.to_le_bytes());
+        v.extend_from_slice(&i16::from(n.last_rx.0).to_le_bytes());
+        v.extend_from_slice(&[0, 0, 0, 0]);
+        if n.role == Role::Room {
+            let posted = u16::try_from(n.posts.len()).unwrap_or(u16::MAX);
+            v.extend_from_slice(&posted.to_le_bytes());
+            v.extend_from_slice(&posted.to_le_bytes());
+        } else {
+            v.extend_from_slice(&(air * 2).to_le_bytes());
+            v.extend_from_slice(&0u32.to_le_bytes());
+        }
+        v
+    }
+
+    fn fake_status(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let Some(k) = frame.get(1..33) else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let Some(j) = self.server(i, k) else {
+            return vec![vec![resp::ERR, 2]];
+        };
+        let tag = self.rng.next_u32().to_le_bytes();
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(&tag, rt);
+        if let (Some(rt), Some(_)) = (rt, self.role_on(i, j)) {
+            let mut push = vec![resp::STATUS_RESPONSE, 0];
+            push.extend_from_slice(&self.key(j)[..6]);
+            push.extend_from_slice(&self.fake_stats(j));
+            self.push_later(i, push, rt, false);
+        }
+        vec![sent]
+    }
+
+    fn fake_binary(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let (Some(k), Some(data)) = (frame.get(1..33), frame.get(33..)) else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let Some(j) = self.server(i, k) else {
+            return vec![vec![resp::ERR, 2]];
+        };
+        let tag = self.rng.next_u32().to_le_bytes();
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(&tag, rt);
+        let (Some(rt), Some(_)) = (rt, self.role_on(i, j)) else {
+            return vec![sent];
+        };
+        // GET_NEIGHBOURS, version 0: count, offset, order, prefix length.
+        let (Some(&6), Some(&0), Some(&count), Some(off), Some(&plen)) = (
+            data.first(),
+            data.get(1),
+            data.get(2),
+            data.get(3..5),
+            data.get(6),
+        ) else {
+            return vec![sent];
+        };
+        let offset = usize::from(u16::from_le_bytes([off[0], off[1]]));
+        let plen = usize::from(plen).min(32);
+        let mut all: Vec<(PubKey, i8)> = self
+            .neighbors
+            .get(j)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|x| (self.key(x), self.snr4(x, j)))
+            .collect();
+        all.sort_by_key(|(_, snr)| std::cmp::Reverse(*snr));
+        let mut body = Vec::new();
+        let mut n = 0u16;
+        for (key, snr) in all.iter().skip(offset).take(usize::from(count)) {
+            if body.len() + plen + 5 > 130 {
+                break;
+            }
+            body.extend_from_slice(&key[..plen]);
+            body.extend_from_slice(&60u32.to_le_bytes());
+            body.push(*snr as u8);
+            n += 1;
+        }
+        let mut push = vec![resp::BINARY_RESPONSE, 0];
+        push.extend_from_slice(&tag);
+        push.extend_from_slice(&(all.len() as u16).to_le_bytes());
+        push.extend_from_slice(&n.to_le_bytes());
+        push.extend_from_slice(&body);
+        self.push_later(i, push, rt, false);
+        vec![sent]
+    }
+
+    /// A command to a server's command line: admins get a reply, queued like a message.
+    fn fake_cli(&mut self, i: usize, prefix: &[u8], text: &[u8]) -> Vec<Vec<u8>> {
+        let Some(j) = self.server(i, prefix) else {
+            return vec![vec![resp::ERR, 2]];
+        };
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(&[0; 4], rt);
+        let (Some(rt), Some(3)) = (rt, self.role_on(i, j)) else {
+            return vec![sent];
+        };
+        let name = self
+            .nodes
+            .get(j)
+            .map(|n| n.name.clone())
+            .unwrap_or_default();
+        let neighbours: Vec<String> = self
+            .neighbors
+            .get(j)
+            .cloned()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|x| format!("{:02X}:{}", self.key(x)[0], self.snr4(x, j)))
+            .collect();
+        let reply = match String::from_utf8_lossy(text).trim() {
+            "ver" => "v1.18.0 (Build: 15 Oct 2026)".to_owned(),
+            "get name" => format!("> {name}"),
+            "clock" => format!("> {}", (EPOCH_MS + self.now) / 1000),
+            "neighbors" => neighbours.join("\n"),
+            "advert" => "OK - Advert sent".to_owned(),
+            _ => "Unknown command".to_owned(),
+        };
+        let mut f = vec![resp::CONTACT_MSG, 40, 0, 0];
+        f.extend_from_slice(&self.key(j)[..6]);
+        f.extend_from_slice(&[0xFF, lc_meshcore::codes::txt::CLI_DATA]);
+        f.extend_from_slice(&(((EPOCH_MS + self.now) / 1000) as u32).to_le_bytes());
+        f.extend_from_slice(reply.as_bytes());
+        self.push_later(i, f, rt + 500, true);
+        vec![sent]
+    }
+
+    /// The room server a `SEND_TXT_MSG` goes to, if it goes to one.
+    fn room_target(&self, i: usize, frame: &[u8]) -> Option<usize> {
+        let j = self.server(i, frame.get(7..13)?)?;
+        (self.nodes.get(j)?.role == Role::Room).then_some(j)
+    }
+
+    /// A post to a room server: kept, acknowledged, and sent to its other clients.
+    fn fake_room_post(&mut self, i: usize, j: usize, ts: &[u8], text: &[u8]) -> Vec<Vec<u8>> {
+        let tag = self.rng.next_u32().to_le_bytes();
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(&tag, rt);
+        let (Some(rt), Some(2 | 3)) = (rt, self.role_on(i, j)) else {
+            return vec![sent];
+        };
+        let text = String::from_utf8_lossy(text).into_owned();
+        let ts = ts
+            .get(..4)
+            .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+        let author = self.key(i);
+        if let Some(n) = self.nodes.get_mut(j) {
+            n.posts.push((author, ts, text.clone()));
+        }
+        let mut confirmed = vec![resp::SEND_CONFIRMED];
+        confirmed.extend_from_slice(&tag);
+        confirmed.extend_from_slice(&u32::try_from(rt).unwrap_or(0).to_le_bytes());
+        self.push_later(i, confirmed, rt, false);
+        let others: Vec<usize> = self
+            .nodes
+            .get(j)
+            .map(|n| {
+                n.clients
+                    .iter()
+                    .map(|(c, _)| *c)
+                    .filter(|&c| c != i)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for c in others {
+            self.push_post(j, c, author, ts, &text, rt + 2_000);
+        }
+        vec![sent]
+    }
+
+    /// The companion of `i` hears an advert from `from` and does not add it (manual add): it
+    /// pushes `NEW_ADVERT` to its app (§16.1).
+    pub fn hear_advert(&mut self, i: usize, from: usize) {
+        let Some(n) = self.nodes.get(from) else {
+            return;
+        };
+        let (key, name) = (n.key, n.name.clone());
+        let kind = self.kind(from);
+        let path = self.route(i, from);
+        let frame = self.contact_frame(resp::NEW_ADVERT, &key, &name, path.as_ref(), kind);
+        self.push_to_app(i, &frame);
     }
 
     /// The stock companion's answer to one app command.
@@ -951,6 +1461,19 @@ impl Net {
                 _ => vec![vec![resp::ERR, 6]],
             },
             cmd::DEVICE_QUERY => vec![vec![resp::DEVICE_INFO, 14]],
+            cmd::SEND_TRACE_PATH => self.trace(i, frame),
+            cmd::SEND_LOGIN => self.fake_login(i, frame),
+            cmd::SEND_STATUS_REQ => self.fake_status(i, frame),
+            cmd::SEND_BINARY_REQ => self.fake_binary(i, frame),
+            cmd::LOGOUT => {
+                let k = frame.get(1..33).unwrap_or(&[]);
+                if let Some(j) = self.server(i, k)
+                    && let Some(n) = self.nodes.get_mut(j)
+                {
+                    n.clients.retain(|(c, _)| *c != i);
+                }
+                vec![vec![resp::OK]]
+            }
             cmd::EXPORT_PRIVATE_KEY => {
                 let mut v = vec![resp::PRIVATE_KEY];
                 v.extend_from_slice(&prv);
@@ -963,7 +1486,7 @@ impl Net {
                     v
                 }];
                 for (k, n, p, t) in &node.contacts {
-                    out.push(Self::contact_frame(resp::CONTACT, k, n, p.as_ref(), *t));
+                    out.push(self.contact_frame(resp::CONTACT, k, n, p.as_ref(), *t));
                 }
                 out.push(vec![resp::END_OF_CONTACTS, 0, 0, 0, 0]);
                 out
@@ -972,7 +1495,7 @@ impl Net {
                 let k = frame.get(1..33);
                 match node.contacts.iter().find(|(c, ..)| Some(&c[..]) == k) {
                     Some((c, n, p, t)) => {
-                        vec![Self::contact_frame(resp::CONTACT, c, n, p.as_ref(), *t)]
+                        vec![self.contact_frame(resp::CONTACT, c, n, p.as_ref(), *t)]
                     }
                     None => vec![vec![resp::ERR, 2]],
                 }
@@ -1118,6 +1641,18 @@ impl Net {
                 }
                 vec![vec![resp::OK]]
             }
+            // Servers (§15.8, §16.5): the console, and a room's posts.
+            cmd::SEND_TXT_MSG if frame.get(1) == Some(&lc_meshcore::codes::txt::CLI_DATA) => {
+                let prefix = frame.get(7..13).unwrap_or(&[]).to_vec();
+                let text = frame.get(13..).unwrap_or(&[]).to_vec();
+                self.fake_cli(i, &prefix, &text)
+            }
+            cmd::SEND_TXT_MSG if self.room_target(i, frame).is_some() => {
+                let j = self.room_target(i, frame).unwrap_or(usize::MAX);
+                let ts = frame.get(3..7).unwrap_or(&[]).to_vec();
+                let text = frame.get(13..).unwrap_or(&[]).to_vec();
+                self.fake_room_post(i, j, &ts, &text)
+            }
             cmd::SEND_TXT_MSG => {
                 let (Some(&attempt), Some(ts), Some(prefix), Some(text)) = (
                     frame.get(2),
@@ -1127,6 +1662,7 @@ impl Net {
                 ) else {
                     return vec![vec![resp::ERR, 6]];
                 };
+
                 let Some((to, _, path, _)) =
                     node.contacts.iter().find(|(k, ..)| k.starts_with(prefix))
                 else {
@@ -1370,6 +1906,11 @@ impl Net {
         };
         let receivers = self.neighbors.get(tx.from).cloned().unwrap_or_default();
         for r in receivers {
+            // Room servers answer without airtime (see the module's doc): they hear nothing
+            // on the simulated channel, and draw nothing from its randomness.
+            if self.nodes.get(r).is_some_and(|n| n.role == Role::Room) {
+                continue;
+            }
             let overlaps = |o: &Tx| o.id != tx.id && o.start < tx.end && tx.start < o.end;
             let trace = std::env::var_os("LICHEN_TRACE_AIR").is_some();
             let label = || {

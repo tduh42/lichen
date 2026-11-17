@@ -40,7 +40,9 @@ pub use rusqlite::Error;
 /// 10: MeshCore chats (ADR-0026): chat kinds 2 (a node, plain) and 3 (a channel), and
 /// `channels` (table added, nothing migrated).
 /// 11: edits and deletes (ADR-0027): `amendments` (table added, nothing migrated).
-const VERSION: i32 = 12;
+/// 13: room servers (ADR-0043): chat kind 4 (a room's posts); saved radios (ADR-0042):
+/// `radios` (table added, nothing migrated).
+const VERSION: i32 = 13;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -51,6 +53,8 @@ pub enum Chat {
     Mesh(PubKey),
     /// A MeshCore channel (§15.3). Received posts are stored as they came, "name: text".
     Channel(ChannelId),
+    /// A room server's posts (§15.8), stored as "author: text" like a channel's.
+    Room(PubKey),
 }
 
 impl Chat {
@@ -60,12 +64,13 @@ impl Chat {
             Chat::Group(_) => 1,
             Chat::Mesh(_) => 2,
             Chat::Channel(_) => 3,
+            Chat::Room(_) => 4,
         }
     }
 
     fn bytes(&self) -> &[u8] {
         match self {
-            Chat::Contact(k) | Chat::Mesh(k) => k,
+            Chat::Contact(k) | Chat::Mesh(k) | Chat::Room(k) => k,
             Chat::Group(g) => g,
             Chat::Channel(c) => c,
         }
@@ -77,13 +82,14 @@ impl Chat {
             1 => bytes.try_into().ok().map(Chat::Group),
             2 => bytes.try_into().ok().map(Chat::Mesh),
             3 => bytes.try_into().ok().map(Chat::Channel),
+            4 => bytes.try_into().ok().map(Chat::Room),
             _ => None,
         }
     }
 
     /// A plain MeshCore conversation (§15): text only, not lichen-encrypted.
     pub const fn is_plain(&self) -> bool {
-        matches!(self, Chat::Mesh(_) | Chat::Channel(_))
+        matches!(self, Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_))
     }
 }
 
@@ -160,6 +166,19 @@ impl Status {
             _ => Status::Received,
         }
     }
+}
+
+/// A radio the phone was paired with (ADR-0042): how to reach it, and the node it is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedRadio {
+    /// What the app connects to: a Bluetooth identifier, a USB device, a TCP address.
+    pub address: String,
+    /// The app's kind of link (0 Bluetooth, 1 USB, 2 TCP).
+    pub link: u8,
+    pub name: String,
+    pub node: Option<PubKey>,
+    /// Unix milliseconds.
+    pub last_used_ms: i64,
 }
 
 /// A stored message.
@@ -299,6 +318,13 @@ CREATE TABLE IF NOT EXISTS channels (
 );
 CREATE TABLE IF NOT EXISTS search_consent (
     gid BLOB PRIMARY KEY
+);
+CREATE TABLE IF NOT EXISTS radios (
+    address TEXT PRIMARY KEY,
+    link INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    node BLOB,
+    last_used INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS positions (
     sender BLOB NOT NULL,
@@ -565,6 +591,47 @@ impl Store {
             )?;
         }
         tx.commit()
+    }
+
+    /// Saves a radio the phone connected to (ADR-0042), replacing what was known of it.
+    pub fn put_radio(&self, r: &SavedRadio) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO radios (address, link, name, node, last_used)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                r.address,
+                r.link,
+                r.name,
+                r.node.as_ref().map(|k| k.as_slice()),
+                r.last_used_ms
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The saved radios, the most recently used first.
+    pub fn radios(&self) -> Result<Vec<SavedRadio>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT address, link, name, node, last_used FROM radios ORDER BY last_used DESC",
+        )?;
+        let rows = st.query_map([], |r| {
+            let node: Option<Vec<u8>> = r.get(3)?;
+            Ok(SavedRadio {
+                address: r.get(0)?,
+                link: r.get(1)?,
+                name: r.get(2)?,
+                node: node.and_then(|n| n.as_slice().try_into().ok()),
+                last_used_ms: r.get(4)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    /// Forgets a saved radio.
+    pub fn delete_radio(&self, address: &str) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM radios WHERE address = ?1", params![address])?;
+        Ok(())
     }
 
     /// The channels saved last, in slot order.
@@ -1339,7 +1406,7 @@ impl Store {
                 Some(a) => Some(a),
                 None => return Ok(None),
             },
-            (false, Chat::Mesh(_) | Chat::Channel(_)) => return Ok(None),
+            (false, Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_)) => return Ok(None),
         };
         let found = self
             .conn

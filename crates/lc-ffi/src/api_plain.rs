@@ -35,6 +35,12 @@ impl LichenCore {
                 let id = i.core.send_channel(&ch, &text, sent_at, now_ms)?;
                 i.stored_outgoing(c, content, id, (1, airtime), false, None)
             }
+            // A post to a room server is a direct message to it (§15.8).
+            Chat::Room(k) => {
+                let airtime = i.core.estimate_plain(&PlainChat::Room(k), text.len());
+                let id = i.core.send_plain(&k, &text, sent_at, now_ms)?;
+                i.stored_outgoing(c, content, id, (1, airtime), true, None)
+            }
             Chat::Contact(_) | Chat::Group(_) => Err(LichenError::NotAllowed),
         }
     }
@@ -44,6 +50,7 @@ impl LichenCore {
         let plain = match chat.to_store()? {
             Chat::Mesh(k) => PlainChat::Direct(k),
             Chat::Channel(c) => PlainChat::Channel(c),
+            Chat::Room(k) => PlainChat::Room(k),
             _ => return Err(LichenError::NotAllowed),
         };
         Ok(Estimate {
@@ -56,7 +63,7 @@ impl LichenCore {
     pub fn plain_text_max(&self, chat: ChatRef) -> Result<u32, LichenError> {
         let i = self.lock();
         let max = match chat.to_store()? {
-            Chat::Mesh(_) => lc_core::plain::TEXT_MAX,
+            Chat::Mesh(_) | Chat::Room(_) => lc_core::plain::TEXT_MAX,
             Chat::Channel(_) => i.core.channel_text_max(),
             _ => return Err(LichenError::NotAllowed),
         };
