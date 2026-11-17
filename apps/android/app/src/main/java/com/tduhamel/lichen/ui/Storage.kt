@@ -39,6 +39,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -178,7 +179,7 @@ private fun Thumbnail(model: AppModel, m: StoredMessage, open: () -> Unit) {
 fun StorageScreen(model: AppModel, back: () -> Unit) {
     val t = lichen
     val context = LocalContext.current
-    var version by remember { mutableStateOf(0) }
+    var version by remember { mutableIntStateOf(0) }
     val usage = remember(version) { model.storageUsage().sortedByDescending { it.second } }
     var clearing by remember { mutableStateOf<Int?>(null) }
     var cleared by remember { mutableStateOf<Int?>(null) }
