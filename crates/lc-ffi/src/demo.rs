@@ -1660,6 +1660,8 @@ mod persistence {
         let demo = DemoNetwork::new();
 
         let core = LichenCore::new("t".into(), vec![1; 32], vec![101; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(0);
         let (mut sent, mut posted) = (false, false);
@@ -1706,6 +1708,8 @@ mod persistence {
 
         // The app restarts with its identity seed from the Keychain: history before connecting.
         let core = LichenCore::new("t".into(), vec![2; 32], vec![101; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         assert_eq!(
             core.history(
@@ -1867,6 +1871,8 @@ mod outbox {
         let (dir, data) = data_dir("outbox-restart");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![1; 32], vec![111; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 2 * 60_000);
@@ -1896,6 +1902,8 @@ mod outbox {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![2; 32], vec![111; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         assert!(matches!(
             status_of(&core, &camille, m.id),
@@ -1919,6 +1927,8 @@ mod outbox {
         let (dir, data) = data_dir("outbox-ack");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![3; 32], vec![112; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 2 * 60_000);
@@ -1943,6 +1953,8 @@ mod outbox {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![4; 32], vec![112; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(6 * 60_000);
         events.extend(run(&demo, &core, 6 * 60_000, 14 * 60_000));
@@ -2082,6 +2094,8 @@ mod replies {
         let (dir, data) = data_dir("replies");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![1; 32], vec![131; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 60_000);
@@ -2169,6 +2183,8 @@ mod replies {
         // Kept across a restart.
         drop(core);
         let core = LichenCore::new("t".into(), vec![2; 32], vec![131; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         check(&core);
         let _ = std::fs::remove_dir_all(&dir);
@@ -2180,6 +2196,8 @@ mod replies {
         let (dir, data) = data_dir("reaction-restart");
         let demo = DemoNetwork::new();
         let core = LichenCore::new("t".into(), vec![3; 32], vec![132; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         core.connect(0);
         run(&demo, &core, 0, 60_000);
@@ -2200,6 +2218,8 @@ mod replies {
         drop(core);
 
         let core = LichenCore::new("t".into(), vec![4; 32], vec![132; 32], data.clone()).unwrap();
+        // The clock the apps give it at every pump: HELLOs carry it (§4.4).
+        core.set_clock(unix_now_ms(), 0);
         core.set_group_consent(false);
         let pending = |c: &LichenCore| {
             c.lock()

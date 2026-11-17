@@ -43,6 +43,11 @@ impl Device {
         // A test bot: it joins the groups that list it, without asking (§10.1).
         dev.core.set_group_consent(false);
         let now = dev.now();
+        // HELLOs carry the time; one stamped 0 gets no answer (second read, N11).
+        let unix_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        dev.core.set_clock(unix_ms, now);
         dev.core.connect(now);
         Ok(dev)
     }

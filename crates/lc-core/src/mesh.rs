@@ -189,7 +189,7 @@ impl Core {
             *c.key,
             Node {
                 key: *c.key,
-                name: String::from_utf8_lossy(c.name).into_owned(),
+                name: crate::identity::shown_name(&String::from_utf8_lossy(c.name)),
                 kind: c.kind,
                 out_path: c.out_path.map(OwnedPath::from_path),
                 last_advert: s.last_advert,

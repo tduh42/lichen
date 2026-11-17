@@ -222,6 +222,9 @@ impl LichenCore {
         }
         i.last_now = now_ms;
         i.core.join(&invite, scanned, now_ms)?;
+        if scanned {
+            i.pin_name(&invite.node);
+        }
         i.save_contacts();
         let out = i
             .core
