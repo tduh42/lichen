@@ -83,6 +83,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     var showingCode by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var leaving by remember { mutableStateOf(false) }
+    var promoting by remember { mutableStateOf<ContactInfo?>(null) }
     var sharing by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
@@ -110,7 +111,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                 CardList {
                     g.members.forEachIndexed { i, m ->
                         if (i > 0) CardDivider(inset = 68.dp)
-                        MemberRow(model, m, g, removable = isAdmin, remove = { removing = m }) {
+                        MemberRow(model, m, g, removable = isAdmin, remove = { removing = m }, promote = { promoting = m }) {
                             // Search for a member: the Search tab opens on them.
                             error = model.startSearch(m.key)
                             if (error == null) model.openSearch = m.key.hex()
@@ -183,7 +184,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
             }
             item {
                 SecondaryButton(
-                    stringResource(if (isAdmin) R.string.close_group else R.string.leave_group), Modifier.padding(top = 12.dp),
+                    stringResource(R.string.leave_group), Modifier.padding(top = 12.dp),
                     background = t.sosBg, foreground = t.sosFg,
                 ) { leaving = true }
             }
@@ -202,18 +203,62 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
     }
     if (leaving && g != null) {
         val admin = model.nodeKey?.contentEquals(g.admin) == true
+        // An admin hands the group over before leaving, or closes it (§10.8).
+        val successors = if (admin) g.members.filter { model.nodeKey?.contentEquals(it.key) != true } else emptyList()
         AlertDialog(
             onDismissRequest = { leaving = false },
-            title = { Text(stringResource(if (admin) R.string.close_group_q else R.string.leave_group_q)) },
-            text = { Text(stringResource(if (admin) R.string.close_group_note else R.string.leave_group_note)) },
+            title = {
+                Text(stringResource(when {
+                    successors.isNotEmpty() -> R.string.who_runs_q
+                    admin -> R.string.close_group_q
+                    else -> R.string.leave_group_q
+                }))
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(stringResource(when {
+                        successors.isNotEmpty() -> R.string.hand_over_note
+                        admin -> R.string.close_group_note
+                        else -> R.string.leave_group_note
+                    }))
+                    successors.forEach { m ->
+                        TextButton(onClick = {
+                            leaving = false
+                            error = model.handOver(g.gid, m.key, leave = true)
+                            if (error == null) left()
+                        }) { Text(stringResource(R.string.hand_over_to, m.name), color = t.tx) }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
                     leaving = false
                     error = model.leaveGroup(g.gid)
                     if (error == null) left()
-                }) { Text(stringResource(if (admin) R.string.close_group else R.string.leave_group), color = t.sos) }
+                }) {
+                    Text(stringResource(when {
+                        successors.isNotEmpty() -> R.string.close_group_everyone
+                        admin -> R.string.close_group
+                        else -> R.string.leave_group
+                    }), color = t.sos)
+                }
             },
             dismissButton = { TextButton(onClick = { leaving = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
+    }
+    promoting?.let { m ->
+        AlertDialog(
+            onDismissRequest = { promoting = null },
+            title = { Text(stringResource(R.string.make_admin_q)) },
+            text = { Text(stringResource(R.string.make_admin_note, m.name)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    error = g?.let { model.handOver(it.gid, m.key, leave = false) }
+                    promoting = null
+                }) { Text(stringResource(R.string.make_admin_named, m.name), color = t.tx) }
+            },
+            dismissButton = { TextButton(onClick = { promoting = null }) { Text(stringResource(R.string.cancel), color = t.tx) } },
             containerColor = t.s1,
         )
     }
@@ -270,7 +315,15 @@ private fun KeysBanner(g: GroupInfo) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: Boolean, remove: () -> Unit, search: () -> Unit) {
+private fun MemberRow(
+    model: AppModel,
+    m: ContactInfo,
+    g: GroupInfo,
+    removable: Boolean,
+    remove: () -> Unit,
+    promote: () -> Unit,
+    search: () -> Unit,
+) {
     val t = lichen
     val me = model.nodeKey?.contentEquals(m.key) == true
     val admin = m.key.contentEquals(g.admin)
@@ -282,6 +335,10 @@ private fun MemberRow(model: AppModel, m: ContactInfo, g: GroupInfo, removable: 
             search()
         })
         if (removable) {
+            DropdownMenuItem({ Text(stringResource(R.string.make_admin)) }, {
+                menu = false
+                promote()
+            })
             DropdownMenuItem({ Text(stringResource(R.string.remove_from_group), color = t.sos) }, {
                 menu = false
                 remove()

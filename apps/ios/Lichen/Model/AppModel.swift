@@ -1514,6 +1514,14 @@ final class AppModel {
         return e
     }
 
+    /// Hands a group we run to `member` (protocol.md §10.8): "Make admin", or, with `leave`,
+    /// how the admin leaves without closing the group.
+    func handOver(_ gid: Data, to member: Data, leave: Bool) -> String? {
+        let e = groupCall { try core.handOver(gid: gid, member: member, leave: leave, nowMs: now()) }
+        if leave { shares = core.shares() }
+        return e
+    }
+
     private func groupCall(_ f: () throws -> Void) -> String? {
         do {
             try f()
@@ -2252,6 +2260,11 @@ extension Message {
                 : String(localized: "\(who) set messages to disappear after \(after)")
         // The name shown before (SR-30): a verified contact keeps it, the line says what changed.
         case 12: return String(localized: "\(actorName)'s radio is now called “\(text)”")
+        // A handover (§10.8): the former admin acts, the successor is the subject.
+        case 40:
+            if mine { return String(localized: "You made \(names) admin") }
+            if let me, subjects.first?.node == me { return String(localized: "\(who) made you admin") }
+            return String(localized: "\(who) made \(names) admin")
         default: return String(localized: "The group changed")
         }
     }

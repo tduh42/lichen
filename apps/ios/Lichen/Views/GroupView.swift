@@ -13,6 +13,7 @@ struct GroupView: View {
     @State private var newName = ""
     @State private var leaving = false
     @State private var removing: ContactInfo?
+    @State private var promoting: ContactInfo?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -28,9 +29,10 @@ struct GroupView: View {
                             memberRow(m, group: g)
                         }
                     }
+                    .modifier(MemberDialogs(gid: gid, promoting: $promoting, removing: $removing, error: $error))
                     if isAdmin { adminCards(g) }
                     locationAndDiffusion
-                    Button(isAdmin ? "Close the group" : "Leave the group") { leaving = true }
+                    Button("Leave the group") { leaving = true }
                         .buttonStyle(.destructive)
                         .padding(.top, 12)
                 }
@@ -63,21 +65,10 @@ struct GroupView: View {
         } message: {
             Text("Every member sees the new name.")
         }
-        .confirmationDialog(isAdmin ? "Close the group?" : "Leave the group?", isPresented: $leaving, titleVisibility: .visible) {
-            Button(isAdmin ? "Close the group" : "Leave the group", role: .destructive) {
-                // The chat closes itself once the group is gone (ChatView), this screen with it.
-                if let e = model.leaveGroup(gid) { error = e }
-            }
+        .confirmationDialog(leaveTitle, isPresented: $leaving, titleVisibility: .visible) {
+            leaveActions
         } message: {
-            Text(isAdmin
-                 ? "Every member stops receiving it. The messages already received stay on each phone."
-                 : "You stop receiving its messages and your location shares with it stop. What you received stays on this phone.")
-        }
-        .confirmationDialog("Remove from the group?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
-                            titleVisibility: .visible, presenting: removing) { m in
-            Button("Remove \(m.name)", role: .destructive) { error = model.removeMember(m.key, from: gid) }
-        } message: { _ in
-            Text("Everyone gets new keys: they cannot read what follows.")
+            Text(leaveMessage)
         }
         .onAppear {
             consent = model.searchConsent(gid)
@@ -174,6 +165,42 @@ struct GroupView: View {
 
     private var isAdmin: Bool { group?.admin == model.nodeKey }
 
+    /// The members an admin can hand the group to: everyone else.
+    private var successors: [ContactInfo] { group?.members.filter { $0.key != model.nodeKey } ?? [] }
+
+    private var leaveTitle: LocalizedStringKey {
+        if !isAdmin { return "Leave the group?" }
+        return successors.isEmpty ? "Close the group?" : "Who runs the group after you?"
+    }
+
+    private var leaveMessage: LocalizedStringKey {
+        if !isAdmin {
+            return "You stop receiving its messages and your location shares with it stop. What you received stays on this phone."
+        }
+        return successors.isEmpty
+            ? "Every member stops receiving it. The messages already received stay on each phone."
+            : "The one you choose can invite, remove and rename, and you leave. Closing the group ends it on every phone; the messages already received stay."
+    }
+
+    /// Leaving: an admin hands the group over first, or closes it (§10.8). The chat closes
+    /// itself once the group is gone (ChatView), this screen with it.
+    @ViewBuilder private var leaveActions: some View {
+        if isAdmin {
+            ForEach(successors, id: \.key) { m in
+                Button("Hand over to \(m.name)") {
+                    if let e = model.handOver(gid, to: m.key, leave: true) { error = e }
+                }
+            }
+            Button("Close the group for everyone", role: .destructive) {
+                if let e = model.leaveGroup(gid) { error = e }
+            }
+        } else {
+            Button("Leave the group", role: .destructive) {
+                if let e = model.leaveGroup(gid) { error = e }
+            }
+        }
+    }
+
     /// Members our latest changes have not reached yet (SR-12).
     @ViewBuilder private func unreachedBanner(_ g: GroupInfo) -> some View {
         let names = g.members.filter { m in g.unreached.contains(m.key) }.map(\.name)
@@ -235,6 +262,11 @@ struct GroupView: View {
                 }
             }
             if isAdmin && !me {
+                Button {
+                    promoting = m
+                } label: {
+                    Label("Make admin", systemImage: "person.badge.key")
+                }
                 Button(role: .destructive) {
                     removing = m
                 } label: {
@@ -242,6 +274,31 @@ struct GroupView: View {
                 }
             }
         }
+    }
+}
+
+/// What the admin does to a member: hand the group over to them (§10.8), or remove them.
+private struct MemberDialogs: ViewModifier {
+    let gid: Data
+    @Binding var promoting: ContactInfo?
+    @Binding var removing: ContactInfo?
+    @Binding var error: String?
+    @Environment(AppModel.self) private var model
+
+    func body(content: Content) -> some View {
+        content
+            .confirmationDialog("Make admin?", isPresented: Binding(get: { promoting != nil }, set: { if !$0 { promoting = nil } }),
+                                titleVisibility: .visible, presenting: promoting) { m in
+                Button("Make \(m.name) admin") { error = model.handOver(gid, to: m.key, leave: false) }
+            } message: { m in
+                Text("\(m.name) will run the group: invite, remove, rename. You stay a member.")
+            }
+            .confirmationDialog("Remove from the group?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                titleVisibility: .visible, presenting: removing) { m in
+                Button("Remove \(m.name)", role: .destructive) { error = model.removeMember(m.key, from: gid) }
+            } message: { _ in
+                Text("Everyone gets new keys: they cannot read what follows.")
+            }
     }
 }
 
@@ -275,7 +332,7 @@ private struct InviteSheet: View {
                 } footer: {
                     Text(candidates.isEmpty
                          ? String(localized: "Contacts appear here once their identity is known: scan their code or exchange a message.")
-                         : String(localized: "New members get the current keys: they can read messages recorded before they joined."))
+                         : String(localized: "New members cannot read what was sent before they joined: every key steps forward as they arrive."))
                 }
                 if let error { Section { Text(error).foregroundStyle(Theme.sosFg) } }
             }
@@ -360,7 +417,7 @@ private struct InviteCodeSheet: View {
                             }
                         }
                     }
-                    Text("Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers can read messages recorded under the current keys.")
+                    Text("Anyone who scans it while it is shown can join: you can remove them from the group. Newcomers cannot read what was sent before they joined.")
                         .font(.system(.footnote))
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
