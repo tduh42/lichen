@@ -424,3 +424,19 @@ fn radio_stats_and_tx_power() {
     );
     assert!(Response::decode(&[24, 1, 0]).is_err(), "truncated");
 }
+
+/// ADR-0035: a group voice note's signed message (611 bytes) verifies, in several parts as
+/// lichen signs it; one byte changed does not.
+#[test]
+fn long_messages_verify() {
+    let prv = expand_seed(&[7; 32]);
+    let key = public_key(&prv);
+    let body = vec![0x5Au8; 576];
+    let parts: [&[u8]; 5] = [b"lichen/1 group", &[1; 16], &[2], &[3; 4], &body];
+    let sig = lc_meshcore::ecdh::sign(&prv, &parts).unwrap();
+    assert!(lc_meshcore::ecdh::verify(&key, &parts, &sig));
+    let mut other = body.clone();
+    other[575] ^= 1;
+    let parts: [&[u8]; 5] = [b"lichen/1 group", &[1; 16], &[2], &[3; 4], &other];
+    assert!(!lc_meshcore::ecdh::verify(&key, &parts, &sig));
+}

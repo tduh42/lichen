@@ -98,6 +98,41 @@ impl LichenCore {
         i.stored_outgoing(Chat::Group(g), content, id, estimate, true, None)
     }
 
+    /// Floods a voice message prepared by [`prepare_voice`] to group `gid` (§13.1, ADR-0035):
+    /// 5 fragments at most (6 s in 700C), refused when over budget or too long.
+    pub fn send_group_voice(
+        &self,
+        gid: Vec<u8>,
+        voice: PreparedVoice,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let g = self::gid(&gid)?;
+        let content = Content::Voice {
+            sent_at,
+            mode: voice.mode,
+            frames: voice.frames,
+            data: voice.data,
+        };
+        let mut i = self.lock();
+        i.writable()?;
+        i.last_now = now_ms;
+        let datagram = content.encode();
+        let estimate = i.core.estimate_group_send(datagram.len());
+        let id = i.core.send_group_voice(&g, &datagram, now_ms)?;
+        i.stored_outgoing(Chat::Group(g), content, id, estimate, false, None)
+    }
+
+    /// Fragments and the airtime of our own floods (both copies) of a group datagram of `len`
+    /// bytes (`content_type ‖ body`): a voice note's cost before it is sent (§13.1).
+    pub fn estimate_group_datagram(&self, len: u32) -> Estimate {
+        let (fragments, airtime_ms) = self.lock().core.estimate_group_send(len as usize);
+        Estimate {
+            fragments,
+            airtime_ms,
+        }
+    }
+
     /// Invites contacts (nodes whose identity is known) into a group we administer (ADR-0017).
     pub fn add_members(
         &self,

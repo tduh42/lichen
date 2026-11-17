@@ -1,5 +1,6 @@
 //! Group message envelope (§10.3, ADR-0009): flooded as `GRP_DATA` on channel hash `0x7C`,
-//! encrypted under the sender's key, 1 or 2 fragments per message.
+//! encrypted under the sender's key, 1 or 2 fragments per message, up to 5 for a voice note
+//! (ADR-0035).
 
 use crate::discovery::CHANNEL_HASH;
 use crate::header::FrameError;
@@ -17,10 +18,16 @@ pub const PAYLOAD_MAX: usize = 156;
 pub const FRAGMENT_PLAIN_MAX: usize = PAYLOAD_MAX - HEADER_LEN - TAG_LEN - 1;
 /// Fragments per message.
 pub const MAX_FRAGMENTS: u8 = 2;
+/// Fragments of a voice note in a group (§13.1, ADR-0035).
+pub const VOICE_MAX_FRAGMENTS: u8 = 5;
+/// The most `frag` can say: `total` takes 3 bits (ADR-0035).
+pub const WIRE_MAX_FRAGMENTS: u8 = 7;
 /// Ed25519 signature length, appended to every message plaintext.
 pub const SIGNATURE_LEN: usize = 64;
 /// Largest message plaintext (`content_type ‖ body ‖ signature`).
 pub const MESSAGE_MAX: usize = FRAGMENT_PLAIN_MAX * MAX_FRAGMENTS as usize;
+/// Largest voice note plaintext in a group.
+pub const VOICE_MESSAGE_MAX: usize = FRAGMENT_PLAIN_MAX * VOICE_MAX_FRAGMENTS as usize;
 
 /// The clear part of an envelope.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,7 +45,7 @@ pub struct GroupHeader {
 impl GroupHeader {
     /// `index << 4 | copy << 3 | total`.
     const fn frag(&self) -> u8 {
-        (self.index << 4) | ((self.copy & 1) << 3) | (self.total & 0x03)
+        (self.index << 4) | ((self.copy & 1) << 3) | (self.total & 0x07)
     }
 
     fn encode(&self, padded: bool) -> [u8; HEADER_LEN] {
@@ -119,8 +126,8 @@ pub fn parse(payload: &[u8]) -> Option<(GroupHeader, bool)> {
     if padded && payload.last() != Some(&0) {
         return None;
     }
-    let (index, copy, total) = (frag >> 4, (frag >> 3) & 1, frag & 0x03);
-    if frag & 0x04 != 0 || total == 0 || total > MAX_FRAGMENTS || index >= total {
+    let (index, copy, total) = (frag >> 4, (frag >> 3) & 1, frag & 0x07);
+    if total == 0 || total > WIRE_MAX_FRAGMENTS || index >= total {
         return None;
     }
     Some((
@@ -177,11 +184,16 @@ pub fn open<'a>(key: &Key, payload: &'a mut [u8]) -> Result<(GroupHeader, &'a [u
 
 /// Number of fragments for a message plaintext of `len` bytes, or `None` if it is too long.
 pub const fn fragments_for(len: usize) -> Option<u8> {
-    if len == 0 || len > MESSAGE_MAX {
+    fragments_up_to(len, MAX_FRAGMENTS)
+}
+
+/// Number of fragments for a plaintext of `len` bytes, `max` at most (a voice note's
+/// [`VOICE_MAX_FRAGMENTS`]), or `None` if it is too long.
+pub const fn fragments_up_to(len: usize, max: u8) -> Option<u8> {
+    let n = len.div_ceil(FRAGMENT_PLAIN_MAX);
+    if len == 0 || n > max as usize || n > WIRE_MAX_FRAGMENTS as usize {
         None
-    } else if len <= FRAGMENT_PLAIN_MAX {
-        Some(1)
     } else {
-        Some(2)
+        Some(n as u8)
     }
 }

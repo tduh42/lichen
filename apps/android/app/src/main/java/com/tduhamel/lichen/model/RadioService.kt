@@ -13,6 +13,7 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.RemoteInput
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import com.tduhamel.lichen.MainActivity
@@ -127,12 +128,13 @@ object Notifications {
             .setContentIntent(open(context, null))
             .build()
 
-    /** A received message, unless notifications are not allowed. */
-    fun message(context: Context, chat: ChatId, title: String, text: String) {
+    /** A received message, unless notifications are not allowed; `actions`: Reply and Mark as
+     * read (ADR-0034), which the app lock leaves out. */
+    fun message(context: Context, chat: ChatId, title: String, text: String, actions: Boolean = false) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return
         }
-        val n = NotificationCompat.Builder(context, MESSAGES)
+        val b = NotificationCompat.Builder(context, MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
@@ -140,11 +142,76 @@ object Notifications {
             .setAutoCancel(true)
             .setContentIntent(open(context, chat))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .build()
-        NotificationManagerCompat.from(context).notify(chat.hex.hashCode(), n)
+        if (actions) {
+            val input = RemoteInput.Builder(NotificationActions.KEY_TEXT).setLabel(context.getString(R.string.message_placeholder)).build()
+            b.addAction(
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_notification, context.getString(R.string.reply),
+                    // Mutable: the system fills in the typed text. The intent is explicit, to a
+                    // receiver no other app can reach.
+                    action(context, chat, NotificationActions.REPLY, PendingIntent.FLAG_MUTABLE),
+                )
+                    .addRemoteInput(input)
+                    .setAllowGeneratedReplies(false)
+                    .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+                    .setAuthenticationRequired(true)
+                    .build(),
+            )
+            b.addAction(
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_notification, context.getString(R.string.mark_as_read),
+                    action(context, chat, NotificationActions.READ, PendingIntent.FLAG_IMMUTABLE),
+                )
+                    .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+                    .setShowsUserInterface(false)
+                    .setAuthenticationRequired(true)
+                    .build(),
+            )
+        }
+        NotificationManagerCompat.from(context).notify(chat.hex.hashCode(), b.build())
     }
+
+    private fun action(context: Context, chat: ChatId, what: String, mutability: Int): PendingIntent =
+        PendingIntent.getBroadcast(
+            context, (what + chat.route).hashCode(),
+            Intent(context, NotificationActions::class.java).setAction(what).putExtra(EXTRA_CHAT, chat.route),
+            mutability or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
 
     fun clear(context: Context, chat: ChatId) {
         NotificationManagerCompat.from(context).cancel(chat.hex.hashCode())
+    }
+}
+
+/**
+ * Reply and Mark as read from a message's notification (ADR-0034). Not exported: only the
+ * notifications' own intents reach it, and still everything in them is checked as if another
+ * app had written it (review of 2026-11-15, SR-25): the action, the conversation, the text.
+ */
+class NotificationActions : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        val chat = intent.getStringExtra(Notifications.EXTRA_CHAT)?.let(ChatId::fromRoute) ?: return
+        val model = (context.applicationContext as? com.tduhamel.lichen.LichenApplication)?.model ?: return
+        when (intent.action) {
+            REPLY -> {
+                val text = RemoteInput.getResultsFromIntent(intent)?.getCharSequence(KEY_TEXT)?.toString()?.trim()
+                if (text.isNullOrEmpty() || text.length > TEXT_MAX) {
+                    Notifications.clear(context, chat)
+                    return
+                }
+                model.replyFromNotification(chat, text)
+            }
+            READ -> model.markReadFromNotification(chat)
+        }
+    }
+
+    companion object {
+        const val REPLY = "com.tduhamel.lichen.REPLY"
+        const val READ = "com.tduhamel.lichen.READ"
+        const val KEY_TEXT = "text"
+
+        /** What a text typed in a notification may hold at most: the core refuses what does
+         * not fit a message anyway. */
+        private const val TEXT_MAX = 4_096
     }
 }

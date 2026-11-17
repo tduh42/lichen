@@ -86,6 +86,8 @@ fun SettingsScreen(
     report: () -> Unit = {},
     nodes: () -> Unit = {},
     radios: () -> Unit = {},
+    blocked: () -> Unit = {},
+    storage: () -> Unit = {},
 ) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
@@ -274,9 +276,18 @@ fun SettingsScreen(
                 }
             }
             item { SectionLabel(stringResource(R.string.privacy), Modifier.padding(top = 10.dp)) }
-            item { PrivacyCard(model) }
+            item { PrivacyCard(model, blocked) }
             item {
                 Text(stringResource(R.string.lock_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+            }
+            // What each conversation takes, and old media to clear (ADR-0034).
+            item { SectionLabel(stringResource(R.string.storage), Modifier.padding(top = 10.dp)) }
+            item {
+                CardList {
+                    Box(Modifier.clickable(onClick = storage)) {
+                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note))
+                    }
+                }
             }
             if (Build.VERSION.SDK_INT >= 33) {
                 item { SectionLabel(stringResource(R.string.language), Modifier.padding(top = 10.dp)) }
@@ -385,7 +396,7 @@ fun SettingsScreen(
 /** The app lock ([com.tduhamel.lichen.model.AppLock]): on after one successful authentication,
  * off by default. */
 @Composable
-private fun PrivacyCard(model: AppModel) {
+private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
     val t = lichen
     val lock = model.lock
     val prompt = LocalLockPrompt.current
@@ -416,6 +427,13 @@ private fun PrivacyCard(model: AppModel) {
                         }
                     }
                 }
+            }
+        }
+        CardDivider()
+        // People the user blocked (ADR-0034), to unblock.
+        Box(Modifier.clickable(onClick = blocked)) {
+            CardRow(stringResource(R.string.blocked)) {
+                Text("${model.blocked.size}", fontSize = 15.sp, color = t.tx2)
             }
         }
     }

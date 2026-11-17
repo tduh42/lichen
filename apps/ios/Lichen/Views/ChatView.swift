@@ -37,6 +37,10 @@ struct ChatView: View {
     /// The view stays on the last message while the content grows (photos, stickers and GIFs
     /// laid out after the first pass): from opening at the end until the user scrolls away.
     @State private var pinned = false
+    /// Blocking the other side, to confirm (ADR-0034).
+    @State private var blocking = false
+    /// Chat info › Media, files and voice (ADR-0034).
+    @State private var showingMedia = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -183,7 +187,12 @@ struct ChatView: View {
                     }
                 }
             }
-            Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo, editing: $editing)
+            if let node = chatKey, model.isBlocked(node) {
+                // Nothing to write with: they are blocked (ADR-0034).
+                BlockedBar(name: model.title(of: chat)) { model.unblock(node) }
+            } else {
+                Composer(chat: chat, draft: $draft, error: $error, replyTo: $replyTo, editing: $editing)
+            }
         }
         .screen()
         .navigationBarTitleDisplayMode(.inline)
@@ -225,11 +234,21 @@ struct ChatView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) { timerMenu }
+            ToolbarItem(placement: .topBarTrailing) { moreMenu }
+        }
+        .confirmationDialog(String(localized: "Block \(model.title(of: chat))?"), isPresented: $blocking,
+                            titleVisibility: .visible) {
+            Button("Block", role: .destructive) {
+                if let node = chatKey { error = model.block(node) }
+            }
+        } message: {
+            Text("Their messages, introductions and group posts no longer reach this phone, and their posts already in your groups are hidden. They are not told. Their position and SOS in a group still show.")
         }
         .sheet(isPresented: $plainInfo) { PlainInfoSheet(chat: chat) }
         .navigationDestination(isPresented: $showingGroup) {
             if case let .group(gid) = chat { GroupView(gid: gid) }
         }
+        .navigationDestination(isPresented: $showingMedia) { ChatMediaView(chat: chat) }
         .onAppear {
             model.load(chat)
             if let f = model.focus, f.chat == chat {
@@ -255,7 +274,18 @@ struct ChatView: View {
             if timer > 0, model.timers[chat] != UInt32(timer) { _ = model.setTimer(chat, UInt32(timer)) }
             #endif
         }
-        .onAppear { if draft.isEmpty { draft = model.draft(chat) } }
+        .onAppear {
+            if draft.isEmpty { draft = model.draft(chat) }
+            // The message the draft answers, kept with it (ADR-0034).
+            if replyTo == nil, editing == nil, let id = model.replyDraft(chat) {
+                if model.loadUntil(chat, id), let m = model.chats[chat]?.first(where: { $0.id == id }), m.referable {
+                    replyTo = m
+                } else {
+                    model.setReplyDraft(chat, nil)
+                }
+            }
+        }
+        .onChange(of: replyTo?.id) { model.setReplyDraft(chat, replyTo?.id) }
         // A group we left, closed or were removed from: back to the conversations.
         .onChange(of: model.groups.map(\.gid)) { _, gids in
             if case let .group(gid) = chat, !gids.contains(gid) { dismissChat() }
@@ -263,8 +293,9 @@ struct ChatView: View {
         .onChange(of: draft) { model.setDraft(chat, draft) }
         .onDisappear {
             if model.notifier.visibleChat == chat { model.notifier.visibleChat = nil }
-            // A recording belongs to its conversation: leaving it drops the recording.
-            model.recorder.cancel(for: chat)
+            // A recording belongs to its conversation: leaving it stops the recording, which
+            // waits there to be sent or discarded (ADR-0034).
+            model.keepRecording(for: chat)
         }
         .sheet(isPresented: Binding(get: { verifying != nil }, set: { if !$0 { verifying = nil } })) {
             if case let .contact(key) = chat {
@@ -377,6 +408,33 @@ struct ChatView: View {
                 .labelStyle(TintedIconLabel(tint: Theme.ok))
                 .padding(.top, 4)
         }
+    }
+
+    /// Archive and block (ADR-0034).
+    private var moreMenu: some View {
+        let archived = model.isArchived(chat)
+        return Menu {
+            // A MeshCore chat carries text only (§15).
+            if !chat.isPlain {
+                Button { showingMedia = true } label: { Label("Media, files and voice", systemImage: "photo.on.rectangle") }
+            }
+            Button {
+                model.setArchived(chat, !archived)
+                if !archived { dismissChat() }
+            } label: {
+                Label(archived ? "Unarchive" : "Archive", systemImage: archived ? "tray.and.arrow.up" : "archivebox")
+            }
+            if let node = chatKey {
+                if model.isBlocked(node) {
+                    Button { model.unblock(node) } label: { Label("Unblock", systemImage: "hand.raised.slash") }
+                } else {
+                    Button(role: .destructive) { blocking = true } label: { Label("Block", systemImage: "hand.raised") }
+                }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle").foregroundStyle(Theme.tx2)
+        }
+        .accessibilityLabel("More")
     }
 
     /// Disappearing messages (§6.5): the choices, and what the timer cannot do.
@@ -768,6 +826,12 @@ private struct MessageView: View {
         if case let .text(_, text) = message.message {
             Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") }
             Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") }
+            // Coordinates in the text (ADR-0034).
+            if let place = LinkedText.places(in: text).first {
+                Button { model.showOnMap(lat: place.lat, lon: place.lon) } label: {
+                    Label("Show on the map", systemImage: "map")
+                }
+            }
         }
         if case let .waiting(_, started, _) = message.status, !started {
             Button(role: .destructive) { error = model.cancel(message) } label: {
@@ -859,6 +923,14 @@ private struct MessageView: View {
                     .padding(.vertical, 9)
                     .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
                     .foregroundStyle(Theme.tx2)
+            case let .text(_, text):
+                // Links open in the browser when tapped, places on the map (ADR-0034).
+                LinkedText(text: text, outgoing: message.outgoing)
+                    .font(.system(.callout))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(message.outgoing ? Theme.actBg : Theme.s2, in: RoundedRectangle(cornerRadius: 18))
+                    .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
             default:
                 Text(message.message.display)
                     .font(.system(.callout))
@@ -915,7 +987,7 @@ private struct MessageView: View {
 }
 
 /// Play button (LoRa orange), waveform, length, codec (mockup `chat`).
-private struct VoiceNote: View {
+struct VoiceNote: View {
     let message: StoredMessage
     @Environment(AppModel.self) private var model
 
@@ -1236,9 +1308,12 @@ private struct Composer: View {
                         .padding(.vertical, 9)
                         .background(Theme.bg, in: RoundedRectangle(cornerRadius: 22))
                         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.line))
-                    if isContact && draft.isEmpty {
+                    // Voice notes: to a contact, or short ones to a group (ADR-0035).
+                    if (isContact || isGroupChat) && draft.isEmpty {
                         Button {
-                            Task { await model.recorder.start(for: chat) }
+                            Task {
+                                await model.recorder.start(for: chat, maxSeconds: isGroupChat ? AppModel.groupVoiceSeconds : VoiceRecorder.maxSeconds)
+                            }
                         } label: {
                             Image(systemName: "mic")
                                 .font(.system(.title3, weight: .semibold))
@@ -1308,23 +1383,17 @@ private struct Composer: View {
             preparing = true
             Task {
                 defer { preparing = false }
-                // Decoded and scaled in the background (SR-27): a picked photo can be large.
-                guard let data = try? await item.loadTransferable(type: Data.self),
-                      let (rgba, w, h) = await Task.detached(priority: .userInitiated, operation: {
-                          BoundedImage.from(data: data, maxPixel: 2048)?.rgba()
-                      }).value
-                else {
+                guard let data = try? await item.loadTransferable(type: Data.self) else {
                     error = LichenError.BadImage.display
                     return
                 }
-                original = data
-                do {
-                    image = try await Task.detached { try prepareImage(rgba: rgba, width: w, height: h) }.value
-                } catch {
-                    self.error = LichenError.BadImage.display
-                }
+                await preparePhoto(data)
             }
         }
+        // Something shared into lichen for this conversation (ADR-0034): a photo goes to the
+        // photo sheet, anything else to the file sheet, as if picked here.
+        .onAppear(perform: takeShared)
+        .onChange(of: model.sharedFor[chat]?.id) { takeShared() }
         .onAppear {
             #if DEBUG
             // -screen share: the location sheet.
@@ -1352,8 +1421,18 @@ private struct Composer: View {
             #endif
         }
         .sheet(isPresented: $locating) { ChatShareSheet(chat: chat) }
-        // A recording under review belongs to this conversation: leaving it stops the playback.
-        .onDisappear { if model.player.playing == VoicePlayer.review { model.player.stop() } }
+        // A recording under review belongs to this conversation: leaving it stops the playback,
+        // and the recording waits there (ADR-0034).
+        .onDisappear {
+            if model.player.playing == VoicePlayer.review { model.player.stop() }
+            if let r = review { model.voiceDrafts[chat] = AppModel.VoiceDraft(pcm: r.pcm, mode: r.mode) }
+        }
+        // A recording left behind: back under review.
+        .onAppear {
+            if review == nil, let v = model.voiceDrafts.removeValue(forKey: chat) {
+                review = Review(pcm: v.pcm, mode: v.mode, voice: prepareVoice(pcm: v.pcm, mode: v.mode))
+            }
+        }
         .sheet(item: Binding(get: { image.map(ImageDraft.init) }, set: { image = $0?.image })) { draft in
             SendPhotoSheet(chat: chat, image: draft.image, original: original) { e in
                 image = nil
@@ -1365,6 +1444,36 @@ private struct Composer: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Allow it in Settings to record voice messages.")
+        }
+    }
+
+    /// Decodes and scales a photo in the background (SR-27: it can be large), then prepares its
+    /// LoRa variants: the photo sheet opens on them.
+    private func preparePhoto(_ data: Data) async {
+        guard let (rgba, w, h) = await Task.detached(priority: .userInitiated, operation: {
+            BoundedImage.from(data: data, maxPixel: 2048)?.rgba()
+        }).value else {
+            error = LichenError.BadImage.display
+            return
+        }
+        original = data
+        do {
+            image = try await Task.detached { try prepareImage(rgba: rgba, width: w, height: h) }.value
+        } catch {
+            self.error = LichenError.BadImage.display
+        }
+    }
+
+    private func takeShared() {
+        guard let shared = model.sharedFor.removeValue(forKey: chat) else { return }
+        if shared.isImage {
+            preparing = true
+            Task {
+                defer { preparing = false }
+                await preparePhoto(shared.data)
+            }
+        } else {
+            file = FileDraft(name: shared.name, data: shared.data)
         }
     }
 
@@ -1396,11 +1505,19 @@ private struct Composer: View {
         return false
     }
 
+    private var isGroupChat: Bool {
+        if case .group = chat { return true }
+        return false
+    }
+
+    /// The Codec2 mode a new recording uses: the chosen one, 700C in a group (ADR-0035).
+    private var recordMode: UInt8 { isGroupChat ? AppModel.groupVoiceMode : UInt8(model.voiceMode) }
+
     /// While recording: time, cost so far, cancel, send.
     private var recordingBar: some View {
         let seconds = model.recorder.elapsed
         // The chosen mode's bytes for what is recorded so far.
-        let estimate = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: UInt8(model.voiceMode), durationMs: UInt32(seconds * 1000)))
+        let estimate = model.voiceEstimate(chat, datagramLen: voiceDatagramLenFor(mode: recordMode, durationMs: UInt32(seconds * 1000)))
         return HStack(spacing: 12) {
             Button {
                 _ = model.recorder.stop(keep: false)
@@ -1414,7 +1531,7 @@ private struct Composer: View {
             .accessibilityLabel("Cancel")
             Circle().fill(Theme.sos).frame(width: 10, height: 10)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(clock(seconds)) / \(clock(VoiceRecorder.maxSeconds))")
+                Text("\(clock(seconds)) / \(clock(model.recorder.limit))")
                     .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 if let e = estimate {
                     Text("\(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of airtime")
@@ -1426,7 +1543,7 @@ private struct Composer: View {
             Button {
                 // Stop and listen before sending.
                 guard let pcm = model.recorder.stop(keep: true) else { return }
-                let mode = UInt8(model.voiceMode)
+                let mode = recordMode
                 review = Review(pcm: pcm, mode: mode, voice: prepareVoice(pcm: pcm, mode: mode))
             } label: {
                 Image(systemName: "stop.fill")
@@ -1439,7 +1556,7 @@ private struct Composer: View {
             Button {
                 // To the conversation the recording was made in.
                 guard let to = model.recorder.chat, let pcm = model.recorder.stop(keep: true) else { return }
-                let voice = prepareVoice(pcm: pcm, mode: UInt8(model.voiceMode))
+                let voice = prepareVoice(pcm: pcm, mode: recordMode)
                 if let e = model.sendVoice(voice, to: to) { error = e }
             } label: {
                 Image(systemName: "arrow.up")
@@ -1457,8 +1574,9 @@ private struct Composer: View {
     /// sound), choose its quality against its airtime, drop it or send it.
     private func reviewBar(_ r: Review) -> some View {
         let reviewing = model.player.playing == VoicePlayer.review
-        let modes: [UInt8] = [0, 2, 3]
-        let cost = model.estimate(chat, datagramLen: voiceDatagramLenFor(mode: r.mode, durationMs: r.voice.durationMs))
+        // In a group, only the modes whose note fits in 5 fragments (ADR-0035).
+        let modes: [UInt8] = [0, 2, 3].filter { !isGroupChat || groupVoiceMaxMs(mode: $0) >= r.voice.durationMs }
+        let cost = model.voiceEstimate(chat, datagramLen: voiceDatagramLenFor(mode: r.mode, durationMs: r.voice.durationMs))
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Button(role: .destructive) {
@@ -1511,7 +1629,9 @@ private struct Composer: View {
             }
             .pickerStyle(.segmented)
             if let e = cost {
-                Text("Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s")
+                Text(isGroupChat
+                     ? String(localized: "Flooded to the group: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of our airtime; every repeater adds as much")
+                     : String(localized: "Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s"))
                     .font(.system(.caption2))
                     .foregroundStyle(Theme.tx2)
             }
@@ -1814,7 +1934,7 @@ private struct SendPhotoSheet: View {
 }
 
 /// A file picked in the composer.
-private struct FileDraft: Identifiable {
+struct FileDraft: Identifiable {
     let id = UUID()
     let name: String
     let data: Data
@@ -1836,13 +1956,13 @@ private func fileSymbol(_ name: String) -> String {
 /// The most a file can be: what the Internet bridge carries (§14.1, 64 MiB).
 private let fileMax = 64 << 20
 
-private struct PickProblem: Error {
+struct PickProblem: Error {
     let message: String
 }
 
 /// A picked file, read in full only when it is at most `fileMax`: the size the system reports
 /// is checked first, and reading stops one byte past the limit whatever it said (recheck R04).
-private func readPicked(_ url: URL) -> Result<FileDraft, PickProblem> {
+func readPicked(_ url: URL) -> Result<FileDraft, PickProblem> {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }
     let tooLarge = PickProblem(message: String(localized: "This file is larger than 64 MB, the most lichen can send."))
@@ -2044,7 +2164,7 @@ private struct FileCard: View {
 }
 
 /// Icon, name and size of a file, and a transport badge.
-private struct FileRow<Badge: View>: View {
+struct FileRow<Badge: View>: View {
     let name: String
     let size: Int
     let badge: Badge
@@ -2168,6 +2288,78 @@ private struct BridgeSection: View {
             } else {
                 content
             }
+        }
+    }
+}
+
+/// In place of the composer for someone the user blocked (ADR-0034).
+private struct BlockedBar: View {
+    let name: String
+    let unblock: () -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("You blocked \(name). Nothing they send reaches this phone.")
+                .font(.system(.footnote))
+                .foregroundStyle(Theme.tx2)
+                .multilineTextAlignment(.center)
+            Button("Unblock", action: unblock)
+                .buttonStyle(SecondaryButtonStyle(height: 44))
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(Theme.s1)
+    }
+}
+
+/// A message's text with its links and places tappable (ADR-0034): a link opens in the
+/// browser when the user taps it (nothing is fetched before, no preview), a place opens
+/// lichen's map. Only `http` and `https` addresses are links.
+struct LinkedText: View {
+    let text: String
+    let outgoing: Bool
+    @Environment(AppModel.self) private var model
+
+    /// The scheme of the in-app links that stand for places; never registered with the system.
+    private static let placeScheme = "lichen-place"
+
+    var body: some View {
+        Text(Self.attributed(text))
+            .tint(outgoing ? Theme.actFg : Theme.tx)
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == Self.placeScheme else {
+                    return url.scheme == "https" || url.scheme == "http" ? .systemAction : .discarded
+                }
+                let parts = url.absoluteString.dropFirst(Self.placeScheme.count + 1).split(separator: ",")
+                if parts.count == 2, let lat = Double(parts[0]), let lon = Double(parts[1]) {
+                    model.showOnMap(lat: lat, lon: lon)
+                }
+                return .handled
+            })
+    }
+
+    static func attributed(_ text: String) -> AttributedString {
+        var a = AttributedString(text)
+        for l in textLinks(text: text) {
+            let range = NSRange(location: Int(l.start), length: Int(l.end - l.start))
+            guard let r = Range(range, in: a) else { continue }
+            switch l.target {
+            case let .web(url):
+                guard let u = URL(string: url) else { continue }
+                a[r].link = u
+            case let .place(lat, lon):
+                a[r].link = URL(string: "\(placeScheme):\(lat),\(lon)")
+            }
+            a[r].underlineStyle = .single
+        }
+        return a
+    }
+
+    /// The places written in `text`.
+    static func places(in text: String) -> [(lat: Double, lon: Double)] {
+        textLinks(text: text).compactMap {
+            if case let .place(lat, lon) = $0.target { return (lat, lon) }
+            return nil
         }
     }
 }

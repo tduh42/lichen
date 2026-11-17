@@ -11,6 +11,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
+import com.tduhamel.lichen.core.BlockedContact
+import com.tduhamel.lichen.core.ChatUsage
 import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.NodeInfo
@@ -70,6 +72,12 @@ import kotlinx.coroutines.withContext
 
 /** The app's appearance setting: the system's by default. */
 enum class Appearance { SYSTEM, DARK, LIGHT }
+
+/** A place from a message's text, shown on the map; `version` tells a new request apart. */
+data class MapPin(val lat: Double, val lon: Double, val version: Int) {
+    /** "45.12340, 5.67890". */
+    val label: String get() = String.format(java.util.Locale.ROOT, "%.5f, %.5f", lat, lon)
+}
 
 /** The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
  * The Kotlin counterpart of the iOS app's `AppModel`; everything runs on the main thread. */
@@ -316,6 +324,19 @@ class AppModel(val app: Application) {
     /** The person (hex) the Search tab shows; `openSearch` asks the tab to open on them. */
     var searchTarget by mutableStateOf<String?>(null)
     var openSearch by mutableStateOf<String?>(null)
+
+    /** A place written in a message (ADR-0034), on the map until dismissed; `openMap` asks for
+     * the Map tab. */
+    var mapPin by mutableStateOf<MapPin?>(null)
+    var openMap by mutableStateOf(false)
+
+    /** Shows a place from a message's text on lichen's own map: nothing is fetched but its
+     * tiles (offline areas included). */
+    fun showOnMap(lat: Double, lon: Double) {
+        mapPin = MapPin(lat, lon, (mapPin?.version ?: 0) + 1)
+        tab = Tab.MAP
+        openMap = true
+    }
 
     /** Searches we run (protocol.md §11); `searchVersion` changes with their estimates. */
     var searches by mutableStateOf(listOf<SearchState>())
@@ -997,7 +1018,7 @@ class AppModel(val app: Application) {
             is LichenEvent.GroupInvited -> {
                 invitations = core.groupInvitations()
                 // Tapping it opens the admin's conversation; the invitation waits in Messages.
-                notify(ChatId.contact(e.admin), res.getString(R.string.group_invitation), res.getString(R.string.invites_you_to, name(e.admin), e.name))
+                notify(ChatId.contact(e.admin), res.getString(R.string.group_invitation), res.getString(R.string.invites_you_to, name(e.admin), e.name), actions = false)
             }
             is LichenEvent.GroupJoined, is LichenEvent.GroupUpdated, is LichenEvent.GroupLeft -> {
                 invitations = core.groupInvitations()
@@ -1055,7 +1076,7 @@ class AppModel(val app: Application) {
             is LichenEvent.Searched -> {
                 // A member asks where we are and we answer (SOS or this group's consent, §11).
                 val chat = ChatId.group(e.gid)
-                notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)))
+                notify(chat, title(chat), app.getString(R.string.searching_for_you, name(e.by)), actions = false)
                 searchedBy = core.searchedBy(now())
             }
             is LichenEvent.SearchUpdated -> {
@@ -1082,6 +1103,8 @@ class AppModel(val app: Application) {
                     }
                 }
             }
+            // An archived conversation came back with a message (ADR-0034).
+            is LichenEvent.ChatPrefsChanged -> refreshChatPrefs()
             is LichenEvent.ChannelsUpdated -> {
                 channels = core.channels()
                 refreshChatPrefs()
@@ -1093,14 +1116,35 @@ class AppModel(val app: Application) {
     }
 
     /** A notification for a message, unless its conversation is on screen (not behind the lock's
-     * cover). With the app lock on, it says only "New message": no sender, no group, no text. */
-    private fun notify(chat: ChatId, title: String, text: String) {
+     * cover); `actions`: Reply and Mark as read (ADR-0034). With the app lock on, it says only
+     * "New message": no sender, no group, no text, nothing to answer it with. */
+    private fun notify(chat: ChatId, title: String, text: String, actions: Boolean = true) {
         if (inForeground && !lock.locked && visibleChat == chat) return
         if (lock.enabled) {
             Notifications.message(app, chat, app.getString(R.string.app_name), app.getString(R.string.new_message))
         } else {
-            Notifications.message(app, chat, title, text)
+            Notifications.message(app, chat, title, text, actions)
         }
+    }
+
+    /** A text typed in a notification (ADR-0034): a message like any other, in the outbox when
+     * the radio is away. Not sent: said in the same place. */
+    fun replyFromNotification(chat: ChatId, text: String) {
+        val error = send(text, chat)
+        if (error == null) {
+            markRead(chat)
+            Notifications.clear(app, chat)
+        } else if (lock.enabled) {
+            Notifications.message(app, chat, app.getString(R.string.app_name), app.getString(R.string.answer_not_sent))
+        } else {
+            Notifications.message(app, chat, app.getString(R.string.not_sent), error)
+        }
+    }
+
+    /** "Mark as read" on a notification. */
+    fun markReadFromNotification(chat: ChatId) {
+        markRead(chat)
+        Notifications.clear(app, chat)
     }
 
     /** Debug extra `share`: 100 m with that contact. */
@@ -1241,6 +1285,29 @@ class AppModel(val app: Application) {
     private fun draftKey(chat: ChatId): String =
         DRAFT + (if (isDemo) "demo" else core.fingerprint().joinToString("")) + "|" + chat.route
 
+    /** The message the draft of `chat` answers (§6.2), kept with the draft (ADR-0034). */
+    fun replyDraft(chat: ChatId): Long? =
+        prefs.getLong(draftKey(chat) + "|reply", -1L).takeIf { it >= 0 }
+
+    fun setReplyDraft(chat: ChatId, id: Long?) {
+        prefs.edit { if (id == null) remove(draftKey(chat) + "|reply") else putLong(draftKey(chat) + "|reply", id) }
+    }
+
+    /** A recording stopped because its conversation was left: offered there again, to listen
+     * to, send or discard (ADR-0034). In memory only, like the recording itself. */
+    class VoiceDraft(val pcm: ShortArray, val mode: Int)
+
+    val voiceDrafts = mutableMapOf<ChatId, VoiceDraft>()
+
+    /** Conversation `chat` is left: a recording made for it stops and waits for it. */
+    fun keepRecording(chat: ChatId) {
+        if (recorder.chat != chat) return
+        recorder.stop(keep = true)?.let { voiceDrafts[chat] = VoiceDraft(it, recordMode(chat)) }
+    }
+
+    /** The Codec2 mode a new recording uses: the chosen one, 700C in a group (ADR-0035). */
+    fun recordMode(chat: ChatId): Int = if (chat.group) GROUP_VOICE_MODE else voiceMode
+
     /**
      * Makes message `id` (a search result, a quoted message) part of the loaded history: what
      * lies between it and the oldest message shown is read at once (recheck R08). False when it
@@ -1262,6 +1329,86 @@ class AppModel(val app: Application) {
 
     fun refreshChatPrefs() {
         chatPrefs = core.chatPrefs().associateBy { ChatId.of(it.chat) }
+        blocked = core.blocked()
+    }
+
+    // ----- blocking and archiving (ADR-0034) -----
+
+    /** People the user blocked, the latest first. */
+    var blocked by mutableStateOf(listOf<BlockedContact>())
+
+    fun isBlocked(node: ByteArray): Boolean = blocked.any { it.node.contentEquals(node) }
+
+    /** Blocks contact `node`: local, they are not told. Returns an error to show, or null. */
+    fun block(node: ByteArray): String? = try {
+        core.block(node, now())
+        refreshChatPrefs()
+        reloadGroupChats()
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    }
+
+    fun unblock(node: ByteArray) {
+        runCatching { core.unblock(node) }
+        refreshChatPrefs()
+        reloadGroupChats()
+    }
+
+    /** A block hides (or shows again) a member's posts already in group histories. */
+    private fun reloadGroupChats() {
+        chats.keys.filter { it.group }.forEach { load(it) }
+        conversations = core.conversations()
+    }
+
+    // ----- sharing into lichen (ADR-0034) -----
+
+    /** Something another app shared, waiting for the user to choose a conversation. */
+    var incomingShare by mutableStateOf<IncomingShare?>(null)
+
+    /** What the user chose to send to a conversation: its composer takes it. */
+    val sharedFor = mutableStateMapOf<ChatId, IncomingShare>()
+
+    /** Sends what was shared to `chat`: its conversation opens, the text in the draft, each
+     * photo or file on its sheet. */
+    fun share(share: IncomingShare, chat: ChatId) {
+        incomingShare = null
+        sharedFor[chat] = share
+        tab = Tab.MESSAGES
+        openChat = chat
+    }
+
+    // ----- media and storage (ADR-0034) -----
+
+    /** What `chat` holds: photos, files and voice messages, the newest first. */
+    fun chatMedia(chat: ChatId): List<StoredMessage> =
+        runCatching { core.chatMedia(chat.ref, null, 2_000u) }.getOrDefault(emptyList())
+
+    /** What each conversation takes on this phone (bytes): its messages and the media kept for
+     * it, and the files downloaded over the bridge for it. */
+    fun storageUsage(): List<Pair<ChatUsage, Long>> = core.storageUsage().map { u ->
+        val downloaded = u.announced.sumOf { h -> downloads[h.hex()]?.length() ?: 0L }
+        u to (u.bytes.toLong() + downloaded)
+    }
+
+    /** Removes photos, files and voice messages older than `days` days from this phone, as
+     * "delete for me" does (their downloads go with them, SR-28). Returns how many. */
+    fun clearMedia(days: Int): Int {
+        val before = System.currentTimeMillis() - days * 86_400_000L
+        val n = runCatching { core.clearMediaOlderThan(before) }.getOrDefault(0u)
+        chats.keys.toList().forEach { load(it) }
+        conversations = core.conversations()
+        pump()
+        return n.toInt()
+    }
+
+    /** Archived: out of the list, under "Archived", until a message comes (unless muted). */
+    fun isArchived(chat: ChatId): Boolean = chatPrefs[chat]?.archived == true
+
+    fun setArchived(chat: ChatId, archived: Boolean) {
+        runCatching { core.setArchived(chat.ref, archived) }
+        refreshChatPrefs()
     }
 
     fun isPinned(chat: ChatId): Boolean = chatPrefs[chat]?.pinnedAtMs != null
@@ -1298,6 +1445,8 @@ class AppModel(val app: Application) {
     fun deleteConversation(chat: ChatId) {
         runCatching { core.deleteConversation(chat.ref) }
         setDraft(chat, "")
+        setReplyDraft(chat, null)
+        voiceDrafts.remove(chat)
         chats.remove(chat)
         conversations = core.conversations()
     }
@@ -1604,7 +1753,13 @@ class AppModel(val app: Application) {
         return runCatching { core.estimateDatagram(key, datagramLen) }.getOrNull()
     }
 
+    /** What a voice message of `datagramLen` bytes costs: on the path to a contact, or our own
+     * floods to a group (both copies, §13.1). */
+    fun voiceEstimate(chat: ChatId, datagramLen: UInt): Estimate? =
+        if (chat.group) core.estimateGroupDatagram(datagramLen) else estimate(chat, datagramLen)
+
     fun sendVoice(voice: PreparedVoice, chat: ChatId): String? {
+        if (chat.group) return sendMedia(chat) { at, now -> core.sendGroupVoice(chat.hex.unhex(), voice, at, now) }
         val key = chat.contactKey ?: return LichenException.MediaInGroup().display(res)
         return sendMedia(chat) { at, now -> core.sendVoice(key, voice, at, now) }
     }
@@ -2255,6 +2410,9 @@ class AppModel(val app: Application) {
     }
 
     companion object {
+        /** A group's voice notes (ADR-0035): Codec2 700C, 6 seconds at most (5 fragments). */
+        const val GROUP_VOICE_MODE = 0
+        const val GROUP_VOICE_SECONDS = 6
         private const val APPEARANCE = "appearance"
         private const val MY_NAME = "lichen.myName"
         private const val BACKED_UP = "lichen.phraseBackedUp"

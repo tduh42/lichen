@@ -28,7 +28,8 @@ enum MapStyle: String, CaseIterable, Identifiable {
 /// Something drawn on the map: us, or someone's position with its circle of uncertainty, or
 /// a MeshCore node at the position it advertises (protocol.md §16.1).
 struct MapItem: Equatable, Identifiable {
-    enum Kind: Equatable { case me, peer, sos, node }
+    /// `node`: a mesh node (ADR-0041 to ADR-0044); `place`: coordinates from a message (ADR-0034).
+    enum Kind: Equatable { case me, peer, sos, node, place }
 
     let id: String
     let kind: Kind
@@ -75,6 +76,8 @@ struct MapLibreView: UIViewRepresentable {
     var overlay: MapOverlay?
     /// Margins kept free when fitting (the full-screen map has buttons and labels on top).
     var insets = UIEdgeInsets(top: 140, left: 95, bottom: 70, right: 95)
+    /// A place to centre on, once per `version` (after any `recenter`).
+    var focus: MapPin?
 
     func makeUIView(context: Context) -> MLNMapView {
         let map = MLNMapView(frame: .zero, styleURL: style.url)
@@ -102,6 +105,11 @@ struct MapLibreView: UIViewRepresentable {
         if c.recenter != recenter {
             c.recenter = recenter
             fit(map)
+        }
+        if let focus, c.focus != focus.version {
+            c.focus = focus.version
+            map.setCenter(CLLocationCoordinate2D(latitude: focus.lat, longitude: focus.lon),
+                          zoomLevel: max(map.zoomLevel, 14), animated: true)
         }
     }
 
@@ -154,6 +162,7 @@ struct MapLibreView: UIViewRepresentable {
         var parent: MapLibreView
         var style: MapStyle?
         var recenter = 0
+        var focus: Int?
         private var annotations: [String: ItemAnnotation] = [:]
         private var circles: [String: (MLNPolygon, Double, Double, Double)] = [:]
         private var circleColors: [ObjectIdentifier: UIColor] = [:]
@@ -337,7 +346,13 @@ final class ItemAnnotationView: MLNAnnotationView {
         frame.size = size
         let anchor = a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2
         centerOffset = CGVector(dx: 0, dy: size.height / 2 - anchor)
-        layer.zPosition = a.item.kind == .sos ? 2 : (a.item.kind == .me ? 1 : (a.item.kind == .node ? -1 : 0))
+        layer.zPosition = switch a.item.kind {
+        case .sos: 3
+        case .place: 2
+        case .me: 1
+        case .peer: 0
+        case .node: -1
+        }
     }
 }
 
@@ -362,6 +377,13 @@ struct MarkerBadge: View {
                     .frame(width: Self.avatar, height: Self.avatar)
                     .background(Color(item.color), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 2))
+            case .place:
+                Image(systemName: "mappin")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: Self.avatar, height: Self.avatar)
+                    .background(Color(item.color), in: Circle())
+                    .overlay(Circle().stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 2))
             case .peer, .sos:
                 Text(item.initials)
                     .font(.system(.caption, weight: .semibold))

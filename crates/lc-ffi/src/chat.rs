@@ -239,12 +239,14 @@ pub struct ReactionCount {
     pub mine: bool,
 }
 
-/// A conversation's local preferences: pinned (since when, Unix ms) and muted (until when).
+/// A conversation's local preferences: pinned (since when, Unix ms), muted (until when),
+/// archived (out of the list until a message comes, ADR-0034).
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ChatPrefs {
     pub chat: ChatRef,
     pub pinned_at_ms: Option<i64>,
     pub muted_until_ms: Option<i64>,
+    pub archived: bool,
 }
 
 impl From<store::Message> for StoredMessage {
@@ -283,6 +285,19 @@ impl From<store::Message> for StoredMessage {
             deletable: false,
         }
     }
+}
+
+/// What a conversation takes on this phone (ADR-0034).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct ChatUsage {
+    pub chat: ChatRef,
+    pub messages: u32,
+    /// Photos, files and voice messages among them.
+    pub media: u32,
+    /// Bytes in the database: messages and the media kept for it.
+    pub bytes: u64,
+    /// Content it announced (§14.1): the app adds what it downloaded of it.
+    pub announced: Vec<Vec<u8>>,
 }
 
 /// A conversation with its last message.

@@ -9,6 +9,7 @@ struct ConversationsView: View {
     @State private var deleting: Row?
     @State private var renaming: Data?
     @State private var searching = false
+    @State private var showingArchived = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -18,7 +19,7 @@ struct ConversationsView: View {
                     RadioCard()
                     StatusBanners()
                     ForEach(model.invitations, id: \.gid) { InvitationCard(invitation: $0) }
-                    if rows.isEmpty {
+                    if rows.isEmpty && archivedRows.isEmpty {
                         EmptyConversations { addingContact = true }
                     }
                 }
@@ -27,50 +28,36 @@ struct ConversationsView: View {
                 .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                 if !rows.isEmpty {
                     Section {
-                        ForEach(rows) { row in
-                            Button { path.append(row.id) } label: { ChatRow(row: row) }
-                                .buttonStyle(.plain)
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Theme.s1)
-                                .alignmentGuide(.listRowSeparatorLeading) { _ in 72 }
-                                // Swipe right: pin; left: delete (confirmed below), rename a contact.
-                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                                    Button { model.setPinned(row.id, !row.pinned) } label: {
-                                        Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
-                                    }
-                                    .tint(Theme.tx2)
-                                }
-                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                    Button { deleting = row } label: { Label("Delete", systemImage: "trash") }
-                                        .tint(Theme.sos)
-                                    if case let .contact(key) = row.id {
-                                        Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
-                                            .tint(Theme.tx2)
-                                    }
-                                }
-                                .contextMenu {
-                                    Button { model.setPinned(row.id, !row.pinned) } label: {
-                                        Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
-                                    }
-                                    if row.muted {
-                                        Button { model.unmute(row.id) } label: { Label("Unmute", systemImage: "bell") }
-                                    } else {
-                                        // SOS alerts are never muted.
-                                        Menu {
-                                            Button("For 1 hour") { model.mute(row.id, hours: 1) }
-                                            Button("For 8 hours") { model.mute(row.id, hours: 8) }
-                                            Button("Until I turn it back on") { model.mute(row.id, hours: nil) }
-                                        } label: {
-                                            Label("Mute", systemImage: "bell.slash")
-                                        }
-                                    }
-                                    if case let .contact(key) = row.id {
-                                        Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
-                                    }
-                                    Button(role: .destructive) { deleting = row } label: {
-                                        Label("Delete conversation", systemImage: "trash")
-                                    }
-                                }
+                        ForEach(rows) { chatRow($0) }
+                    }
+                    .listRowSeparatorTint(Theme.line)
+                }
+                // Archived conversations (ADR-0034): one row, opened in place.
+                if !archivedRows.isEmpty {
+                    Section {
+                        Button { withAnimation { showingArchived.toggle() } } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "archivebox")
+                                    .frame(width: 44)
+                                    .foregroundStyle(Theme.tx2)
+                                Text("Archived").font(.system(.callout, weight: .semibold))
+                                Spacer()
+                                Text(String(archivedRows.count)).foregroundStyle(Theme.tx2)
+                                Image(systemName: showingArchived ? "chevron.up" : "chevron.down")
+                                    .font(.system(.footnote, weight: .semibold))
+                                    .foregroundStyle(Theme.tx2)
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 52)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Theme.s1)
+                        .accessibilityLabel(String(localized: "Archived, \(archivedRows.count)"))
+                        .accessibilityHint(showingArchived ? String(localized: "Hides them") : String(localized: "Shows them"))
+                        if showingArchived {
+                            ForEach(archivedRows) { chatRow($0) }
                         }
                     }
                     .listRowSeparatorTint(Theme.line)
@@ -138,6 +125,63 @@ struct ConversationsView: View {
         }
     }
 
+    /// A conversation in the list: open it; swipe right to pin, left to archive, delete or
+    /// rename; long press for the rest.
+    private func chatRow(_ row: Row) -> some View {
+        Button { path.append(row.id) } label: { ChatRow(row: row) }
+            .buttonStyle(.plain)
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Theme.s1)
+            .alignmentGuide(.listRowSeparatorLeading) { _ in 72 }
+            // Swipe right: pin; left: delete (confirmed below), archive, rename a contact.
+            .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                Button { model.setPinned(row.id, !row.pinned) } label: {
+                    Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
+                }
+                .tint(Theme.tx2)
+            }
+            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                Button { deleting = row } label: { Label("Delete", systemImage: "trash") }
+                    .tint(Theme.sos)
+                Button { model.setArchived(row.id, !row.archived) } label: {
+                    Label(row.archived ? "Unarchive" : "Archive",
+                          systemImage: row.archived ? "tray.and.arrow.up" : "archivebox")
+                }
+                .tint(Theme.tx2)
+                if case let .contact(key) = row.id {
+                    Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
+                        .tint(Theme.tx2)
+                }
+            }
+            .contextMenu {
+                Button { model.setPinned(row.id, !row.pinned) } label: {
+                    Label(row.pinned ? "Unpin" : "Pin", systemImage: row.pinned ? "pin.slash" : "pin")
+                }
+                if row.muted {
+                    Button { model.unmute(row.id) } label: { Label("Unmute", systemImage: "bell") }
+                } else {
+                    // SOS alerts are never muted.
+                    Menu {
+                        Button("For 1 hour") { model.mute(row.id, hours: 1) }
+                        Button("For 8 hours") { model.mute(row.id, hours: 8) }
+                        Button("Until I turn it back on") { model.mute(row.id, hours: nil) }
+                    } label: {
+                        Label("Mute", systemImage: "bell.slash")
+                    }
+                }
+                Button { model.setArchived(row.id, !row.archived) } label: {
+                    Label(row.archived ? "Unarchive" : "Archive",
+                          systemImage: row.archived ? "tray.and.arrow.up" : "archivebox")
+                }
+                if case let .contact(key) = row.id {
+                    Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
+                }
+                Button(role: .destructive) { deleting = row } label: {
+                    Label("Delete conversation", systemImage: "trash")
+                }
+            }
+    }
+
     private var header: some View {
         HStack(alignment: .bottom) {
             Text("Messages")
@@ -167,10 +211,15 @@ struct ConversationsView: View {
         /// Pinned (since when, Unix ms) and muted now.
         var pinnedAt: Int64?
         var muted = false
+        var archived = false
         var pinned: Bool { pinnedAt != nil }
     }
 
-    private var rows: [Row] {
+    /// The list: what is not archived.
+    private var rows: [Row] { allRows.filter { !$0.archived } }
+    private var archivedRows: [Row] { allRows.filter(\.archived) }
+
+    private var allRows: [Row] {
         var out: [Row] = []
         for g in model.groups {
             let chat = ChatID.group(gid: g.gid)
@@ -217,6 +266,7 @@ struct ConversationsView: View {
                 pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
+        for i in out.indices { out[i].archived = model.isArchived(out[i].id) }
         // Pinned first (the latest pinned on top), then the most recent.
         return out.sorted {
             if $0.pinnedAt != $1.pinnedAt { return ($0.pinnedAt ?? .min) > ($1.pinnedAt ?? .min) }

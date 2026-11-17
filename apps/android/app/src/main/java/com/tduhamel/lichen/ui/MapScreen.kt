@@ -27,10 +27,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CloudDownload
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.MyLocation
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -79,6 +82,7 @@ import com.tduhamel.lichen.model.OfflineMaps
 import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.initials
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.maplibre.android.geometry.LatLngBounds
 
 /** Precision names, and the nominal precision of a received radius. */
@@ -144,23 +148,29 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
         }
     }
     val items = mapItems(model, showNodes)
-    // Someone new on the map: reframe around everyone (nodes do not count).
-    val people = items.filter { it.kind != MapItem.Kind.NODE }.map { it.id }
+    // Someone new on the map: reframe around everyone (nodes do not count). A place from a
+    // message is centred on by itself (`focus`), and keeps the map on it.
+    val people = items.filter { it.kind != MapItem.Kind.NODE && it.kind != MapItem.Kind.PLACE }.map { it.id }
     LaunchedEffect(people) {
         val ids = people.toSet()
         if ((ids - seen).isNotEmpty()) {
+            val first = seen.isEmpty()
             seen = seen + ids
-            recenter++
+            if (!(first && model.mapPin != null)) recenter++
         }
     }
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
         Box(Modifier.weight(1f)) {
             MapGate(model) {
-                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize()) { b, z -> camera = b to z }
+                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize(), focus = model.mapPin) { b, z -> camera = b to z }
             }
-            Row(
+            Column(
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+            Row(
+                Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Row(
@@ -229,6 +239,8 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
                 Box(Modifier.width(8.dp))
                 MapIcon(Icons.Outlined.MyLocation, stringResource(R.string.show_everyone), t.iroh) { recenter++ }
             }
+            model.mapPin?.let { PinBar(model, it) }
+            }
             offline.progress?.let { (done, total) ->
                 Row(
                     Modifier
@@ -280,7 +292,41 @@ private fun MapIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label
     ) { Icon(icon, label) }
 }
 
-/** The markers: everyone's last position (SOS first in colour), and ours. */
+private const val PLACE_ID = "place"
+
+/** The place from a message on the map (ADR-0034): its coordinates, to copy, and a way to put
+ * it away. */
+@Composable
+private fun PinBar(model: AppModel, pin: com.tduhamel.lichen.model.MapPin) {
+    val t = lichen
+    val clipboard = androidx.compose.ui.platform.LocalClipboard.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .shadow(4.dp, CircleShape)
+            .background(t.s2, CircleShape)
+            .padding(start = 16.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(Icons.Outlined.Place, null, tint = t.iroh, modifier = Modifier.size(18.dp))
+        Text(
+            pin.label, color = t.tx, fontSize = 14.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = {
+            scope.launch {
+                clipboard.setClipEntry(androidx.compose.ui.platform.ClipEntry(android.content.ClipData.newPlainText("lichen", pin.label)))
+            }
+        }) { Icon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), tint = t.tx) }
+        IconButton(onClick = { model.mapPin = null }) { Icon(Icons.Outlined.Close, stringResource(R.string.remove_pin), tint = t.tx) }
+    }
+}
+
+/** The markers: everyone's last position (SOS first in colour), ours, and a place from a
+ * message. */
 @Composable
 private fun mapItems(model: AppModel, showNodes: Boolean): List<MapItem> {
     val t = lichen
@@ -292,6 +338,9 @@ private fun mapItems(model: AppModel, showNodes: Boolean): List<MapItem> {
             val color = if (n.kind == com.tduhamel.lichen.core.NodeKind.REPEATER) t.lora.toArgb() else 0xFFD6D6D0.toInt()
             out += MapItem("n:" + n.key.hex(), MapItem.Kind.NODE, lat, lon, 0.0, initials(n.name), n.name, color, t.dark)
         }
+    }
+    model.mapPin?.let { pin ->
+        out += MapItem(PLACE_ID, MapItem.Kind.PLACE, pin.lat, pin.lon, 0.0, "", "", t.iroh.toArgb(), t.dark)
     }
     for (p in model.positions) {
         val name = model.name(p.from)

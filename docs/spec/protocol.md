@@ -501,16 +501,16 @@ payload = 0x7C ‖ type (1) ‖ gid_hash (2) ‖ sender (1) ‖ key_epoch (1) �
           ‖ ciphertext ‖ tag (16) ‖ [0x00 if type = 0x03]
 type    = 0x02, or 0x03 when a trailing pad byte is present
 gid_hash = SHA256(gid)[0..2];  sender = id[0] of the sender's identity
-frag    = index << 4 | copy << 3 | total, total ∈ {1, 2}, index < total, copy ∈ {0, 1}, bit 2 = 0
+frag    = index << 4 | copy << 3 | total, total ∈ 1..=7 (3 bits), index < total, copy ∈ {0, 1}
 nonce   = counter (4) ‖ key_epoch ‖ frag ‖ 0×6;  AAD = payload[0..11];  key = sender key
 ```
 
 - **Length rule** (§1 fact 9): a stock node reads a 2-byte MAC after the channel hash, so the rest of the payload must not be a non-empty multiple of 16. When `len(payload) − 3` would be one, the sender appends the pad byte and uses type 0x03 (the type byte is in the AAD).
 - **Size**: `len(payload) ≤ 156`, so that its `LOG_RX_DATA` push still crosses a Bluetooth link whole after 8 hops with transport codes (`173 − 3 − 1 − 4 − 1 − 8`, §1 fact 10). A fragment carries at most 128 bytes of plaintext.
-- **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 62 bytes in one fragment, 193 in two. The signature is what authenticates a group message; the tag keeps frames that are not from a holder of the sender key away from it.
+- **Plaintext of a message** (cut into 1 or 2 fragments, all but the last full; a VOICE into up to 5, §13.1, ADR-0035): `content_type ‖ body ‖ signature (64)`, with `signature = Ed25519(sender identity, "lichen/1 group" ‖ gid ‖ key_epoch ‖ counter ‖ content_type ‖ body)`. A TEXT therefore holds 62 bytes in one fragment, 193 in two. The signature is what authenticates a group message; the tag keeps frames that are not from a holder of the sender key away from it.
 - **Counter**: one per message, strictly increasing under a sender key; every fragment of a message has the same counter, and `frag` separates their nonces. Messages (what the user sends: texts, replies, reactions, announcements) take counters from 0 to 2^31 − 1; what the core sends by itself (positions, search packets) takes counters from 2^31, each range increasing on its own (ADR-0024). A receiver keeps one replay window per range, so a gap among message counters is a lost message (§10.6), never a stale position. The `next_counter` of SENDER_KEY counts messages.
 - **Two copies**: every message is flooded twice (`copy` 0 then 1, each frame spaced by `10 × t + U[0, 10 × t)`, `t` the airtime of a full envelope). The copy bit changes the nonce and the bytes, so repeaters' duplicate filters forward both; receivers keep the first and drop the second with the replay window. A flood lost at its first hop to a collision with other traffic is otherwise lost for every member.
-- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key and counter range); reassemble; verify the signature with the member's identity key; drop anything that fails. Every member holds the sender key, so a fragment that opens may not be the sender's: fragments of a two-fragment message are kept side by side (6 at most), and the pair whose signature verifies is the message (review of 2026-11-15, SR-17). Copies of the same flood (several paths) are dropped by the replay window.
+- **Receiver**: find the group by `gid_hash`, the members by `sender`, try their current and previous keys; check the replay window (highest counter and a 64-bit bitmap per key and counter range); reassemble; verify the signature with the member's identity key; drop anything that fails. Every member holds the sender key, so a fragment that opens may not be the sender's: fragments of a message of several are kept side by side (`total` + 4 at most), and the combination, one per index, whose signature verifies is the message; 32 combinations are tried at most (review of 2026-11-15, SR-17). A message of more than 2 fragments that is not a VOICE, or a VOICE of more than 5, is dropped once its signature is checked (ADR-0035). Versions before ADR-0035 drop every envelope whose `total` is above 2. Copies of the same flood (several paths) are dropped by the replay window.
 - **Early messages**: an envelope from a listed member whose key (for that `key_epoch`) has not arrived yet is kept for 10 minutes, and tried again when a new sender key arrives: only when that key can still come (none held for the member, or a newer `key_epoch`), 64 at most, and 8 at most per group hash and sender byte, so that garbage under one member's byte, which nothing can check before the key comes, cannot push out the others' (review of 2026-11-15, SR-20). Sender keys travel pairwise over several hops and often arrive after a member's first post.
 - **No acknowledgement** in groups: a member who is not connected misses the message (ADR-0006). For the sender, a message is "sent to the group" once the first copy of every fragment has left (§6.1); until then it waits like any queued message.
 
@@ -540,7 +540,7 @@ Vectors: `testdata/lichen/content.toml` (`[[invite]]`, `[[group_join]]`; `[[grou
 
 Group messages are flooded twice and never acknowledged (§10.3): when both copies collide at a busy repeater, the message is lost for every member behind it. A member that notices a gap asks for it over a pairwise session. An envelope is encrypted under its author's sender key and **signed** by the author, so any member who holds it can hand it on: the receiver authenticates it exactly as if heard on the air.
 
-**Keeping.** Every member keeps the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included once their first copy has left: one payload per fragment, with the step it was sent at (§10.9). Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER, GIF, EDIT, DELETE and TIMER are kept; positions, search packets and digests go stale, are not worth resending, and do not use message counters anyway. They are stored with the group, with the Unix time they were kept, and come back after a restart for what is left of their hour (ADR-0040): ciphertext under keys the members hold; our own sender key is still never stored.
+**Keeping.** Every member keeps the envelope payloads (§10.3, as heard: any copy) of the last 64 group messages of each group, for 1 hour, its own included once their first copy has left: one payload per fragment, with the step it was sent at (§10.9). Only TEXT, REPLY, REACTION, ANNOUNCE, STICKER, GIF, EDIT, DELETE and TIMER are kept; positions, search packets and digests go stale, are not worth resending, and do not use message counters anyway. A VOICE is not kept either: handing on its 5 fragments pairwise to each member who asks would cost more airtime than its own floods (ADR-0035), so its gap is asked for and never answered. They are stored with the group, with the Unix time they were kept, and come back after a restart for what is left of their hour (ADR-0040): ciphertext under keys the members hold; our own sender key is still never stored.
 
 **Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. For the first message received under a key, they start at the key's `next_counter` (§10.2): what its owner sent from there on was sent after the key reached us, by the owner itself or relayed by the admin with the counter it expected next. Nothing before that is missing: it may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed when that member sends another message, or its digest.
 
@@ -678,7 +678,7 @@ A **share** is a target (a contact or a group), a precision and an end time.
 
 ## 13. Media over LoRa (ADR-0012)
 
-Small media only, direct sessions only (never flooded: in a group they wait for the Internet bridge, L7). Integers little-endian.
+Small media only, direct sessions only (never flooded: in a group they wait for the Internet bridge, L7), except a short VOICE, which a group carries flooded (§13.1, ADR-0035). Integers little-endian.
 
 ### 13.1 VOICE (0x05)
 
@@ -687,6 +687,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 - `mode`, with its bits per 40 ms frame: 0 = Codec2 700C (28), 1 = Codec2 1200 (48), 2 = Codec2 1600 (64), 3 = Codec2 2400 (96: two 20 ms Codec2 frames of 48 bits). `frames` counts 40 ms frames in every mode. Audio is 8 kHz mono. The sender picks the mode (the apps: 1600 by default, 700C to save airtime, 2400 for clarity); a receiver decodes all four.
 - `data`: the frames' bits back to back, most significant bit first, `⌈frames × bits / 8⌉` bytes; anything else is rejected.
 - At most 375 frames (15 s): 1,313 bytes in 700C, 2,250 in 1200, 3,000 in 1600, 4,500 in 2400. Ten seconds on one hop: 875 bytes (6 fragments) in 700C, 2,000 (14) in 1600, 3,000 (21) in 2400.
+- **In a group** (ADR-0035): flooded as a group message (§10.3) in at most 5 fragments, so `data` holds at most 568 bytes: 6.48 s in 700C, 3.76 s in 1200, 2.84 s in 1600, 1.88 s in 2400. The apps record 6 s at most in 700C for a group (150 frames, 525 bytes, 5 fragments). Every fragment is flooded twice (§10.3): a 6-second note costs its sender about 9.6 s of airtime at SF8 / 62.5 kHz / CR 4/5, 14.3 s at CR 4/8, and every repeater that hears it as much again; about three of the longest texts. Like any medium it is refused, not queued, when its floods do not fit in the airtime left this hour (§13.4), and the apps show its cost before sending. It is not recoverable (§10.6).
 - Before encoding, the sender removes DC and rumble (high-pass at about 100 Hz) and brings the speech to about -20 dBFS (at most +24 dB, peaks softly limited); in 700C the encoder's equaliser is on. Codec2 is sensitive to level: a quiet recording comes out muffled.
 
 ### 13.2 FILE (0x02): images and small files
@@ -725,7 +726,7 @@ Vectors: `testdata/lichen/content.toml` (`[[file]]`, `[[bad_file]]`).
 
 ### 13.4 Airtime
 
-Before sending a medium, the core estimates the airtime of its first round on the current path. When it does not fit in what is left of the sliding hour (§9), the send is refused with the time at which it would fit; nothing is queued. Text and positions are never refused this way (they are deferred frame by frame, §9).
+Before sending a medium, the core estimates the airtime of its first round on the current path, or, for a VOICE to a group, of all its floods (§13.1). When it does not fit in what is left of the sliding hour (§9), the send is refused with the time at which it would fit; nothing is queued. Text and positions are never refused this way (they are deferred frame by frame, §9).
 
 ## 14. Internet bridge (ADR-0015)
 
@@ -739,7 +740,7 @@ LoRa carries an authenticated **announcement**; the content travels over the Int
 - `hash`: BLAKE3 of the content; `size`: its length in bytes (at most 64 MiB).
 - `transport` 1: **iroh**, `key` the provider's iroh endpoint id (Ed25519); 2: **Tor**, `key` the provider's onion service identity (Ed25519, the v3 address derives from it). Unknown transports are skipped.
 - `media_id` links the announcement to a LoRa preview of the same image (§13.2), when one was sent.
-- Sent like any datagram (direct) or as a group message (§10.3, two fragments at most): **media reach groups this way**, never flooded themselves.
+- Sent like any datagram (direct) or as a group message (§10.3, two fragments at most): **media reach groups this way**, never flooded themselves (short voice notes excepted, §13.1).
 
 One announcement over iroh with a 20-byte name is 105 bytes: one fragment on any path. With both iroh and Tor, 138 bytes.
 

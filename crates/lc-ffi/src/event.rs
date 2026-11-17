@@ -188,6 +188,9 @@ pub enum LichenEvent {
     NodeUpdated {
         node: Vec<u8>,
     },
+    /// A conversation's preferences changed by themselves (an archived one came back with a
+    /// message, ADR-0034): read `chat_prefs()` again.
+    ChatPrefsChanged,
 }
 
 pub(crate) fn snr(snr4: i8) -> f32 {

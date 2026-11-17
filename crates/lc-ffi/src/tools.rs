@@ -30,6 +30,58 @@ pub fn gif_link(text: String) -> Option<GifLink> {
     lc_core::content::gif_link(&text).map(|(id, title)| GifLink { id, title })
 }
 
+/// Where a span of a message's text leads (ADR-0034).
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum TextTarget {
+    /// An `http` or `https` address, opened in the browser when the user taps it; nothing is
+    /// fetched before (no preview).
+    Web { url: String },
+    /// Coordinates (WGS 84 degrees), shown on the app's map.
+    Place { lat: f64, lon: f64 },
+}
+
+/// A link or a place in a text, by UTF-16 offsets: what Swift's `NSRange` and Kotlin's strings
+/// count.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct TextLink {
+    pub start: u32,
+    pub end: u32,
+    pub target: TextTarget,
+}
+
+/// The links and places in `text`, in order (ADR-0034).
+#[uniffi::export]
+pub fn text_links(text: String) -> Vec<TextLink> {
+    let spans = lc_core::links::find(&text);
+    // Byte offsets to UTF-16 offsets, in one pass: the spans are in order.
+    let mut out = Vec::with_capacity(spans.len());
+    let mut unit = 0u32;
+    let mut chars = text.char_indices().peekable();
+    let mut advance = |to: usize| {
+        while let Some(&(at, c)) = chars.peek() {
+            if at >= to {
+                break;
+            }
+            unit += c.len_utf16() as u32;
+            chars.next();
+        }
+        unit
+    };
+    for s in spans {
+        let start = advance(s.start);
+        let end = advance(s.end);
+        out.push(TextLink {
+            start,
+            end,
+            target: match s.found {
+                lc_core::links::Found::Link(url) => TextTarget::Web { url },
+                lc_core::links::Found::Place { lat, lon } => TextTarget::Place { lat, lon },
+            },
+        });
+    }
+    out
+}
+
 /// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report
 /// title.pdf" becomes "Very long rep….pdf". A name received from someone else is only a label:
 /// path separators and control characters are dropped, and so are leading dots and spaces, so
@@ -115,6 +167,20 @@ pub fn decode_voice(mode: u8, frames: u16, data: Vec<u8>) -> Option<Vec<i16>> {
 #[uniffi::export]
 pub fn voice_datagram_len(voice: &PreparedVoice) -> u32 {
     8 + voice.data.len() as u32
+}
+
+/// The longest voice note a group takes in `mode` (§13.1, ADR-0035): what fits in 5 fragments
+/// with its header and signature. 6,480 ms in 700C.
+#[uniffi::export]
+pub fn group_voice_max_ms(mode: u8) -> u32 {
+    let mode = lc_media::voice::Mode::from_code(mode).unwrap_or(lc_media::voice::ENCODE_MODE);
+    // content_type ‖ ts ‖ mode ‖ frames ‖ data ‖ signature, in 5 fragments.
+    let room = lc_proto::group::VOICE_MESSAGE_MAX - 8 - lc_proto::group::SIGNATURE_LEN;
+    let frames = (0..=lc_media::voice::MAX_FRAMES)
+        .rev()
+        .find(|&f| lc_media::voice::data_len(mode, f) <= room)
+        .unwrap_or(0);
+    u32::from(frames) * lc_media::voice::FRAME_MS
 }
 
 /// Bytes of a VOICE datagram of `duration_ms` in `mode` (the cost while recording).

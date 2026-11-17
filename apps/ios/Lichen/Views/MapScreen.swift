@@ -21,14 +21,17 @@ struct MapScreen: View {
     var body: some View {
         ZStack(alignment: .top) {
             MapGate {
-                MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter) { bounds, zoom in
+                MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { bounds, zoom in
                     camera = (bounds, zoom)
-                }
+                }, focus: model.mapPin)
             }
             .ignoresSafeArea(edges: .top)
-            topBar
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+            VStack(spacing: 8) {
+                topBar
+                if let pin = model.mapPin { PinBar(pin: pin) }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
             if let p = offline.progress {
                 DownloadBanner(done: p.done, total: p.total)
                     .padding(.top, 64)
@@ -50,7 +53,8 @@ struct MapScreen: View {
                 MainActor.assumeIsolated { model.refreshPositions() }
             }
             seen = Set(items.map(\.id))
-            if !items.isEmpty { recenter += 1 }
+            // A place from a message keeps the map on itself.
+            if !items.isEmpty, model.mapPin == nil { recenter += 1 }
             #if DEBUG
             if model.debugScreen == "sos" { showingSos = true }
             #endif
@@ -60,7 +64,8 @@ struct MapScreen: View {
             refresh?.invalidate()
         }
         .onChange(of: items.filter { $0.kind != .node }.map(\.id)) { _, ids in
-            let new = Set(ids).subtracting(seen)
+            // A place from a message is centred on by itself (`focus`).
+            let new = Set(ids).subtracting(seen).subtracting([Self.placeId])
             if !new.isEmpty {
                 seen.formUnion(new)
                 recenter += 1
@@ -122,9 +127,17 @@ struct MapScreen: View {
 
     // MARK: items
 
+    private static let placeId = "place"
+
     private var items: [MapItem] {
         let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
         var out: [MapItem] = []
+        if let pin = model.mapPin {
+            out.append(MapItem(
+                id: Self.placeId, kind: .place, lat: pin.lat, lon: pin.lon, radius: 0, initials: "",
+                label: "", color: UIColor(Theme.me).resolvedColor(with: traits), dark: dark
+            ))
+        }
         for p in model.positions {
             let name = model.name(of: p.from)
             let color = p.sos ? Theme.sosBtn : Theme.marker(for: p.from)
@@ -172,6 +185,38 @@ struct MapScreen: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
+    }
+}
+
+/// The place from a message on the map (ADR-0034): its coordinates, to copy, and a way to put
+/// it away.
+private struct PinBar: View {
+    let pin: MapPin
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mappin").foregroundStyle(Theme.me).accessibilityHidden(true)
+            Text(verbatim: pin.label)
+                .font(.system(.subheadline, design: .monospaced))
+                .foregroundStyle(Theme.tx)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+            Button { UIPasteboard.general.string = pin.label } label: {
+                Image(systemName: "doc.on.doc").frame(width: 32, height: 32)
+            }
+            .accessibilityLabel("Copy")
+            Button { model.mapPin = nil } label: {
+                Image(systemName: "xmark").frame(width: 32, height: 32)
+            }
+            .accessibilityLabel("Remove the pin")
+        }
+        .foregroundStyle(Theme.tx)
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: 44)
+        .background(Theme.s2, in: Capsule())
+        .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
     }
 }
 

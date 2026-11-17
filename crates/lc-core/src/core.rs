@@ -404,6 +404,8 @@ pub enum Error {
     /// No repeater to go through: the node is heard directly, or the radio floods to it
     /// (§16.3).
     NoPath,
+    /// The user blocked this contact (ADR-0034).
+    Blocked,
 }
 
 /// Core configuration. Its `Debug` leaves the seeds out (review of 2026-11-15, SR-34).
@@ -806,6 +808,9 @@ pub struct Core {
     pub(crate) mesh: crate::mesh::Mesh,
     /// Room servers and repeaters (§15.8, §16.5).
     pub(crate) servers: crate::server::Servers,
+    /// Nodes and identities the user blocked (ADR-0034).
+    blocked_nodes: HashSet<PubKey>,
+    blocked_ids: HashSet<PubKey>,
 }
 
 impl std::fmt::Debug for Core {
@@ -889,6 +894,8 @@ impl Core {
             search: crate::search::Searches::default(),
             mesh: crate::mesh::Mesh::default(),
             servers: crate::server::Servers::default(),
+            blocked_nodes: HashSet::new(),
+            blocked_ids: HashSet::new(),
         }
     }
 
@@ -995,6 +1002,59 @@ impl Core {
 
     pub fn contacts(&self) -> impl Iterator<Item = &Contact> {
         self.contacts.values()
+    }
+
+    // ----- blocking (ADR-0034) ---------------------------------------------------------
+
+    /// Blocks node `node` and the identity it is known under, if any. Local: nothing is sent,
+    /// and they are not told. From now on their introductions, handshakes, probes and direct
+    /// messages, lichen or MeshCore, are dropped unanswered, an introduction under that
+    /// identity from another node too, and their posts in groups are not reported (positions
+    /// and SOS still are). Their sessions end, and our messages waiting for them fail
+    /// (`Refused`). Returns the identity blocked with the node.
+    pub fn block(&mut self, node: &PubKey, now: Millis) -> Option<PubKey> {
+        let identity = self.identity_of(node);
+        self.blocked_nodes.insert(*node);
+        if let Some(i) = identity {
+            self.blocked_ids.insert(i);
+        }
+        if let Some(mut peer) = self.peers.remove(node) {
+            self.fail_queue(&mut peer, FailReason::Refused, now);
+        }
+        identity
+    }
+
+    /// A block kept by the app, restored at start.
+    pub fn restore_block(&mut self, node: PubKey, identity: Option<PubKey>) {
+        self.blocked_nodes.insert(node);
+        if let Some(i) = identity {
+            self.blocked_ids.insert(i);
+        }
+    }
+
+    /// Unblocks node `node`, the identity blocked with it (`identity`), and the one it is
+    /// known under now.
+    pub fn unblock(&mut self, node: &PubKey, identity: Option<&PubKey>) {
+        self.blocked_nodes.remove(node);
+        for i in [identity.copied(), self.identity_of(node)]
+            .into_iter()
+            .flatten()
+        {
+            self.blocked_ids.remove(&i);
+        }
+    }
+
+    /// Whether node `node` is blocked, itself or through the identity it is known under.
+    pub fn is_blocked(&self, node: &PubKey) -> bool {
+        self.blocked_nodes.contains(node)
+            || self
+                .identity_of(node)
+                .is_some_and(|i| self.blocked_ids.contains(&i))
+    }
+
+    /// Whether a group member, node `node` with identity `identity`, is blocked.
+    pub(crate) fn member_blocked(&self, node: &PubKey, identity: &PubKey) -> bool {
+        self.blocked_nodes.contains(node) || self.blocked_ids.contains(identity)
     }
 
     pub const fn radio(&self) -> &LoRaParams {
@@ -1132,6 +1192,9 @@ impl Core {
         if !self.contacts.contains_key(to) {
             return Err(Error::UnknownContact);
         }
+        if self.is_blocked(to) {
+            return Err(Error::Blocked);
+        }
         if datagram.is_empty() {
             return Err(Error::Empty);
         }
@@ -1176,6 +1239,33 @@ impl Core {
             return Err(Error::OverBudget { wait_ms: at - now });
         }
         self.send_datagram(to, datagram, now)
+    }
+
+    /// Floods a voice note (a VOICE datagram, `content_type ‖ body`) to group `gid` (§13.1,
+    /// ADR-0035): 5 fragments at most, and refused, not queued, when its floods do not fit in
+    /// the airtime left this hour (§13.4).
+    pub fn send_group_voice(
+        &mut self,
+        gid: &GroupId,
+        datagram: &[u8],
+        now: Millis,
+    ) -> Result<MsgId, Error> {
+        if datagram.first() != Some(&lc_proto::content::VOICE) {
+            return Err(Error::Invalid);
+        }
+        if !self.groups.contains_key(gid) {
+            return Err(Error::UnknownGroup);
+        }
+        let (fragments, airtime) = self.estimate_group_send(datagram.len());
+        if fragments > lc_proto::group::VOICE_MAX_FRAGMENTS {
+            return Err(Error::TooLarge);
+        }
+        let queued = self.queued_airtime();
+        let at = self.budget.opportunity_after(now, queued, airtime);
+        if at > now {
+            return Err(Error::OverBudget { wait_ms: at - now });
+        }
+        self.send_group(gid, datagram, true, now)
     }
 
     /// Airtime (first round) of every datagram queued or in flight, counted whole.
@@ -1465,6 +1555,10 @@ impl Core {
 
     /// Queues a datagram sent by the core itself (not reported to the app).
     pub(crate) fn enqueue_internal(&mut self, to: &PubKey, datagram: Vec<u8>) {
+        // Nothing of a blocked node's would answer it (ADR-0034).
+        if self.is_blocked(to) {
+            return;
+        }
         let id = self.next_id;
         self.next_id += 1;
         self.peers
@@ -2601,10 +2695,12 @@ impl Core {
     /// The contacts a frame from hash byte `src` may come from: people only (repeaters, rooms
     /// and sensors never run lichen, §4.6), in key order.
     fn candidates(&self, src: u8) -> Vec<PubKey> {
+        // Nothing from a node the user blocked, or one known under an identity they blocked,
+        // is opened or answered (ADR-0034).
         let mut v: Vec<PubKey> = self
             .contacts
             .iter()
-            .filter(|(k, c)| k[0] == src && c.is_person())
+            .filter(|(k, c)| k[0] == src && c.is_person() && !self.is_blocked(k))
             .map(|(k, _)| *k)
             .collect();
         v.sort_unstable();
@@ -2905,6 +3001,15 @@ impl Core {
                 return;
             };
             self.peer_version(&c, ack.version);
+            // An identity the user blocked, behind another node: no session (ADR-0034).
+            if self.blocked_ids.contains(&ack.identity) {
+                if let Some(mut p) = self.peers.remove(&c) {
+                    p.introducing = None;
+                    self.fail_queue(&mut p, FailReason::Refused, now);
+                    self.peers.insert(c, p);
+                }
+                return;
+            }
             if !self.learn_identity(&c, ack.identity) {
                 // The contact is known under another identity: no session with this one (§4.6).
                 if let Some(mut p) = self.peers.remove(&c) {
@@ -2972,6 +3077,10 @@ impl Core {
             let Some(keys) = intro::responder_keys(&prv, &me, &answered.answer, &id_i) else {
                 return;
             };
+            // An identity the user blocked, from another node: no session (ADR-0034).
+            if self.blocked_ids.contains(&id_i) {
+                return;
+            }
             if !self.learn_identity(&c, id_i) {
                 // The contact is known under another identity: no session with this one (§4.6).
                 return;

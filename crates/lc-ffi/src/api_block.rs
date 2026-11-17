@@ -1,0 +1,78 @@
+//! Blocking (ADR-0034): local, nothing is sent and the person is not told.
+
+use super::*;
+
+/// Someone the user blocked: their node, the identity it had then, and the name shown then.
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct BlockedContact {
+    pub node: Vec<u8>,
+    pub identity: Option<Vec<u8>>,
+    pub name: String,
+    /// Unix ms.
+    pub at_ms: i64,
+}
+
+#[uniffi::export]
+impl LichenCore {
+    /// Blocks contact `node` and the identity it is known under: their introductions,
+    /// direct messages (lichen and MeshCore) and group posts no longer reach this phone, and
+    /// their group posts already here are hidden until unblocked. Their positions and SOS in
+    /// groups still show. Our messages waiting for them fail. Kept across restarts.
+    pub fn block(&self, node: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        let name = i
+            .nicknames
+            .get(&k)
+            .cloned()
+            .or_else(|| {
+                i.core
+                    .contacts()
+                    .find(|c| c.key == k)
+                    .map(|c| c.name.clone())
+            })
+            .ok_or(LichenError::UnknownContact)?;
+        let identity = i.core.block(&k, now_ms);
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.block(&k, identity.as_ref(), &name, unix_ms())
+            .map_err(|_| LichenError::Storage)
+    }
+
+    /// Unblocks `node`: what they send reaches this phone again, and their group posts
+    /// kept here show again. What they sent meanwhile is gone.
+    pub fn unblock(&self, node: Vec<u8>) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        let identity = i
+            .store
+            .as_ref()
+            .and_then(|s| s.blocked().ok())
+            .and_then(|v| v.into_iter().find(|b| b.node == k))
+            .and_then(|b| b.identity);
+        i.core.unblock(&k, identity.as_ref());
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.unblock(&k).map_err(|_| LichenError::Storage)
+    }
+
+    /// Everyone blocked, the latest first.
+    pub fn blocked(&self) -> Vec<BlockedContact> {
+        self.lock()
+            .store
+            .as_ref()
+            .and_then(|s| s.blocked().ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|b| BlockedContact {
+                node: b.node.to_vec(),
+                identity: b.identity.map(|i| i.to_vec()),
+                name: b.name,
+                at_ms: b.at,
+            })
+            .collect()
+    }
+
+    /// Whether contact `node` is blocked, itself or through its identity.
+    pub fn is_blocked(&self, node: Vec<u8>) -> bool {
+        key(&node).is_ok_and(|k| self.lock().core.is_blocked(&k))
+    }
+}

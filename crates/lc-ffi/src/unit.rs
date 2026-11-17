@@ -1410,3 +1410,196 @@ mod backup {
         let _ = std::fs::remove_dir_all(d);
     }
 }
+
+/// Links and places come with UTF-16 offsets, what the apps' strings count (ADR-0034).
+#[cfg(test)]
+mod text_links {
+    use super::*;
+
+    #[test]
+    fn offsets_count_utf16_units() {
+        // "é" is one unit, "🏔" two.
+        let text = "é🏔 https://a.fr/x, 45.1234, 5.6789";
+        let links = crate::text_links(text.into());
+        assert_eq!(links.len(), 2);
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let span =
+            |l: &TextLink| String::from_utf16(&units[l.start as usize..l.end as usize]).unwrap();
+        assert_eq!(span(&links[0]), "https://a.fr/x");
+        assert_eq!(
+            links[0].target,
+            TextTarget::Web {
+                url: "https://a.fr/x".into()
+            }
+        );
+        assert_eq!(span(&links[1]), "45.1234, 5.6789");
+        assert!(matches!(links[1].target, TextTarget::Place { lat, lon }
+            if (lat - 45.1234).abs() < 1e-9 && (lon - 5.6789).abs() < 1e-9));
+        assert!(crate::text_links("nothing here".into()).is_empty());
+    }
+}
+
+/// Blocking and archiving (ADR-0034).
+#[cfg(test)]
+mod block_archive {
+    use super::*;
+
+    fn core_with_bob() -> std::sync::Arc<LichenCore> {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![149; 32], None).unwrap();
+        core.lock().core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        core
+    }
+
+    #[test]
+    fn a_block_is_listed_and_lifted() {
+        let core = core_with_bob();
+        core.rename_contact(vec![9; 32], Some("Bobby".into()))
+            .unwrap();
+        assert!(!core.is_blocked(vec![9; 32]));
+        core.block(vec![9; 32], 0).unwrap();
+        assert!(core.is_blocked(vec![9; 32]));
+        let list = core.blocked();
+        assert_eq!(list.len(), 1);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].identity.as_deref()),
+            ("Bobby", Some(&[7u8; 32][..]))
+        );
+        assert_eq!(
+            core.send_text(vec![9; 32], "hi".into(), 1, 0).err(),
+            Some(LichenError::Blocked)
+        );
+        assert_eq!(
+            core.block(vec![8; 32], 0).err(),
+            Some(LichenError::UnknownContact)
+        );
+        core.unblock(vec![9; 32]).unwrap();
+        assert!(!core.is_blocked(vec![9; 32]));
+        assert!(core.blocked().is_empty());
+    }
+
+    #[test]
+    fn a_message_brings_an_archived_chat_back() {
+        let core = core_with_bob();
+        let chat = ChatRef::Contact { key: vec![9; 32] };
+        core.set_archived(chat.clone(), true).unwrap();
+        assert!(
+            core.chat_prefs()
+                .iter()
+                .any(|p| p.chat == chat && p.archived)
+        );
+        let mut i = core.lock();
+        assert!(i.on_event(&received(
+            [9; 32],
+            Content::Text {
+                sent_at: 5,
+                text: "back".into()
+            }
+        )));
+        assert!(
+            i.extra
+                .iter()
+                .any(|e| matches!(e, LichenEvent::ChatPrefsChanged))
+        );
+        drop(i);
+        assert!(!core.chat_prefs().iter().any(|p| p.archived));
+    }
+}
+
+/// Media and storage (ADR-0034): old media go as a delete for me does, announcements with
+/// their downloads (`MediaGone`), texts stay.
+#[cfg(test)]
+mod media_storage {
+    use super::*;
+
+    #[test]
+    fn old_media_are_cleared() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![150; 32], None).unwrap();
+        let chat = Chat::Contact([9; 32]);
+        let announce = Content::Announce(lc_core::Announce {
+            sent_at: 1,
+            media_id: [3; 8],
+            kind: 3,
+            hash: [6; 32],
+            size: 10_000,
+            providers: vec![(1, [8; 32])],
+            name: "topo.pdf".into(),
+        });
+        {
+            let i = core.lock();
+            let st = i.store.as_ref().unwrap();
+            for (content, at_ms) in [
+                (
+                    Content::Text {
+                        sent_at: 1,
+                        text: "old text".into(),
+                    },
+                    1_000,
+                ),
+                (announce, 1_000),
+                (
+                    Content::Voice {
+                        sent_at: 1,
+                        mode: 2,
+                        frames: 2,
+                        data: vec![7; 16],
+                    },
+                    9_000,
+                ),
+            ] {
+                st.insert(&store::Message {
+                    id: 0,
+                    chat,
+                    outgoing: false,
+                    author: None,
+                    content,
+                    at_ms,
+                    status: Status::Received,
+                    fragments: 1,
+                    airtime_ms: 0,
+                    snr4: None,
+                    read: true,
+                    msg_ref: None,
+                })
+                .unwrap();
+            }
+        }
+        let r = ChatRef::Contact { key: vec![9; 32] };
+        assert_eq!(core.chat_media(r.clone(), None, 10).unwrap().len(), 2);
+        let usage = core.storage_usage();
+        assert_eq!((usage[0].messages, usage[0].media), (3, 2));
+        assert_eq!(usage[0].announced, vec![vec![6u8; 32]]);
+        assert_eq!(core.clear_media_older_than(5_000).unwrap(), 1);
+        assert!(
+            core.lock()
+                .extra
+                .iter()
+                .any(|e| matches!(e, LichenEvent::MediaGone { hash } if hash == &[6u8; 32]))
+        );
+        let left = core.history(r.clone(), None, 10).unwrap();
+        assert_eq!(left.len(), 2, "the text and the newer voice message stay");
+        assert_eq!(core.chat_media(r, None, 10).unwrap().len(), 1);
+    }
+}
+
+/// ADR-0035: what a group takes of a voice note, per mode: 5 fragments.
+#[cfg(test)]
+mod group_voice {
+    #[test]
+    fn the_longest_note_a_group_takes() {
+        assert_eq!(crate::group_voice_max_ms(0), 6_480);
+        assert_eq!(crate::group_voice_max_ms(1), 3_760);
+        assert_eq!(crate::group_voice_max_ms(2), 2_840);
+        assert_eq!(crate::group_voice_max_ms(3), 1_880);
+        // 6 s of 700C is what the apps record for a group.
+        let v = crate::prepare_voice(vec![0; 48_000], 0);
+        assert_eq!(v.frames, 150);
+        assert!(crate::voice_datagram_len(&v) as usize + 64 <= 5 * 128);
+    }
+}

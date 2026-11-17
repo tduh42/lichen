@@ -198,6 +198,10 @@ impl Inner {
             self.core
                 .set_room_logins(crate::api_server::decode_room_logins(&v));
         }
+        // Blocks (ADR-0034).
+        for b in store.blocked().unwrap_or_default() {
+            self.core.restore_block(b.node, b.identity);
+        }
         // A TX power a search lowered before the app stopped: the radio kept it.
         if let Ok(Some(v)) = store.setting(TX_POWER_RESTORE)
             && let [dbm] = v.as_slice()

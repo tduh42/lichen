@@ -48,6 +48,7 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.WrongBackupWords -> res.getString(R.string.err_wrong_backup_words)
     is LichenException.BackupDamaged -> res.getString(R.string.err_backup_damaged)
     is LichenException.NoPath -> res.getString(R.string.err_no_path)
+    is LichenException.Blocked -> res.getString(R.string.err_blocked)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {
