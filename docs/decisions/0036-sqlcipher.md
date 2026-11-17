@@ -1,6 +1,6 @@
 # ADR-0036 — The database encrypted at rest (SQLCipher)
 
-- Status: proposed: waiting for the choice of a crypto library on Android (below)
+- Status: accepted (2026-11-17: OpenSSL built from source approved for Android)
 - Date: 2026-11-16
 - Revisits ADR-0010 ("encrypting the database with a Keychain key: to revisit")
 
@@ -41,20 +41,23 @@ CommonCrypto whatever Android uses.
 4. **SQLite3 Multiple Ciphers** in place of SQLCipher: its own ciphers in C, no crypto library,
    reads SQLCipher's format; not approved, and not supported by `rusqlite`.
 
-Recommended: **option 1** for Android, CommonCrypto on Apple. It is the path `rusqlite` supports
-(no fork, no `unsafe` of ours), the C is a mainstream library built reproducibly from crates.io,
-and its cost is size, measured below. Option 2 is the fallback if the size or the C is refused.
+Chosen: **option 1** for Android (and Linux hosts), CommonCrypto on Apple. It is the path
+`rusqlite` supports (no fork, no `unsafe` of ours), the C is a mainstream library built
+reproducibly from crates.io, and its cost is size and build time, measured below. Option 2
+stays the fallback should OpenSSL become a burden.
 
-## Decision (once the library is approved)
+## Decision
 
 - The store is a SQLCipher database (SQLCipher 4 defaults: AES-256-CBC, HMAC-SHA512 per page),
   opened with a **raw 32-byte key** (`PRAGMA key = "x'…'"`): no passphrase to stretch.
-- **The key**: 32 random bytes drawn once per phone. iOS: a Keychain item, this device only,
-  after the first unlock (as the identity, ADR-0013). Android: a file in the app's no-backup
-  files, sealed with AES-GCM under an Android Keystore key that never leaves the Keystore. A key
-  that cannot be read now (before the first unlock) opens no database: the app shows its storage
-  problem screen, never a clear database. A key that is gone for good (a reset Keystore) leaves
-  the databases unreadable: the history comes back from a backup (ADR-0037).
+- **The key**: 32 random bytes drawn at the first start with SQLCipher, then always read. iOS: a
+  Keychain item, this device only, after the first unlock (as the identity, ADR-0013). Android: a
+  file in the app's no-backup files, sealed with AES-GCM under an Android Keystore key that never
+  leaves the Keystore. A key that cannot be read now (before the first unlock) opens no database:
+  the app says so ("try again"), never opens a clear one. A database already encrypted is never
+  given a new key: when its key is gone for good (a reset Keychain or Keystore), the app says the
+  key is lost and offers to restore a backup (ADR-0037) or to start again with an empty history
+  (the unreadable database is removed, a new key drawn; the identity stays).
 - **Migration**: a plain database found at start is encrypted in place: `sqlcipher_export` into a
   copy beside it (its `user_version` carried over), synced, renamed over the plain file (atomic),
   its journal files removed. Interrupted, the plain file is untouched and the next start does it
@@ -62,33 +65,36 @@ and its cost is size, measured below. Option 2 is the fallback if the size or th
 - **Backups** (ADR-0037) take a plain copy (`sqlcipher_export` into `KEY ''`) on a connection of
   their own and encrypt it themselves; a restored database is plain until the next start
   encrypts it with this phone's key.
-- **All platforms at once**: one switch, `lc-ffi`'s `sqlcipher` feature; the apps ask
-  `database_encryption()` and only then keep a key and pass it. A core without SQLCipher refuses
-  a key (nothing stored) rather than ignoring it.
-
-## What is ready (this branch), behind the switch, off
-
-- `lc-core`: feature `sqlcipher`; `Store::open_encrypted`, `cipher::{encrypt_plain,
-  export_plain}`; `tests/sqlcipher.rs` (a plain store encrypted in place, another key refused,
-  the clear text gone from the file, a backup of an encrypted store restored and encrypted again)
-  runs on macOS with CommonCrypto: `cargo test -p lc-core --features sqlcipher --test sqlcipher`.
-  Without the feature, the same file checks that a key is refused and nothing is written.
-- `lc-ffi`: feature `sqlcipher`, `LichenCore::with_database_key`, `database_encryption()`.
-- Apps: the key in the Keychain (iOS) and behind the Keystore (Android), made and passed only
-  when `database_encryption()` is true.
+- **All platforms at once**: one switch, the `sqlcipher` feature of `lc-core` and `lc-ffi`, on in
+  the apps' core builds (`scripts/build-ios-core.sh`, `scripts/build-android-core.sh`): Apple
+  targets build SQLCipher on CommonCrypto, every other target on OpenSSL's libcrypto built from
+  source (`libsqlite3-sys` with `bundled-sqlcipher-vendored-openssl`, a target-specific
+  dependency of `lc-core`). The apps ask `database_encryption()` and only then keep a key. A core
+  without SQLCipher refuses a key (nothing stored) rather than ignoring it.
+- **Tests**: `cargo test --workspace` runs on plain SQLite; `scripts/check.sh` also runs the store,
+  the backups and the binding layer under SQLCipher (`tests/sqlcipher.rs`, `tests/backup.rs`,
+  `lc-ffi` unit tests), on macOS with CommonCrypto and on Linux (CI) with OpenSSL from source.
 
 ## Consequences
 
-- Sizes, measured on this branch (release core, arm64; `docs/measurements.md`):
+- Measured on 2026-11-17 (release core, arm64; `docs/measurements.md`):
 
-  | | SQLite (now) | SQLCipher | difference |
+  | | SQLite | SQLCipher | difference |
   |---|---|---|---|
-  | Android `liblc_ffi.so`, stripped, vendored OpenSSL | 33,142,312 B | 37,113,464 B | +3.97 MB (+12 %) |
-  | Android debug APK (the library is stored uncompressed) | 161,738,706 B | 165,710,042 B | +3.97 MB |
-  | iOS app (simulator debug dylib), CommonCrypto | 74,628,992 B | 74,677,568 B | +49 KB |
+  | Android `liblc_ffi.so`, stripped (OpenSSL from source) | 33,225,008 B | 37,224,272 B | +4.0 MB (+12 %) |
+  | Android release APK (native libraries stored uncompressed) | 54,152,810 B | 58,166,890 B | +4.0 MB (+7.4 %) |
+  | iOS app (CommonCrypto, measured on 2026-11-16) | | | +49 KB |
 
   On iOS the app links as it is: CommonCrypto is part of the system library, and the app
   already links `Security` (its Keychain code imports it).
+- **Build time**: OpenSSL compiled from source takes 30 s (100 s of CPU) per target on a 12-core
+  Mac, once: Cargo and CI's cache keep it. CI builds it for Android and for the Linux host (the
+  JVM tests' core and `check.sh`'s SQLCipher step); expect about a minute each on a 4-core runner
+  the first time. `check.sh` also compiles the binding layer once more with SQLCipher (about a
+  minute on the Mac).
+- **First start after the update**: a history of 100,000 messages and 300 images (34 MB) is
+  encrypted in place in 0.15 s on the Mac (release); a phone is slower, but it happens once and
+  grows with the database. Opening an encrypted database takes 1 ms.
 - Every read and write pays AES and an HMAC per 4 KiB page; lichen's database is small and its
   writes are few (a message, a status).
 - Rejected: encrypting columns in the app (search, indexes and every query would change; the
