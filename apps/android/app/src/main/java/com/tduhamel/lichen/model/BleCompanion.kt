@@ -175,6 +175,9 @@ class BleCompanion(
     }
 
     /** Disconnects and forgets the radio (no reconnection). */
+    /** The radio connected or being connected to (saved radios, ADR-0042). */
+    val address: String? get() = prefs.getString(LAST_DEVICE, null)
+
     fun disconnect() {
         prefs.edit { remove(LAST_DEVICE) }
         closeGatt()

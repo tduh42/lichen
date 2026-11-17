@@ -71,6 +71,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case let .group(gid): "g" + gid.hex
         case let .mesh(key): "m" + key.hex
         case let .channel(id): "h" + id.hex
+        case let .room(key): "r" + key.hex
         }
     }
 
@@ -80,6 +81,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case let .group(gid): ["kind": "g", "id": gid.hex]
         case let .mesh(key): ["kind": "m", "id": key.hex]
         case let .channel(id): ["kind": "h", "id": id.hex]
+        case let .room(key): ["kind": "r", "id": key.hex]
         }
     }
 
@@ -89,6 +91,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case "g": .group(gid: id)
         case "m": .mesh(key: id)
         case "h": .channel(id: id)
+        case "r": .room(key: id)
         default: .contact(key: id)
         }
     }

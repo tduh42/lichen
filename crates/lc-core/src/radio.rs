@@ -4,6 +4,19 @@
 use lc_meshcore::{Command, OtherParams, response::DeviceInfo};
 
 use crate::core::{Core, Error, Event, Expect};
+use lc_proto::Millis;
+
+/// How often the battery is read while the radio is connected (ADR-0042).
+pub const BATTERY_EVERY_MS: Millis = 10 * 60_000;
+
+/// The battery's charge from its voltage, as the apps show it: 3.3 V empty, 4.2 V full.
+pub fn battery_percent(millivolts: u16) -> u8 {
+    let pct = (u32::from(millivolts).saturating_sub(3_300) * 100 + 450) / 900;
+    u8::try_from(pct.min(100)).unwrap_or(100)
+}
+
+/// At or below this charge the apps warn that the radio's battery is low (ADR-0042).
+pub const BATTERY_LOW_PERCENT: u8 = 15;
 
 /// What lichen knows of the radio's settings. A field the radio has not reported is empty.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -72,6 +85,28 @@ impl Core {
         self.command(&Command::GetCustomVars, Expect::CustomVars);
         self.command(&Command::GetAutoaddConfig, Expect::Autoadd);
         self.command(&Command::GetBattAndStorage, Expect::Battery);
+        self.mesh.battery_at = None;
+    }
+
+    /// Reads the battery again when [`BATTERY_EVERY_MS`] passed since it was last read, for the
+    /// low-battery warning (ADR-0042). The apps call it as they run (it never wakes them, and
+    /// the core's own timing does not depend on it); true when a read went out.
+    pub fn radio_refresh_if_due(&mut self, now: Millis) -> bool {
+        if !self.online {
+            return false;
+        }
+        match self.mesh.battery_at {
+            None => {
+                self.mesh.battery_at = Some(now);
+                false
+            }
+            Some(t) if now.saturating_sub(t) >= BATTERY_EVERY_MS => {
+                self.mesh.battery_at = Some(now);
+                self.command(&Command::GetBattAndStorage, Expect::Battery);
+                true
+            }
+            Some(_) => false,
+        }
     }
 
     /// Reads the battery and storage again (the radio card); nothing before the connection,

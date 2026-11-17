@@ -20,10 +20,17 @@ struct PlainInfoSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
     @State private var confirmLeave = false
+    @State private var sharing = false
 
     private var channel: MeshChannel? {
         guard case let .channel(id) = chat else { return nil }
         return model.channels.first { $0.id == id }
+    }
+
+    /// A room server's posts (§15.8).
+    private var room: Data? {
+        guard case let .room(key) = chat else { return nil }
+        return key
     }
 
     var body: some View {
@@ -31,11 +38,19 @@ struct PlainInfoSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     Banner(kind: .warn, title: String(localized: "Not lichen-encrypted"),
-                           message: channel == nil ? directText : channelText)
+                           message: room != nil ? roomText : channel == nil ? directText : channelText)
+                    if let room {
+                        ServerLoginCard(key: room, room: true)
+                    }
                     if let c = channel {
                         CardList {
                             CardRow(title: c.name, subtitle: c.kind.label)
                         }
+                        // In the stock app's format (§15.3).
+                        Button { sharing = true } label: {
+                            Label("Share by QR code", systemImage: "qrcode").frame(maxWidth: .infinity, minHeight: 44)
+                        }
+                        .buttonStyle(.bordered)
                         if c.kind == .hashtagChannel {
                             Text("Anyone who joins \(c.name) in a MeshCore app reads it and can write in it.")
                                 .font(.system(.footnote)).foregroundStyle(Theme.tx2)
@@ -51,7 +66,11 @@ struct PlainInfoSheet: View {
                 .padding(16)
             }
             .background(Theme.bg)
-            .navigationTitle(channel == nil ? String(localized: "MeshCore chat") : String(localized: "Channel"))
+            .navigationTitle(room != nil ? String(localized: "Room server")
+                             : channel == nil ? String(localized: "MeshCore chat") : String(localized: "Channel"))
+            .sheet(isPresented: $sharing) {
+                if let c = channel { ChannelQRSheet(channel: c) }
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
@@ -66,6 +85,10 @@ struct PlainInfoSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private var roomText: String {
+        String(localized: "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore's own encryption to the room: the room and everyone logged in read them.")
     }
 
     private var directText: String {
@@ -91,6 +114,7 @@ struct JoinChannelSheet: View {
     @State private var name = ""
     @State private var secret = ""
     @State private var error: String?
+    @State private var scanning = false
 
     private var hasPublic: Bool { model.channels.contains { $0.kind == .publicChannel } }
 
@@ -105,6 +129,13 @@ struct JoinChannelSheet: View {
                     .disabled(hasPublic)
                 } footer: {
                     Text("MeshCore's public channel: everyone in range reads it. It starts muted.")
+                }
+                Section {
+                    Button { scanning = true } label: {
+                        Label("Scan a channel's QR code", systemImage: "qrcode.viewfinder")
+                    }
+                } footer: {
+                    Text("From a MeshCore app or from lichen: it holds the channel's name and secret.")
                 }
                 Section {
                     TextField("#hiking", text: $tag)
@@ -138,6 +169,12 @@ struct JoinChannelSheet: View {
             .background(Theme.bg)
             .navigationTitle("Join a channel")
             .navigationBarTitleDisplayMode(.inline)
+            .sheet(isPresented: $scanning) {
+                ScanChannelSheet { chat in
+                    dismiss()
+                    open(chat)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }

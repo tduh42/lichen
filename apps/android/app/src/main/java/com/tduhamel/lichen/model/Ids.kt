@@ -20,12 +20,15 @@ data class ChatId(val kind: Kind, val hex: String) {
      * of its id in bytes: node keys 32, group ids 16, channel ids 8. */
     enum class Kind(val prefix: String, val bytes: Int) {
         CONTACT("c", 32), GROUP("g", 16), MESH("m", 32), CHANNEL("h", 8),
+
+        /** A room server's posts (protocol.md §15.8). */
+        ROOM("r", 32),
     }
 
     val group: Boolean get() = kind == Kind.GROUP
 
     /** A plain MeshCore chat (§15): text only, not lichen-encrypted. */
-    val plain: Boolean get() = kind == Kind.MESH || kind == Kind.CHANNEL
+    val plain: Boolean get() = kind == Kind.MESH || kind == Kind.CHANNEL || kind == Kind.ROOM
 
     val channel: Boolean get() = kind == Kind.CHANNEL
 
@@ -34,6 +37,7 @@ data class ChatId(val kind: Kind, val hex: String) {
         Kind.GROUP -> ChatRef.Group(hex.unhex())
         Kind.MESH -> ChatRef.Mesh(hex.unhex())
         Kind.CHANNEL -> ChatRef.Channel(hex.unhex())
+        Kind.ROOM -> ChatRef.Room(hex.unhex())
     }
 
     /** The contact's node key, for a lichen direct conversation. */
@@ -51,12 +55,14 @@ data class ChatId(val kind: Kind, val hex: String) {
             is ChatRef.Group -> ChatId(Kind.GROUP, ref.gid.hex())
             is ChatRef.Mesh -> ChatId(Kind.MESH, ref.key.hex())
             is ChatRef.Channel -> ChatId(Kind.CHANNEL, ref.id.hex())
+            is ChatRef.Room -> ChatId(Kind.ROOM, ref.key.hex())
         }
 
         fun contact(key: ByteArray) = ChatId(Kind.CONTACT, key.hex())
         fun group(gid: ByteArray) = ChatId(Kind.GROUP, gid.hex())
         fun mesh(key: ByteArray) = ChatId(Kind.MESH, key.hex())
         fun channel(id: ByteArray) = ChatId(Kind.CHANNEL, id.hex())
+        fun room(key: ByteArray) = ChatId(Kind.ROOM, key.hex())
 
         /** The conversation of a route or a notification's extra; null for anything else. The
          * activity is exported: another app can send any string here (review of 2026-11-15,

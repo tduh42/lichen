@@ -13,6 +13,8 @@ import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.InviteInfo
 import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
+import com.tduhamel.lichen.core.NodeInfo
+import com.tduhamel.lichen.core.SavedRadio
 import com.tduhamel.lichen.core.RadioSettings
 import com.tduhamel.lichen.core.InviteCode
 import com.tduhamel.lichen.core.BackupSummary
@@ -162,6 +164,15 @@ class AppModel(val app: Application) {
     /** New identities presented by verified contacts, waiting for the user (node hex → identity). */
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
     var contacts by mutableStateOf(listOf<ContactInfo>())
+
+    /** MeshCore nodes the radio knows or heard (protocol.md §16.1). */
+    var nodes by mutableStateOf(listOf<NodeInfo>())
+
+    /** Bumped when a trace or a server's answer changes (§16): screens read them again. */
+    var meshToolsVersion by mutableStateOf(0)
+
+    /** Radios this phone was paired with (ADR-0042). */
+    var savedRadios by mutableStateOf(listOf<SavedRadio>())
     /** What the radio reported of its settings (protocol §1.1), read again after each change. */
     var radioSettings by mutableStateOf<RadioSettings?>(null)
     /** Why the radio did not take a setting, for a dialog. */
@@ -574,6 +585,8 @@ class AppModel(val app: Application) {
 
     private fun refreshAll() {
         contacts = people()
+        nodes = core.nodes()
+        savedRadios = core.savedRadios()
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
@@ -744,6 +757,7 @@ class AppModel(val app: Application) {
         radio = null
         conflicts = emptyMap()
         contacts = emptyList()
+        nodes = emptyList()
         groups = emptyList()
         chats.clear()
         conversations = emptyList()
@@ -870,6 +884,8 @@ class AppModel(val app: Application) {
         val t = now()
         core.setClock(System.currentTimeMillis().toULong(), t)
         core.tick(t)
+        // The radio's battery, for the low-battery warning (ADR-0042).
+        core.refreshBatteryIfDue(t)
         val d = demo
         val toDemo = mutableListOf<ByteArray>()
         while (true) {
@@ -911,6 +927,7 @@ class AppModel(val app: Application) {
                 nodeName = e.name
                 radio = e.radio
                 radioSettings = core.radioSettings()
+                radioConnected()
                 // The ongoing notification names the node, not the link's address.
                 if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
@@ -935,6 +952,7 @@ class AppModel(val app: Application) {
             }
             LichenEvent.ContactsUpdated -> {
                 contacts = people()
+                nodes = core.nodes()
                 debugInvites()
                 debugFill()
                 debugOpen()
@@ -1053,7 +1071,7 @@ class AppModel(val app: Application) {
                 // (review of 2026-11-15, SR-30).
                 val chat = ChatId.of(e.chat)
                 if (!isMuted(chat)) {
-                    val title = if (chat.channel) listOfNotNull(e.label, title(chat)).joinToString(" · ")
+                    val title = if (chat.channel || chat.kind == ChatId.Kind.ROOM) listOfNotNull(e.label, title(chat)).joinToString(" · ")
                     else "${e.label ?: title(chat)} · MeshCore"
                     notify(chat, title, e.text)
                 }
@@ -1069,6 +1087,8 @@ class AppModel(val app: Application) {
                 refreshChatPrefs()
                 debugOpen()
             }
+            // A trace or a server's answer (§16).
+            is LichenEvent.NodeUpdated -> meshToolsVersion++
         }
     }
 
@@ -1305,7 +1325,7 @@ class AppModel(val app: Application) {
             val m = when (chat.kind) {
                 ChatId.Kind.GROUP -> core.sendGroupText(chat.hex.unhex(), text, sentAt, now())
                 ChatId.Kind.CONTACT -> core.sendText(chat.hex.unhex(), text, sentAt, now())
-                ChatId.Kind.MESH, ChatId.Kind.CHANNEL -> core.sendPlain(chat.ref, text, sentAt, now())
+                ChatId.Kind.MESH, ChatId.Kind.CHANNEL, ChatId.Kind.ROOM -> core.sendPlain(chat.ref, text, sentAt, now())
             }
             if (chats[chat] == null) load(chat) else upsert(m)
             conversations = core.conversations()
@@ -1889,6 +1909,7 @@ class AppModel(val app: Application) {
         ChatId.Kind.GROUP -> groups.firstOrNull { it.gid.hex() == chat.hex }?.name ?: res.getString(R.string.group)
         ChatId.Kind.CHANNEL -> channel(chat)?.name ?: res.getString(R.string.channel)
         ChatId.Kind.CONTACT, ChatId.Kind.MESH -> name(chat.hex.unhex())
+        ChatId.Kind.ROOM -> node(chat.hex.unhex())?.name ?: res.getString(R.string.room_server)
     }
 
     fun channel(chat: ChatId): MeshChannel? =

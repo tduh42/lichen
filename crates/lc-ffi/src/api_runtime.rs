@@ -151,7 +151,7 @@ impl LichenCore {
             (Chat::Contact(k), Content::Voice { .. }) => i.core.send_media(k, datagram, now_ms)?,
             // A plain text goes again as it was (§15.2): same timestamp, so a receiver that
             // got it already sees a retry.
-            (Chat::Mesh(k), Content::Text { sent_at, text }) => {
+            (Chat::Mesh(k) | Chat::Room(k), Content::Text { sent_at, text }) => {
                 i.core.send_plain(k, text, *sent_at, now_ms)?
             }
             (Chat::Channel(c), Content::Text { sent_at, text }) => {

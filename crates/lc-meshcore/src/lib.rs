@@ -24,6 +24,7 @@ pub mod command;
 pub mod ecdh;
 pub mod path;
 pub mod response;
+pub mod server;
 pub mod usb;
 
 pub use air::{Packet, PayloadType, Route};

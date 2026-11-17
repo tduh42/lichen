@@ -14,6 +14,7 @@ Integers are **little-endian**. `‖` = concatenation. MeshCore facts come from 
 | Flood scope | `GET_DEFAULT_FLOOD_SCOPE` (64): region name and key, used for the transport codes of our floods | — |
 | Identity | `EXPORT_PRIVATE_KEY` (23) → 64 "expanded" orlp bytes; public key in `SELF_INFO` | — |
 | Radio | `SELF_INFO`: frequency kHz, BW Hz, SF, CR (5..8); the radio's settings, §1.1 | — |
+| Mesh tools (§16) | `GET_CONTACTS`; trace, logins, requests and CLI text to room servers and repeaters | `NEW_ADVERT` (0x8A); pushes 0x85–0x87, 0x89, 0x8C; queued `CONTACT_MSG` of types 1 and 2 |
 
 Facts that constrain the protocol:
 
@@ -758,6 +759,7 @@ A channel is a 16-byte secret held in one of the companion's channel slots, with
   - *Hashtag*: name `#` + the tag, lower-cased (letters, digits and `-`), secret `SHA-256("#" ‖ tag)[0..16]`, as stock clients derive it.
   - *Private*: a name and 16 bytes given by whoever created it (32 hex digits).
   - A channel already in a slot is not added twice.
+- **Sharing by QR code** (ADR-0043), in the stock app's format (MeshCore's `docs/qr_codes.md` at 81dbae5): `meshcore://channel/add?name=<name>&secret=<32 hex digits>`, the name percent-encoded (UTF-8; lichen escapes every byte but letters, digits and `-._~`; `+` reads as a space). Other parameters (`region_scope`) are ignored. A code whose name is empty or longer than 31 bytes, or whose secret is not 16 bytes or is all zero, is refused. Anyone who scans it reads and posts on the channel: the apps say so before showing it. Vectors in `testdata/meshcore/mesh.toml` (`[[qr]]`).
 - **Leaving**: `SET_CHANNEL` with an empty name and a zero secret.
 - **Posting**: `SEND_CHANNEL_TXT_MSG` (3): `txt_type 0 ‖ index ‖ ts u32 ‖ text`. The companion floods `name: text`, so `text` ≤ 160 − 2 − the length of our node's name. `OK` means the post left; nobody acknowledges it.
 
@@ -787,3 +789,51 @@ The apps show the estimate before sending, as for lichen messages.
 ### 15.7 History from the MeshCore app (ADR-0033)
 
 The official MeshCore app's exported database can be imported once: its plain direct messages go to the MeshCore chat with their node, its channel posts to the channel of their secret (`channel_id(secret)`, §15.3), as received or sent, with the sender's time, read. Other text types are left out; a message already there (same chat, direction, time and text) is skipped. The file is read from a private copy, read-only and immutable, in SQLite's defensive mode.
+
+
+### 15.8 Room servers (ADR-0043)
+
+A room server is a MeshCore node (type 3) that keeps the last 32 posts of a room and sends them to the clients logged in; stock clients show its posts as a conversation. Its posts are as private as a direct message to it (MeshCore's AES-128 between our radio and the room, readable by the room and by everyone logged in): a room chat is a MeshCore chat (§15.6), with its own kind in the store.
+
+- **Login**: `SEND_LOGIN` (26, `MyMesh.cpp` L1577): `key (32) ‖ password` (the room's guest or admin password, 15 bytes at most: `BaseChatMesh.cpp` L603). The companion sends an anonymous request with our `sync_since` for that room, the time of the newest post it acknowledged (L611, L291–L293), and answers `SENT` (`ack` = the room key's first 4 bytes). The room answers a known password with push `LOGIN_SUCCESS` (0x85, `MyMesh.cpp` L704): `is_admin ‖ key prefix (6) ‖ server time u32 ‖ permissions ‖ firmware level`, the role in permissions bits 0–1 (`ClientACL.h`: 0 guest, 1 read only, 2 read and write, 3 admin; `simple_room_server/MyMesh.cpp` L343–L387: the guest password gives read and write). A wrong password gets no answer at all, so the login gives up after `SENT`'s estimate plus 4 s ("no answer: a wrong password, or out of reach"); `LOGIN_FAIL` (0x86, L717) is for an answer that is not a welcome.
+- **Catch-up**: once logged in, the room sends every post newer than `sync_since`, one at a time, each acknowledged by the companion (`simple_room_server/MyMesh.cpp` L995–L1030), then each new one; it never sends us our own. They are queued like direct messages: `CONTACT_MSG` from the room's key prefix with `txt_type` 2 (`MyMesh.cpp` L550), the text being `author key prefix (4) ‖ post`. The author is named after the contact whose key starts with it, the room itself for its own notices, else shown in hex. A signed post from a node that is not a room server is dropped. Posts are stored as "author: text", like channel posts (§15.1), and a repeat within the hour is dropped.
+- **Posting**: a direct message to the room (§15.2, `txt_type` 0); the room acknowledges what it keeps (`SEND_CONFIRMED`), a reader without the right to post gets no acknowledgement and the post fails after its three attempts.
+- **Remembering**: the user may keep a room's password on the phone; lichen then logs in to it at each connection, once the radio's contacts are read, so that the posts since the last time come. A repeater's password is never kept (§16.5).
+- One login, status or binary request is out at a time: the companion forgets the one it waits for when it gets another (`clearPendingReqs`, `MyMesh.cpp` L1588). lichen queues them.
+
+## 16. Mesh tools (ADR-0041)
+
+What lichen shows of the MeshCore network itself, from the companion, as the stock app does. MeshCore facts come from the firmware's sources at v1.18 (`https://github.com/meshcore-dev/MeshCore/blob/81dbae5/…`; `MyMesh.cpp` is `examples/companion_radio/MyMesh.cpp`, `BaseChatMesh.cpp` is `src/helpers/BaseChatMesh.cpp`), with the line of each handler; vectors in `testdata/meshcore/mesh.toml`, written from them by `mesh.py`. Nothing here is lichen-encrypted, and nothing is stored: the radio is the source of truth and is read again at each connection.
+
+### 16.1 Nodes
+
+- **The radio's contacts** come with `GET_CONTACTS` (§1). Each record (`MyMesh.cpp` L171, `writeContactRespFrame`) is `key (32) ‖ type ‖ flags ‖ out_path_len ‖ out_path (64) ‖ name (32, NUL-padded) ‖ last_advert u32 ‖ lat i32 ‖ lon i32 ‖ lastmod u32`: `type` 1 companion, 2 repeater, 3 room server, 4 sensor; `last_advert` is the node's own clock at its last advert, `lastmod` the radio's clock when it last heard from it (an advert, a message: `BaseChatMesh.cpp` L198, L240, L294), shown as "last heard". `lat`, `lon` are degrees × 10⁶ from the node's last advert that carried a position (L193); both 0 means none.
+- **Nodes heard but not added.** An advert from a node that the radio does not add (manual add without its type in the auto-add mask, more hops than the auto-add limit, or a full table: `BaseChatMesh.cpp` L156–L184) comes as push `NEW_ADVERT` (0x8A, `MyMesh.cpp` L361) with the same record; push `ADVERT` (0x80) is for a contact, read again with `GET_CONTACT_BY_KEY`. lichen lists them, marked as not on the radio, the 512 most recently heard at most.
+- The list is the radio's contacts and those nodes, the most recently heard first, with their type, hops (`out_path_len`, §1) and last heard. A contact lichen keeps that the radio did not report (someone known from a group) is not a node of this radio.
+- **Map layer:** the nodes whose record carries a position, at that position, with their type. Only what their owners chose to advertise in clear (ADR-0032); lichen never derives a position for a node.
+
+### 16.2 Paths
+
+A contact's `out_path` (§1) is its route from our radio: one hash per repeater, the first bytes of its key (1 to 3 bytes, `path_len` bits 6–7). The apps show it hop by hop, each hash named after the repeaters the radio reports (type 2, §16.1) whose key starts with it: none known shows the hash in hex, several show all of them (a 1-byte hash is often shared). `None` (0xFF) means the radio floods to reach the node; 0 hops that it hears it directly.
+
+### 16.3 Traces
+
+- **Sending**: `SEND_TRACE_PATH` (36, `MyMesh.cpp` L1813): `tag u32 ‖ auth u32 ‖ flags ‖ path`. `flags & 3` gives the size of each hash in `path`, `1 << (flags & 3)` bytes; the path is a whole number of hashes, at most 64 of them and 178 bytes. The companion answers `SENT` (`flood` 0, `ack` = `tag`, `timeout_ms` its estimate) or `ERR 6`. lichen draws `tag` at random and sends `auth` 0 (v1.18 carries it without checking it).
+- **On the air** (`src/Mesh.cpp` L42–L68): a direct `TRACE` (type 9) whose payload is `tag ‖ auth ‖ flags ‖ hashes`; the repeater whose key matches the next hash appends the SNR × 4 at which it heard the packet to the packet's path and forwards it; once every hash is used, any node that hears it reports it. Companions do not forward, so a trace only goes through repeaters.
+- **The path traced**: the contact's `out_path`, plus the node's own hash when it is a repeater, then the same hashes back without the last one, so that the last transmission reaches our radio again (`h1 h2 h1` for a contact two repeaters away). 1-byte paths are traced with 1-byte hashes (`flags` 0); 2- and 3-byte paths with their first two bytes (`flags` 1). Nothing to trace (a node heard directly that is not a repeater, or one the radio floods to) is refused; so is a trace whose answer would not fit a Bluetooth frame (§1, 10).
+- **The answer**: push `TRACE_DATA` (0x89, `MyMesh.cpp` L855): `reserved ‖ path_len ‖ flags ‖ tag u32 ‖ auth u32 ‖ hashes (path_len bytes) ‖ SNR × 4 per hop (path_len >> (flags & 3), i8) ‖ final SNR × 4 (i8)`, the last one ours. It is matched by `tag`. No answer within `timeout_ms` + 3 s, or the radio gone before it came, is "no answer"; the apps show where each SNR was measured, out and back.
+- **Airtime**: our transmission, `2 + 9 + path` bytes, counts in the budget (§9); a trace that does not fit is refused with the wait. One trace per node at a time.
+
+### 16.4 Saved radios (ADR-0042)
+
+The apps keep the radios the phone was paired with (Bluetooth identifier, USB device or TCP address, link, name, node key, last use) in the database, to switch between them. The history, contacts, groups and keys stay with the phone's identity (ADR-0010, ADR-0013), whichever radio carries them; each radio keeps its own MeshCore contacts, channels and settings, and the people a lichen user writes to see another node when the radio changes. The radio's battery is read at connection and again at most every 10 minutes while connected, when the app runs anyway, so that it never wakes the app by itself (`GET_BATT_AND_STORAGE`, §1.1); at or below 15 % (3.3 V empty, 4.2 V full) the apps warn.
+
+### 16.5 Repeaters (ADR-0044)
+
+A repeater (type 2) answers its admin and guests (`examples/simple_repeater/MyMesh.cpp` at 81dbae5). lichen offers: login, status, neighbours and a small command line. Requests are queued one at a time (§15.8), and each counts in the budget as a direct packet of a few blocks.
+
+- **Login**: as for a room (§15.8), without `sync_since` (`BaseChatMesh.cpp` L615–L618): the admin password gives role 3, the guest password role 0 (`MyMesh.cpp` L90–L143). An empty password logs in a client the repeater already lists.
+- **Status**: `SEND_STATUS_REQ` (27, `MyMesh.cpp` L1630): `key` → `SENT`, then push `STATUS_RESPONSE` (0x87, L724): `reserved ‖ key prefix (6) ‖ stats`, matched by the prefix. A repeater's stats are `RepeaterStats` (`simple_repeater/MyMesh.h` L44, 56 bytes, little-endian): `battery mV u16 ‖ TX queue u16 ‖ noise floor i16 ‖ last RSSI i16 ‖ packets received u32 ‖ sent u32 ‖ airtime s u32 ‖ uptime s u32 ‖ sent flood u32 ‖ sent direct u32 ‖ received flood u32 ‖ received direct u32 ‖ error events u16 ‖ last SNR × 4 i16 ‖ direct duplicates u16 ‖ flood duplicates u16 ‖ receive airtime s u32 ‖ receive errors u32`. A room server's (`ServerStats`, `simple_room_server/MyMesh.cpp` L24, 52 bytes) has the same first 48 bytes, then `posts u16 ‖ post pushes u16`. Guests may ask for it.
+- **Neighbours**: `SEND_BINARY_REQ` (50, `MyMesh.cpp` L1720): `key ‖ request` → `SENT` (`ack` = a tag), then push `BINARY_RESPONSE` (0x8C, L750): `reserved ‖ tag u32 ‖ answer`, matched by the tag. The request is `GET_NEIGHBOURS` (`simple_repeater/MyMesh.cpp` L276): `0x06 ‖ version 0 ‖ count ‖ offset u16 ‖ order ‖ key prefix length ‖ 4 random bytes`; lichen asks for 255 from offset 0, the strongest first (order 2), with 6-byte prefixes. The answer is `total u16 ‖ count u16 ‖ count × (key prefix ‖ heard seconds ago u32 ‖ SNR × 4 i8)`, as many as fit 130 bytes (11 with 6-byte prefixes); lichen asks for the next page while the total is not reached, four pages at most. A neighbour is named after the node the radio knows with that prefix.
+- **Command line**: `SEND_TXT_MSG` (§15.2) with `txt_type` 1 (CLI data, `MyMesh.cpp` L1132): the companion sends it once, without acknowledgement, under its own clock. A repeater runs it for an admin only (`simple_repeater/MyMesh.cpp` L702) and answers with a `txt_type` 1 message (L749), queued as `CONTACT_MSG` from its prefix: a console line, never stored and never in a conversation. A type 1 message from a person's radio (type 0 or 1) is dropped. Commands are at most 160 bytes; the apps show what was sent and what came back, in order.
+- **Logout**: `LOGOUT` (29, L1748) stops the radio's keep-alive with that server; lichen sends it when the user logs out, and forgets the password.

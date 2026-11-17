@@ -401,6 +401,7 @@ fn describe(core: &Core, e: &Event) -> String {
                         .map_or_else(|| hex::encode(id), |c| c.name.clone());
                     format!("[MeshCore {name}]")
                 }
+                lc_core::PlainChat::Room(k) => format!("[room {}]", name_of(core, &k)),
             };
             let route = m.hops.map_or("direct".to_owned(), |h| format!("{h} hops"));
             format!(
@@ -460,6 +461,8 @@ fn describe(core: &Core, e: &Event) -> String {
             Some(p) => format!("TX power {dbm} dBm for a search (was {p} dBm)"),
             None => format!("TX power {dbm} dBm"),
         },
+        Event::NodesUpdated => format!("{} nodes known", core.nodes().len()),
+        Event::NodeTool { node } => format!("{}: trace or server answer", name_of(core, node)),
     }
 }
 

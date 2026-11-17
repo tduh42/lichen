@@ -115,6 +115,29 @@ pub enum Command<'a> {
         name: &'a [u8],
         secret: &'a [u8; 16],
     },
+    /// `[26] key ‖ password` → `SENT` (`ack` = the key's first 4 bytes), then push
+    /// `LOGIN_SUCCESS`, or `LOGIN_FAIL`, or nothing for a wrong password (§15.8, §16.5). The
+    /// firmware keeps 15 bytes of the password.
+    SendLogin {
+        key: &'a [u8; 32],
+        password: &'a [u8],
+    },
+    /// `[27] key` → `SENT`, then push `STATUS_RESPONSE` (§16.5).
+    SendStatusReq { key: &'a [u8; 32] },
+    /// `[29] key` → `OK`: the radio stops keeping the connection to that server alive.
+    Logout { key: &'a [u8; 32] },
+    /// `[50] key ‖ request` → `SENT` (`ack` = the tag), then push `BINARY_RESPONSE` with the
+    /// same tag (§16.5).
+    SendBinaryReq { key: &'a [u8; 32], data: &'a [u8] },
+    /// `[36] tag u32 ‖ auth u32 ‖ flags ‖ path` → `SENT` (`ack` = `tag`), then push
+    /// `TRACE_DATA` from the end of the path (§16.3). `flags & 3` is the size of each hash in
+    /// `path`, `1 << (flags & 3)` bytes.
+    SendTracePath {
+        tag: u32,
+        auth: u32,
+        flags: u8,
+        path: &'a [u8],
+    },
 }
 
 /// Longest text of a plain MeshCore message (`MAX_TEXT_LEN`, ten AES blocks). A channel post
@@ -123,6 +146,39 @@ pub const TEXT_MAX: usize = 160;
 
 /// Longest channel name in `SET_CHANNEL` (32 bytes, NUL-terminated).
 pub const CHANNEL_NAME_MAX: usize = 31;
+
+/// Longest password a server checks (`BaseChatMesh::sendLogin` keeps 15 bytes).
+pub const PASSWORD_MAX: usize = 15;
+
+/// A `GET_NEIGHBOURS` request to a repeater (`examples/simple_repeater/MyMesh.cpp` L276):
+/// version 0, how many, from which, the order (0 newest heard first, 2 strongest first), how
+/// many key bytes per neighbour, and 4 random bytes that make the packet unique.
+pub fn neighbours_request(
+    count: u8,
+    offset: u16,
+    order: u8,
+    prefix_len: u8,
+    random: [u8; 4],
+) -> [u8; 11] {
+    let [o0, o1] = offset.to_le_bytes();
+    let [r0, r1, r2, r3] = random;
+    [
+        crate::codes::req::GET_NEIGHBOURS,
+        0,
+        count,
+        o0,
+        o1,
+        order,
+        prefix_len,
+        r0,
+        r1,
+        r2,
+        r3,
+    ]
+}
+
+/// Longest trace path in bytes the firmware takes (`len - 10 < MAX_PACKET_PAYLOAD - 5`).
+pub const TRACE_PATH_MAX: usize = 178;
 
 /// Smallest `SEND_RAW_DATA` payload accepted by the firmware.
 pub const RAW_DATA_MIN: usize = 4;
@@ -299,6 +355,50 @@ impl Command<'_> {
                 w.put(&[cmd::SET_CHANNEL, index])?;
                 w.put(&padded)?;
                 w.put(secret)?;
+            }
+            Command::SendLogin { key, password } => {
+                if password.len() > PASSWORD_MAX || password.contains(&0) {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SEND_LOGIN)?;
+                w.put(key)?;
+                w.put(password)?;
+            }
+            Command::SendStatusReq { key } => {
+                w.u8(cmd::SEND_STATUS_REQ)?;
+                w.put(key)?;
+            }
+            Command::Logout { key } => {
+                w.u8(cmd::LOGOUT)?;
+                w.put(key)?;
+            }
+            Command::SendBinaryReq { key, data } => {
+                if data.is_empty() {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SEND_BINARY_REQ)?;
+                w.put(key)?;
+                w.put(data)?;
+            }
+            Command::SendTracePath {
+                tag,
+                auth,
+                flags,
+                path,
+            } => {
+                let size = 1usize << (flags & 3);
+                if path.is_empty()
+                    || path.len() > TRACE_PATH_MAX
+                    || path.len() % size != 0
+                    || path.len() / size > crate::path::MAX_PATH_BYTES
+                {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::SEND_TRACE_PATH)?;
+                w.u32(tag)?;
+                w.u32(auth)?;
+                w.u8(flags)?;
+                w.put(path)?;
             }
             Command::SendRawPacket { priority, raw } => {
                 if raw.len() < 2 {

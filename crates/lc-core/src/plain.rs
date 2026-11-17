@@ -52,11 +52,12 @@ impl Channel {
     }
 }
 
-/// A plain conversation: a node, or a channel.
+/// A plain conversation: a node, a channel, or a room server's posts (§15.8).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PlainChat {
     Direct(PubKey),
     Channel(ChannelId),
+    Room(PubKey),
 }
 
 pub fn channel_id(secret: &[u8; 16]) -> ChannelId {
@@ -81,6 +82,76 @@ pub fn hashtag(tag: &str) -> Option<(String, [u8; 16])> {
     }
     let secret = lc_meshcore::air::region_key(&tag);
     Some((format!("#{tag}"), secret))
+}
+
+/// The stock app's QR code for a channel (§15.3, MeshCore's `docs/qr_codes.md`):
+/// `meshcore://channel/add?name=<percent-encoded>&secret=<32 hex digits>`.
+pub fn channel_qr(name: &str, secret: &[u8; 16]) -> String {
+    let mut out = String::from("meshcore://channel/add?name=");
+    for &b in name.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(char::from(b));
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out.push_str("&secret=");
+    for b in secret {
+        out.push_str(&format!("{b:02x}"));
+    }
+    out
+}
+
+/// Decodes a query value: `+` is a space, `%XX` a byte; `None` for a bad escape or text
+/// that is not UTF-8.
+fn query_value(v: &str) -> Option<String> {
+    let mut bytes = Vec::with_capacity(v.len());
+    let mut it = v.bytes();
+    while let Some(b) = it.next() {
+        match b {
+            b'+' => bytes.push(b' '),
+            b'%' => {
+                let hi = char::from(it.next()?).to_digit(16)?;
+                let lo = char::from(it.next()?).to_digit(16)?;
+                bytes.push(u8::try_from(hi << 4 | lo).ok()?);
+            }
+            b => bytes.push(b),
+        }
+    }
+    String::from_utf8(bytes).ok()
+}
+
+/// A channel from the stock app's QR code (§15.3): its name and secret, or `None` when the
+/// text is not one, the name is empty or longer than a slot takes, or the secret is not 16
+/// bytes (all zero is no secret). Other parameters (`region_scope`) are ignored.
+pub fn parse_channel_qr(text: &str) -> Option<(String, [u8; 16])> {
+    let text = text.trim();
+    let (base, query) = text.split_once('?')?;
+    if !base.eq_ignore_ascii_case("meshcore://channel/add") {
+        return None;
+    }
+    let (mut name, mut secret) = (None, None);
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        match k {
+            "name" => name = Some(query_value(v)?),
+            "secret" => {
+                let hex = query_value(v)?;
+                if hex.len() != 32 {
+                    return None;
+                }
+                let mut out = [0u8; 16];
+                for (o, i) in out.iter_mut().zip((0..32).step_by(2)) {
+                    *o = u8::from_str_radix(hex.get(i..i + 2)?, 16).ok()?;
+                }
+                secret = Some(out);
+            }
+            _ => {}
+        }
+    }
+    let name = name?.trim().to_owned();
+    let secret = secret.filter(|s| *s != [0; 16])?;
+    (!name.is_empty() && name.len() <= NAME_MAX && !name.contains('\0')).then_some((name, secret))
 }
 
 /// Splits a channel post into its author's label and its body ("name: body", §15.1).
@@ -281,6 +352,13 @@ impl Core {
                 direct_bytes(text_len, path)
             }
             PlainChat::Channel(_) => channel_bytes(text_len, self.name.len()),
+            PlainChat::Room(to) => direct_bytes(
+                text_len,
+                self.contacts
+                    .get(to)
+                    .and_then(|c| c.out_path.as_ref())
+                    .map_or(0, |p| p.bytes.len()),
+            ),
         };
         self.airtime_ms(bytes)
     }
@@ -402,8 +480,13 @@ impl Core {
         path_len: u8,
         now: Millis,
     ) {
-        if kind != 0 {
-            return;
+        match kind {
+            lc_meshcore::codes::txt::PLAIN => {}
+            lc_meshcore::codes::txt::CLI_DATA => return self.on_cli_reply(prefix, ts, text),
+            lc_meshcore::codes::txt::SIGNED_PLAIN => {
+                return self.on_room_post(prefix, ts, text, snr4, path_len, now);
+            }
+            _ => return,
         }
         let text = text_of(text);
         if !self.deliver_direct(prefix, &text, ts, snr4, path_len, now)
@@ -517,7 +600,13 @@ impl Core {
     }
 
     /// Whether the same message was received in the last hour (a retry, §15.1); records it.
-    fn plain_seen(&mut self, chat: &PlainChat, ts: u32, text: &str, now: Millis) -> bool {
+    pub(crate) fn plain_seen(
+        &mut self,
+        chat: &PlainChat,
+        ts: u32,
+        text: &str,
+        now: Millis,
+    ) -> bool {
         let mut h = Sha256::new();
         match chat {
             PlainChat::Direct(k) => {
@@ -527,6 +616,10 @@ impl Core {
             PlainChat::Channel(c) => {
                 h.update([1]);
                 h.update(c);
+            }
+            PlainChat::Room(k) => {
+                h.update([2]);
+                h.update(k);
             }
         }
         h.update(ts.to_le_bytes());
@@ -897,7 +990,8 @@ mod tests {
     }
 
     /// At connection the slots are read and the companion's queue is drained (§15.1): a direct
-    /// message from Bob, a post on Public, a retry of it (dropped), and a room post (ignored).
+    /// message from Bob, a post on Public, a retry of it (dropped), and a signed post from Bob,
+    /// who is not a room server (dropped, §15.8).
     #[test]
     fn the_queue_is_drained_at_connection() {
         let post = frame("111400000000004002df6a616c6963653a206869");

@@ -32,6 +32,7 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Layers
 import androidx.compose.material.icons.outlined.MyLocation
 import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -125,6 +126,8 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     var layers by remember { mutableStateOf(false) }
     var showingOffline by remember { mutableStateOf(false) }
+    // MeshCore nodes at the positions they advertise (protocol.md §16.1).
+    var showNodes by remember { mutableStateOf(prefs.getBoolean("map.nodes", true)) }
     val askLocation = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { model.locationReady() }
     DisposableEffect(Unit) {
         model.needsLocation("map", true)
@@ -140,10 +143,11 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
             model.refreshPositions()
         }
     }
-    val items = mapItems(model)
-    // Someone new on the map: reframe around everyone.
-    LaunchedEffect(items.map { it.id }) {
-        val ids = items.map { it.id }.toSet()
+    val items = mapItems(model, showNodes)
+    // Someone new on the map: reframe around everyone (nodes do not count).
+    val people = items.filter { it.kind != MapItem.Kind.NODE }.map { it.id }
+    LaunchedEffect(people) {
+        val ids = people.toSet()
         if ((ids - seen).isNotEmpty()) {
             seen = seen + ids
             recenter++
@@ -187,6 +191,16 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
                                 },
                             )
                         }
+                        HorizontalDivider(color = t.line)
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.map_nodes)) },
+                            leadingIcon = { Checkbox(showNodes, null) },
+                            onClick = {
+                                showNodes = !showNodes
+                                prefs.edit().putBoolean("map.nodes", showNodes).apply()
+                                layers = false
+                            },
+                        )
                         HorizontalDivider(color = t.line)
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.download_area)) },
@@ -268,9 +282,17 @@ private fun MapIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label
 
 /** The markers: everyone's last position (SOS first in colour), and ours. */
 @Composable
-private fun mapItems(model: AppModel): List<MapItem> {
+private fun mapItems(model: AppModel, showNodes: Boolean): List<MapItem> {
     val t = lichen
     val out = mutableListOf<MapItem>()
+    if (showNodes) {
+        for (n in model.nodes) {
+            val lat = n.lat ?: continue
+            val lon = n.lon ?: continue
+            val color = if (n.kind == com.tduhamel.lichen.core.NodeKind.REPEATER) t.lora.toArgb() else 0xFFD6D6D0.toInt()
+            out += MapItem("n:" + n.key.hex(), MapItem.Kind.NODE, lat, lon, 0.0, initials(n.name), n.name, color, t.dark)
+        }
+    }
     for (p in model.positions) {
         val name = model.name(p.from)
         val color = if (p.sos) t.sosBtn else t.marker(p.from)

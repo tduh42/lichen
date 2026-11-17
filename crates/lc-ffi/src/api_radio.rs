@@ -53,6 +53,10 @@ pub struct RadioSettings {
     pub manufacturer: String,
     pub firmware: String,
     pub build_date: String,
+    /// The battery's charge (3.3 V empty, 4.2 V full), and whether it is low enough to warn
+    /// (ADR-0042); read again at most every 10 minutes while connected.
+    pub battery_percent: Option<u8>,
+    pub battery_low: bool,
 }
 
 impl From<&lc_core::radio::RadioSettings> for RadioSettings {
@@ -94,6 +98,10 @@ impl From<&lc_core::radio::RadioSettings> for RadioSettings {
             manufacturer: r.manufacturer.clone(),
             firmware: r.firmware.clone(),
             build_date: r.build_date.clone(),
+            battery_percent: r.battery_mv.map(lc_core::radio::battery_percent),
+            battery_low: r.battery_mv.is_some_and(|mv| {
+                lc_core::radio::battery_percent(mv) <= lc_core::radio::BATTERY_LOW_PERCENT
+            }),
         }
     }
 }
@@ -108,6 +116,12 @@ impl LichenCore {
     /// Reads the battery and storage again.
     pub fn refresh_radio(&self) {
         self.lock().core.radio_refresh();
+    }
+
+    /// Reads the battery again when 10 minutes passed since it was last read (the low-battery
+    /// warning, ADR-0042): call it as the app runs, with `pump`.
+    pub fn refresh_battery_if_due(&self, now_ms: u64) {
+        self.lock().core.radio_refresh_if_due(now_ms);
     }
 
     /// LoRa parameters, applied by the radio at once: a radio on other settings no longer

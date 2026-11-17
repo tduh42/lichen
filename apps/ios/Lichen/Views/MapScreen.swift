@@ -7,6 +7,8 @@ struct MapScreen: View {
     @Environment(\.colorScheme) private var scheme
     @State private var offline = OfflineMaps()
     @AppStorage("map.style") private var style = MapStyle.auto
+    /// MeshCore nodes at the positions they advertise (protocol.md §16.1).
+    @AppStorage("map.nodes") private var showNodes = true
     @State private var recenter = 0
     /// Who was on the map already: someone new reframes the map around everyone.
     @State private var seen: Set<String> = []
@@ -57,7 +59,7 @@ struct MapScreen: View {
             model.needsLocation("map", false)
             refresh?.invalidate()
         }
-        .onChange(of: items.map(\.id)) { _, ids in
+        .onChange(of: items.filter { $0.kind != .node }.map(\.id)) { _, ids in
             let new = Set(ids).subtracting(seen)
             if !new.isEmpty {
                 seen.formUnion(new)
@@ -87,6 +89,9 @@ struct MapScreen: View {
             Menu {
                 Picker("Map style", selection: $style) {
                     ForEach(MapStyle.allCases) { Text($0.label).tag($0) }
+                }
+                Toggle(isOn: $showNodes) {
+                    Label("MeshCore nodes", systemImage: "antenna.radiowaves.left.and.right")
                 }
                 Section {
                     Button {
@@ -134,6 +139,17 @@ struct MapScreen: View {
                 color: UIColor(color).resolvedColor(with: traits),
                 dark: dark
             ))
+        }
+        if showNodes {
+            for n in model.nodes {
+                guard let lat = n.lat, let lon = n.lon else { continue }
+                out.append(MapItem(
+                    id: "n:" + n.key.hex, kind: .node, lat: lat, lon: lon, radius: 0,
+                    initials: "", label: n.name,
+                    color: UIColor(n.kind == .repeater ? Theme.lora : Color(hex: 0xD6D6D0)).resolvedColor(with: traits),
+                    dark: dark, symbol: n.kind.symbol
+                ))
+            }
         }
         if let me = model.myFix {
             out.append(MapItem(
@@ -404,7 +420,7 @@ private struct ShareRow: View {
 
     private var avatarKey: Data {
         switch share.chat {
-        case let .contact(key), let .mesh(key): key
+        case let .contact(key), let .mesh(key), let .room(key): key
         case let .group(gid): gid
         case let .channel(id): id
         }
@@ -422,7 +438,7 @@ private struct ShareRow: View {
             let n = model.groups.first { $0.gid == gid }?.members.count ?? 0
             return String(localized: "Group · \(n) members · flood")
         // Positions never go to a plain MeshCore chat (§15).
-        case .mesh, .channel:
+        case .mesh, .channel, .room:
             return ""
         }
     }

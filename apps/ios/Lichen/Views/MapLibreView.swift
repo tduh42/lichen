@@ -25,9 +25,10 @@ enum MapStyle: String, CaseIterable, Identifiable {
     }
 }
 
-/// Something drawn on the map: us, or someone's position with its circle of uncertainty.
+/// Something drawn on the map: us, or someone's position with its circle of uncertainty, or
+/// a MeshCore node at the position it advertises (protocol.md §16.1).
 struct MapItem: Equatable, Identifiable {
-    enum Kind: Equatable { case me, peer, sos }
+    enum Kind: Equatable { case me, peer, sos, node }
 
     let id: String
     let kind: Kind
@@ -41,6 +42,8 @@ struct MapItem: Equatable, Identifiable {
     let color: UIColor
     /// Drawn for the dark theme.
     let dark: Bool
+    /// A node's symbol (SF Symbols).
+    var symbol: String? = nil
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 }
@@ -106,6 +109,9 @@ struct MapLibreView: UIViewRepresentable {
     static let latitudeMax = 85.0
 
     private func fit(_ map: MLNMapView) {
+        // People first: nodes count only when nobody else is on the map.
+        let people = self.items.filter { $0.kind != .node }
+        let items = people.isEmpty ? self.items : people
         guard let first = items.first else { return }
         if items.count == 1 && first.radius < 500 && overlay == nil {
             map.setCenter(first.coordinate, zoomLevel: max(map.zoomLevel, 13), animated: true)
@@ -331,7 +337,7 @@ final class ItemAnnotationView: MLNAnnotationView {
         frame.size = size
         let anchor = a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2
         centerOffset = CGVector(dx: 0, dy: size.height / 2 - anchor)
-        layer.zPosition = a.item.kind == .sos ? 2 : (a.item.kind == .me ? 1 : 0)
+        layer.zPosition = a.item.kind == .sos ? 2 : (a.item.kind == .me ? 1 : (a.item.kind == .node ? -1 : 0))
     }
 }
 
@@ -349,6 +355,13 @@ struct MarkerBadge: View {
                     .fill(Color(item.color))
                     .frame(width: Self.dot, height: Self.dot)
                     .overlay(Circle().stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 3))
+            case .node:
+                Image(systemName: item.symbol ?? "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0x141413))
+                    .frame(width: Self.avatar, height: Self.avatar)
+                    .background(Color(item.color), in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 2))
             case .peer, .sos:
                 Text(item.initials)
                     .font(.system(.caption, weight: .semibold))

@@ -33,6 +33,10 @@ pub enum ChatRef {
     Channel {
         id: Vec<u8>,
     },
+    /// A MeshCore room server's posts (§15.8), by its node key: not lichen-encrypted.
+    Room {
+        key: Vec<u8>,
+    },
 }
 
 impl ChatRef {
@@ -42,6 +46,7 @@ impl ChatRef {
             Self::Group { gid: g } => Chat::Group(gid(g)?),
             Self::Mesh { key: k } => Chat::Mesh(key(k)?),
             Self::Channel { id } => Chat::Channel(channel(id)?),
+            Self::Room { key: k } => Chat::Room(key(k)?),
         })
     }
 
@@ -51,6 +56,7 @@ impl ChatRef {
             Chat::Group(g) => Self::Group { gid: g.to_vec() },
             Chat::Mesh(k) => Self::Mesh { key: k.to_vec() },
             Chat::Channel(c) => Self::Channel { id: c.to_vec() },
+            Chat::Room(k) => Self::Room { key: k.to_vec() },
         }
     }
 }
@@ -76,6 +82,7 @@ pub(crate) fn plain_chat(c: PlainChat) -> Chat {
     match c {
         PlainChat::Direct(k) => Chat::Mesh(k),
         PlainChat::Channel(id) => Chat::Channel(id),
+        PlainChat::Room(k) => Chat::Room(k),
     }
 }
 

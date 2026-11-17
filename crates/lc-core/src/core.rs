@@ -346,6 +346,13 @@ pub enum Event {
         dbm: i8,
         previous: Option<i8>,
     },
+    /// The nodes the radio knows or heard changed (§16.1): read [`Core::nodes`].
+    NodesUpdated,
+    /// A trace to `node`, or what its room server or repeater answered, changed (§16.3,
+    /// §16.5): read [`Core::trace_of`] and [`Core::server`].
+    NodeTool {
+        node: PubKey,
+    },
 }
 
 /// Why a request was refused right away.
@@ -387,6 +394,9 @@ pub enum Error {
     /// What was pasted names an identity other than the one this contact has: the change
     /// waits for the user, who compares safety numbers (§4.6).
     IdentityPending,
+    /// No repeater to go through: the node is heard directly, or the radio floods to it
+    /// (§16.3).
+    NoPath,
 }
 
 /// Core configuration. Its `Debug` leaves the seeds out (review of 2026-11-15, SR-34).
@@ -449,6 +459,12 @@ pub(crate) enum Expect {
     Autoadd,
     /// `GET_BATT_AND_STORAGE` (§1.1).
     Battery,
+    /// `SEND_TRACE_PATH` of this tag (§16.3).
+    Trace(u32),
+    /// A login, status or binary request to a server (§16.5).
+    Server,
+    /// A command to this server's command line (§16.5).
+    Cli(PubKey),
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -471,7 +487,10 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
         (Expect::Stats, R::RadioStats { .. }) => true,
         (Expect::Sync, R::ContactMsg { .. } | R::ChannelMsg { .. } | R::NoMoreMessages) => true,
         (Expect::Channel(i), R::ChannelInfo { index, .. }) => *index == i,
-        (Expect::PlainSent(_), R::Sent { .. }) => true,
+        (
+            Expect::PlainSent(_) | Expect::Trace(_) | Expect::Server | Expect::Cli(_),
+            R::Sent { .. },
+        ) => true,
         (Expect::CustomVars, R::CustomVars(_)) => true,
         (Expect::Autoadd, R::AutoaddConfig { .. }) => true,
         (Expect::Battery, R::BattAndStorage { .. }) => true,
@@ -761,6 +780,10 @@ pub struct Core {
     pending_identities: HashMap<PubKey, PubKey>,
     /// Search mode (§11).
     pub(crate) search: crate::search::Searches,
+    /// Mesh tools: nodes and traces (§16).
+    pub(crate) mesh: crate::mesh::Mesh,
+    /// Room servers and repeaters (§15.8, §16.5).
+    pub(crate) servers: crate::server::Servers,
 }
 
 impl std::fmt::Debug for Core {
@@ -840,6 +863,8 @@ impl Core {
             loc: Locations::default(),
             pending_identities: HashMap::new(),
             search: crate::search::Searches::default(),
+            mesh: crate::mesh::Mesh::default(),
+            servers: crate::server::Servers::default(),
         }
     }
 
@@ -1011,6 +1036,8 @@ impl Core {
         self.command(&Command::GetDefaultFloodScope, Expect::Scope);
         self.radio_read_all();
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        self.mesh_connected();
+        self.servers_connected();
         self.plain_connected();
         self.tick(now);
     }
@@ -1023,6 +1050,8 @@ impl Core {
         self.commands.clear();
         self.awaiting = None;
         self.plain_disconnected();
+        self.mesh_disconnected();
+        self.servers_disconnected();
     }
 
     /// Adds or updates a contact by hand (contact card, tests); a known identity is kept.
@@ -1506,7 +1535,22 @@ impl Core {
             Response::LogRxData { snr4, rssi, raw } => self.on_log_rx(raw, snr4, rssi, now),
             Response::MsgWaiting => self.plain_sync(),
             Response::SendConfirmed { ack, .. } => self.on_send_confirmed(ack),
-            Response::NewAdvert(_) => {}
+            Response::NewAdvert(c) => self.mesh_heard(&c),
+            Response::TraceData {
+                tag,
+                snrs,
+                final_snr4,
+                ..
+            } => self.on_trace_data(tag, snrs, final_snr4, now),
+            Response::LoginSuccess {
+                admin,
+                prefix,
+                permissions,
+                ..
+            } => self.on_login(prefix, Some((permissions, admin))),
+            Response::LoginFail { prefix } => self.on_login(prefix, None),
+            Response::StatusResponse { prefix, data } => self.on_status(prefix, data),
+            Response::BinaryResponse { tag, data } => self.on_binary(tag, data, now),
             Response::Other { code, .. } if code >= 0x80 => {}
             r => self.on_reply(r, now),
         }
@@ -1525,6 +1569,8 @@ impl Core {
         self.tick_locations(now);
         self.tick_search(now);
         self.tick_plain(now);
+        self.tick_mesh(now);
+        self.tick_servers(now);
         // Round robin: start after the peer served last, so that sessions share the radio.
         let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
         keys.sort_unstable();
@@ -1563,6 +1609,12 @@ impl Core {
             consider(d);
         }
         if let Some(d) = self.next_plain_wakeup() {
+            consider(d);
+        }
+        if let Some(d) = self.next_mesh_wakeup() {
+            consider(d);
+        }
+        if let Some(d) = self.next_server_wakeup() {
             consider(d);
         }
         let slot = self.next_slot.max(self.deferred_until.unwrap_or(0));
@@ -1662,6 +1714,7 @@ impl Core {
             }
             Response::Contact(c) => {
                 let key = *c.key;
+                let record = c;
                 // A companion keeps a few hundred contacts; a radio that sends more is not
                 // followed past this (review of 2026-11-15, SR-32).
                 if self.contacts.contains_key(&key) || self.contacts.len() < CONTACTS_MAX {
@@ -1682,6 +1735,7 @@ impl Core {
                             kind: c.kind,
                         },
                     );
+                    self.mesh_contact(&record);
                 }
                 if expect == Some(Expect::Contacts) {
                     done = false;
@@ -1695,6 +1749,7 @@ impl Core {
             Response::EndOfContacts { .. } => {
                 self.events.push_back(Event::ContactsUpdated);
                 self.plain_contacts_updated(now);
+                self.servers_contacts_read(now);
             }
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             Response::Ok => match expect {
@@ -1714,15 +1769,19 @@ impl Core {
                     reason: FailReason::Refused,
                 }),
                 Some(Expect::Sync) => self.plain.syncing = false,
+                Some(Expect::Trace(tag)) => self.on_trace_refused(tag),
+                Some(Expect::Server) => self.on_server_refused(),
+                Some(Expect::Cli(node)) => self.on_cli_refused(&node),
                 _ => {}
             },
             Response::Sent {
                 tag, timeout_ms, ..
-            } => {
-                if let Some(Expect::PlainSent(id)) = expect {
-                    self.on_plain_sent(id, tag, timeout_ms, now);
-                }
-            }
+            } => match expect {
+                Some(Expect::PlainSent(id)) => self.on_plain_sent(id, tag, timeout_ms, now),
+                Some(Expect::Trace(t)) => self.on_trace_sent(t, timeout_ms, now),
+                Some(Expect::Server) => self.on_server_sent(tag, timeout_ms, now),
+                _ => {}
+            },
             Response::NoMoreMessages => self.plain.syncing = false,
             Response::ContactMsg {
                 snr4,
@@ -1927,6 +1986,13 @@ impl Core {
     /// Whether `airtime_ms` fits in the budget now.
     pub(crate) fn budget_allows(&mut self, now: Millis, airtime_ms: Millis) -> bool {
         self.budget.can_transmit(now, airtime_ms)
+    }
+
+    /// How long until `airtime_ms` fits in the budget.
+    pub(crate) fn budget_wait(&mut self, now: Millis, airtime_ms: Millis) -> Millis {
+        self.budget
+            .next_opportunity(now, airtime_ms)
+            .saturating_sub(now)
     }
 
     fn occupy(&mut self, now: Millis, airtime_ms: Millis, hops: Option<u8>) {
