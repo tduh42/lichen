@@ -1354,7 +1354,7 @@ impl Store {
                 }),
             }
         }
-        out.sort_by(|a, b| b.bytes.cmp(&a.bytes));
+        out.sort_by_key(|u| std::cmp::Reverse(u.bytes));
         Ok(out)
     }
 
