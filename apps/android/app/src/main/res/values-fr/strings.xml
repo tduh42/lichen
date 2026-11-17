@@ -908,4 +908,17 @@
     <string name="map_waits_tor">La carte attend pendant que Tor est activé</string>
     <string name="map_waits_tor_note">Ses tuiles viennent d’OpenFreeMap en direct, hors de Tor : elles montreraient la zone que tu regardes.</string>
     <string name="map_load_once">Charger la carte cette fois</string>
+    <string name="tcp_failed">Impossible de joindre la radio : %1$s</string>
+    <string name="tcp_not_encrypted">non chiffré</string>
+    <string name="licences">Licences</string>
+    <string name="licences_row">GNU GPL 3 ou ultérieure, et ce que lichen inclut</string>
+    <string name="licences_note">lichen est un logiciel libre sous licence publique générale GNU, version 3 ou ultérieure : tu peux l’utiliser, l’étudier, le partager et le modifier. Son code source est sur GitHub.</string>
+    <string name="licences_included">Inclus</string>
+    <string name="licences_crates">Crates Rust du cœur (%1$d)</string>
+    <string name="licence_on_page">La licence est sur la page ci-dessus.</string>
+    <string name="report_problem">Signaler un problème</string>
+    <string name="report_row">Un journal sans tes messages, à envoyer aux développeurs</string>
+    <string name="report_note">Ce que lichen a fait récemment, pour ses développeurs : les versions, le modèle de ta radio, son firmware et ses réglages, et le journal récent de l’app. Aucun message, aucune clé, aucun nom ni aucune position n’y figure. Relis-le, puis envoie-le avec quelques mots sur ce qui n’a pas marché.</string>
+    <string name="report_share">Partager le rapport</string>
+    <string name="report_subject">Rapport de problème lichen</string>
 </resources>

@@ -22,6 +22,8 @@ lichen is licensed under the GNU General Public License, version 3 or later (`LI
 
 The Rust crates come from crates.io, pinned in `Cargo.lock`. `cargo deny check licenses` (run by `scripts/check.sh` and CI) accepts only licences that can be combined into a GPLv3 work; the list is in `deny.toml`.
 
+Both apps show all of this in Settings › About › Licences, with the licence files of every Rust crate the core links on iOS and Android: `assets/licences/licences.json`, made by `python3 -I scripts/licences.py` from `cargo metadata`, `apps/ios/project.yml` and the Android version catalogue; `scripts/check.sh` fails when it is not current.
+
 ## Services
 
 - **Maps:** styles and tiles from [OpenFreeMap](https://openfreemap.org/), map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL). Both apps show the attribution on the map.

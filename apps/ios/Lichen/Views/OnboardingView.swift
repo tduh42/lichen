@@ -112,6 +112,7 @@ private struct WelcomeView: View {
 struct PairingView: View {
     var done: (() -> Void)?
     @Environment(AppModel.self) private var model
+    @State private var address = TcpCompanion.lastTyped
 
     var body: some View {
         ScrollView {
@@ -152,6 +153,7 @@ struct PairingView: View {
                 }
                 .card(padding: 16)
                 .padding(.top, 8)
+                network
                 if let done {
                     Button("Try the demo network instead") {
                         model.startDemo()
@@ -181,6 +183,38 @@ struct PairingView: View {
         case let .connecting(name): String(localized: "Connecting to \(name)…")
         case let .connected(name): String(localized: "\(name) connected")
         default: String(localized: "Searching over Bluetooth…")
+        }
+    }
+
+    /// A companion on Wi-Fi, or a USB radio relayed by `lichen bridge`; the link is clear and
+    /// unauthenticated, and the screen says so (review of 2026-11-15, SR-31).
+    @ViewBuilder private var network: some View {
+        SectionLabel("Network").padding(.top, 8)
+        Text("A companion on Wi-Fi, or a USB radio relayed by a computer (lichen bridge; the simulator reaches it at 127.0.0.1:5000). The network link to the radio is not encrypted: on a shared network, someone can read and change MeshCore chats, contacts and channels. lichen messages stay end-to-end encrypted.")
+            .font(.system(.subheadline))
+            .foregroundStyle(Theme.tx2)
+            .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+            TextField("host:port", text: $address)
+                .accessibilityIdentifier("tcpAddress")
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.system(.callout, design: .monospaced))
+                .padding(12)
+                .background(Theme.s1, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+                .onSubmit { model.connectTcp(address) }
+            Button("Connect") { model.connectTcp(address) }
+                .buttonStyle(SecondaryButtonStyle(height: 46))
+                .frame(width: 120)
+                .disabled(tcpAddress(text: address) == nil)
+        }
+        if let error = model.tcpError {
+            Text("Could not reach the radio: \(error)")
+                .font(.system(.footnote))
+                .foregroundStyle(Theme.danger)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

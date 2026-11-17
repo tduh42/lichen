@@ -23,6 +23,8 @@ android {
     compileSdk = 37
     // The sticker set (ADR-0025), shared with iOS: assets `noto/manifest.json` and the files.
     sourceSets.getByName("main").assets.srcDir("../../../assets/stickers")
+    // Settings › About › Licences (scripts/licences.py): asset `licences.json`.
+    sourceSets.getByName("main").assets.srcDir("../../../assets/licences")
     // The NDK the core is built with (CLAUDE.md); AGP strips the library's symbols with it.
     ndkVersion = "28.2.13676358"
 

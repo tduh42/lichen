@@ -77,7 +77,14 @@ fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean
  * about. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit, radio: () -> Unit = {}) {
+fun SettingsScreen(
+    model: AppModel,
+    pair: () -> Unit,
+    identity: () -> Unit,
+    radio: () -> Unit = {},
+    licences: () -> Unit = {},
+    report: () -> Unit = {},
+) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
@@ -302,6 +309,17 @@ fun SettingsScreen(model: AppModel, pair: () -> Unit, identity: () -> Unit, radi
                         }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
+                    CardDivider()
+                    Row(Modifier.fillMaxWidth().clickable(onClick = licences), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.licences), stringResource(R.string.licences_row)) }
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
+                    }
+                    CardDivider()
+                    // ADR-0045: no message, key, name or position in it.
+                    Row(Modifier.fillMaxWidth().clickable(onClick = report), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.report_problem), stringResource(R.string.report_row)) }
+                        Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
+                    }
                 }
             }
         }
@@ -408,7 +426,12 @@ private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(model.nodeName.ifEmpty { stringResource(R.string.radio) }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
                 Text(
-                    if (model.isDemo) stringResource(R.string.demo_network) else "${model.linkKind} · ${stringResource(R.string.radio_connected_short)}",
+                    when {
+                        model.isDemo -> stringResource(R.string.demo_network)
+                        // SR-31: the network link to the radio is clear.
+                        model.linkKind == "TCP" -> "TCP · ${stringResource(R.string.radio_connected_short)} · ${stringResource(R.string.tcp_not_encrypted)}"
+                        else -> "${model.linkKind} · ${stringResource(R.string.radio_connected_short)}"
+                    },
                     fontSize = 13.sp, color = t.tx2,
                 )
             }
@@ -432,7 +455,8 @@ private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
             Text(stringResource(R.string.airtime_left_short), fontSize = 13.sp, color = t.tx2)
             AirtimeMeter(model.budget.usedMs, model.budget.limitMs, large = true)
         }
-        if (model.isConnected && !model.isDemo) {
+        // Over TCP, also while it reconnects: stops trying.
+        if ((model.isConnected || model.tcp.target != null) && !model.isDemo) {
             SecondaryButton(stringResource(R.string.disconnect), background = t.sosBg, foreground = t.sosFg) { model.disconnect() }
         }
     }
