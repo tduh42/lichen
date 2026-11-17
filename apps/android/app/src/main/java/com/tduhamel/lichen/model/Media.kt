@@ -31,6 +31,10 @@ class VoiceRecorder {
     var elapsed by mutableStateOf(0.0)
         private set
 
+    /** The longest this recording may be, seconds: 15, 6 for a group (ADR-0035). */
+    var limit by mutableStateOf(MAX_SECONDS)
+        private set
+
     /** The conversation the recording is for: only that conversation shows it and sends it. */
     var chat by mutableStateOf<ChatId?>(null)
         private set
@@ -44,8 +48,10 @@ class VoiceRecorder {
     /** Starts recording (the RECORD_AUDIO permission is granted); false when the microphone
      * cannot be opened. */
     @SuppressLint("MissingPermission")
-    fun start(chat: ChatId): Boolean {
+    fun start(chat: ChatId, maxSeconds: Int = MAX_SECONDS): Boolean {
         if (recording) return this.chat == chat
+        limit = maxSeconds.coerceIn(1, MAX_SECONDS)
+        val most = RATE * limit
         val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val r = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
@@ -71,8 +77,8 @@ class VoiceRecorder {
         }
         thread = Thread({
             val buf = ShortArray(800)
-            while (recording && count < MAX_SAMPLES) {
-                val n = r.read(buf, 0, minOf(buf.size, MAX_SAMPLES - count))
+            while (recording && count < most) {
+                val n = r.read(buf, 0, minOf(buf.size, most - count))
                 if (n > 0) {
                     buf.copyInto(samples, count, 0, n)
                     count += n

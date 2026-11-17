@@ -30,6 +30,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material.icons.outlined.ExpandLess
+import androidx.compose.material.icons.outlined.ExpandMore
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -93,6 +98,8 @@ private data class Row(
     /** Pinned since (Unix ms), and muted now. */
     val pinnedAt: Long? = null,
     val muted: Boolean = false,
+    /** Out of the list, under "Archived" (ADR-0034). */
+    val archived: Boolean = false,
 ) {
     /** A node, lichen or MeshCore (can be renamed): not a group or a channel. */
     val contact: Boolean get() = id.nodeKey != null
@@ -114,7 +121,8 @@ fun ConversationsScreen(
     var deleting by remember { mutableStateOf<Row?>(null) }
     var renaming by remember { mutableStateOf<Row?>(null) }
 
-    val rows = buildList {
+    var showingArchived by remember { mutableStateOf(false) }
+    val all = buildList {
         for (g in model.groups) {
             val chat = ChatId.group(g.gid)
             val last = model.last(chat)
@@ -162,7 +170,10 @@ fun ConversationsScreen(
             )
         }
         // Pinned first (the latest pinned on top), then the most recent.
-    }.sortedWith(compareByDescending<Row> { it.pinnedAt ?: Long.MIN_VALUE }.thenByDescending { it.atMs ?: 0L }.thenBy { it.title })
+    }.map { it.copy(archived = model.isArchived(it.id)) }
+        .sortedWith(compareByDescending<Row> { it.pinnedAt ?: Long.MIN_VALUE }.thenByDescending { it.atMs ?: 0L }.thenBy { it.title })
+    val rows = all.filter { !it.archived }
+    val archived = all.filter { it.archived }
 
     Scaffold(
         containerColor = t.bg,
@@ -197,20 +208,44 @@ fun ConversationsScreen(
             item { RadioCard(model) }
             item { StatusBanners(model, pair) }
             items(model.invitations, key = { "inv" + it.gid.hex() }) { InvitationCard(model, it) }
-            if (rows.isEmpty()) {
+            @Composable
+            fun rowsOf(list: List<Row>) = list.forEachIndexed { i, row ->
+                if (i > 0) CardDivider(inset = 72.dp)
+                SwipeToDelete({ deleting = row }) {
+                    ChatRow(
+                        row, open = { open(row.id) }, delete = { deleting = row }, rename = { renaming = row },
+                        pin = { model.setPinned(row.id, row.pinnedAt == null) },
+                        mute = { hours -> if (hours == 0) model.unmute(row.id) else model.mute(row.id, hours) },
+                        archive = { model.setArchived(row.id, !row.archived) },
+                    )
+                }
+            }
+            if (rows.isEmpty() && archived.isEmpty()) {
                 item { EmptyConversations() }
-            } else {
+            } else if (rows.isNotEmpty()) {
+                item { CardList { rowsOf(rows) } }
+            }
+            // Archived conversations (ADR-0034): one row, opened in place.
+            if (archived.isNotEmpty()) {
                 item {
                     CardList {
-                        rows.forEachIndexed { i, row ->
-                            if (i > 0) CardDivider(inset = 72.dp)
-                            SwipeToDelete({ deleting = row }) {
-                                ChatRow(
-                                    row, open = { open(row.id) }, delete = { deleting = row }, rename = { renaming = row },
-                                    pin = { model.setPinned(row.id, row.pinnedAt == null) },
-                                    mute = { hours -> if (hours == 0) model.unmute(row.id) else model.mute(row.id, hours) },
-                                )
-                            }
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp)
+                                .clickable { showingArchived = !showingArchived }
+                                .padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Icon(Icons.Outlined.Archive, null, tint = t.tx2)
+                            Text(stringResource(R.string.archived), color = t.tx, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text("${archived.size}", color = t.tx2)
+                            Icon(if (showingArchived) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, tint = t.tx2)
+                        }
+                        if (showingArchived) {
+                            CardDivider()
+                            rowsOf(archived)
                         }
                     }
                 }
@@ -263,6 +298,7 @@ private fun ChatRow(
     pin: () -> Unit,
     /** Hours to mute for, null: until turned back on, 0: unmute. */
     mute: (Int?) -> Unit,
+    archive: () -> Unit,
 ) {
     val t = lichen
     val context = LocalContext.current
@@ -284,6 +320,14 @@ private fun ChatRow(
             onClick = {
                 menu = false
                 if (row.muted) mute(0) else muteMenu = true
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(if (row.archived) R.string.unarchive else R.string.archive)) },
+            leadingIcon = { Icon(if (row.archived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) },
+            onClick = {
+                menu = false
+                archive()
             },
         )
         if (row.contact) {

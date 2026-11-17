@@ -671,6 +671,16 @@
         }
       }
     },
+    "%lld messages · %lld media": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld messages · %lld médias"
+          }
+        }
+      }
+    },
     "%lld messages, %lld media files, %@": {
       "localizations": {
         "fr": {
@@ -747,6 +757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld reçus · %lld envoyés · %lld en attente"
+          }
+        }
+      }
+    },
+    "%lld removed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld supprimés"
           }
         }
       }
@@ -1167,6 +1187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une sauvegarde laisse de côté les messages éphémères, ce qui attendait encore d’être envoyé et le partage de position. Après une restauration, tes contacts et tes groupes te voient comme après un redémarrage."
+          }
+        }
+      }
+    },
+    "A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une personne bloquée n’est pas prévenue. Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone ; sa position et son SOS dans un groupe s’affichent toujours. Ce qu’elle envoie pendant le blocage est perdu."
           }
         }
       }
@@ -1731,6 +1761,36 @@
         }
       }
     },
+    "Archive": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archiver"
+          }
+        }
+      }
+    },
+    "Archived": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivées"
+          }
+        }
+      }
+    },
+    "Archived, %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivées, %lld"
+          }
+        }
+      }
+    },
     "Ask %@ to show a new code.": {
       "localizations": {
         "fr": {
@@ -1877,6 +1937,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cap depuis le nord · ±%@"
+          }
+        }
+      }
+    },
+    "Block": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer"
+          }
+        }
+      }
+    },
+    "Block %@?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloquer %@ ?"
+          }
+        }
+      }
+    },
+    "Blocked": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bloqués"
           }
         }
       }
@@ -2037,6 +2127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clair"
+          }
+        }
+      }
+    },
+    "Clear media": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effacer les médias"
           }
         }
       }
@@ -2467,6 +2567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Copier"
+          }
+        }
+      }
+    },
+    "Could not block.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocage impossible."
           }
         }
       }
@@ -3361,6 +3471,16 @@
         }
       }
     },
+    "Files": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichiers"
+          }
+        }
+      }
+    },
     "Find your people": {
       "localizations": {
         "fr": {
@@ -3407,6 +3527,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Diffusé à tout le canal, sans accusé de réception"
+          }
+        }
+      }
+    },
+    "Flooded to the group: %@ · ≈ %@ s of our airtime; every repeater adds as much": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diffusé au groupe : %@ · ≈ %@ s de notre temps d’antenne ; chaque répéteur en ajoute autant"
           }
         }
       }
@@ -3841,6 +3971,16 @@
         }
       }
     },
+    "Hides them": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les masque"
+          }
+        }
+      }
+    },
     "History": {
       "localizations": {
         "fr": {
@@ -3951,6 +4091,16 @@
         }
       }
     },
+    "In all: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En tout : %@"
+          }
+        }
+      }
+    },
     "In lichen: Add a contact › Scan. They join %@ and you become a verified contact for them.": {
       "localizations": {
         "fr": {
@@ -3977,6 +4127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inclus"
+          }
+        }
+      }
+    },
+    "Internet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Internet"
           }
         }
       }
@@ -4821,6 +4981,16 @@
         }
       }
     },
+    "Mark as read": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marquer comme lu"
+          }
+        }
+      }
+    },
     "Meanwhile your groups get a beacon without position every 2 minutes, to locate you by radio.": {
       "localizations": {
         "fr": {
@@ -4837,6 +5007,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Médias"
+          }
+        }
+      }
+    },
+    "Media older than 1 year": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus d’un an"
+          }
+        }
+      }
+    },
+    "Media older than 30 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus de 30 jours"
+          }
+        }
+      }
+    },
+    "Media older than 90 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus de 90 jours"
+          }
+        }
+      }
+    },
+    "Media, files and voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias, fichiers et vocaux"
           }
         }
       }
@@ -5107,6 +5317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mode"
+          }
+        }
+      }
+    },
+    "More": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plus"
           }
         }
       }
@@ -5421,6 +5641,26 @@
         }
       }
     },
+    "No conversations yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de conversation."
+          }
+        }
+      }
+    },
+    "No files in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun fichier dans cette conversation."
+          }
+        }
+      }
+    },
     "No longer in the group: %@": {
       "localizations": {
         "fr": {
@@ -5477,6 +5717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun chemin vers %@"
+          }
+        }
+      }
+    },
+    "No photos in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune photo dans cette conversation."
           }
         }
       }
@@ -5541,6 +5791,16 @@
         }
       }
     },
+    "No voice messages in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun message vocal dans cette conversation."
+          }
+        }
+      }
+    },
     "Nobody": {
       "localizations": {
         "fr": {
@@ -5557,6 +5817,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Personne d'autre pour l'instant. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
+          }
+        }
+      }
+    },
+    "Nobody is blocked.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne n’est bloqué."
           }
         }
       }
@@ -5667,6 +5937,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Non remis : %@"
+          }
+        }
+      }
+    },
+    "Not downloaded": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas téléchargé"
           }
         }
       }
@@ -6241,12 +6521,32 @@
         }
       }
     },
+    "Photo, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo, %@"
+          }
+        }
+      }
+    },
     "Photo: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Photo : %@"
+          }
+        }
+      }
+    },
+    "Photos": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos"
           }
         }
       }
@@ -6261,12 +6561,22 @@
         }
       }
     },
-    "Photos and voice messages go to contacts only: in a group they would have to be flooded.": {
+    "Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder."
+            "value": "Les photos et les fichiers vont seulement aux contacts : dans un groupe, il faudrait les inonder. Les messages vocaux courts peuvent aller à un groupe."
+          }
+        }
+      }
+    },
+    "Photos, files and voice messages older than that are removed from this phone, as “Delete for me” does: their place in the conversation goes too. The other phones keep theirs.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les photos, fichiers et messages vocaux plus anciens sont supprimés de ce téléphone, comme avec « Supprimer pour moi » : leur place dans la conversation disparaît aussi. Les autres téléphones gardent les leurs."
           }
         }
       }
@@ -6731,6 +7041,16 @@
         }
       }
     },
+    "Remove": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Supprimer"
+          }
+        }
+      }
+    },
     "Remove %@": {
       "localizations": {
         "fr": {
@@ -6767,6 +7087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Retirer ma réaction"
+          }
+        }
+      }
+    },
+    "Remove the pin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retirer le repère"
           }
         }
       }
@@ -7461,6 +7791,16 @@
         }
       }
     },
+    "Send to": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer à"
+          }
+        }
+      }
+    },
     "Sender keys up to date": {
       "localizations": {
         "fr": {
@@ -7811,6 +8151,16 @@
         }
       }
     },
+    "Shows them": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les affiche"
+          }
+        }
+      }
+    },
     "Signed group messages, flooded": {
       "localizations": {
         "fr": {
@@ -7837,6 +8187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radio simulée connectée"
+          }
+        }
+      }
+    },
+    "Since %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Depuis le %@"
           }
         }
       }
@@ -8571,6 +8931,16 @@
         }
       }
     },
+    "Their messages, introductions and group posts no longer reach this phone, and their posts already in your groups are hidden. They are not told. Their position and SOS in a group still show.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone, et ceux déjà dans tes groupes sont masqués. Cette personne n’est pas prévenue. Sa position et son SOS dans un groupe s’affichent toujours."
+          }
+        }
+      }
+    },
     "Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.": {
       "localizations": {
         "fr": {
@@ -8707,6 +9077,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour."
+          }
+        }
+      }
+    },
+    "This cannot be undone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C’est définitif."
           }
         }
       }
@@ -9101,6 +9481,16 @@
         }
       }
     },
+    "Unarchive": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Désarchiver"
+          }
+        }
+      }
+    },
     "Unavailable: turn on iroh or Tor in Settings to fetch the file.": {
       "localizations": {
         "fr": {
@@ -9117,6 +9507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Indisponible : active iroh ou Tor dans les Réglages pour récupérer l'original."
+          }
+        }
+      }
+    },
+    "Unblock": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Débloquer"
           }
         }
       }
@@ -9271,6 +9671,16 @@
         }
       }
     },
+    "Usage per conversation; clear old photos, files and voice messages.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’espace par conversation ; effacer les anciens photos, fichiers et messages vocaux."
+          }
+        }
+      }
+    },
     "Use %@ again": {
       "localizations": {
         "fr": {
@@ -9357,6 +9767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Par iroh"
+          }
+        }
+      }
+    },
+    "Voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocaux"
           }
         }
       }
@@ -9701,6 +10121,26 @@
         }
       }
     },
+    "You blocked %@. Nothing they send reaches this phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as bloqué %@. Rien de ce que cette personne envoie n’arrive sur ce téléphone."
+          }
+        }
+      }
+    },
+    "You blocked this contact: unblock them first.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu as bloqué ce contact : débloque-le d’abord."
+          }
+        }
+      }
+    },
     "You closed the group": {
       "localizations": {
         "fr": {
@@ -9807,6 +10247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu as désactivé les messages éphémères"
+          }
+        }
+      }
+    },
+    "Your answer was not sent.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta réponse n’a pas été envoyée."
           }
         }
       }

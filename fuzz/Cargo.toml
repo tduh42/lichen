@@ -126,6 +126,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "text_links"
+path = "fuzz_targets/text_links.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "core_companion"
 path = "fuzz_targets/core_companion.rs"
 test = false

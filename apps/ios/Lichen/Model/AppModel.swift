@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import Observation
+import UniformTypeIdentifiers
 
 /// A conversation: `ChatRef` comes from the core (contact, group, or a plain MeshCore chat).
 typealias ChatID = ChatRef
@@ -297,6 +298,22 @@ final class AppModel {
             openRequest = chat
         }
         notifier.locked = { [weak self] in self?.lock.locked ?? false }
+        // Reply and Mark as read from a notification (ADR-0034): the answer is a message like
+        // any other, in the outbox when the radio is away.
+        notifier.onReply = { [weak self] chat, text in
+            guard let self else { return }
+            if let error = send(text, to: chat) {
+                notifier.notSent(chat, reason: error)
+            } else {
+                markRead(chat)
+                notifier.clear(chat)
+            }
+        }
+        notifier.onMarkRead = { [weak self] chat in
+            guard let self else { return }
+            markRead(chat)
+            notifier.clear(chat)
+        }
         locator.onAuthorization = { [weak self] s in self?.locationDenied = s == .denied || s == .restricted }
         locationDenied = [.denied, .restricted].contains(locator.authorization)
         shares = core.shares()
@@ -830,7 +847,7 @@ final class AppModel {
             groupsChanged()
             // Tapping it opens the admin's conversation; the invitation waits in Messages.
             notifier.message(.contact(key: admin), title: String(localized: "Group invitation"),
-                             body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"))
+                             body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"), actions: false)
         case let .groupJoined(gid, _, admin):
             if joining.removeValue(forKey: admin) != nil { joinedByInvite[admin] = gid }
             groupsChanged()
@@ -869,6 +886,9 @@ final class AppModel {
                 _ = send(say, to: chat)
             }
             #endif
+        case .chatPrefsChanged:
+            // An archived conversation came back with a message (ADR-0034).
+            refreshPrefs()
         case .channelsUpdated:
             channels = core.channels()
             refreshPrefs()
@@ -919,7 +939,7 @@ final class AppModel {
             // A member asks where we are and we answer (SOS or this group's consent, §11).
             let chat = ChatID.group(gid: gid)
             notifier.message(chat, title: title(of: chat),
-                             body: String(localized: "\(name(of: by)) is searching for you"))
+                             body: String(localized: "\(name(of: by)) is searching for you"), actions: false)
             searchedBy = core.searchedBy(nowMs: now())
         case .searchUpdated:
             searchVersion += 1
@@ -1003,6 +1023,42 @@ final class AppModel {
         "\(isDemo ? "demo" : core.fingerprint().joined())|\(chat.storageKey)"
     }
 
+    /// The message the draft of `chat` answers (§6.2), kept with the draft (ADR-0034).
+    func replyDraft(_ chat: ChatID) -> Int64? {
+        drafts[draftKey(chat) + "|reply"].flatMap { Int64($0) }
+    }
+
+    func setReplyDraft(_ chat: ChatID, _ id: Int64?) {
+        let key = draftKey(chat) + "|reply"
+        let value = id.map { String($0) }
+        guard drafts[key] != value else { return }
+        drafts[key] = value
+        Self.saveDrafts(drafts)
+    }
+
+    /// A recording stopped because its conversation was left: offered there again, to listen
+    /// to, send or discard (ADR-0034). In memory only, like the recording itself.
+    struct VoiceDraft {
+        let pcm: [Int16]
+        let mode: UInt8
+    }
+
+    @ObservationIgnored var voiceDrafts: [ChatID: VoiceDraft] = [:]
+
+    /// Conversation `chat` is left: a recording made for it stops and waits for it.
+    func keepRecording(for chat: ChatID) {
+        guard recorder.chat == chat else { return }
+        guard recorder.recording else {
+            // Still asking for the microphone: nothing recorded.
+            recorder.cancel(for: chat)
+            return
+        }
+        if let pcm = recorder.stop(keep: true) {
+            let mode: UInt8 = if case .group = chat { Self.groupVoiceMode } else { UInt8(voiceMode) }
+            voiceDrafts[chat] = VoiceDraft(pcm: pcm, mode: mode)
+        }
+    }
+
     /// Drafts by identity, in lichen's folder: like the history, out of backups (SR-22). They
     /// used to be in the preferences, which backups carry: moved once, then removed there.
     @ObservationIgnored private var drafts: [String: String] = AppModel.loadDrafts()
@@ -1050,6 +1106,135 @@ final class AppModel {
 
     func refreshPrefs() {
         prefs = Dictionary(core.chatPrefs().map { ($0.chat, $0) }, uniquingKeysWith: { a, _ in a })
+        blocked = core.blocked()
+    }
+
+    // MARK: blocking and archiving (ADR-0034)
+
+    /// People the user blocked, the latest first.
+    var blocked: [BlockedContact] = []
+
+    func isBlocked(_ node: Data) -> Bool { blocked.contains { $0.node == node } }
+
+    /// The node behind a direct conversation, lichen or MeshCore.
+    func node(of chat: ChatID) -> Data? {
+        switch chat {
+        case let .contact(key), let .mesh(key): key
+        case .group, .channel, .room: nil
+        }
+    }
+
+    /// Blocks contact `node`: local, they are not told. Returns an error to show, or nil.
+    func block(_ node: Data) -> String? {
+        do {
+            try core.block(node: node, nowMs: now())
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not block.")
+        }
+        refreshPrefs()
+        reloadGroupChats()
+        pump()
+        return nil
+    }
+
+    func unblock(_ node: Data) {
+        try? core.unblock(node: node)
+        refreshPrefs()
+        reloadGroupChats()
+    }
+
+    /// A block hides (or shows again) a member's posts already in group histories.
+    private func reloadGroupChats() {
+        for chat in Array(chats.keys) {
+            if case .group = chat { load(chat) }
+        }
+        conversations = core.conversations()
+    }
+
+    // MARK: sharing into lichen (ADR-0034)
+
+    /// A file or a photo another app opened in lichen ("Open in lichen"), read, its copy gone,
+    /// its name sanitised: it waits for the user to choose a conversation.
+    struct SharedFile: Identifiable {
+        let id = UUID()
+        let name: String
+        let data: Data
+        let isImage: Bool
+    }
+
+    var incomingShare: SharedFile?
+    /// What the user chose to send to a conversation: its composer takes it.
+    var sharedFor: [ChatID: SharedFile] = [:]
+    var shareError: String?
+
+    /// A URL the system opened lichen with. Only a file is taken: lichen registers no URL
+    /// scheme, and anything else is ignored. The system's copy (Documents/Inbox) is read once,
+    /// at most 64 MB, and deleted.
+    func receiveShared(_ url: URL) {
+        guard url.isFileURL else { return }
+        let inbox = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Inbox", isDirectory: true).standardizedFileURL.path
+        defer {
+            if let inbox, url.standardizedFileURL.path.hasPrefix(inbox + "/") {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        switch readPicked(url) {
+        case let .success(draft):
+            let safe = fitFileName(name: draft.name, maxBytes: 64)
+            let name = safe.isEmpty ? "file" : safe
+            let type = UTType(filenameExtension: (name as NSString).pathExtension)
+            incomingShare = SharedFile(name: name, data: draft.data, isImage: type?.conforms(to: .image) ?? false)
+        case let .failure(problem):
+            shareError = problem.message
+        }
+    }
+
+    /// Sends what was shared to `chat`: its conversation opens on the photo or file sheet.
+    func share(_ shared: SharedFile, to chat: ChatID) {
+        incomingShare = nil
+        sharedFor[chat] = shared
+        tab = .messages
+        openRequest = chat
+    }
+
+    // MARK: media and storage (ADR-0034)
+
+    /// What `chat` holds: photos, files and voice messages, the newest first.
+    func chatMedia(_ chat: ChatID) -> [StoredMessage] {
+        (try? core.chatMedia(chat: chat, beforeId: nil, limit: 2_000)) ?? []
+    }
+
+    /// What each conversation takes on this phone: its messages and the media kept for it,
+    /// and the files downloaded over the bridge for it.
+    func storageUsage() -> [(usage: ChatUsage, bytes: Int64)] {
+        core.storageUsage().map { u in
+            let downloaded = u.announced.compactMap { downloads[$0] }.reduce(Int64(0)) { sum, url in
+                sum + ((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0)
+            }
+            return (u, Int64(clamping: u.bytes) + downloaded)
+        }
+    }
+
+    /// Removes photos, files and voice messages older than `days` days from this phone, as
+    /// "delete for me" does (their downloads go with them, SR-28). Returns how many.
+    func clearMedia(olderThanDays days: Int) -> Int {
+        let before = Int64((Date().timeIntervalSince1970 - Double(days) * 86_400) * 1000)
+        let n = (try? core.clearMediaOlderThan(beforeMs: before)) ?? 0
+        for chat in Array(chats.keys) { load(chat) }
+        conversations = core.conversations()
+        pump()
+        return Int(n)
+    }
+
+    /// Archived: out of the list, under "Archived", until a message comes (unless muted).
+    func isArchived(_ chat: ChatID) -> Bool { prefs[chat]?.archived ?? false }
+
+    func setArchived(_ chat: ChatID, _ archived: Bool) {
+        try? core.setArchived(chat: chat, archived: archived)
+        refreshPrefs()
     }
 
     func isPinned(_ chat: ChatID) -> Bool { prefs[chat]?.pinnedAtMs != nil }
@@ -1091,6 +1276,8 @@ final class AppModel {
     func deleteConversation(_ chat: ChatID) {
         try? core.deleteConversation(chat: chat)
         setDraft(chat, "")
+        setReplyDraft(chat, nil)
+        voiceDrafts[chat] = nil
         chats[chat] = nil
         conversations = core.conversations()
     }
@@ -1226,9 +1413,26 @@ final class AppModel {
         return try? core.estimateDatagram(to: key, len: datagramLen)
     }
 
+    /// What a voice message of `len` bytes costs: on the path to a contact, or our own floods
+    /// to a group (both copies, §13.1).
+    func voiceEstimate(_ chat: ChatID, datagramLen: UInt32) -> Estimate? {
+        if case .group = chat { return core.estimateGroupDatagram(len: datagramLen) }
+        return estimate(chat, datagramLen: datagramLen)
+    }
+
+    /// A group's voice notes (ADR-0035): Codec2 700C, 6 seconds at most (5 fragments).
+    static let groupVoiceMode: UInt8 = 0
+    static let groupVoiceSeconds: TimeInterval = 6
+
     func sendVoice(_ voice: PreparedVoice, to chat: ChatID) -> String? {
-        guard case let .contact(key) = chat else { return LichenError.MediaInGroup.display }
-        return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
+        switch chat {
+        case let .contact(key):
+            return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
+        case let .group(gid):
+            return sendMedia(chat) { try core.sendGroupVoice(gid: gid, voice: voice, sentAt: $0, nowMs: $1) }
+        case .mesh, .channel, .room:
+            return LichenError.MediaInGroup.display
+        }
     }
 
     /// A small file over LoRa (§13.2, ADR-0022), compressed when smaller (ADR-0023): up to 8 KB
@@ -1635,6 +1839,16 @@ final class AppModel {
         shares = core.shares()
         updateLocator()
         pump()
+    }
+
+    /// A place written in a message (ADR-0034), on the map until dismissed.
+    var mapPin: MapPin?
+
+    /// Shows a place from a message's text on the map: lichen's own map, nothing fetched but
+    /// its tiles (offline areas included).
+    func showOnMap(lat: Double, lon: Double) {
+        mapPin = MapPin(lat: lat, lon: lon, version: (mapPin?.version ?? 0) + 1)
+        tab = .map
     }
 
     func setSos(_ on: Bool) {
@@ -2156,6 +2370,16 @@ final class AppModel {
     var totalUnread: Int { conversations.reduce(0) { $0 + Int($1.unread) } }
 }
 
+/// A place from a message's text, shown on the map; `version` tells a new request apart.
+struct MapPin: Equatable {
+    let lat: Double
+    let lon: Double
+    let version: Int
+
+    /// "45.12340, 5.67890".
+    var label: String { String(format: "%.5f, %.5f", lat, lon) }
+}
+
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }
 
@@ -2313,7 +2537,7 @@ extension LichenError {
             let minutes = max(1, Int((Double(waitS) / 60).rounded(.up)))
             return String(localized: "Not enough airtime left this hour: it fits in \(minutes) min.")
         case .MediaInGroup:
-            return String(localized: "Photos and voice messages go to contacts only: in a group they would have to be flooded.")
+            return String(localized: "Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.")
         case .BadImage: return String(localized: "This image could not be read.")
         case .NotAPreview: return String(localized: "There is no full version to ask for.")
         case .NotSearching: return String(localized: "No search is running for this person.")
@@ -2332,6 +2556,7 @@ extension LichenError {
         case .WrongBackupWords: return String(localized: "These 24 words are not the ones of this backup.")
         case .BackupDamaged: return String(localized: "This backup is damaged or incomplete: nothing was restored.")
         case .NoPath: return String(localized: "No repeater on the way: the radio hears it directly, or does not know a path yet.")
+        case .Blocked: return String(localized: "You blocked this contact: unblock them first.")
         }
     }
 }

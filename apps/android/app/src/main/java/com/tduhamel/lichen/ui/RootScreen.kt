@@ -103,6 +103,14 @@ fun RootScreen(model: AppModel) {
                 map = { tab("map") },
             )
         }
+        // A place in a message (ADR-0034): the Map tab, on it.
+        LaunchedEffect(model.openMap) {
+            if (!model.openMap) return@LaunchedEffect
+            model.openMap = false
+            tab("map")
+        }
+        // Shared into lichen from another app (ADR-0034): where to send it.
+        model.incomingShare?.let { share -> ShareTargetSheet(model, share) { model.incomingShare = null } }
         // An SOS notification, or the debug extra `screen search`: the Search tab on them.
         LaunchedEffect(model.openSearch) {
             val who = model.openSearch ?: return@LaunchedEffect
@@ -138,7 +146,14 @@ fun RootScreen(model: AppModel) {
                     model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
                     nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
+                    blocked = { nav.navigate("blocked") }, storage = { nav.navigate("storage") },
                 )
+            }
+            composable("blocked") { BlockedScreen(model, back = { nav.popBackStack() }) }
+            composable("storage") { StorageScreen(model, back = { nav.popBackStack() }) }
+            composable("media/{id}") { e ->
+                val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
+                if (chat != null) ChatMediaScreen(model, chat, back = { nav.popBackStack() })
             }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
             composable("radio") { RadioSettingsScreen(model, back = { nav.popBackStack() }) }
@@ -171,7 +186,10 @@ fun RootScreen(model: AppModel) {
             composable("chat/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
                 if (chat != null) {
-                    ChatScreen(model, chat, back = { nav.popBackStack() }, details = { nav.navigate("group/${chat.route}") })
+                    ChatScreen(
+                        model, chat, back = { nav.popBackStack() }, details = { nav.navigate("group/${chat.route}") },
+                        media = { nav.navigate("media/${chat.route}") },
+                    )
                 }
             }
         }

@@ -157,7 +157,7 @@
     <string name="err_not_allowed">Seul l\'administrateur du groupe peut faire ça.</string>
     <string name="err_invalid_key">Clé invalide.</string>
     <string name="err_over_budget">Plus assez de temps d\'antenne cette heure : ça passera dans %1$d min.</string>
-    <string name="err_media_in_group">Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder.</string>
+    <string name="err_media_in_group">Les photos et les fichiers vont seulement aux contacts : dans un groupe, il faudrait les inonder. Les messages vocaux courts peuvent aller à un groupe.</string>
     <string name="err_bad_image">Impossible de lire cette image.</string>
     <string name="err_not_a_preview">Il n\'y a pas de version complète à demander.</string>
     <string name="err_not_searching">Aucune recherche en cours pour cette personne.</string>
@@ -1084,4 +1084,62 @@
     <string name="meshcore_room_login">Serveur de salon MeshCore · %1$s</string>
     <string name="waiting_room_ack">En attente de l’accusé du salon</string>
     <string name="kept_by_room">Gardé par le salon · %1$s s de temps d’antenne</string>
+    <!-- Places in messages (ADR-0034) -->
+    <string name="remove_pin">Retirer le repère</string>
+    <!-- Notification actions (ADR-0034) -->
+    <string name="mark_as_read">Marquer comme lu</string>
+    <string name="answer_not_sent">Ta réponse n’a pas été envoyée.</string>
+    <!-- Block and archive (ADR-0034) -->
+    <string name="err_blocked">Tu as bloqué ce contact : débloque-le d’abord.</string>
+    <string name="archived">Archivées</string>
+    <string name="archive">Archiver</string>
+    <string name="unarchive">Désarchiver</string>
+    <string name="block">Bloquer</string>
+    <string name="unblock">Débloquer</string>
+    <string name="block_q">Bloquer %1$s ?</string>
+    <string name="block_note">Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone, et ceux déjà dans tes groupes sont masqués. Cette personne n’est pas prévenue. Sa position et son SOS dans un groupe s’affichent toujours.</string>
+    <string name="you_blocked">Tu as bloqué %1$s. Rien de ce que cette personne envoie n’arrive sur ce téléphone.</string>
+    <string name="blocked">Bloqués</string>
+    <string name="nobody_blocked">Personne n’est bloqué.</string>
+    <string name="blocked_since">Depuis le %1$s</string>
+    <string name="blocked_note">Une personne bloquée n’est pas prévenue. Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone ; sa position et son SOS dans un groupe s’affichent toujours. Ce qu’elle envoie pendant le blocage est perdu.</string>
+    <string name="more">Plus</string>
+    <!-- Media and storage (ADR-0034) -->
+    <string name="media_files_voice">Médias, fichiers et vocaux</string>
+    <string name="photos">Photos</string>
+    <string name="files">Fichiers</string>
+    <string name="voice">Vocaux</string>
+    <string name="no_photos_here">Aucune photo dans cette conversation.</string>
+    <string name="no_files_here">Aucun fichier dans cette conversation.</string>
+    <string name="no_voice_here">Aucun message vocal dans cette conversation.</string>
+    <string name="storage_note">L’espace par conversation ; effacer les anciens photos, fichiers et messages vocaux.</string>
+    <string name="storage_in_all">En tout : %1$s</string>
+    <string name="no_conversations_yet">Pas encore de conversation.</string>
+    <string name="clear_media">Effacer les médias</string>
+    <string name="clear_media_note">Les photos, fichiers et messages vocaux plus anciens sont supprimés de ce téléphone, comme avec « Supprimer pour moi » : leur place dans la conversation disparaît aussi. Les autres téléphones gardent les leurs.</string>
+    <string name="cannot_be_undone">C’est définitif.</string>
+    <string name="remove">Supprimer</string>
+    <string name="media_older_30">Médias de plus de 30 jours</string>
+    <string name="media_older_90">Médias de plus de 90 jours</string>
+    <string name="media_older_365">Médias de plus d’un an</string>
+    <plurals name="messages_media">
+        <item quantity="one">%1$d message · %2$d médias</item>
+        <item quantity="many">%1$d messages · %2$d médias</item>
+        <item quantity="other">%1$d messages · %2$d médias</item>
+    </plurals>
+    <plurals name="media_removed">
+        <item quantity="one">%1$d supprimé</item>
+        <item quantity="many">%1$d supprimés</item>
+        <item quantity="other">%1$d supprimés</item>
+    </plurals>
+    <!-- Sharing into lichen (ADR-0034) -->
+    <string name="send_to">Envoyer à</string>
+    <string name="plain_text_only">Une discussion MeshCore ne transporte que du texte.</string>
+    <plurals name="shared_files">
+        <item quantity="one">%1$d fichier ou photo</item>
+        <item quantity="many">%1$d fichiers ou photos</item>
+        <item quantity="other">%1$d fichiers ou photos</item>
+    </plurals>
+    <!-- Voice notes in groups (ADR-0035) -->
+    <string name="group_voice_cost">Diffusé au groupe : %1$s · ≈ %2$s s de notre temps d’antenne ; chaque répéteur en ajoute autant</string>
 </resources>

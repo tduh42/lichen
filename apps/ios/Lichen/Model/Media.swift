@@ -10,6 +10,8 @@ final class VoiceRecorder {
 
     private(set) var recording = false
     private(set) var elapsed: TimeInterval = 0
+    /// The longest this recording may be: 15 s, 6 s for a group (ADR-0035).
+    private(set) var limit: TimeInterval = VoiceRecorder.maxSeconds
     var denied = false
     /// The conversation the recording is for (set from the tap, before the permission prompt):
     /// only that conversation shows it and sends it.
@@ -19,9 +21,10 @@ final class VoiceRecorder {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private let url = FileManager.default.temporaryDirectory.appendingPathComponent("voice.caf")
 
-    func start(for chat: ChatID) async {
+    func start(for chat: ChatID, maxSeconds: TimeInterval = VoiceRecorder.maxSeconds) async {
         if recording { return }
         self.chat = chat
+        limit = min(maxSeconds, Self.maxSeconds)
         guard await AVAudioApplication.requestRecordPermission() else {
             denied = true
             self.chat = nil
@@ -45,13 +48,13 @@ final class VoiceRecorder {
             return
         }
         recorder = r
-        r.record(forDuration: Self.maxSeconds)
+        r.record(forDuration: limit)
         recording = true
         elapsed = 0
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let r = self.recorder else { return }
-                self.elapsed = r.isRecording ? r.currentTime : Self.maxSeconds
+                self.elapsed = r.isRecording ? r.currentTime : self.limit
             }
         }
     }

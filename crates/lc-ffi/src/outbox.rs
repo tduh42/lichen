@@ -276,6 +276,14 @@ impl Inner {
         {
             row = st.tombstone(row.id).ok().flatten()?;
         }
+        // A message received in an archived conversation brings it back to the list, unless
+        // it is muted (ADR-0034).
+        if !m.outgoing
+            && !matches!(m.content, Content::Notice(_))
+            && st.unarchive_on_message(&m.chat, unix_ms()).unwrap_or(false)
+        {
+            self.extra.push_back(LichenEvent::ChatPrefsChanged);
+        }
         let out = self.present(row);
         self.extra.push_back(LichenEvent::MessageChanged {
             message: out.clone(),

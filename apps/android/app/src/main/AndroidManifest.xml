@@ -51,6 +51,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Share into lichen (ADR-0034): text, photos, any file, one or several. What
+                 comes in is checked as another app's data (SR-25) before anything is read. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
             <!-- A radio plugged in over USB (OTG) opens the app, which connects to it. -->
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
@@ -60,6 +72,11 @@
                 android:resource="@xml/usb_devices" />
         </activity>
 
+        <!-- Reply and Mark as read from a message's notification (ADR-0034): only its own
+             notifications' intents reach it. -->
+        <receiver
+            android:name=".model.NotificationActions"
+            android:exported="false" />
         <service
             android:name=".model.RadioService"
             android:exported="false"

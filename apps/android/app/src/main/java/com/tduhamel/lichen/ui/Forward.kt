@@ -77,3 +77,48 @@ fun ForwardSheet(model: AppModel, m: StoredMessage, dismiss: () -> Unit) {
         }
     }
 }
+
+/** Where to send what another app shared (ADR-0034): with files or photos, a lichen contact
+ * or a group (over the Internet bridge); a text alone goes anywhere, MeshCore chats included.
+ * Blocked contacts are left out. The conversation then opens on the usual sheets. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShareTargetSheet(model: AppModel, share: com.tduhamel.lichen.model.IncomingShare, dismiss: () -> Unit) {
+    val t = lichen
+    val targets = buildList {
+        model.groups.forEach { add(Triple(it.name, it.gid, ChatId.group(it.gid))) }
+        model.contacts.filter { it.identity != null && !model.isBlocked(it.key) }
+            .forEach { add(Triple(it.name, it.key, ChatId.contact(it.key))) }
+        if (!share.hasFiles) {
+            model.channels.forEach { add(Triple(it.name, it.id, ChatId.channel(it.id))) }
+            model.contacts.filter { it.identity == null && it.person && !model.isBlocked(it.key) }
+                .forEach { add(Triple(it.name, it.key, ChatId.mesh(it.key))) }
+        }
+    }
+    ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.send_to), fontSize = 22.sp, color = t.tx)
+            if (share.hasFiles) {
+                Text(
+                    androidx.compose.ui.res.pluralStringResource(R.plurals.shared_files, share.uris.size, share.uris.size),
+                    fontSize = 13.sp, color = t.tx2,
+                )
+            }
+            LazyColumn {
+                items(targets, key = { it.third.route }) { (name, key, chat) ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { model.share(share, chat) }.padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Avatar(name, key, 40.dp)
+                        Column {
+                            Text(name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx)
+                            if (chat.plain) Text(stringResource(R.string.meshcore), fontSize = 13.sp, color = t.tx2)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

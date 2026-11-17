@@ -1,5 +1,6 @@
 use lc_proto::group::{
-    FRAGMENT_PLAIN_MAX, GroupHeader, PAYLOAD_MAX, fragments_for, open, parse, seal, stock_would_try,
+    FRAGMENT_PLAIN_MAX, GroupHeader, PAYLOAD_MAX, VOICE_MAX_FRAGMENTS, fragments_for,
+    fragments_up_to, open, parse, seal, stock_would_try,
 };
 use proptest::prelude::*;
 
@@ -26,6 +27,35 @@ fn sizes() {
     assert_eq!(fragments_for(129), Some(2));
     assert_eq!(fragments_for(256), Some(2));
     assert_eq!(fragments_for(257), None);
+    // A voice note in a group (ADR-0035): 5 fragments, 640 bytes.
+    assert_eq!(fragments_up_to(640, VOICE_MAX_FRAGMENTS), Some(5));
+    assert_eq!(fragments_up_to(641, VOICE_MAX_FRAGMENTS), None);
+    assert_eq!(fragments_up_to(129, VOICE_MAX_FRAGMENTS), Some(2));
+    assert_eq!(fragments_up_to(0, VOICE_MAX_FRAGMENTS), None);
+    assert_eq!(
+        fragments_up_to(7 * 128 + 1, 9),
+        None,
+        "the wire says 7 at most"
+    );
+}
+
+/// ADR-0035: `total` takes 3 bits; 0, above 7, and an index past it are refused.
+#[test]
+fn frag_total_takes_three_bits() {
+    let key = [9u8; 32];
+    for total in 1..=7u8 {
+        let h = header(total - 1, total);
+        let mut out = [0u8; 200];
+        let n = seal(&key, &h, &[1, 2, 3], &mut out).unwrap();
+        assert_eq!(parse(&out[..n]).map(|(h, _)| h), Some(h));
+    }
+    let mut out = [0u8; 200];
+    let n = seal(&key, &header(0, 1), &[1, 2, 3], &mut out).unwrap();
+    for frag in [0x00, 0x10, 0x51, 0x45 + 0x10] {
+        let mut p = out;
+        p[10] = frag;
+        assert_eq!(parse(&p[..n]), None, "frag {frag:#04x}");
+    }
 }
 
 proptest! {

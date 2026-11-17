@@ -273,6 +273,9 @@ impl Core {
         if !self.contacts.contains_key(to) {
             return Err(Error::UnknownContact);
         }
+        if self.is_blocked(to) {
+            return Err(Error::Blocked);
+        }
         if text.is_empty() {
             return Err(Error::Empty);
         }
@@ -550,7 +553,8 @@ impl Core {
         else {
             return false;
         };
-        if self.plain_seen(&PlainChat::Direct(key), ts, text, now) {
+        // From a node the user blocked: dropped (ADR-0034).
+        if self.is_blocked(&key) || self.plain_seen(&PlainChat::Direct(key), ts, text, now) {
             return true;
         }
         self.events.push_back(Event::PlainReceived(PlainMessage {

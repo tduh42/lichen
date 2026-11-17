@@ -14,6 +14,7 @@ pub mod fakenet;
 pub mod group;
 pub mod identity;
 pub mod import;
+pub mod links;
 pub mod location;
 pub mod mesh;
 pub mod plain;

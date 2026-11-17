@@ -30,6 +30,7 @@ import androidx.fragment.app.FragmentActivity
 import com.tduhamel.lichen.model.AppLock
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.IncomingShare
 import com.tduhamel.lichen.model.Notifications
 import com.tduhamel.lichen.model.isHex
 import com.tduhamel.lichen.ui.LichenTheme
@@ -53,7 +54,8 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (BuildConfig.DEBUG) model.applyDebug(debugOptions())
-        handle(intent)
+        // Recreated (a rotation): the same intent again, already handled.
+        if (savedInstanceState == null) handle(intent)
         biometric = BiometricPrompt(
             this, ContextCompat.getMainExecutor(this),
             object : BiometricPrompt.AuthenticationCallback() {
@@ -164,8 +166,14 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** A notification's conversation, or a radio plugged in over USB. */
+    /** A notification's conversation, a share from another app, or a radio plugged in over
+     * USB. */
     private fun handle(intent: Intent?) {
+        // Shared into lichen (ADR-0034): checked first, read only once the user picks a chat.
+        if (intent?.action == Intent.ACTION_SEND || intent?.action == Intent.ACTION_SEND_MULTIPLE) {
+            IncomingShare.from(intent, packageName)?.let { model.incomingShare = it }
+            return
+        }
         intent?.getStringExtra(Notifications.EXTRA_CHAT)?.let(ChatId::fromRoute)?.let { model.openChat = it }
         // An SOS notification opens its search.
         intent?.getStringExtra(Notifications.EXTRA_SOS)?.takeIf { it.isHex(32) }?.let { model.openSearch = it.lowercase() }

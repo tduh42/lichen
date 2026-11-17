@@ -11,6 +11,19 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.font.FontStyle
 import com.tduhamel.lichen.core.QuoteKind
+import com.tduhamel.lichen.core.TextTarget
+import com.tduhamel.lichen.core.textLinks
+import androidx.compose.material.icons.outlined.Map
+import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Archive
+import androidx.compose.material.icons.outlined.Unarchive
+import androidx.compose.material.icons.outlined.Block
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
 import com.tduhamel.lichen.core.ChatRef
 import com.tduhamel.lichen.core.Quote
 import androidx.compose.material.icons.filled.Close
@@ -127,6 +140,7 @@ import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.WaitReason
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.VoiceRecorder
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.Notifications
 import com.tduhamel.lichen.model.display
@@ -141,7 +155,7 @@ import com.tduhamel.lichen.model.writtenEarlierMs
 /** One conversation (mockup `chat`). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit) {
+fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> Unit, media: () -> Unit = {}) {
     val t = lichen
     var error by remember { mutableStateOf<String?>(null) }
     val noLongerHere = stringResource(R.string.message_no_longer_here)
@@ -150,6 +164,8 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var renaming by remember { mutableStateOf(false) }
     /** What a MeshCore chat is (§15.6). */
     var plainInfo by remember { mutableStateOf(false) }
+    /** Blocking the other side, to confirm (ADR-0034). */
+    var blocking by remember { mutableStateOf(false) }
     val messages = model.chats[chat].orEmpty()
     val list = rememberLazyListState()
 
@@ -159,8 +175,9 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.visibleChat = chat
         onDispose {
             if (model.visibleChat == chat) model.visibleChat = null
-            // A recording belongs to its conversation: leaving it drops the recording.
-            model.recorder.cancel(chat)
+            // A recording belongs to its conversation: leaving it stops the recording, which
+            // waits there to be sent or discarded (ADR-0034).
+            model.keepRecording(chat)
         }
     }
     // The first message that was unread when the chat opened, and how many were: the divider
@@ -168,8 +185,10 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     var dividerBefore by remember(chat) { mutableStateOf<Long?>(null) }
     var unreadAtOpen by remember(chat) { mutableIntStateOf(0) }
     var highlight by remember(chat) { mutableStateOf<Long?>(null) }
-    // The message being answered (§6.2).
+    // The message being answered (§6.2), kept with the draft (ADR-0034).
     var replyTo by remember(chat) { mutableStateOf<StoredMessage?>(null) }
+    var replyRestored by remember(chat) { mutableStateOf(false) }
+    LaunchedEffect(replyTo?.id, replyRestored) { if (replyRestored) model.setReplyDraft(chat, replyTo?.id) }
     /** Our message being edited (§6.4). */
     var editing by remember(chat) { mutableStateOf<StoredMessage?>(null) }
     LaunchedEffect(chat) {
@@ -178,6 +197,12 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             model.focus = null
             if (model.loadUntil(chat, id)) highlight = id else error = noLongerHere
         }
+        // The message the draft answers, kept with it (ADR-0034).
+        model.replyDraft(chat)?.let { id ->
+            val m = if (model.loadUntil(chat, id)) model.chats[chat].orEmpty().firstOrNull { it.id == id } else null
+            if (m != null && m.referable) replyTo = m else model.setReplyDraft(chat, null)
+        }
+        replyRestored = true
         // Before marking them read: where the unread messages start.
         val unread = model.chats[chat].orEmpty().filter { !it.outgoing && !it.read }
         dividerBefore = unread.firstOrNull()?.id
@@ -267,6 +292,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             },
             actions = {
                 TimerMenu(model, chat) { error = it }
+                MoreMenu(model, chat, block = { blocking = true }, archived = back, media = media)
                 if (chat.group) {
                     IconButton(onClick = details) { Icon(Icons.Outlined.Info, stringResource(R.string.group_details), tint = t.tx) }
                 } else if (chat.plain) {
@@ -392,7 +418,28 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
             }
         }
-        Composer(model, chat, replyTo, { replyTo = null }, editing, { editing = null }) { error = it }
+        val blockedNode = chat.nodeKey?.takeIf { model.isBlocked(it) }
+        if (blockedNode != null) {
+            // Nothing to write with: they are blocked (ADR-0034).
+            BlockedBar(model.title(chat)) { model.unblock(blockedNode) }
+        } else {
+            Composer(model, chat, replyTo, { replyTo = null }, editing, { editing = null }) { error = it }
+        }
+    }
+    if (blocking) {
+        AlertDialog(
+            onDismissRequest = { blocking = false },
+            title = { Text(stringResource(R.string.block_q, model.title(chat))) },
+            text = { Text(stringResource(R.string.block_note)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    blocking = false
+                    chat.nodeKey?.let { model.block(it) }?.let { error = it }
+                }) { Text(stringResource(R.string.block), color = t.sos) }
+            },
+            dismissButton = { TextButton(onClick = { blocking = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
     }
 
     if (renaming) chat.nodeKey?.let { RenameDialog(model, it) { renaming = false } }
@@ -410,6 +457,78 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(R.string.ok), color = t.tx) } },
             containerColor = t.s1,
         )
+    }
+}
+
+/** Media, archive and block (ADR-0034); archiving goes back to the list (`archived`). */
+@Composable
+private fun MoreMenu(model: AppModel, chat: ChatId, block: () -> Unit, archived: () -> Unit, media: () -> Unit) {
+    val t = lichen
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.more), tint = t.tx) }
+        DropdownMenu(open, { open = false }, containerColor = t.s1) {
+            // A MeshCore chat carries text only (§15).
+            if (!chat.plain) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.media_files_voice)) },
+                    leadingIcon = { Icon(Icons.Outlined.Photo, null) },
+                    onClick = {
+                        open = false
+                        media()
+                    },
+                )
+            }
+            val isArchived = model.isArchived(chat)
+            DropdownMenuItem(
+                text = { Text(stringResource(if (isArchived) R.string.unarchive else R.string.archive)) },
+                leadingIcon = { Icon(if (isArchived) Icons.Outlined.Unarchive else Icons.Outlined.Archive, null) },
+                onClick = {
+                    open = false
+                    model.setArchived(chat, !isArchived)
+                    if (!isArchived) archived()
+                },
+            )
+            chat.nodeKey?.let { node ->
+                if (model.isBlocked(node)) {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.unblock)) },
+                        leadingIcon = { Icon(Icons.Outlined.Block, null) },
+                        onClick = {
+                            open = false
+                            model.unblock(node)
+                        },
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.block), color = t.sos) },
+                        leadingIcon = { Icon(Icons.Outlined.Block, null, tint = t.sos) },
+                        onClick = {
+                            open = false
+                            block()
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** In place of the composer for someone the user blocked (ADR-0034). */
+@Composable
+private fun BlockedBar(name: String, unblock: () -> Unit) {
+    val t = lichen
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(t.s1)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(stringResource(R.string.you_blocked, name), fontSize = 13.sp, color = t.tx2, textAlign = TextAlign.Center)
+        SecondaryButton(stringResource(R.string.unblock), onClick = unblock)
     }
 }
 
@@ -630,6 +749,17 @@ private fun MessageBubble(
                         selecting = true
                     },
                 )
+                // Coordinates in the text (ADR-0034).
+                places(text).firstOrNull()?.let { (lat, lon) ->
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.show_on_map)) },
+                        leadingIcon = { Icon(Icons.Outlined.Map, null) },
+                        onClick = {
+                            menu = false
+                            model.showOnMap(lat, lon)
+                        },
+                    )
+                }
             }
             if (cancellable) {
                 DropdownMenuItem(
@@ -730,10 +860,12 @@ private fun MessageBubble(
                 Text(stringResource(R.string.message_deleted), fontSize = 16.sp, color = t.tx2, fontStyle = FontStyle.Italic)
             }
         } else if (!MediaContent(model, m)) {
+            val color = if (m.outgoing) t.actFg else t.tx
             Text(
-                m.message.display(res),
+                // Links open in the browser when tapped, places on the map (ADR-0034).
+                if (text != null) linked(model, text, color) else AnnotatedString(m.message.display(res)),
                 fontSize = 16.sp,
-                color = if (m.outgoing) t.actFg else t.tx,
+                color = color,
                 modifier = Modifier
                     .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
                     .padding(horizontal = 14.dp, vertical = 9.dp),
@@ -765,6 +897,31 @@ private fun MessageBubble(
     }
     if (selecting && text != null) SelectTextDialog(text) { selecting = false }
 }
+
+/** A message's text with its links and places tappable (ADR-0034): a link opens in the
+ * browser when the user taps it (nothing is fetched before, no preview), a place on lichen's
+ * map. Only `http` and `https` addresses are links. */
+@Composable
+private fun linked(model: AppModel, text: String, color: Color): AnnotatedString = remember(text, color) {
+    buildAnnotatedString {
+        append(text)
+        val style = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline))
+        for (l in textLinks(text)) {
+            val start = l.start.toInt()
+            val end = l.end.toInt()
+            if (start < 0 || end > text.length || start >= end) continue
+            when (val target = l.target) {
+                is TextTarget.Web -> addLink(LinkAnnotation.Url(target.url, style), start, end)
+                is TextTarget.Place ->
+                    addLink(LinkAnnotation.Clickable("place", style) { model.showOnMap(target.lat, target.lon) }, start, end)
+            }
+        }
+    }
+}
+
+/** The places written in `text`. */
+private fun places(text: String): List<Pair<Double, Double>> =
+    textLinks(text).mapNotNull { (it.target as? TextTarget.Place)?.let { p -> p.lat to p.lon } }
 
 /** The reactions offered (§6.2). */
 private val ReactionChoices = listOf("👍", "❤️", "😂", "😮", "😢", "🙏")
@@ -908,10 +1065,21 @@ private fun Composer(
     val scope = rememberCoroutineScope()
     // Kept per conversation, across screens and restarts.
     var draft by remember(chat) { mutableStateOf(model.draft(chat)) }
-    // A recording stopped and not sent yet; it belongs to this conversation.
-    var review by remember(chat) { mutableStateOf<VoiceReview?>(null) }
+    // A recording stopped and not sent yet; it belongs to this conversation. One left behind
+    // there comes back under review (ADR-0034).
+    var review by remember(chat) {
+        mutableStateOf(
+            model.voiceDrafts.remove(chat)?.let {
+                VoiceReview(it.pcm, it.mode, com.tduhamel.lichen.core.prepareVoice(it.pcm.toList(), it.mode.toUByte()))
+            },
+        )
+    }
+    val currentReview by androidx.compose.runtime.rememberUpdatedState(review)
     DisposableEffect(chat) {
-        onDispose { if (model.player.playing == com.tduhamel.lichen.model.VoicePlayer.REVIEW) model.player.stop() }
+        onDispose {
+            if (model.player.playing == com.tduhamel.lichen.model.VoicePlayer.REVIEW) model.player.stop()
+            currentReview?.let { model.voiceDrafts[chat] = AppModel.VoiceDraft(it.pcm, it.mode) }
+        }
     }
     LaunchedEffect(draft) { model.setDraft(chat, draft) }
     var menu by remember { mutableStateOf(false) }
@@ -958,8 +1126,7 @@ private fun Composer(
             file = FileDraft(if (screen == "fileBig") "Topo Vercors 2026.pdf" else "Refuge notes.txt", data)
         }
     }
-    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+    fun preparePhoto(uri: android.net.Uri) {
         preparing = true
         scope.launch {
             // The core encodes the AVIF thumbnails (a few seconds): off the main thread.
@@ -971,10 +1138,47 @@ private fun Composer(
             if (result == null) onError(res.getString(R.string.err_bad_image)) else picked = result
         }
     }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) preparePhoto(uri)
+    }
+    // Something shared into lichen for this conversation (ADR-0034): its text joins the draft;
+    // each photo goes to the photo sheet, each file to the file sheet, one after the other, as
+    // if picked here. File names are only labels: sanitised before anything shows them.
+    val shared = model.sharedFor[chat]
+    LaunchedEffect(shared, picked, file, preparing) {
+        val s = shared ?: return@LaunchedEffect
+        if (picked != null || file != null || preparing) return@LaunchedEffect
+        s.text?.let { draft = if (draft.isBlank()) it else "$draft $it" }
+        val uri = s.uris.firstOrNull()
+        val rest = s.uris.drop(1)
+        if (rest.isEmpty()) model.sharedFor.remove(chat) else model.sharedFor[chat] = com.tduhamel.lichen.model.IncomingShare(null, rest)
+        if (uri == null) return@LaunchedEffect
+        if (chat.plain) {
+            model.sharedFor.remove(chat)
+            onError(res.getString(R.string.plain_text_only))
+            return@LaunchedEffect
+        }
+        val type = runCatching { context.contentResolver.getType(uri) }.getOrNull()
+        if (type?.startsWith("image/") == true) {
+            preparePhoto(uri)
+        } else {
+            // In the composer's scope: this effect starts again as the queue shrinks.
+            preparing = true
+            scope.launch {
+                val read = withContext(Dispatchers.IO) { readPicked(context, uri) }
+                preparing = false
+                when (read) {
+                    null -> onError(res.getString(R.string.file_unreadable))
+                    TOO_LARGE -> onError(res.getString(R.string.file_too_large))
+                    else -> file = FileDraft(com.tduhamel.lichen.core.fitFileName(read.name, 64u).ifEmpty { "file" }, read.data)
+                }
+            }
+        }
+    }
     val askMic = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         if (!ok) {
             onError(res.getString(R.string.mic_denied))
-        } else if (!model.recorder.start(chat)) {
+        } else if (!model.recorder.start(chat, if (chat.group) AppModel.GROUP_VOICE_SECONDS else VoiceRecorder.MAX_SECONDS)) {
             onError(res.getString(R.string.mic_unavailable))
         }
     }
@@ -1007,7 +1211,8 @@ private fun Composer(
     ) {
         if (model.recorder.recording && model.recorder.chat == chat) {
             RecordingBar(model, chat, onReview = { pcm ->
-                review = VoiceReview(pcm, model.voiceMode, com.tduhamel.lichen.core.prepareVoice(pcm.toList(), model.voiceMode.toUByte()))
+                val mode = model.recordMode(chat)
+                review = VoiceReview(pcm, mode, com.tduhamel.lichen.core.prepareVoice(pcm.toList(), mode.toUByte()))
             }, onError = onError)
             return@Column
         }
@@ -1149,14 +1354,15 @@ private fun Composer(
                     focusedPlaceholderColor = t.tx2, unfocusedPlaceholderColor = t.tx2,
                 ),
             )
-            if (chat.contactKey != null && draft.isEmpty()) {
+            // Voice notes: to a contact, or short ones to a group (ADR-0035).
+            if ((chat.contactKey != null || chat.group) && draft.isEmpty()) {
                 IconButton(
                     onClick = {
                         val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
                             PackageManager.PERMISSION_GRANTED
                         if (!granted) {
                             askMic.launch(Manifest.permission.RECORD_AUDIO)
-                        } else if (!model.recorder.start(chat)) {
+                        } else if (!model.recorder.start(chat, if (chat.group) AppModel.GROUP_VOICE_SECONDS else VoiceRecorder.MAX_SECONDS)) {
                             onError(res.getString(R.string.mic_unavailable))
                         }
                     },

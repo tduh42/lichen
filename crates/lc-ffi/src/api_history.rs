@@ -124,7 +124,7 @@ impl LichenCore {
             .collect()
     }
 
-    /// Pinned and muted conversations.
+    /// Pinned, muted and archived conversations.
     pub fn chat_prefs(&self) -> Vec<ChatPrefs> {
         self.lock()
             .store
@@ -136,8 +136,19 @@ impl LichenCore {
                 chat: ChatRef::from_store(&p.chat),
                 pinned_at_ms: p.pinned_at,
                 muted_until_ms: p.muted_until,
+                archived: p.archived,
             })
             .collect()
+    }
+
+    /// Archives a conversation (out of the list, under "Archived") or brings it back. A
+    /// message received in it brings it back, unless it is muted (ADR-0034).
+    pub fn set_archived(&self, chat: ChatRef, archived: bool) -> Result<(), LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+        st.set_archived(&c, archived)
+            .map_err(|_| LichenError::Storage)
     }
 
     /// Pins a conversation at the top of the list (the latest pinned first), or unpins it.
@@ -156,6 +167,83 @@ impl LichenCore {
         let i = self.lock();
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;
         st.set_muted(&c, until_ms).map_err(|_| LichenError::Storage)
+    }
+
+    /// `chat`'s photos, files and voice messages, announced ones too, newest first, before
+    /// message `before_id` (ADR-0034).
+    pub fn chat_media(
+        &self,
+        chat: ChatRef,
+        before_id: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<StoredMessage>, LichenError> {
+        let c = chat.to_store()?;
+        let i = self.lock();
+        let Some(store) = i.store.as_ref() else {
+            return Ok(Vec::new());
+        };
+        Ok(store
+            .media_messages(&c, before_id, limit)
+            .map_err(|_| LichenError::Storage)?
+            .into_iter()
+            .map(|m| i.present(m))
+            .collect())
+    }
+
+    /// What each conversation takes on this phone, the largest first: messages, media, bytes
+    /// in the database, and the content it announced (the app adds the downloads it keeps).
+    pub fn storage_usage(&self) -> Vec<ChatUsage> {
+        let i = self.lock();
+        let Some(store) = i.store.as_ref() else {
+            return Vec::new();
+        };
+        store
+            .usage()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|u| ChatUsage {
+                chat: ChatRef::from_store(&u.chat),
+                messages: u.messages,
+                media: u.media,
+                bytes: u.bytes,
+                announced: store
+                    .announced_hashes(&u.chat)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|h| h.to_vec())
+                    .collect(),
+            })
+            .collect()
+    }
+
+    /// Removes the photos, files and voice messages stored before `before_ms` (Unix ms) from
+    /// this phone, as a delete for me does (§6.4): their media, reactions and edits, the
+    /// database's free pages overwritten, and the downloads of announced content
+    /// (`MediaGone`, SR-28). Ours still being sent stay. Returns how many went.
+    pub fn clear_media_older_than(&self, before_ms: i64) -> Result<u32, LichenError> {
+        let mut i = self.lock();
+        let ids = i
+            .store
+            .as_ref()
+            .ok_or(LichenError::Storage)?
+            .media_before(before_ms)
+            .map_err(|_| LichenError::Storage)?;
+        let mut gone = 0u32;
+        for id in ids {
+            if i.outbox.contains_key(&id) {
+                continue;
+            }
+            let removed = i
+                .store
+                .as_ref()
+                .and_then(|s| s.delete_for_me(id).ok().flatten());
+            if let Some(m) = removed {
+                i.media_gone(&m.content);
+                gone += 1;
+            }
+        }
+        i.persist();
+        Ok(gone)
     }
 
     /// Conversations that have messages, most recent first.

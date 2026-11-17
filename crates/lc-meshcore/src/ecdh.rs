@@ -105,8 +105,9 @@ pub fn verify(key: &[u8; 32], parts: &[&[u8]], sig: &[u8; 64]) -> bool {
         return false;
     };
     let sig = Signature::from_bytes(sig);
-    // `verify_strict` needs the message in one piece; parts are small (≤ a few hundred bytes).
-    let mut msg = [0u8; 512];
+    // `verify_strict` needs the message in one piece; parts are small: a group voice note's
+    // signed message is the largest, 611 bytes (ADR-0035).
+    let mut msg = [0u8; 1024];
     let mut n = 0;
     for p in parts {
         let Some(dst) = msg.get_mut(n..n + p.len()) else {
