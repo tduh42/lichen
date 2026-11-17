@@ -550,28 +550,6 @@ class AppModel(val app: Application) {
     private var debugApplied = false
     private var debugVoiceSent = false
 
-    init {
-        clearOldShares(app)
-        refreshAll()
-        Notifications.channels(app)
-        if (ble.permitted()) ble.start()
-        // No download runs yet: those an earlier run left unfinished, and those no stored
-        // message announces any more, go (second read of 2026-11-17, N14). The core does
-        // nothing without this identity's database on disk.
-        core.sweepDownloads(folder("downloads").path)
-        loadDownloads()
-        startBridge()
-        shares = core.shares()
-        positions = core.positions(now())
-        refreshLocationAccess()
-        updateLocator()
-        // The TCP link in use when the app stopped comes back, retried until it answers; once
-        // the model is built (its state changes run the core).
-        if (prefs.getBoolean(TCP_ACTIVE, false)) {
-            scope.launch(Dispatchers.Main) { tcp.connect(tcpAddress, retrying = true) }
-        }
-    }
-
     /** The stored identity, or a new one on a first launch; never a silent replacement of an
      * identity that cannot be read. `null` sets [identityProblem]. */
     private fun loadIdentity(): ByteArray? = when (val r = identityStore.read()) {
@@ -2542,5 +2520,31 @@ class AppModel(val app: Application) {
 
         /** What the timer menu offers: off, 5 minutes, 1 hour, 8 hours, 1 day, 1 week. */
         val TIMER_CHOICES = listOf(0u, 300u, 3_600u, 28_800u, 86_400u, 604_800u)
+    }
+
+    // Last in the class, on purpose: Kotlin runs property initialisers and init blocks in the
+    // order they are written, and this one sets state (refreshAll and the rest). A property
+    // declared below it would still be null then, and the app crashed at launch on a phone
+    // when one was (`blocked`). `ModelOrderTest` keeps it last.
+    init {
+        clearOldShares(app)
+        refreshAll()
+        Notifications.channels(app)
+        if (ble.permitted()) ble.start()
+        // No download runs yet: those an earlier run left unfinished, and those no stored
+        // message announces any more, go (second read of 2026-11-17, N14). The core does
+        // nothing without this identity's database on disk.
+        core.sweepDownloads(folder("downloads").path)
+        loadDownloads()
+        startBridge()
+        shares = core.shares()
+        positions = core.positions(now())
+        refreshLocationAccess()
+        updateLocator()
+        // The TCP link in use when the app stopped comes back, retried until it answers; once
+        // the model is built (its state changes run the core).
+        if (prefs.getBoolean(TCP_ACTIVE, false)) {
+            scope.launch(Dispatchers.Main) { tcp.connect(tcpAddress, retrying = true) }
+        }
     }
 }
