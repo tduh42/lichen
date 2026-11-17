@@ -34,12 +34,15 @@ mod api_history;
 mod api_identity;
 mod api_import;
 mod api_location;
+mod api_mesh;
 mod api_plain;
 mod api_radio;
+mod api_radios;
 mod api_replies;
 mod api_runtime;
 mod api_search;
 mod api_send;
+mod api_server;
 mod chat;
 mod error;
 mod event;
@@ -56,10 +59,15 @@ mod timers;
 mod tools;
 #[cfg(test)]
 mod unit;
+#[cfg(test)]
+mod unit_mesh;
 
 pub use api_backup::{BackupSummary, RestoredBackup};
 pub use api_import::ImportReport;
+pub use api_mesh::{ChannelCode, NodeInfo, NodeKind, PathHop, TraceInfo, TraceLeg, TraceState};
 pub use api_radio::{RadioSettings, RadioVar, Telemetry};
+pub use api_radios::{LinkKind, SavedRadio};
+pub use api_server::{ConsoleEntry, NeighbourInfo, ServerInfo, ServerLogin, ServerStats};
 pub use chat::*;
 pub use error::*;
 pub use event::*;

@@ -214,7 +214,7 @@ impl LichenCore {
         let datagram = content.encode();
         match c {
             // Lichen content never goes into a plain MeshCore chat (§15).
-            Chat::Mesh(_) | Chat::Channel(_) => Err(LichenError::NotAllowed),
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => Err(LichenError::NotAllowed),
             Chat::Contact(k) => {
                 let estimate = i.core.estimate_send(&k, datagram.len());
                 let id = i.core.send_datagram(&k, datagram, now_ms)?;
@@ -264,7 +264,9 @@ impl LichenCore {
         let datagram = content.encode();
         let (id, estimate) = match c {
             // Lichen content never goes into a plain MeshCore chat (§15).
-            Chat::Mesh(_) | Chat::Channel(_) => return Err(LichenError::NotAllowed),
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => {
+                return Err(LichenError::NotAllowed);
+            }
             Chat::Contact(k) => (
                 i.core.send_datagram(&k, datagram.clone(), now_ms)?,
                 i.core.estimate_send(&k, datagram.len()),

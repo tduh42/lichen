@@ -184,6 +184,11 @@ impl Inner {
         for gid in store.search_consents().unwrap_or_default() {
             self.core.restore_search_consent(&gid);
         }
+        // Rooms logged in to at each connection (§15.8).
+        if let Ok(Some(v)) = store.setting(crate::api_server::ROOM_LOGINS) {
+            self.core
+                .set_room_logins(crate::api_server::decode_room_logins(&v));
+        }
         // A TX power a search lowered before the app stopped: the radio kept it.
         if let Ok(Some(v)) = store.setting(TX_POWER_RESTORE)
             && let [dbm] = v.as_slice()
@@ -216,13 +221,15 @@ impl Inner {
             let id = match (m.chat, &m.content) {
                 (Chat::Contact(k), _) => self.core.send_datagram(&k, datagram, now),
                 (Chat::Group(g), _) => self.core.send_group_datagram(&g, &datagram, now),
-                (Chat::Mesh(k), Content::Text { sent_at, text }) => {
+                (Chat::Mesh(k) | Chat::Room(k), Content::Text { sent_at, text }) => {
                     self.core.send_plain(&k, text, *sent_at, now)
                 }
                 (Chat::Channel(c), Content::Text { sent_at, text }) => {
                     self.core.send_channel(&c, text, *sent_at, now)
                 }
-                (Chat::Mesh(_) | Chat::Channel(_), _) => Err(lc_core::Error::NotAllowed),
+                (Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_), _) => {
+                    Err(lc_core::Error::NotAllowed)
+                }
             };
             match id {
                 Ok(id) if matches!(m.chat, Chat::Channel(_)) => {
@@ -325,9 +332,10 @@ impl Inner {
             .filter(|a| !a.deleted)
             .and_then(|a| a.text)
             .zip(m.content.sent_at());
-        // A received channel post is stored as it came, "name: text" (§15.1).
+        // A received channel post is stored as it came, "name: text" (§15.1), a room's post
+        // likewise (§15.8).
         let label = match (&m.chat, m.outgoing, &m.content) {
-            (Chat::Channel(_), false, Content::Text { sent_at, text }) => {
+            (Chat::Channel(_) | Chat::Room(_), false, Content::Text { sent_at, text }) => {
                 let (name, body) = lc_core::plain::split_post(text);
                 name.map(|n| {
                     (
@@ -451,7 +459,7 @@ impl Inner {
                 .contacts()
                 .find(|c| c.key == *k)
                 .and_then(|c| c.identity),
-            Chat::Mesh(_) | Chat::Channel(_) => None,
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => None,
         }
     }
 

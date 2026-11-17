@@ -60,6 +60,9 @@ pub enum LichenError {
     WrongBackupWords,
     /// The backup file is cut short or was changed: nothing was restored.
     BackupDamaged,
+    /// No repeater to go through: the node is heard directly, or the radio floods to it
+    /// (§16.3).
+    NoPath,
 }
 
 impl std::fmt::Display for LichenError {
@@ -93,6 +96,7 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::Expired => Self::Expired,
             lc_core::Error::Invalid => Self::InvalidSetting,
             lc_core::Error::IdentityPending => Self::IdentityPending,
+            lc_core::Error::NoPath => Self::NoPath,
         }
     }
 }

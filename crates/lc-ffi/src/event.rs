@@ -184,6 +184,10 @@ pub enum LichenEvent {
     },
     /// The radio's MeshCore channels changed, or were read (§15.3): see `channels()`.
     ChannelsUpdated,
+    /// A trace to `node` changed (§16.3): see `trace(node)`.
+    NodeUpdated {
+        node: Vec<u8>,
+    },
 }
 
 pub(crate) fn snr(snr4: i8) -> f32 {
@@ -331,6 +335,11 @@ impl LichenEvent {
                 by: by.to_vec(),
             },
             Event::TxPower { dbm, previous } => Self::TxPower { dbm, previous },
+            // The apps read the nodes with the contacts.
+            Event::NodesUpdated => Self::ContactsUpdated,
+            Event::NodeTool { node } => Self::NodeUpdated {
+                node: node.to_vec(),
+            },
             Event::Beacon {
                 gid,
                 from,

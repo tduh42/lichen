@@ -16,6 +16,14 @@ use crate::LocationFix;
 const REFUGE: (f64, f64) = (44.8960, 5.4880);
 const COL: (f64, f64) = (44.9150, 5.4620);
 const YOU: (f64, f64) = (44.8885, 5.4985);
+/// The repeaters and the refuge's room server, which advertise their positions (§16.1).
+const HUB: (f64, f64) = (44.8931, 5.4925);
+const CREST: (f64, f64) = (44.9098, 5.4688);
+const BOARD: (f64, f64) = (44.8962, 5.4884);
+
+fn e6(at: (f64, f64)) -> (i32, i32) {
+    ((at.0 * 1e6).round() as i32, (at.1 * 1e6).round() as i32)
+}
 /// Where Julien hurt himself in the SOS scenario, halfway down, without GPS.
 const JULIEN_HURT: (f64, f64) = (44.9055, 5.4750);
 /// Julien's walking speed, m/s.
@@ -154,6 +162,13 @@ enum Action {
         from: usize,
         text: String,
     },
+    /// The app's radio hears a node's advert and does not add it (§16.1).
+    HeardAdvert(usize),
+    /// Someone posts on the refuge's room server (§15.8).
+    RoomPost {
+        from: usize,
+        text: String,
+    },
 }
 
 struct Demo {
@@ -187,6 +202,8 @@ struct Demo {
     /// Marc, at the refuge with the stock MeshCore app (§15).
     marc: usize,
     marc_answered: bool,
+    /// The refuge's room server (§15.8).
+    board: usize,
 }
 
 /// The app's radio misses every copy of `author`'s second group message (its sender byte;
@@ -395,6 +412,14 @@ impl Demo {
                 self.net.send_plain_text(marc, app, &text, ts);
             }
             Action::PublicPost { from, text } => self.net.post_on_channel(from, 0, &text, ts),
+            Action::HeardAdvert(from) => {
+                let app = self.app;
+                self.net.hear_advert(app, from);
+            }
+            Action::RoomPost { from, text } => {
+                let board = self.board;
+                self.net.room_post(board, from, &text, ts);
+            }
             Action::JulienGif => {
                 if let Some(gid) = self.group {
                     let gif = Content::Gif {
@@ -806,6 +831,32 @@ impl DemoNetwork {
         net.link(app, lucie);
         net.know(app, marc, true);
         net.know(marc, app, true);
+        // The mesh around (§16): two repeaters and the refuge's room server, in the radio's
+        // contacts, with the positions they advertise. Demo passwords: "password" for the
+        // hub's admin, "hello" for its guests and the board's.
+        let board = net.add_room(12, "Refuge board", "keeper", "hello");
+        net.link(hub, board);
+        net.set_passwords(hub, "password", "hello");
+        net.set_passwords(crest, "password", "hello");
+        net.nodes[hub].advert_position = Some(e6(HUB));
+        net.nodes[crest].advert_position = Some(e6(CREST));
+        net.nodes[board].advert_position = Some(e6(BOARD));
+        for n in [hub, crest, board] {
+            net.know(app, n, true);
+        }
+        let wall_s = (unix_now_ms() / 1000) as u32;
+        net.room_post(
+            board,
+            marc,
+            "Hut keeper here: the spring is flowing again, no need to carry water up.",
+            wall_s.saturating_sub(5 * 3_600),
+        );
+        net.room_post(
+            board,
+            camille,
+            "Left a pair of gloves on the bench by the door, help yourselves.",
+            wall_s.saturating_sub(2 * 3_600),
+        );
         for n in [app, marc, lucie] {
             net.set_channel(
                 n,
@@ -860,6 +911,14 @@ impl DemoNetwork {
                     text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
                 },
             ),
+            (20 * SEC, Action::HeardAdvert(lucie)),
+            (
+                200 * SEC,
+                Action::RoomPost {
+                    from: marc,
+                    text: "Wind picking up on the ridge this afternoon, gusts at 60 km/h.".into(),
+                },
+            ),
             (
                 45 * SEC,
                 Action::MarcWrites(
@@ -892,6 +951,7 @@ impl DemoNetwork {
                 camille_sos: None,
                 marc,
                 marc_answered: false,
+                board,
             }),
         })
     }

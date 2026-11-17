@@ -78,7 +78,7 @@ impl Inner {
         let id = match &chat {
             Chat::Contact(k) => self.core.send_datagram(k, datagram, now),
             Chat::Group(g) => self.core.send_group_datagram(g, &datagram, now),
-            Chat::Mesh(_) | Chat::Channel(_) => return,
+            Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_) => return,
         };
         // Not accepted now: it stays pending and goes again at the next start.
         if let Ok(id) = id {
