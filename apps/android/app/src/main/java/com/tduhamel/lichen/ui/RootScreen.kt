@@ -146,7 +146,6 @@ fun RootScreen(model: AppModel) {
                     model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
                     nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
-                    blocked = { nav.navigate("blocked") },
                     blocked = { nav.navigate("blocked") }, storage = { nav.navigate("storage") },
                 )
             }

@@ -671,14 +671,22 @@
         }
       }
     },
-    "%lld messages, %lld media files, %@": {
     "%lld messages · %lld media": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld messages, %2$lld fichiers médias, %3$@"
             "value": "%lld messages · %lld médias"
+          }
+        }
+      }
+    },
+    "%lld messages, %lld media files, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld messages, %2$lld fichiers médias, %3$@"
           }
         }
       }
@@ -733,16 +741,11 @@
         }
       }
     },
-<<<<<<< HEAD
     "%lld of %lld, the strongest first.": {
-=======
-    "%lld removed": {
->>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-<<<<<<< HEAD
             "value": "%lld sur %lld, les plus forts d’abord."
           }
         }
@@ -754,9 +757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld reçus · %lld envoyés · %lld en attente"
-=======
+          }
+        }
+      }
+    },
+    "%lld removed": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "%lld supprimés"
->>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
           }
         }
       }
@@ -1162,7 +1172,6 @@
       }
     },
     "A backup file and its 24 words: replaces this identity and its messages": {
-    "A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -1178,6 +1187,15 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une sauvegarde laisse de côté les messages éphémères, ce qui attendait encore d’être envoyé et le partage de position. Après une restauration, tes contacts et tes groupes te voient comme après un redémarrage."
+          }
+        }
+      }
+    },
+    "A blocked person is not told. Their messages, introductions and group posts no longer reach this phone; their position and SOS in a group still show. What they send while blocked is lost.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "Une personne bloquée n’est pas prévenue. Ses messages, ses présentations et ses messages de groupe n’arrivent plus sur ce téléphone ; sa position et son SOS dans un groupe s’affichent toujours. Ce qu’elle envoie pendant le blocage est perdu."
           }
         }
@@ -4104,12 +4122,20 @@
       }
     },
     "Included": {
-    "Internet": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Inclus"
+          }
+        }
+      }
+    },
+    "Internet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "Internet"
           }
         }
@@ -7005,20 +7031,22 @@
         }
       }
     },
-<<<<<<< HEAD
     "Remember on this phone": {
-=======
-    "Remove": {
->>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-<<<<<<< HEAD
             "value": "Retenir sur ce téléphone"
-=======
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "Supprimer"
->>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
           }
         }
       }
@@ -9034,7 +9062,6 @@
       }
     },
     "This backup is damaged or incomplete: nothing was restored.": {
-    "This cannot be undone.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -9050,6 +9077,15 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour."
+          }
+        }
+      }
+    },
+    "This cannot be undone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "C’est définitif."
           }
         }
@@ -9435,20 +9471,22 @@
         }
       }
     },
-<<<<<<< HEAD
     "USB": {
-=======
-    "Unarchive": {
->>>>>>> 069a968 (iOS: French for block and archive)
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-<<<<<<< HEAD
             "value": "USB"
-=======
+          }
+        }
+      }
+    },
+    "Unarchive": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
             "value": "Désarchiver"
->>>>>>> 069a968 (iOS: French for block and archive)
           }
         }
       }
