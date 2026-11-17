@@ -1332,6 +1332,24 @@ impl Store {
             .collect())
     }
 
+    /// Whether a stored message, in any conversation and ours or not, still announces content
+    /// `hash` (§14.1): then its offer and its download stay (second read of 2026-11-17, N7).
+    pub fn announces(&self, hash: &[u8; 32]) -> Result<bool, Error> {
+        // `ANNOUNCE ‖ ts (4) ‖ media id (8) ‖ kind (1) ‖ hash (32) ‖ …`: the type byte and
+        // the hash narrow the rows, the decoder decides.
+        let mut st = self.conn.prepare(
+            "SELECT content FROM messages
+             WHERE substr(content, 1, 1) = ?1 AND substr(content, 15, 32) = ?2",
+        )?;
+        let rows = st.query_map(
+            params![[lc_proto::content::ANNOUNCE].as_slice(), hash.as_slice()],
+            |r| r.get::<_, Vec<u8>>(0),
+        )?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .any(|c| matches!(Content::decode(&c), Some(Content::Announce(a)) if a.hash == *hash)))
+    }
+
     /// Deletes a conversation: its messages, the media we kept for it and its timer. Location
     /// shares and positions are separate (the map).
     pub fn delete_chat(&self, chat: &Chat) -> Result<usize, Error> {

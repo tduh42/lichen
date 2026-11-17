@@ -897,6 +897,57 @@ mod media_gone {
             "{events:?}"
         );
     }
+    fn announce(core: &LichenCore, chat: Chat, outgoing: bool) -> i64 {
+        let mut i = core.lock();
+        i.record(store::Message {
+            id: 0,
+            chat,
+            outgoing,
+            author: None,
+            content: Content::Announce(Announce {
+                sent_at: 1,
+                media_id: [0; 8],
+                kind: 1,
+                hash: [0x66; 32],
+                size: 2_000,
+                providers: vec![(1, [5; 32])],
+                name: "photo.jpg".into(),
+            }),
+            at_ms: unix_ms(),
+            status: if outgoing {
+                Status::Delivered
+            } else {
+                Status::Received
+            },
+            fragments: 0,
+            airtime_ms: 0,
+            snr4: None,
+            read: true,
+            msg_ref: None,
+        })
+        .unwrap()
+        .id
+    }
+
+    /// Second read of 2026-11-17, N7: a contact announces again content we sent (the same
+    /// hash), then deletes their message. Our offer and our copy stay while our own message
+    /// announces it; they go with the last message that does.
+    #[test]
+    fn someone_elses_delete_leaves_our_media() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![146; 32], None).unwrap();
+        let (camille, bob) = ([8u8; 32], [9u8; 32]);
+        let ours = announce(&core, Chat::Contact(camille), true);
+        let theirs = announce(&core, Chat::Contact(bob), false);
+        while core.poll_event().is_some() {}
+        let gone = |core: &LichenCore| {
+            std::iter::from_fn(|| core.poll_event())
+                .any(|e| matches!(e, LichenEvent::MediaGone { hash } if hash == vec![0x66; 32]))
+        };
+        core.delete_for_me(theirs).unwrap();
+        assert!(!gone(&core), "their delete took our media");
+        core.delete_for_me(ours).unwrap();
+        assert!(gone(&core), "the last announcement went, its media stayed");
+    }
 }
 
 /// Review of 2026-11-15, SR-35: a file name cannot reorder itself on screen.
