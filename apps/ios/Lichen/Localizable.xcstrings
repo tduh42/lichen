@@ -91,6 +91,26 @@
         }
       }
     },
+    "%@ asks for the full photo": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ demande la photo en entier"
+          }
+        }
+      }
+    },
+    "%@ asks for the full photo · about %lld s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ demande la photo en entier · environ %lld s de temps d’antenne"
+          }
+        }
+      }
+    },
     "%@ becomes a verified contact: you scanned their code in person. You read what the group sends from now on, not what came before.": {
       "localizations": {
         "fr": {
@@ -1827,6 +1847,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Demander ses voisins"
+          }
+        }
+      }
+    },
+    "Asked: %@ decides whether to send it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demandée : %@ choisit de l’envoyer ou non"
           }
         }
       }
@@ -3757,16 +3787,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Depuis toi"
-          }
-        }
-      }
-    },
-    "Full image requested…": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image complète demandée…"
           }
         }
       }
@@ -6207,6 +6227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Non connecté"
+          }
+        }
+      }
+    },
+    "Not now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas maintenant"
           }
         }
       }

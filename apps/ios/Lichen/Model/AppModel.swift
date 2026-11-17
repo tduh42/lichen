@@ -226,6 +226,9 @@ final class AppModel {
     var debugScreen: String?
     /// Image previews whose full variant we asked for.
     var requestedFull: Set<Int64> = []
+    /// Contacts' requests for the full variant of our photos, waiting for the user (§13.3),
+    /// by conversation; in memory, like the core's.
+    var fullRequests: [ChatID: [FullImageRequest]] = [:]
     let recorder = VoiceRecorder()
     @ObservationIgnored let notifier = Notifier()
     /// The app lock (Settings › Privacy): app only, the radio goes on behind it.
@@ -1040,6 +1043,23 @@ final class AppModel {
             updateLocator()
         case .mediaRequested:
             break
+        case let .fullImageRequested(chat, _, _):
+            // It waits on our photo for the user's answer (§13.3): nothing goes before.
+            fullRequests[chat] = core.fullImageRequests(chat: chat)
+            #if DEBUG
+            // -autoFull YES: sent at once, as before the user was asked (screenshots, tests).
+            if UserDefaults.standard.bool(forKey: "autoFull") {
+                let pending = fullRequests[chat] ?? []
+                DispatchQueue.main.async { [weak self] in
+                    for r in pending { _ = self?.answerFull(r.messageId, in: chat, send: true) }
+                }
+                break
+            }
+            #endif
+            if !isMuted(chat), case let .contact(key) = chat {
+                notifier.message(chat, title: title(of: chat),
+                                 body: String(localized: "\(name(of: key)) asks for the full photo"), actions: false)
+            }
         case let .searched(gid, by):
             // A member asks where we are and we answer (SOS or this group's consent, §11).
             let chat = ChatID.group(gid: gid)
@@ -1092,6 +1112,7 @@ final class AppModel {
             chats[chat] = page
             olderAvailable[chat] = page.count == Int(Self.historyPage)
             historyError[chat] = nil
+            fullRequests[chat] = core.fullImageRequests(chat: chat)
         } catch {
             if chats[chat] == nil { chats[chat] = [] }
             historyError[chat] = String(localized: "The history could not be read.")
@@ -1608,6 +1629,28 @@ final class AppModel {
         do {
             try core.requestFullImage(messageId: message.id, nowMs: now())
             requestedFull.insert(message.id)
+            pump()
+            return nil
+        } catch let e as LichenError {
+            return e.display
+        } catch {
+            return String(localized: "Could not send.")
+        }
+    }
+
+    /// A contact's request for the full variant of our photo `message`, if one waits (§13.3).
+    func fullRequest(for message: StoredMessage) -> FullImageRequest? {
+        guard message.outgoing else { return nil }
+        return fullRequests[message.chat]?.first { $0.messageId == message.id }
+    }
+
+    /// Answers a contact's request for the full variant of our photo (§13.3): `send` sends it,
+    /// refused when it does not fit in the hour's airtime (the request then still waits); not
+    /// now forgets it, and the contact gets no answer.
+    func answerFull(_ messageId: Int64, in chat: ChatID, send: Bool) -> String? {
+        defer { fullRequests[chat] = core.fullImageRequests(chat: chat) }
+        do {
+            try core.answerFullImageRequest(messageId: messageId, send: send, nowMs: now())
             pump()
             return nil
         } catch let e as LichenError {

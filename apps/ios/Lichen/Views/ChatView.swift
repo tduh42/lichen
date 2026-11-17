@@ -1247,11 +1247,14 @@ private struct ImageCard: View {
                         TransportBadge(kind: .lora, label: full ? String(localized: "LoRa · full thumbnail") : String(localized: "LoRa · preview"))
                         if !full && !message.outgoing { Text("full one on request").font(.system(.caption)).foregroundStyle(Theme.tx2) }
                     }
+                    if let request = model.fullRequest(for: message) {
+                        fullRequestCard(request)
+                    }
                     if let announce {
                         BridgeSection(announce: announce, standalone: false)
                     } else if !message.outgoing && !full && fullLen > 0 {
                         if model.requestedFull.contains(message.id) {
-                            Label("Full image requested…", systemImage: "hourglass")
+                            Label("Asked: \(model.title(of: message.chat)) decides whether to send it", systemImage: "hourglass")
                                 .font(.system(.footnote))
                                 .foregroundStyle(Theme.tx2)
                         } else {
@@ -1279,6 +1282,29 @@ private struct ImageCard: View {
                 Text(error ?? "")
             }
         }
+    }
+
+    /// A contact asks for the full variant of our photo (§13.3): it goes only if the user
+    /// sends it. Over budget, the alert says when it would fit.
+    private func fullRequestCard(_ request: FullImageRequest) -> some View {
+        let who = model.title(of: message.chat)
+        let seconds = max(1, Int((Double(request.airtimeMs) / 1000).rounded()))
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("\(who) asks for the full photo · about \(seconds) s of airtime")
+                .font(.system(.footnote))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Not now") { _ = model.answerFull(message.id, in: message.chat, send: false) }
+                    .buttonStyle(SecondaryButtonStyle(height: 40))
+                Button("Send") { error = model.answerFull(message.id, in: message.chat, send: true) }
+                    .buttonStyle(SecondaryButtonStyle(background: Theme.loraBg, foreground: Theme.loraFg, height: 40))
+                    .disabled(!model.isConnected)
+            }
+        }
+        .padding(10)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("fullRequest")
     }
 
     private func fullLabel(_ bytes: Int) -> String {
