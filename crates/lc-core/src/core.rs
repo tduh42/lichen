@@ -43,6 +43,8 @@ pub type MsgId = u64;
 
 /// How long to wait for the companion's answer to a command.
 const COMMAND_TIMEOUT_MS: Millis = 5_000;
+/// Times a contact list that stopped before its end is asked for again.
+const CONTACT_RESYNCS: u8 = 2;
 /// HELLO tries before giving up on a peer.
 const HELLO_TRIES: u8 = 8;
 /// Path discovery probes before reporting `NoPath` (§4.5).
@@ -797,6 +799,8 @@ pub struct Core {
     secrets: HashMap<PubKey, [u8; 32]>,
     peers: HashMap<PubKey, Peer>,
     commands: VecDeque<(Vec<u8>, Expect)>,
+    /// Contact lists asked for again after one stopped short since the last complete one.
+    contact_resyncs: u8,
     awaiting: Option<(Expect, Millis)>,
     /// Plain MeshCore text (§15).
     pub(crate) plain: crate::plain::Plain,
@@ -924,6 +928,7 @@ impl Core {
             secrets: HashMap::new(),
             peers: HashMap::new(),
             commands: VecDeque::new(),
+            contact_resyncs: 0,
             awaiting: None,
             plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
@@ -1330,6 +1335,7 @@ impl Core {
         );
         self.command(&Command::GetDefaultFloodScope, Expect::Scope);
         self.radio_read_all();
+        self.contact_resyncs = 0;
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
         self.mesh_connected();
         self.servers_connected();
@@ -1849,15 +1855,37 @@ impl Core {
     /// The next command frame for the companion, if one is due. Commands go one at a time:
     /// the next waits for the answer to the previous one (or a timeout).
     pub fn poll_companion(&mut self, now: Millis) -> Option<Vec<u8>> {
-        if let Some((_, deadline)) = self.awaiting {
+        if let Some((expect, deadline)) = self.awaiting {
             if now < deadline {
                 return None;
             }
             self.awaiting = None;
+            if expect == Expect::Contacts {
+                self.contacts_cut_short(now);
+            }
         }
         let (frame, expect) = self.commands.pop_front()?;
         self.awaiting = Some((expect, now + COMMAND_TIMEOUT_MS));
         Some(frame)
+    }
+
+    /// The contacts are read: the app shows them, and what waited for them goes on (held plain
+    /// messages, rooms to log in to).
+    fn contacts_read(&mut self, now: Millis) {
+        self.events.push_back(Event::ContactsUpdated);
+        self.plain_contacts_updated(now);
+        self.servers_contacts_read(now);
+    }
+
+    /// A contact list that stopped before END_OF_CONTACTS (a companion that dropped frames: a
+    /// full Bluetooth queue drops them silently) still counts for what arrived, instead of
+    /// leaving the list empty; it is asked for again, a few times (§1).
+    fn contacts_cut_short(&mut self, now: Millis) {
+        self.contacts_read(now);
+        if self.contact_resyncs < CONTACT_RESYNCS {
+            self.contact_resyncs += 1;
+            self.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        }
     }
 
     /// A frame from the companion.
@@ -2110,9 +2138,8 @@ impl Core {
                 }
             }
             Response::EndOfContacts { .. } => {
-                self.events.push_back(Event::ContactsUpdated);
-                self.plain_contacts_updated(now);
-                self.servers_contacts_read(now);
+                self.contact_resyncs = 0;
+                self.contacts_read(now);
             }
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             Response::Ok => match expect {
@@ -3794,6 +3821,47 @@ mod tests {
     use super::*;
 
     /// A GET_CHANNEL answer: `0x12 ‖ index ‖ name (32) ‖ secret (16)`.
+    /// A CONTACT frame (code 3) for node `k`, no path.
+    fn contact_frame(k: u8, name: &str) -> Vec<u8> {
+        let mut f = vec![3];
+        f.extend_from_slice(&[k; 32]);
+        f.extend_from_slice(&[1, 0, 0xFF]);
+        f.extend_from_slice(&[0; 64]);
+        let mut n = [0u8; 32];
+        n[..name.len()].copy_from_slice(name.as_bytes());
+        f.extend_from_slice(&n);
+        f.extend_from_slice(&[0; 16]);
+        f
+    }
+
+    /// A companion that drops frames (oxymesh's Bluetooth queue, 2026-11-17) sends
+    /// CONTACTS_START and three contacts of 112, and never END_OF_CONTACTS: the app used to show
+    /// no contact at all. What arrived counts once the wait times out, and the list is asked for
+    /// again, twice at most.
+    #[test]
+    fn a_contact_list_cut_short_still_counts() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        core.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        assert!(core.poll_companion(0).is_some());
+        core.on_companion_frame(&[2, 112, 0, 0, 0], 10);
+        for k in 1..=3u8 {
+            core.on_companion_frame(&contact_frame(k, "node"), 20);
+        }
+        let updated = |c: &mut Core| {
+            std::iter::from_fn(|| c.poll_event()).any(|e| matches!(e, Event::ContactsUpdated))
+        };
+        assert!(!updated(&mut core), "nothing before the end, or the wait");
+        let mut now = 20 + COMMAND_TIMEOUT_MS;
+        assert!(core.poll_companion(now).is_some(), "asked again");
+        assert!(updated(&mut core), "what arrived is shown");
+        assert_eq!(core.contacts().count(), 3);
+        // Cut short again twice: asked again once more, then no more.
+        now += COMMAND_TIMEOUT_MS;
+        assert!(core.poll_companion(now).is_some());
+        now += COMMAND_TIMEOUT_MS;
+        assert!(core.poll_companion(now).is_none(), "twice at most");
+    }
+
     fn channel_info(index: u8, name: &str, secret: [u8; 16]) -> Vec<u8> {
         let mut f = vec![0x12, index];
         let mut n = [0u8; 32];
