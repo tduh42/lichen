@@ -48,6 +48,9 @@ const SYNC_EVERY_MS: Millis = 600_000;
 /// GROUP_SYNC answers an admin gives per group in [`SYNC_EVERY_MS`] (§10.7): a forged early
 /// envelope cannot make it answer every member with every key.
 const SYNC_ANSWERS_MAX: usize = 8;
+/// Newer key epochs asked for, remembered per group (§10.7): more than the envelopes held
+/// (64), so that one request cannot push out what the last one asked.
+const EPOCHS_ASKED_MAX: usize = 128;
 /// Envelopes whose sender key has not arrived yet are kept this long (§10.3).
 const HELD_MS: Millis = 600_000;
 /// And at most this many in all…
@@ -157,6 +160,8 @@ pub(crate) struct Held {
     /// Its group hash and sender byte, from the clear header: each sender gets a share.
     gid_hash: u16,
     sender: u8,
+    /// The key epoch it names: newer than the one held, it makes us ask once (§10.7).
+    key_epoch: u8,
     snr4: i8,
     rssi: i8,
     at: Millis,
@@ -442,6 +447,9 @@ struct Recovery {
     rejoined: HashMap<PubKey, Millis>,
     /// When we last asked the admin for the keys (§10.7).
     synced_at: Option<Millis>,
+    /// Newer key epochs of members we asked for, once each (§10.7, second read of 2026-11-17,
+    /// N8): (member, key epoch), the oldest first. Memory only.
+    epochs_asked: VecDeque<(PubKey, u8)>,
     /// As admin (or former admin, §10.8), when we last answered each member's GROUP_SYNC.
     syncs_answered: HashMap<PubKey, Millis>,
     /// A newer state from a listed member naming itself admin, and that member: kept until a
@@ -456,6 +464,17 @@ struct Recovery {
 }
 
 impl Recovery {
+    /// We asked for `member`'s key of `epoch` (§10.7): not again.
+    fn asked_epoch(&mut self, member: PubKey, epoch: u8) {
+        if self.epochs_asked.contains(&(member, epoch)) {
+            return;
+        }
+        if self.epochs_asked.len() >= EPOCHS_ASKED_MAX {
+            self.epochs_asked.pop_front();
+        }
+        self.epochs_asked.push_back((member, epoch));
+    }
+
     fn keep(&mut self, k: Kept) {
         if self
             .kept
@@ -878,6 +897,38 @@ impl Group {
 
     fn is_member(&self, k: &PubKey) -> bool {
         self.members.iter().any(|m| m.key == *k)
+    }
+
+    /// The keys an envelope held from member byte `sender` under `key_epoch` (in a group of
+    /// hash `gid_hash`) makes us want (§10.7): the members of that byte of which we hold no key
+    /// at all (`None`, asked for every 10 minutes), or only an older key epoch, not asked for
+    /// yet (`Some(key_epoch)`, asked for once).
+    fn wanted_key(
+        &self,
+        me: &PubKey,
+        gid_hash: u16,
+        sender: u8,
+        key_epoch: u8,
+    ) -> Vec<(PubKey, Option<u8>)> {
+        if self.gid_hash() != gid_hash {
+            return Vec::new();
+        }
+        self.members
+            .iter()
+            .filter(|m| m.key != *me && m.key[0] == sender)
+            .filter_map(
+                |m| match self.keys.get(&m.key).and_then(|mk| mk.current.as_ref()) {
+                    None => Some((m.key, None)),
+                    Some(c)
+                        if newer(key_epoch, c.epoch)
+                            && !self.recovery.epochs_asked.contains(&(m.key, key_epoch)) =>
+                    {
+                        Some((m.key, Some(key_epoch)))
+                    }
+                    Some(_) => None,
+                },
+            )
+            .collect()
     }
 
     /// The member reached through node `node`.
@@ -2251,51 +2302,61 @@ impl Core {
         self.tick(now);
     }
 
-    /// Envelopes held a minute from a member of which we hold no key at all (§10.7): a member
-    /// asks the admin for the keys (GROUP_SYNC, once in 10 minutes per group); the admin asks
-    /// that member for its key (GROUP_KEY_REQUEST, once in 10 minutes per member). A key of a
-    /// newer epoch than one held is not asked for: the clear header of an envelope proves
-    /// nothing before the key comes.
+    /// Envelopes held a minute from a member of which we hold no key, or only an older key
+    /// epoch than theirs (§10.7): a member asks the admin for the keys (GROUP_SYNC, once in 10
+    /// minutes per group); the admin asks that member for its key (GROUP_KEY_REQUEST, once in
+    /// 10 minutes per member). A newer key epoch is asked for once (second read of 2026-11-17,
+    /// N8): the clear header of an envelope proves nothing before the key comes, so a forged
+    /// one must not make members ask again and again; the admin's budget bounds the rest.
     fn ask_sync(&mut self, now: Millis) {
         let Some(me) = self.key else {
             return;
         };
-        let waiting: Vec<(u16, u8)> = self
+        let waiting: Vec<(u16, u8, u8)> = self
             .held
             .iter()
             .filter(|h| h.at + SYNC_AFTER_MS <= now)
-            .map(|h| (h.gid_hash, h.sender))
+            .map(|h| (h.gid_hash, h.sender, h.key_epoch))
             .collect();
         if waiting.is_empty() {
             return;
         }
         let mut asks = Vec::new();
         for g in self.groups.values_mut() {
-            let gh = g.gid_hash();
-            let keyless: Vec<(PubKey, PubKey)> = g
-                .members
+            let mut want: Vec<(PubKey, Option<u8>)> = waiting
                 .iter()
-                .filter(|m| m.key != me && waiting.contains(&(gh, m.key[0])))
-                .filter(|m| g.keys.get(&m.key).is_none_or(|mk| mk.current.is_none()))
-                .map(|m| (m.key, m.node))
+                .flat_map(|&(gh, sender, epoch)| g.wanted_key(&me, gh, sender, epoch))
                 .collect();
-            if keyless.is_empty() {
+            want.sort_unstable();
+            want.dedup();
+            if want.is_empty() {
                 continue;
             }
             if g.admin == me {
-                for (id, node) in keyless {
-                    if g.recovery
-                        .keys_asked
-                        .get(&id)
-                        .is_some_and(|&t| t + SYNC_EVERY_MS > now)
-                    {
-                        continue;
+                let mut asked: Vec<PubKey> = Vec::new();
+                for (id, epoch) in want {
+                    if !asked.contains(&id) {
+                        if g.recovery
+                            .keys_asked
+                            .get(&id)
+                            .is_some_and(|&t| t + SYNC_EVERY_MS > now)
+                        {
+                            continue;
+                        }
+                        let Some(node) = g.members.iter().find(|m| m.key == id).map(|m| m.node)
+                        else {
+                            continue;
+                        };
+                        g.recovery.keys_asked.insert(id, now);
+                        asked.push(id);
+                        asks.push((
+                            node,
+                            encode_gid_epoch(content::GROUP_KEY_REQUEST, &g.gid, g.epoch),
+                        ));
                     }
-                    g.recovery.keys_asked.insert(id, now);
-                    asks.push((
-                        node,
-                        encode_gid_epoch(content::GROUP_KEY_REQUEST, &g.gid, g.epoch),
-                    ));
+                    if let Some(e) = epoch {
+                        g.recovery.asked_epoch(id, e);
+                    }
                 }
                 continue;
             }
@@ -2310,6 +2371,11 @@ impl Core {
                 continue;
             };
             g.recovery.synced_at = Some(now);
+            for (id, epoch) in want {
+                if let Some(e) = epoch {
+                    g.recovery.asked_epoch(id, e);
+                }
+            }
             asks.push((
                 admin_node,
                 encode_gid_epoch(content::GROUP_SYNC, &g.gid, g.epoch),
@@ -2383,22 +2449,20 @@ impl Core {
         self.held
             .iter()
             .filter_map(|h| {
+                let after = h.at + SYNC_AFTER_MS;
+                let due =
+                    |last: Option<Millis>| last.map_or(after, |t| after.max(t + SYNC_EVERY_MS));
                 self.groups
                     .values()
-                    .filter(|g| g.gid_hash() == h.gid_hash)
                     .filter_map(|g| {
-                        let after = h.at + SYNC_AFTER_MS;
-                        let m = g.members.iter().find(|m| {
-                            m.key != me
-                                && m.key[0] == h.sender
-                                && g.keys.get(&m.key).is_none_or(|mk| mk.current.is_none())
-                        })?;
-                        let last = if g.admin == me {
-                            g.recovery.keys_asked.get(&m.key).copied()
+                        let want = g.wanted_key(&me, h.gid_hash, h.sender, h.key_epoch);
+                        if g.admin == me {
+                            want.iter()
+                                .map(|(id, _)| due(g.recovery.keys_asked.get(id).copied()))
+                                .min()
                         } else {
-                            g.recovery.synced_at
-                        };
-                        Some(last.map_or(after, |t| after.max(t + SYNC_EVERY_MS)))
+                            (!want.is_empty()).then(|| due(g.recovery.synced_at))
+                        }
                     })
                     .filter(|&due| due < h.at + HELD_MS)
                     .min()
@@ -3789,6 +3853,7 @@ impl Core {
                             payload: payload.to_vec(),
                             gid_hash: h.gid_hash,
                             sender: h.sender,
+                            key_epoch: h.key_epoch,
                             snr4,
                             rssi,
                             at: now,
@@ -4257,15 +4322,26 @@ mod tests {
         signer: &[u8; 64],
         body: &[u8],
     ) -> Vec<u8> {
+        envelope_under(sender, (key, 0), counter, signer, body)
+    }
+
+    /// [`envelope_body`] under the sender key `key` of key epoch `key_epoch`.
+    fn envelope_under(
+        sender: &PubKey,
+        (key, key_epoch): (&[u8; 32], u8),
+        counter: u32,
+        signer: &[u8; 64],
+        body: &[u8],
+    ) -> Vec<u8> {
         let body = body.to_vec();
-        let (epoch_b, counter_b) = ([0u8], counter.to_le_bytes());
+        let (epoch_b, counter_b) = ([key_epoch], counter.to_le_bytes());
         let sig = sign(signer, &signed_parts(&GID, &epoch_b, &counter_b, &body)).unwrap();
         let mut plain = body;
         plain.extend_from_slice(&sig);
         let header = GroupHeader {
             gid_hash: gid_hash(&GID),
             sender: sender[0],
-            key_epoch: 0,
+            key_epoch,
             counter,
             index: 0,
             total: 1,
@@ -5487,34 +5563,136 @@ mod tests {
         assert!(resent(&late).is_empty());
     }
 
-    /// Review of 2026-11-17: an envelope's clear header (group hash, member byte, key epoch)
-    /// is anyone's to forge. One under a member whose key we hold, claiming its next epoch,
-    /// makes nobody ask the admin (§10.7).
+    /// §10.7, follow-up to N8 of the second read of 2026-11-17: a member that missed a
+    /// rotation holds the sender's envelope under a key epoch newer than its own; a minute on,
+    /// it asks the admin, once, and reads once the keys come.
     #[test]
-    fn a_forged_newer_epoch_makes_nobody_ask() {
+    fn a_member_who_missed_a_rotation_asks_the_admin() {
         let admin = [0xA1; 32];
         let b_prv = expand_seed(&[0x62; 32]);
         let b = public_key(&b_prv);
         let mut core = core_with_group(&[(admin, [1; 32], 0), (b, [2; 32], 0)]);
         core.groups.get_mut(&GID).unwrap().admin = admin;
-        let header = GroupHeader {
-            gid_hash: gid_hash(&GID),
-            sender: b[0],
-            key_epoch: 1,
-            counter: 0,
-            index: 0,
-            total: 1,
-            copy: 0,
-        };
-        let mut out = [0u8; group::PAYLOAD_MAX];
-        let n = group::seal(&[0x66; 32], &header, b"garbage", &mut out).unwrap();
-        core.on_group_envelope(&out[..n], 0, 0, 1_000);
-        core.tick_groups(62_000);
-        assert!(
+        let syncs = |core: &Core| {
             core.queued(&[1; 32])
                 .iter()
-                .all(|d| !matches!(Control::decode(d), Some(Control::Sync { .. })))
-        );
+                .filter(|d| matches!(Control::decode(d), Some(Control::Sync { gid, epoch: 1 }) if gid == GID))
+                .count()
+        };
+        let body = Content::Text {
+            sent_at: 1,
+            text: "after the rotation".into(),
+        }
+        .encode();
+        let e = envelope_under(&b, (&[3; 32], 1), 0, &b_prv, &body);
+        core.on_group_envelope(&e, 0, 0, 1_000);
+        core.tick_groups(30_000);
+        assert_eq!(syncs(&core), 0, "too early: the key may be on its way");
+        assert_eq!(core.next_sync(), Some(61_000));
+        core.tick_groups(61_000);
+        assert_eq!(syncs(&core), 1);
+        assert_eq!(core.next_sync(), None, "asked for that epoch");
+        core.on_sender_keys(&admin, GID, vec![ke(b, 1, [3; 32], 0)], 70_000);
+        assert_eq!(texts(&mut core), vec!["after the rotation".to_owned()]);
+    }
+
+    /// Second read of 2026-11-17, N8: an envelope's clear header (group hash, member byte, key
+    /// epoch) is anyone's to forge. One under a member whose key we hold, claiming its next
+    /// epoch, makes a member ask the admin once, however often it is flooded again; climbing
+    /// epochs make it ask at most once in 10 minutes. The admin, asked by every member that
+    /// often, answers at most 8 in 10 minutes; holding such an envelope itself, it asks the
+    /// member once.
+    #[test]
+    fn a_forged_newer_epoch_costs_at_most_the_capped_answers() {
+        let admin = [0xA1; 32];
+        let b_prv = expand_seed(&[0x62; 32]);
+        let b = public_key(&b_prv);
+        let forged = |epoch: u8, counter: u32| {
+            let header = GroupHeader {
+                gid_hash: gid_hash(&GID),
+                sender: b[0],
+                key_epoch: epoch,
+                counter,
+                index: 0,
+                total: 1,
+                copy: 0,
+            };
+            let mut out = [0u8; group::PAYLOAD_MAX];
+            let n = group::seal(&[0x66; 32], &header, b"garbage", &mut out).unwrap();
+            out[..n].to_vec()
+        };
+        let member = || {
+            let mut core = core_with_group(&[(admin, [1; 32], 0), (b, [2; 32], 0)]);
+            core.groups.get_mut(&GID).unwrap().admin = admin;
+            core
+        };
+        let syncs = |core: &Core| {
+            core.queued(&[1; 32])
+                .iter()
+                .filter(|d| matches!(Control::decode(d), Some(Control::Sync { .. })))
+                .count()
+        };
+        // The same epoch, flooded every minute for an hour: one request.
+        let mut core = member();
+        for minute in 0..60u32 {
+            let now = u64::from(minute) * 60_000 + 1_000;
+            core.on_group_envelope(&forged(1, minute), 0, 0, now);
+            core.tick_groups(now + 500);
+        }
+        assert_eq!(syncs(&core), 1);
+        // A new epoch every minute: once in 10 minutes.
+        let mut core = member();
+        for minute in 0..60u32 {
+            let now = u64::from(minute) * 60_000 + 1_000;
+            let epoch = u8::try_from(minute % 100).unwrap() + 1;
+            core.on_group_envelope(&forged(epoch, minute), 0, 0, now);
+            core.tick_groups(now + 500);
+        }
+        assert_eq!(syncs(&core), 6);
+
+        // The admin of 12 members, each asking every 10 minutes for an hour.
+        let members: Vec<(PubKey, [u8; 32], u32)> =
+            (0..12u8).map(|i| ([0x10 + i; 32], [i; 32], 0)).collect();
+        let mut core = core_with_group(&members);
+        let mut answers: Vec<Millis> = Vec::new();
+        for round in 0..6u64 {
+            for i in 0..12u8 {
+                let now = round * SYNC_EVERY_MS + 1_000 + u64::from(i) * 1_000;
+                let sync = Control::Sync { gid: GID, epoch: 1 }.encode();
+                core.on_group_control(&[i + 1; 32], &sync, now);
+                if core.groups[&GID]
+                    .recovery
+                    .syncs_answered
+                    .get(&[0x10 + i; 32])
+                    == Some(&now)
+                {
+                    answers.push(now);
+                }
+            }
+        }
+        for &t in &answers {
+            let within = answers
+                .iter()
+                .filter(|&&u| u >= t && u < t + SYNC_EVERY_MS)
+                .count();
+            assert!(within <= SYNC_ANSWERS_MAX, "{within} answers from {t}");
+        }
+        assert!(answers.len() <= 6 * SYNC_ANSWERS_MAX + SYNC_ANSWERS_MAX);
+
+        // The admin holding such an envelope asks the member once.
+        let mut core = core_with_group(&[(b, [2; 32], 0)]);
+        let asks = |core: &Core| {
+            core.queued(&[1; 32])
+                .iter()
+                .filter(|d| matches!(Control::decode(d), Some(Control::KeyRequest { .. })))
+                .count()
+        };
+        for minute in 0..60u32 {
+            let now = u64::from(minute) * 60_000 + 1_000;
+            core.on_group_envelope(&forged(1, minute), 0, 0, now);
+            core.tick_groups(now + 500);
+        }
+        assert_eq!(asks(&core), 1);
     }
 
     /// §10.7: the admin answers at most 8 GROUP_SYNC per group in 10 minutes.
