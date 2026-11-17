@@ -28,7 +28,9 @@ crates/
                         location shares (location.rs, ADR-0011); search mode (search.rs, particle
                         filter in solver.rs, ADR-0016); identity tools (identity.rs:
                         phrase, fingerprint, safety number, card); SQLite store (store.rs,
-                        ADR-0010); fake MeshCore network for tests
+                        ADR-0010); encrypted backup file (backup.rs, ADR-0037); the store under
+                        SQLCipher (cipher.rs, feature `sqlcipher`, ADR-0036); fake MeshCore
+                        network for tests
   lc-media/     std     media over LoRa (ADR-0012): Codec2 voice frames, AVIF thumbnails (preview + full)
   lc-bridge/    std     Internet bridge (ADR-0015): async (tokio), iroh endpoint and Arti (Tor) onion
                         service, `lichen/blob/1` offers and fetches checked against BLAKE3; the only
@@ -97,6 +99,8 @@ cargo test -p lc-proto --release --test transfer -- --ignored --nocapture    # m
 cargo test -p lc-core --release --test fakenet -- --ignored --nocapture
 cargo test -p lc-core --release --test location -- --nocapture            # location: dead reckoning figures
 cargo test -p lc-core --release --test identity -- --nocapture            # introduction costs
+cargo test -p lc-core --test backup                                       # backup file: vectors, round trip, refusals, restore
+cargo test -p lc-core --features sqlcipher --test sqlcipher               # the store under SQLCipher (CommonCrypto on macOS)
 cargo test -p lc-core --release --test search -- --ignored --nocapture    # search: convergence figures
 cargo run --release -p lc-cli -- search /dev/cu.usbmodem14301 --csv local/rx.csv --at 45.19,5.72   # field recorder
 cargo run -p lc-media --release --example encode_voice -- in.wav out.c2 heard.wav   # voice fixtures

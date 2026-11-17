@@ -8,6 +8,8 @@ pub(crate) struct Inner {
     pub(crate) seed: [u8; 32],
     pub(crate) store: Option<Store>,
     pub(crate) data_dir: Option<PathBuf>,
+    /// The database's key (ADR-0036), when the app encrypts it.
+    pub(crate) db_key: Option<[u8; 32]>,
     /// Core message id → row id, for the messages sent by this run.
     pub(crate) inflight: HashMap<u64, i64>,
     /// Events to hand out after the current one (`MessageChanged`).
@@ -31,6 +33,16 @@ pub(crate) struct Inner {
     pub(crate) timer_inflight: HashMap<u64, (Chat, u32)>,
     /// The recent log of problem reports (ADR-0045).
     pub(crate) diag: report::Diag,
+}
+
+/// The database of `identity` in `dir`: one per identity (ADR-0010).
+pub(crate) fn database_file(dir: &std::path::Path, identity: &PubKey) -> PathBuf {
+    let hex: String = identity
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    dir.join(format!("id-{hex}.sqlite"))
 }
 
 /// How long a text waits for the radio and its recipient (§6.1).
@@ -144,12 +156,11 @@ impl Inner {
         let store = match &self.data_dir {
             Some(dir) => {
                 let _ = std::fs::create_dir_all(dir);
-                let hex: String = identity
-                    .iter()
-                    .take(8)
-                    .map(|b| format!("{b:02x}"))
-                    .collect();
-                Store::open(&dir.join(format!("id-{hex}.sqlite")))
+                let file = database_file(dir, identity);
+                match &self.db_key {
+                    Some(key) => Store::open_encrypted(&file, key),
+                    None => Store::open(&file),
+                }
             }
             None => Store::in_memory(),
         };

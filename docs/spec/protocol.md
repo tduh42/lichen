@@ -56,6 +56,7 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 - A **contact** is a node key plus, once known, an identity key and a verified flag (§4.7).
 - **Static secret** `S` (32 bytes) with a contact of identity `id_P`: MeshCore's ECDH (A:§2) between identities, `S = X25519(clamp(prv[0..32]), u(id_P))`, `u` being the Montgomery coordinate of the Ed25519 point `id_P`. An `id_P` that does not decompress, or an all-zero `S`, is rejected.
 - The static secret **never** encrypts data directly: it only feeds the handshake (§4).
+- A phone's data (history, contacts, groups, media) is saved in a backup file that the 24 words open, under a key of its own derived from the seed: `backup.md` (ADR-0037).
 
 ## 3. lichen frame
 

@@ -43,6 +43,10 @@ fun LichenException.display(res: Resources): String = when (this) {
     is LichenException.InvalidSetting -> res.getString(R.string.err_invalid_setting)
     is LichenException.NotAnExport -> res.getString(R.string.err_not_an_export)
     is LichenException.IdentityPending -> res.getString(R.string.err_identity_pending)
+    is LichenException.NotABackup -> res.getString(R.string.err_not_a_backup)
+    is LichenException.NewerBackup -> res.getString(R.string.err_newer_backup)
+    is LichenException.WrongBackupWords -> res.getString(R.string.err_wrong_backup_words)
+    is LichenException.BackupDamaged -> res.getString(R.string.err_backup_damaged)
 }
 
 fun BridgeException.display(res: Resources): String = when (this) {

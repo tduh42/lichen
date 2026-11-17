@@ -8,6 +8,8 @@ struct IdentityView: View {
     @Environment(AppModel.self) private var model
     @State private var showingPhrase = false
     @State private var restoring = false
+    @State private var exporting = false
+    @State private var restoringBackup = false
 
     var body: some View {
         @Bindable var model = model
@@ -60,9 +62,23 @@ struct IdentityView: View {
                     }
                     .buttonStyle(.plain)
                     CardDivider()
-                    CardRow(title: String(localized: "Encrypted backup"),
-                            subtitle: String(localized: "A password-protected file: coming later"))
-                        .opacity(0.5)
+                    Button { restoringBackup = true } label: {
+                        CardRow(title: String(localized: "Restore a backup"),
+                                subtitle: String(localized: "A backup file and its 24 words: replaces this identity and its messages")) {
+                            Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    if !model.isDemo {
+                        CardDivider()
+                        Button { exporting = true } label: {
+                            CardRow(title: String(localized: "Encrypted backup"),
+                                    subtitle: String(localized: "Your messages, contacts, groups and media in one file your 24 words open")) {
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
 
                 if let next {
@@ -78,6 +94,8 @@ struct IdentityView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingPhrase) { RecoveryPhraseSheet() }
         .sheet(isPresented: $restoring) { RestoreSheet() }
+        .sheet(isPresented: $exporting) { BackupExportSheet() }
+        .sheet(isPresented: $restoringBackup) { RestoreBackupSheet(restored: next) }
     }
 }
 
@@ -191,6 +209,7 @@ struct IdentityProblemView: View {
     @Environment(AppModel.self) private var model
     let problem: AppModel.IdentityProblem
     @State private var restoring = false
+    @State private var restoringBackup = false
     @State private var confirmNew = false
     @State private var error: String?
 
@@ -217,6 +236,8 @@ struct IdentityProblemView: View {
             if problem != .storage {
                 Button("Restore from my 24 words") { restoring = true }
                     .buttonStyle(.secondary)
+                Button("Restore a backup") { restoringBackup = true }
+                    .buttonStyle(.secondary)
             }
             if problem == .corrupt {
                 Button("Start a new identity", role: .destructive) { confirmNew = true }
@@ -227,6 +248,7 @@ struct IdentityProblemView: View {
         .padding(24)
         .screen()
         .sheet(isPresented: $restoring) { RestoreSheet() }
+        .sheet(isPresented: $restoringBackup) { RestoreBackupSheet() }
         .confirmationDialog(
             "Start a new identity?", isPresented: $confirmNew, titleVisibility: .visible
         ) {

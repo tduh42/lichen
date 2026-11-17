@@ -12,6 +12,7 @@ struct SettingsView: View {
     @AppStorage("onboarded") private var onboarded = true
     @State private var importing = false
     @State private var importResult: String?
+    @State private var exportingBackup = false
     @State private var radioOpen = false
 
     var body: some View {
@@ -151,6 +152,21 @@ struct SettingsView: View {
                             Button("OK") { importResult = nil }
                         } message: {
                             Text(importResult ?? "")
+                        }
+                        // The encrypted backup (ADR-0037).
+                        if !model.isDemo {
+                            SectionLabel("Backup").padding(.top, 10)
+                            CardList {
+                                Button { exportingBackup = true } label: {
+                                    CardRow(title: String(localized: "Export a backup"),
+                                            subtitle: String(localized: "Messages, contacts, groups, settings and media in one file your 24 words open.")) {
+                                        Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .sheet(isPresented: $exportingBackup) { BackupExportSheet() }
                         }
                         SectionLabel("Demo").padding(.top, 10)
                         CardList {

@@ -412,6 +412,19 @@ impl Store {
         Self::init(Connection::open(path)?)
     }
 
+    /// Opens (or creates) the database at `path` encrypted with `key` (SQLCipher, ADR-0036). A
+    /// plain database found there is encrypted first, in place. Fails without SQLCipher built
+    /// in, or with another key: it is never opened in clear instead.
+    pub fn open_encrypted(path: &Path, key: &[u8; 32]) -> Result<Self, Error> {
+        crate::cipher::required()?;
+        if crate::cipher::is_plain(path).map_err(crate::cipher::io_error)? {
+            crate::cipher::encrypt_plain(path, key)?;
+        }
+        let conn = Connection::open(path)?;
+        crate::cipher::apply_key(&conn, key)?;
+        Self::init(conn)
+    }
+
     /// A database in memory (demo, tests).
     pub fn in_memory() -> Result<Self, Error> {
         Self::init(Connection::open_in_memory()?)
@@ -478,6 +491,65 @@ impl Store {
         )?;
         conn.pragma_update(None, "user_version", VERSION)?;
         Ok(Self { conn })
+    }
+
+    // ----- backup (docs/spec/backup.md, ADR-0037) ---------------------------------------
+
+    /// Makes this database, a copy of the store taken for a backup, into what a backup keeps
+    /// (backup.md §3): disappearing messages go with their media, reactions and edits; groups
+    /// lose the other members' sender keys; invitations, location shares and positions, search
+    /// consents and the settings named in `drop_settings` go; texts still waiting fail
+    /// (interrupted), and our reactions, edits and deletes not delivered yet go. Then the file
+    /// is compacted, with no journal beside it. Returns how many messages it keeps.
+    pub fn prepare_backup(&self, drop_settings: &[&str]) -> Result<u64, Error> {
+        self.vanish(i64::MAX)?;
+        let tx = self.conn.unchecked_transaction()?;
+        let groups: Vec<(Vec<u8>, Vec<u8>)> = {
+            let mut st = tx.prepare("SELECT gid, snapshot FROM groups")?;
+            let rows = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for (gid, snapshot) in groups {
+            match crate::group::snapshot_without_keys(&snapshot) {
+                Some(bare) => tx.execute(
+                    "UPDATE groups SET snapshot = ?2 WHERE gid = ?1",
+                    params![gid, bare],
+                )?,
+                None => tx.execute("DELETE FROM groups WHERE gid = ?1", params![gid])?,
+            };
+        }
+        tx.execute_batch(
+            "DELETE FROM invitations;
+             DELETE FROM shares;
+             DELETE FROM positions;
+             DELETE FROM search_consent;
+             DELETE FROM reactions WHERE pending <> 0;
+             DELETE FROM amendments WHERE pending <> 0;",
+        )?;
+        let (failed, reason, b) = Status::Failed(FailReason::Interrupted).columns();
+        let (queued, sending) = (
+            Status::Queued.columns().0,
+            Status::Sending { sent: 0, total: 0 }.columns().0,
+        );
+        tx.execute(
+            "UPDATE messages SET status = ?1, status_a = ?2, status_b = ?3, expires_ms = NULL
+             WHERE status IN (?4, ?5)",
+            params![failed, reason, b, queued, sending],
+        )?;
+        for key in drop_settings {
+            tx.execute("DELETE FROM settings WHERE key = ?1", params![key])?;
+        }
+        tx.commit()?;
+        self.conn.execute_batch("VACUUM")?;
+        self.conn.pragma_update(None, "journal_mode", "DELETE")?;
+        self.message_count()
+    }
+
+    /// How many messages the store holds.
+    pub fn message_count(&self) -> Result<u64, Error> {
+        self.conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get::<_, i64>(0))
+            .map(|n| u64::try_from(n).unwrap_or(0))
     }
 
     // ----- MeshCore channels (protocol.md §15.3) ----------------------------------------

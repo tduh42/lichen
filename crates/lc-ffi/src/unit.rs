@@ -1195,3 +1195,167 @@ mod demo_radio_settings {
         assert_eq!(r.battery_mv, Some(4_012));
     }
 }
+
+#[cfg(test)]
+mod backup {
+    use super::*;
+
+    fn dir(name: &str) -> std::path::PathBuf {
+        let d =
+            std::env::temp_dir().join(format!("lichen-ffi-backup-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
+    }
+
+    fn text(t: &str) -> store::Message {
+        store::Message {
+            id: 0,
+            chat: Chat::Contact([0x4D; 32]),
+            outgoing: false,
+            author: None,
+            content: Content::Text {
+                sent_at: 1_793_000_000,
+                text: t.into(),
+            },
+            at_ms: 1_793_000_000_000,
+            status: Status::Received,
+            fragments: 1,
+            airtime_ms: 0,
+            snr4: None,
+            read: true,
+            msg_ref: None,
+        }
+    }
+
+    /// ADR-0037: exported on one phone, restored on another with the words; the app then
+    /// starts with that identity and finds its history and media.
+    #[test]
+    fn exported_then_restored_elsewhere() {
+        let (a_dir, b_dir) = (dir("a"), dir("b"));
+        let a = LichenCore::new(
+            "t".into(),
+            vec![1; 32],
+            vec![150; 32],
+            Some(a_dir.display().to_string()),
+        )
+        .unwrap();
+        a.lock()
+            .store
+            .as_ref()
+            .unwrap()
+            .insert(&text("At the refuge?"))
+            .unwrap();
+        std::fs::create_dir_all(a_dir.join("downloads")).unwrap();
+        std::fs::write(a_dir.join("downloads").join("ab12.jpg"), b"photo").unwrap();
+        let file = a_dir.join("lichen.backup").display().to_string();
+        let made = a
+            .export_backup(file.clone(), br#"{"lichen.tor":true}"#.to_vec())
+            .unwrap();
+        assert_eq!((made.messages, made.files), (1, 1));
+        assert!(!a_dir.join("backup-work").join("backup.sqlite").exists());
+
+        let b = LichenCore::new(
+            "t".into(),
+            vec![2; 32],
+            vec![151; 32],
+            Some(b_dir.display().to_string()),
+        )
+        .unwrap();
+        let other = lc_core::identity::recovery_phrase(&[7; 32]);
+        let into = b_dir.display().to_string();
+        assert_eq!(
+            b.restore_backup(file.clone(), other, into.clone()),
+            Err(LichenError::WrongBackupWords)
+        );
+        assert_eq!(
+            b.restore_backup(file.clone(), vec!["lichen".into(); 24], into.clone()),
+            Err(LichenError::BadCode)
+        );
+        assert_eq!(
+            b.restore_backup(
+                b_dir.join("none").display().to_string(),
+                a.recovery_phrase(),
+                into.clone()
+            ),
+            Err(LichenError::NotABackup)
+        );
+        let r = b
+            .restore_backup(file.clone(), a.recovery_phrase(), into.clone())
+            .unwrap();
+        assert_eq!(r.identity_seed, vec![150; 32]);
+        assert_eq!(r.settings, br#"{"lichen.tor":true}"#);
+        assert_eq!((r.messages, r.files), (1, 1));
+        assert!(b.storage_ok(), "another identity's store stays open");
+        assert_eq!(
+            std::fs::read(b_dir.join("downloads").join("ab12.jpg")).unwrap(),
+            b"photo"
+        );
+
+        let c = LichenCore::new(
+            "t".into(),
+            vec![3; 32],
+            r.identity_seed,
+            Some(b_dir.display().to_string()),
+        )
+        .unwrap();
+        let chat = ChatRef::Contact {
+            key: vec![0x4D; 32],
+        };
+        let h = c.history(chat, None, 10).unwrap();
+        assert!(
+            matches!(&h[..], [m] if matches!(&m.message, Message::Text { text, .. } if text == "At the refuge?"))
+        );
+        // Restored again over its own open store: that store is closed first.
+        c.restore_backup(file.clone(), a.recovery_phrase(), into.clone())
+            .unwrap();
+        assert!(!c.storage_ok());
+        // A demo core exports nothing, but can restore into the app's folder.
+        let demo = LichenCore::new("t".into(), vec![4; 32], vec![152; 32], None).unwrap();
+        assert_eq!(
+            demo.export_backup("x".into(), Vec::new()),
+            Err(LichenError::NotAllowed)
+        );
+        assert!(demo.restore_backup(file, a.recovery_phrase(), into).is_ok());
+        for d in [a_dir, b_dir] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// ADR-0036: a database key is used only with SQLCipher built in; otherwise nothing is
+    /// stored, rather than stored in clear.
+    #[test]
+    fn a_database_key_needs_sqlcipher() {
+        let d = dir("key");
+        let at = Some(d.display().to_string());
+        let c = LichenCore::with_database_key(
+            "t".into(),
+            vec![1; 32],
+            vec![153; 32],
+            at.clone(),
+            Some(vec![9; 32]),
+        )
+        .unwrap();
+        assert_eq!(c.storage_ok(), database_encryption());
+        assert!(
+            LichenCore::with_database_key(
+                "t".into(),
+                vec![1; 32],
+                vec![153; 32],
+                at.clone(),
+                Some(vec![9; 31])
+            )
+            .is_err()
+        );
+        // The app could not read its key: no database, rather than a clear one.
+        let locked = LichenCore::with_database_key(
+            "t".into(),
+            vec![1; 32],
+            vec![154; 32],
+            at,
+            Some(Vec::new()),
+        )
+        .unwrap();
+        assert!(!locked.storage_ok());
+        let _ = std::fs::remove_dir_all(d);
+    }
+}
