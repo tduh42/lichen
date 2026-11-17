@@ -55,9 +55,13 @@ struct ChatView: View {
             }
             ScrollViewReader { proxy in
                 ScrollView {
-                    // Not lazy: pages of 100 messages, and exact heights let the view open on the
-                    // last one (a lazy stack estimates photos and voice notes, and lands short).
-                    VStack(spacing: 10) {
+                    // Lazy: only the rows on screen are built, so a long history (many earlier
+                    // pages, a search result or a quote thousands of messages back) opens and
+                    // scrolls at once (docs/measurements.md, 2026-11-17). The view opens at the
+                    // end (`defaultScrollAnchor`), and stays there while photos and stickers take
+                    // their real height (FollowBottom); a jump lands again once the rows around
+                    // it have theirs.
+                    LazyVStack(spacing: 10) {
                         if let e = model.historyError[chat] {
                             Banner(kind: .warn, title: e, action: (String(localized: "Retry"), { model.load(chat) }))
                         }
@@ -135,6 +139,9 @@ struct ChatView: View {
                     scrollToStart(proxy)
                     try? await Task.sleep(for: .milliseconds(250))
                     scrollToStart(proxy)
+                    // Far back, the first scroll lands on estimated heights: once more.
+                    try? await Task.sleep(for: .milliseconds(350))
+                    if highlight != nil || dividerBefore != nil { scrollToStart(proxy) }
                     if highlight != nil {
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { highlight = nil }
@@ -182,6 +189,9 @@ struct ChatView: View {
                     highlight = id
                     Task {
                         try? await Task.sleep(for: .milliseconds(100))
+                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        // Once the rows around it have their real heights.
+                        try? await Task.sleep(for: .milliseconds(400))
                         withAnimation { proxy.scrollTo(id, anchor: .center) }
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { if highlight == id { highlight = nil } }
