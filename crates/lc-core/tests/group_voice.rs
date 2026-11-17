@@ -94,7 +94,7 @@ fn a_voice_note_reaches_every_member() {
                 _ => None,
             })
             .collect();
-        assert_eq!(got, [voice.clone()], "member {i}");
+        assert_eq!(got, std::slice::from_ref(&voice), "member {i}");
     }
 }
 

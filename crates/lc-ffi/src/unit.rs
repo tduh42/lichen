@@ -1512,7 +1512,7 @@ mod block_archive {
 /// Media and storage (ADR-0034): old media go as a delete for me does, announcements with
 /// their downloads (`MediaGone`), texts stay.
 #[cfg(test)]
-mod storage {
+mod media_storage {
     use super::*;
 
     #[test]
