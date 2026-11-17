@@ -759,6 +759,7 @@ response = 0x00 ‖ size u64 ‖ content     (found)
 - The provider serves whoever asks for a hash it offers: the hash is the capability, and it only travels inside encrypted announcements. iroh authenticates the provider by its endpoint id (TLS 1.3, end to end even through a relay).
 - An accept-list of contacts' endpoints is deliberately not used: the connection, and with it the knowledge that the provider is online, comes before any check the provider could make (review of 2026-11-15, SR-29). Anyone who knows a provider's endpoint id can tell whether iroh runs (§14.4); relay only hides the address.
 - The requester writes the content to a file as it arrives (`<name>.part`), renamed only once the hash matches and removed on any failure or cancellation: a download never sits in memory (SR-33).
+- The provider keeps what it offers in files and serves each request from the file as it reads it, 64 KiB at a time, hashing on the way: nothing is held in memory per request (second read of 2026-11-17, N17). The last chunk goes only once the whole hashes to the offer's `hash`; a file that no longer does (changed or cut on disk) is cut short before it, so it never goes out whole, and is no longer offered. At most 8 requests are served at once; a request must arrive within 30 s, an answer go within 10 minutes (SR-33).
 - The provider offers a blob while the app runs (synchronous mode), for 7 days after the announcement.
 - An onion service accepts only `BEGIN` to port 1 and answers anything else with `END` (reason `DONE`), as other onion services do.
 
