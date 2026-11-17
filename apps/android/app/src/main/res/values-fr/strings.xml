@@ -564,8 +564,16 @@
     <string name="close_group_q">Fermer le groupe ?</string>
     <string name="leave_group_note">Tu ne reçois plus ses messages et tes partages de position avec lui s’arrêtent. Ce que tu as reçu reste sur ce téléphone.</string>
     <string name="close_group_note">Plus aucun membre ne le reçoit. Les messages déjà reçus restent sur chaque téléphone.</string>
+    <string name="close_group_everyone">Fermer le groupe pour tous</string>
+    <string name="who_runs_q">Qui gère le groupe après toi ?</string>
+    <string name="hand_over_note">La personne choisie pourra inviter, retirer et renommer, et tu pars. Fermer le groupe le termine sur chaque téléphone ; les messages déjà reçus restent.</string>
+    <string name="hand_over_to">Confier le groupe à %1$s</string>
+    <string name="make_admin">Confier le groupe</string>
+    <string name="make_admin_q">Confier le groupe ?</string>
+    <string name="make_admin_named">Confier le groupe à %1$s</string>
+    <string name="make_admin_note">%1$s gérera le groupe : inviter, retirer, renommer. Tu restes membre.</string>
     <string name="invite_none">Les contacts apparaissent ici une fois leur identité connue : scanne leur code ou échange un message.</string>
-    <string name="invite_note">Les nouveaux membres reçoivent les clés actuelles : ils peuvent lire les messages enregistrés avant leur arrivée.</string>
+    <string name="invite_note">Les nouveaux membres ne peuvent pas lire ce qui a été envoyé avant leur arrivée : chaque clé avance d’un cran quand ils arrivent.</string>
     <!-- Outbox (protocol.md §6.1) -->
     <string name="debug_offline_text">Écrit pendant que ma radio est éteinte</string>
     <string name="debug_offline_group">J\'arrive, radio éteinte pour l\'instant</string>
@@ -655,7 +663,7 @@
     <string name="new_code">Nouveau code</string>
     <string name="invite_scan_hint">Dans lichen : Ajouter un contact › Scanner. La personne rejoint %1$s et tu deviens pour elle un contact vérifié.</string>
     <string name="joined_header">Ont rejoint</string>
-    <string name="invite_warning">Toute personne qui le scanne pendant qu\'il est affiché peut rejoindre le groupe : tu peux la retirer du groupe. Les nouveaux venus peuvent lire les messages enregistrés sous les clés actuelles.</string>
+    <string name="invite_warning">Toute personne qui le scanne pendant qu\'il est affiché peut rejoindre le groupe : tu peux la retirer du groupe. Les nouveaux venus ne peuvent pas lire ce qui a été envoyé avant leur arrivée.</string>
     <string name="invitation_code_for">Code d\'invitation pour %1$s</string>
     <string name="join_group">Rejoindre un groupe</string>
     <string name="join_q">Rejoindre %1$s ?</string>
@@ -663,8 +671,8 @@
     <string name="the_admin">l\'admin</string>
     <string name="the_group">le groupe</string>
     <string name="join">Rejoindre</string>
-    <string name="join_note">%1$s devient un contact vérifié : tu as scanné son code en personne. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe.</string>
-    <string name="join_note_pasted">Collé, pas scanné : %1$s est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe.</string>
+    <string name="join_note">%1$s devient un contact vérifié : tu as scanné son code en personne. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède.</string>
+    <string name="join_note_pasted">Collé, pas scanné : %1$s est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède.</string>
     <string name="asking_admin">Demande à %1$s de t\'ajouter…</string>
     <string name="asking_note">Son téléphone t\'ajoute par LoRa, en général en une ou deux minutes. Tu peux fermer cet écran : le groupe apparaîtra dans tes conversations.</string>
     <string name="already_in">Tu fais déjà partie de %1$s</string>
@@ -700,6 +708,9 @@
     <string name="notice_you_timer">Tu as réglé les messages pour disparaître après %s</string>
     <string name="notice_timer">%1$s a réglé les messages pour disparaître après %2$s</string>
     <string name="notice_node_renamed">La radio de %1$s s’appelle maintenant « %2$s »</string>
+    <string name="notice_you_made_admin">Tu as confié le groupe à %1$s</string>
+    <string name="notice_made_you_admin">%1$s t’a confié le groupe</string>
+    <string name="notice_made_admin">%1$s a confié le groupe à %2$s</string>
     <string name="notice_you_timer_off">Tu as désactivé les messages éphémères</string>
     <string name="notice_timer_off">%s a désactivé les messages éphémères</string>
     <string name="notice_changed">Le groupe a changé</string>

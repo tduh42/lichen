@@ -505,8 +505,8 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
     }
 }
 
-/// Tries of a membership datagram (GROUP_STATE, SENDER_KEY, SENDER_KEYS): five within half an
-/// hour, then one an hour for a day (§10.1, SR-12).
+/// Tries of a membership datagram (GROUP_STATE, SENDER_KEY, SENDER_KEYS, GROUP_HANDOVER): five
+/// within half an hour, then one an hour for a day (§10.1, SR-12).
 const MEMBERSHIP_TRIES: u8 = 5 + 24;
 
 #[derive(Clone, Debug)]
@@ -765,6 +765,8 @@ pub struct Core {
     pub(crate) group_copies: u8,
     /// Members ask for the group messages they missed (§10.6); off only to measure without.
     pub(crate) group_recovery: bool,
+    /// Whether this member floods a digest after its bursts (§10.6, ADR-0040).
+    pub(crate) group_digest: bool,
     /// Groups changed since the app last persisted them.
     pub(crate) dirty_groups: HashSet<GroupId>,
     /// Invitations shown (§10.5): token → group and expiry. Never stored: a restart revokes
@@ -868,6 +870,7 @@ impl Core {
             held: VecDeque::new(),
             group_copies: crate::group::COPIES,
             group_recovery: true,
+            group_digest: true,
             dirty_groups: HashSet::new(),
             invites: HashMap::new(),
             invite_admissions: HashMap::new(),
@@ -1372,10 +1375,24 @@ impl Core {
     /// SENDER_KEYS of the same group join the waiting one.
     pub(crate) fn enqueue_control(&mut self, to: &PubKey, datagram: Vec<u8>) {
         if let Some(p) = self.peers.get_mut(to) {
-            for m in p.queue.iter_mut().filter(|m| m.internal && !m.started) {
+            // The latest first, and never past a handover of the same group: a state merged
+            // ahead of it would come before the handover that lets the peer take it (§10.8).
+            let gid = crate::group::membership_of(&datagram);
+            for m in p
+                .queue
+                .iter_mut()
+                .rev()
+                .filter(|m| m.internal && !m.started)
+            {
                 if let Some(merged) = crate::group::merge_control(&m.datagram, &datagram) {
                     m.datagram = merged;
                     return;
+                }
+                if m.datagram.first() == Some(&datagram::GROUP_HANDOVER)
+                    && gid.is_some()
+                    && crate::group::membership_of(&m.datagram) == gid
+                {
+                    break;
                 }
             }
         }
@@ -1975,7 +1992,12 @@ impl Core {
     fn fail_message(&mut self, peer: &mut Peer, mut m: Outgoing, reason: FailReason, now: Millis) {
         let membership = matches!(
             m.datagram.first(),
-            Some(&(datagram::GROUP_STATE | datagram::SENDER_KEY | datagram::SENDER_KEYS))
+            Some(
+                &(datagram::GROUP_STATE
+                    | datagram::SENDER_KEY
+                    | datagram::SENDER_KEYS
+                    | datagram::GROUP_HANDOVER)
+            )
         );
         if !m.internal {
             self.events.push_back(Event::Failed { id: m.id, reason });
@@ -3231,6 +3253,9 @@ impl Core {
                                 | &lc_proto::content::GROUP_MISSING
                                 | &lc_proto::content::GROUP_RESEND
                                 | &lc_proto::content::GROUP_SYNC
+                                | &lc_proto::content::GROUP_HANDOVER
+                                | &lc_proto::content::GROUP_DIGEST
+                                | &lc_proto::content::GROUP_KEY_REQUEST
                         )
                     )
                 {

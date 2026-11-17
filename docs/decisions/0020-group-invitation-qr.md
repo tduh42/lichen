@@ -1,6 +1,6 @@
 # ADR-0020 — Group invitation by QR code: a short-lived token, no secret in the code
 
-- Status: accepted
+- Status: accepted; amended by ADR-0039 (newcomers no longer read what came before)
 - Date: 2026-11-09
 
 ## Context

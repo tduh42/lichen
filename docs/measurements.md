@@ -405,3 +405,23 @@ Release core for arm64, the same branch built with SQLite (now) and with SQLCiph
 | iOS app, simulator debug dylib | 74,628,992 B | 74,677,568 B | +49 KB |
 
 The OpenSSL sources hold 548,000 lines of C (344,000 in `crypto/`); only `libcrypto` is linked. On iOS nothing is added but SQLCipher's own code.
+
+## 2026-11-17 — Groups at 20 % loss, before and after the M9 group changes (ADR-0038, 0039, 0040)
+
+`LICHEN_LOSS=20 cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`, the setup of 2026-11-09: five members around one repeater (none hears another), 20 % random loss on every link, 40 seeds; every member posts 8 times, a post a minute overall (each member every five minutes, on the minute). "Last posts" are each member's 8th post. With `LICHEN_REVEAL=1` a 9th round follows and reveals the last gaps (the 2026-11-09 protocol); with `LICHEN_REVEAL=0` nothing follows the 8th post, as at the end of a conversation. `LICHEN_DIGEST=0` turns the digest of ADR-0040 off. Before: `main` at `4158484` (2026-11-16); after: this branch. Frames: every transmission from the first post to half an hour after the last, repeater included, per run.
+
+| | Recovery | Delivered | Last posts | Recovered (late) | Delay p50 / p90 | Frames per run |
+|---|---|---|---|---|---|---|
+| before, revealed | without | 5567/6400 (87.0 %) | 725/800 (90.6 %) | — | — | 162 |
+| before, revealed | with | 6143/6400 (96.0 %) | 671/800 (83.9 %) | 1272 | 420 s / 1190 s | 1547 |
+| after, revealed | without | 5603/6400 (87.5 %) | 703/800 (87.9 %) | — | — | 162 |
+| after, revealed | with, no digest | 6118/6400 (95.6 %) | 621/800 (77.6 %) | 1242 | 430 s / 1300 s | 1429 |
+| after, revealed | with, digest | 6151/6400 (96.1 %) | 665/800 (83.1 %) | 1275 | 430 s / 1390 s | 1789 |
+| before, burst ends | with | 5946/6400 (92.9 %) | 509/800 (63.6 %) | 1075 | 410 s / 920 s | 1146 |
+| after, burst ends | with, no digest | 5866/6400 (91.7 %) | 445/800 (55.6 %) | 990 | 410 s / 980 s | 1030 |
+| after, burst ends | with, digest | 6113/6400 (95.5 %) | 631/800 (78.9 %) | 1237 | 450 s / 1290 s | 1516 |
+
+- **Key step and handover** (the rows "no digest" against "before"): the same within the spread of 40 seeds. A step sends nothing; members try a few keys when one fails.
+- **The digest** brings back a burst's lost last post: when nothing follows the 8th post, 78.9 % of them arrive instead of 55.6 %, and 95.5 % of all posts instead of 91.7 %, about what a later message revealing the gaps gives (96.0 %). The 486 more frames per run are mostly the recovery it sets off (247 more posts recovered); the digests themselves are five per run here, one per member, two copies each: 1.43 s of the author's airtime per digest at SF8 / 62.5 kHz / CR 4/5 (a 97-byte envelope, 0.71 s a copy), about 2.9 s with the repeater's relays.
+- **A first digest that waited two minutes failed:** every post got one, sent exactly when another member posted on the minute; both floods collided at the repeater and the recovery traffic that followed fed on itself: 61.7 % delivered (77.2 % with the two minutes drawn up to three), 4080 frames per run. Six minutes plus up to three keeps the digest to the end of a burst.
+- Recovery still loses posts at 20 % per link: the request and the answer each need a session through a repeater that drops one frame in five, and members who lost the same post ask at the same time (ADR-0024).

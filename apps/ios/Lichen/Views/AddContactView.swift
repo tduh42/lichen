@@ -177,8 +177,8 @@ private struct JoinPanel: View {
                 Button("Close") { done() }.buttonStyle(.secondary)
             } else {
                 Text(inPerson
-                     ? String(localized: "\(admin) becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.")
-                     : String(localized: "Pasted, not scanned: \(admin) is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys."))
+                     ? String(localized: "\(admin) becomes a verified contact: you scanned their code in person. You read what the group sends from now on, not what came before.")
+                     : String(localized: "Pasted, not scanned: \(admin) is added without being verified. Compare safety numbers with them to verify. You read what the group sends from now on, not what came before."))
                     .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Join") { join() }
