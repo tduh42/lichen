@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.tcpAddress
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.AppModel.RadioState
 
@@ -195,10 +196,13 @@ fun PairingScreen(model: AppModel, back: () -> Unit, done: () -> Unit = back) {
                         shape = RoundedCornerShape(12.dp),
                         colors = fieldColors(),
                     )
-                    SecondaryButton(stringResource(R.string.connect), Modifier.width(120.dp), enabled = address.contains(':')) {
+                    SecondaryButton(stringResource(R.string.connect), Modifier.width(120.dp), enabled = tcpAddress(address) != null) {
                         model.connectTcp(address.trim())
                     }
                 }
+            }
+            model.tcpError?.let { why ->
+                item { Text(stringResource(R.string.tcp_failed, why), fontSize = 13.sp, color = t.sos, modifier = Modifier.padding(horizontal = 4.dp)) }
             }
             if (!model.isDemo) {
                 item {

@@ -38,7 +38,9 @@ impl LichenCore {
             reaction_inflight: HashMap::new(),
             amend_inflight: HashMap::new(),
             timer_inflight: HashMap::new(),
+            diag: report::Diag::default(),
         };
+        inner.diag.note(0, "core started", None);
         // The history is available before the node connects.
         if let Some(id) = inner.core.key().copied() {
             inner.open_store(&id);
@@ -57,6 +59,7 @@ impl LichenCore {
     pub fn connect(&self, now_ms: u64) {
         let mut i = self.lock();
         i.last_now = now_ms;
+        i.diag.note(now_ms, "radio link up", None);
         i.core.connect(now_ms);
         i.persist();
     }
@@ -66,6 +69,7 @@ impl LichenCore {
     pub fn disconnect(&self, now_ms: u64) {
         let mut i = self.lock();
         i.last_now = now_ms;
+        i.diag.note(now_ms, "radio link down", None);
         i.core.disconnect(now_ms);
         i.persist();
     }
@@ -180,13 +184,19 @@ impl LichenCore {
     pub fn on_companion_frame(&self, frame: Vec<u8>, now_ms: u64) {
         let mut i = self.lock();
         i.last_now = now_ms;
+        i.diag.frame_in(now_ms, &frame);
         i.core.on_companion_frame(&frame, now_ms);
         i.persist();
     }
 
     /// The next frame to write to the companion, if one is due.
     pub fn poll_companion(&self, now_ms: u64) -> Option<Vec<u8>> {
-        self.lock().core.poll_companion(now_ms)
+        let mut i = self.lock();
+        let f = i.core.poll_companion(now_ms);
+        if f.is_some() {
+            i.diag.frame_out();
+        }
+        f
     }
 
     pub fn tick(&self, now_ms: u64) {
@@ -223,6 +233,8 @@ impl LichenCore {
                 return Some(e);
             }
             let e = i.core.poll_event()?;
+            let now = i.last_now;
+            i.diag.event(now, &e);
             let keep = i.on_event(&e);
             i.persist();
             if keep {

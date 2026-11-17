@@ -415,8 +415,17 @@ class AppModel(val app: Application) {
     /** How the radio is reached: "BLE", "USB" or "TCP". */
     var linkKind by mutableStateOf("BLE")
 
-    /** The app is on screen: received messages need no notification. */
+    /** The app is on screen: received messages need no notification. Back on screen, a TCP
+     * link waiting to retry tries at once. */
     var inForeground = false
+        set(on) {
+            if (on != field) log.note(if (on) "app in the foreground" else "app in the background")
+            if (on && !field) tcp.retryNow()
+            field = on
+        }
+
+    /** The app's recent log, for problem reports (ADR-0045). */
+    val log = AppLog(::now)
 
     /** The conversation on screen: its messages need no notification. */
     var visibleChat: ChatId? = null
@@ -433,12 +442,16 @@ class AppModel(val app: Application) {
 
     // USB first: the Bluetooth link may report its state while it is built.
     val usb = UsbCompanion(app, ::usbChanged, ::frame) { usbDevices = it }
-    val tcp = TcpCompanion(::tcpChanged, ::frame)
+    val tcp = TcpCompanion(::tcpChanged, ::frame, { tcpError = it }, log::note)
+
+    /** Why the last TCP connection failed, for the pairing screen. */
+    var tcpError by mutableStateOf<String?>(null)
 
     /** The last TCP companion address, to offer again. */
     var tcpAddress by mutableStateOf(prefs.getString(TCP_ADDRESS, null) ?: "10.0.2.2:5000")
         private set
-    val ble = BleCompanion(app, ::bleChanged, { found = it }, ::frame)
+    // Frames from Bluetooth are left aside while a TCP link is wanted: both may reach a radio.
+    val ble = BleCompanion(app, ::bleChanged, { found = it }, { if (tcp.target == null) frame(it) })
 
     private var demo: DemoNetwork? = null
     private var demoJob: Job? = null
@@ -461,6 +474,11 @@ class AppModel(val app: Application) {
         positions = core.positions(now())
         refreshLocationAccess()
         updateLocator()
+        // The TCP link in use when the app stopped comes back, retried until it answers; once
+        // the model is built (its state changes run the core).
+        if (prefs.getBoolean(TCP_ACTIVE, false)) {
+            scope.launch(Dispatchers.Main) { tcp.connect(tcpAddress, retrying = true) }
+        }
     }
 
     /** The stored identity, or a new one on a first launch; never a silent replacement of an
@@ -754,7 +772,8 @@ class AppModel(val app: Application) {
     }
 
     private fun bleChanged(s: RadioState) {
-        if (usb.device != null || tcp.connectedTo != null) return
+        log.note("Bluetooth: ${s.logWord}")
+        if (usb.device != null || tcp.target != null) return
         linkKind = "BLE"
         link = RadioLink(ble::write)
         radioChanged(s)
@@ -774,7 +793,9 @@ class AppModel(val app: Application) {
     }
 
     private fun tcpChanged(s: RadioState) {
-        if (s is RadioState.Connected || s is RadioState.Connecting) {
+        log.note("TCP: ${s.logWord}")
+        if (s is RadioState.Connected) prefs.edit { putBoolean(TCP_ACTIVE, true) }
+        if (tcp.target != null) {
             ble.stopScan()
             linkKind = "TCP"
             link = RadioLink(tcp::write)
@@ -786,10 +807,13 @@ class AppModel(val app: Application) {
         }
     }
 
-    fun connectTcp(address: String) {
+    /** Connects to the companion at [address] ("host:port"); false when it is not an address. */
+    fun connectTcp(address: String): Boolean {
+        tcpError = null
+        if (!tcp.connect(address)) return false
         tcpAddress = address
         prefs.edit { putString(TCP_ADDRESS, address) }
-        tcp.connect(address)
+        return true
     }
 
     /** The Bluetooth permissions were just granted. */
@@ -806,7 +830,10 @@ class AppModel(val app: Application) {
     /** Disconnects the radio (and forgets it, over Bluetooth). */
     fun disconnect() {
         when {
-            tcp.connectedTo != null -> tcp.close()
+            tcp.target != null -> {
+                prefs.edit { putBoolean(TCP_ACTIVE, false) }
+                tcp.close()
+            }
             usb.device != null -> usb.close()
             else -> ble.disconnect()
         }
@@ -2068,6 +2095,7 @@ class AppModel(val app: Application) {
         private const val MY_NAME = "lichen.myName"
         private const val BACKED_UP = "lichen.phraseBackedUp"
         private const val TCP_ADDRESS = "lichen.tcpAddress"
+        private const val TCP_ACTIVE = "lichen.tcpActive"
         private const val IROH = "lichen.iroh"
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"

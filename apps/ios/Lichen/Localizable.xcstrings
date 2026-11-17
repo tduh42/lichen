@@ -1021,6 +1021,16 @@
         }
       }
     },
+    "A companion on Wi-Fi, or a USB radio relayed by a computer (lichen bridge; the simulator reaches it at 127.0.0.1:5000). The network link to the radio is not encrypted: on a shared network, someone can read and change MeshCore chats, contacts and channels. lichen messages stay end-to-end encrypted.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un companion en Wi-Fi, ou une radio USB relayée par un ordinateur (lichen bridge ; le simulateur la joint à 127.0.0.1:5000). Le lien réseau avec la radio n’est pas chiffré : sur un réseau partagé, quelqu’un peut lire et modifier les discussions MeshCore, les contacts et les canaux. Les messages lichen restent chiffrés de bout en bout."
+          }
+        }
+      }
+    },
     "A complete area works without a network. A partial one misses tiles at some zoom levels: resume it while you still have a network.": {
       "localizations": {
         "fr": {
@@ -1067,6 +1077,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un hashtag, ce sont des lettres, des chiffres et des tirets."
+          }
+        }
+      }
+    },
+    "A log without your messages, to send to the developers": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un journal sans tes messages, à envoyer aux développeurs"
           }
         }
       }
@@ -1861,6 +1881,16 @@
         }
       }
     },
+    "Connect": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecter"
+          }
+        }
+      }
+    },
     "Connect a radio to see its settings.": {
       "localizations": {
         "fr": {
@@ -2147,6 +2177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chargement impossible · Réessaie"
+          }
+        }
+      }
+    },
+    "Could not reach the radio: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de joindre la radio : %@"
           }
         }
       }
@@ -3141,6 +3181,16 @@
         }
       }
     },
+    "GNU GPL 3 or later, and what lichen includes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GNU GPL 3 ou ultérieure, et ce que lichen inclut"
+          }
+        }
+      }
+    },
     "GPS": {
       "localizations": {
         "fr": {
@@ -3437,6 +3487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "En réponse à %@ : %@"
+          }
+        }
+      }
+    },
+    "Included": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inclus"
           }
         }
       }
@@ -3777,6 +3837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Permet aux radios autour d'ajouter la tienne en contact"
+          }
+        }
+      }
+    },
+    "Licences": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Licences"
           }
         }
       }
@@ -4387,6 +4457,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Demande une connexion Internet"
+          }
+        }
+      }
+    },
+    "Network": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réseau"
           }
         }
       }
@@ -5741,6 +5821,16 @@
         }
       }
     },
+    "Report a problem": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signaler un problème"
+          }
+        }
+      }
+    },
     "Resend": {
       "localizations": {
         "fr": {
@@ -5837,6 +5927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Serveurs de salon"
+          }
+        }
+      }
+    },
+    "Rust crates of the core (%lld)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crates Rust du cœur (%lld)"
           }
         }
       }
@@ -6381,6 +6481,16 @@
         }
       }
     },
+    "Share the report": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager le rapport"
+          }
+        }
+      }
+    },
     "Share your position with a contact or join a group.": {
       "localizations": {
         "fr": {
@@ -6731,6 +6841,16 @@
         }
       }
     },
+    "TCP · MeshCore companion · not encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP · MeshCore companion · non chiffré"
+          }
+        }
+      }
+    },
     "Tap to load from GIPHY": {
       "localizations": {
         "fr": {
@@ -6901,6 +7021,16 @@
         }
       }
     },
+    "The licence is on the page above.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La licence est sur la page ci-dessus."
+          }
+        }
+      }
+    },
     "The lock stays off": {
       "localizations": {
         "fr": {
@@ -6987,6 +7117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le stockage sécurisé du téléphone est illisible pour le moment, souvent avant le premier déverrouillage. Rien n’a été modifié : déverrouille le téléphone, puis réessaie."
+          }
+        }
+      }
+    },
+    "The radio closed the link.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio a fermé le lien."
           }
         }
       }
@@ -7971,6 +8111,16 @@
         }
       }
     },
+    "What lichen did lately, for its developers: versions, your radio's model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce que lichen a fait récemment, pour ses développeurs : les versions, le modèle de ta radio, son firmware et ses réglages, et le journal récent de l’app. Aucun message, aucune clé, aucun nom ni aucune position n’y figure. Relis-le, puis envoie-le avec quelques mots sur ce qui n’a pas marché."
+          }
+        }
+      }
+    },
     "What people with a MeshCore app see": {
       "localizations": {
         "fr": {
@@ -8571,6 +8721,16 @@
         }
       }
     },
+    "host:port": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hôte:port"
+          }
+        }
+      }
+    },
     "in %lld s": {
       "localizations": {
         "fr": {
@@ -8627,6 +8787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tes discussions lichen avec les mêmes personnes restent chiffrées de bout en bout ; rien n'en passe jamais dans une discussion MeshCore."
+          }
+        }
+      }
+    },
+    "lichen is free software under the GNU General Public License, version 3 or later: you may use it, study it, share it and change it. Its source code is on GitHub.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lichen est un logiciel libre sous licence publique générale GNU, version 3 ou ultérieure : tu peux l’utiliser, l’étudier, le partager et le modifier. Son code source est sur GitHub."
           }
         }
       }

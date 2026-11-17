@@ -901,4 +901,17 @@
     <string name="map_waits_tor">The map waits while Tor is on</string>
     <string name="map_waits_tor_note">Its tiles come from OpenFreeMap directly, outside Tor: they would show the area you look at.</string>
     <string name="map_load_once">Load the map this time</string>
+    <string name="tcp_failed">Could not reach the radio: %1$s</string>
+    <string name="tcp_not_encrypted">not encrypted</string>
+    <string name="licences">Licences</string>
+    <string name="licences_row">GNU GPL 3 or later, and what lichen includes</string>
+    <string name="licences_note">lichen is free software under the GNU General Public License, version 3 or later: you may use it, study it, share it and change it. Its source code is on GitHub.</string>
+    <string name="licences_included">Included</string>
+    <string name="licences_crates">Rust crates of the core (%1$d)</string>
+    <string name="licence_on_page">The licence is on the page above.</string>
+    <string name="report_problem">Report a problem</string>
+    <string name="report_row">A log without your messages, to send to the developers</string>
+    <string name="report_note">What lichen did lately, for its developers: versions, your radio’s model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.</string>
+    <string name="report_share">Share the report</string>
+    <string name="report_subject">lichen problem report</string>
 </resources>

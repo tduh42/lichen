@@ -204,6 +204,29 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            CardDivider()
+                            NavigationLink {
+                                LicencesView()
+                            } label: {
+                                CardRow(title: String(localized: "Licences"),
+                                        subtitle: String(localized: "GNU GPL 3 or later, and what lichen includes")) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            CardDivider()
+                            // ADR-0045: no message, key, name or position in it.
+                            NavigationLink {
+                                ReportView()
+                            } label: {
+                                CardRow(title: String(localized: "Report a problem"),
+                                        subtitle: String(localized: "A log without your messages, to send to the developers")) {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -302,6 +325,7 @@ struct SettingsView: View {
                         Text(model.nodeName.isEmpty ? String(localized: "MeshCore radio") : model.nodeName)
                             .font(.system(.body, weight: .semibold))
                         Text(model.isDemo ? String(localized: "Demo network · simulated companion") :
+                                model.link == .tcp ? String(localized: "TCP · MeshCore companion · not encrypted") :
                                 String(localized: "BLE · MeshCore companion"))
                             .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
@@ -333,8 +357,9 @@ struct SettingsView: View {
                 Text("Airtime left").font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 AirtimeMeter(usedMs: model.budget.usedMs, limitMs: model.budget.limitMs, large: true)
             }
-            if model.isConnected && !model.isDemo {
-                Button("Disconnect") { model.companion.disconnect() }
+            // Over TCP, also while it reconnects: stops trying.
+            if (model.isConnected || model.link == .tcp) && !model.isDemo {
+                Button("Disconnect") { model.disconnectRadio() }
                     .buttonStyle(.destructive)
             }
         }

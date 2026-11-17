@@ -54,6 +54,9 @@ else
   echo "skipped: install cargo-deny (brew install cargo-deny, or cargo install cargo-deny)"
 fi
 
+step "licences the apps show (assets/licences/licences.json)"
+python3 -I scripts/licences.py --check
+
 if [ "${CHECK_SKIP_FUZZ:-0}" != "1" ] && [ -f fuzz/Cargo.toml ]; then
   step "fuzz smoke run (${FUZZ_SECS:-30} s per target)"
   scripts/fuzz.sh "${FUZZ_SECS:-30}"

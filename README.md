@@ -7,6 +7,7 @@ Off-grid encrypted messaging.
 
 Encrypted messaging on top of the **stock MeshCore** network: long fragmented messages, ChaCha20-Poly1305 with forward secrecy, private groups, media, location sharing and a search mode, and plain chats with people who use the stock MeshCore apps. No firmware is modified: the app talks to the MeshCore companion (Bluetooth or USB) and carries its frames in `RAW_CUSTOM` and `GRP_DATA` packets.
 
+- Getting started (a radio, its firmware, pairing, a first message): [`docs/getting-started.md`](docs/getting-started.md) ([français](docs/getting-started.fr.md)). Before each release: [`docs/field-checklist.md`](docs/field-checklist.md).
 - Normative spec: [`docs/spec/protocol.md`](docs/spec/protocol.md); original design: [`docs/spec/design.md`](docs/spec/design.md) (French original: [`design.fr.md`](docs/spec/design.fr.md)).
 - Decisions: [`docs/decisions/`](docs/decisions/). Mockups: [`docs/maquettes/`](docs/maquettes/). Logo and palette: [`docs/brand/`](docs/brand/).
 - Shared Rust core; an iOS app (SwiftUI) and an Android app (Jetpack Compose).
@@ -186,9 +187,27 @@ cd apps/ios && xcodegen generate          # Lichen.xcodeproj from project.yml
 open Lichen.xcodeproj                     # Run on a simulator or an iPhone
 ```
 
-Needs Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Rust (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`). To run it on your own iPhone, a free Apple ID is enough: set its team id in `Local.xcconfig`, turn on Developer Mode on the phone (Settings › Privacy & Security), and run from Xcode; a free team's app stops opening after 7 days until you run it again.
+Needs Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen) and Rust (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`).
 
-Without a MeshCore node (or in the simulator, which has no Bluetooth), Settings → **Try the demo network** runs the app's real core against a simulated network with two other users and a group, in real time.
+Without a MeshCore node, Settings → **Try the demo network** runs the app's real core against a simulated network with two other users and a group, in real time. The simulator has no Bluetooth, but it reaches a real radio over TCP: `cargo run --release -p lc-cli -- bridge <serial port>` relays a USB radio on `127.0.0.1:5000`, and Settings › Pair a radio › Network connects to it (or the launch argument `-tcp 127.0.0.1:5000`). The same works on an iPhone with the Mac's address, or with a MeshCore companion on Wi-Fi. That link is neither encrypted nor authenticated: on a shared network someone can read and change the MeshCore chats, contacts and channels it carries (lichen's own messages stay end-to-end encrypted); the pairing screen says so.
+
+### On your own iPhone
+
+A free Apple ID is enough. Once:
+
+1. Xcode › Settings › Apple Accounts: sign in with your Apple ID; Xcode makes a "Personal Team".
+2. `cp apps/ios/Local.example.xcconfig apps/ios/Local.xcconfig`, then set `DEVELOPMENT_TEAM` to that team's id and `LICHEN_BUNDLE_ID` to an identifier of your own (`org.yourname.lichen`: Apple gives each identifier to the first team that registers it).
+3. Connect the iPhone by USB, unlock it and tap Trust. On the phone, Settings › Privacy & Security › Developer Mode, on, then restart.
+
+Then, from a Terminal on the Mac (signing does not work over SSH):
+
+```sh
+scripts/install-ios.sh            # builds the core and the app (Release), installs it on the iPhone
+```
+
+The first launch may say "Untrusted Developer": Settings › General › VPN & Device Management › your Apple ID › Trust. A free team's profile lasts **7 days**: after that the app no longer opens until you run the script again; reinstalling keeps the messages and the identity. A free team can also register at most 10 app identifiers a week, 3 devices, and 3 apps per device.
+
+What a free team allows, from [Apple's capability table](https://developer.apple.com/help/account/reference/supported-capabilities-ios) and [membership comparison](https://developer.apple.com/support/compare-memberships/) (checked 2026-11-16): background modes, keychain sharing and app groups yes; push notifications, iCloud, Sign in with Apple, associated domains, network extensions, NFC, Apple Pay and in-app purchase no. lichen asks for none of the latter: it has no entitlements file. What it uses needs only the default entitlements or an `Info.plist` line: Bluetooth in the background and location (`UIBackgroundModes`: `bluetooth-central`, `location`), the Keychain in the app's own default group, local notifications (no push), Face ID, the camera, the microphone, the local network (TCP to a radio), and file protection set per folder.
 
 | Messages | Chat | Map |
 |---|---|---|

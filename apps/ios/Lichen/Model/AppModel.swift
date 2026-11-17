@@ -224,6 +224,15 @@ final class AppModel {
         case storage
     }
     @ObservationIgnored let companion = Companion()
+    /// The companion over TCP (Wi-Fi, or `lichen bridge`): used instead of Bluetooth while the
+    /// user wants it (`Link.swift`).
+    @ObservationIgnored let tcp = TcpCompanion()
+    /// How the radio is reached now.
+    var link = RadioLink.bluetooth
+    /// Why the last TCP connection failed, for the pairing screen.
+    var tcpError: String?
+    /// The app's recent log, for problem reports (ADR-0045).
+    @ObservationIgnored var appLog: [ReportLine] = []
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var demo: DemoNetwork?
     @ObservationIgnored private var demoTimer: Timer?
@@ -265,7 +274,8 @@ final class AppModel {
         refreshPrefs()
         companion.onState = { [weak self] s in MainActor.assumeIsolated { self?.companionChanged(s) } }
         companion.onFound = { [weak self] f in MainActor.assumeIsolated { self?.found = f } }
-        companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.frame(d) } }
+        companion.onFrame = { [weak self] d in MainActor.assumeIsolated { self?.bluetoothFrame(d) } }
+        setUpTcp()
         locator.onFix = { [weak self] l in self?.gotFix(LocationFix(l)) }
         // A tap on a notification opens its conversation.
         notifier.onOpen = { [weak self] chat in
@@ -353,7 +363,7 @@ final class AppModel {
     private func useIdentity(_ seed: Data) {
         if isDemo {
             leaveDemo()
-            companionState = companion.state
+            companionState = linkState
         }
         resetState()
         identitySeed = seed
@@ -508,7 +518,7 @@ final class AppModel {
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
         }
-        companionState = companion.state
+        companionState = linkState
         shares = core.shares()
         refreshPrefs()
         updateLocator()
@@ -583,6 +593,15 @@ final class AppModel {
     }
 
     private func companionChanged(_ s: Companion.State) {
+        note("Bluetooth: \(s.logWord)")
+        // A TCP link the user asked for comes first (`Link.swift`).
+        if tcp.target != nil { return }
+        link = .bluetooth
+        linkChanged(s)
+    }
+
+    /// The radio link in use (Bluetooth or TCP) is now `s`.
+    func linkChanged(_ s: Companion.State) {
         if isDemo { return }
         let was = isConnected
         companionState = s
@@ -597,7 +616,7 @@ final class AppModel {
         }
     }
 
-    private func frame(_ data: Data) {
+    func frame(_ data: Data) {
         core.onCompanionFrame(frame: data, nowMs: now())
         pump()
     }
@@ -622,7 +641,7 @@ final class AppModel {
             if demo != nil {
                 if !demoRadioOff { toDemo.append(f) }
             } else {
-                companion.write(f)
+                writeRadio(f)
             }
         }
         if let demo, !toDemo.isEmpty {
