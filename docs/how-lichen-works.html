@@ -172,13 +172,13 @@ footer p { max-width: 75ch; }
       <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M10 50 L24 14 V50 L38 14 V50 L48 28.3" fill="none" stroke="var(--lora)" stroke-width="5.5" stroke-linejoin="round" stroke-linecap="round"/><circle cx="53.5" cy="16.4" r="4" fill="var(--lora)"/></svg>
       <h1 class="wordmark">lichen</h1>
     </div>
-    <p class="thesis"><b>A modern messenger that works off-grid, over stock MeshCore:</b> encrypted chats and groups, voice, photos and files, location and an SOS search. No firmware is touched: lichen lives in the phone, and rides MeshCore packets that repeaters already forward.</p>
+    <p class="thesis"><b>A modern messenger that works off-grid, over stock MeshCore:</b> encrypted chats and groups, voice, photos and files, location and an SOS search, and MeshCore's own chats, channels, rooms and repeaters in the same app. No firmware is touched: lichen lives in the phone, and rides MeshCore packets that repeaters already forward.</p>
     <div class="preset" aria-label="French MeshCore preset">
       <span>869.618 MHz</span><span>62.5 kHz</span><span>SF8</span><span>CR 4/8</span><span>360 s of airtime per hour</span>
     </div>
     <canvas class="waterfall" id="waterfall" aria-label="LoRa chirps on a spectrogram" role="img"></canvas>
     <nav class="toc" aria-label="Sections">
-      <a href="#stack">The journey</a><a href="#frame">A frame</a><a href="#fragments">Long messages</a><a href="#messenger">A messenger first</a><a href="#identity">Identity</a><a href="#groups">Groups</a><a href="#location">Location</a><a href="#search">Finding someone</a><a href="#media">Media and files</a><a href="#bridge">Internet bridge</a><a href="#budget">Airtime</a>
+      <a href="#stack">The journey</a><a href="#frame">A frame</a><a href="#fragments">Long messages</a><a href="#messenger">A messenger first</a><a href="#identity">Identity</a><a href="#groups">Groups</a><a href="#location">Location</a><a href="#search">Finding someone</a><a href="#media">Media and files</a><a href="#bridge">Internet bridge</a><a href="#mesh">MeshCore</a><a href="#budget">Airtime</a>
     </nav>
   </header>
 
@@ -289,12 +289,13 @@ footer p { max-width: 75ch; }
 
   <!-- 3b. Messenger -->
   <section class="sec" id="messenger">
-    <div class="eyebrow">§6.1 to §6.5 · Outbox, replies, reactions, edits, disappearing messages</div>
+    <div class="eyebrow">§6 and ADR-0034 · Outbox, replies, edits, disappearing messages, everyday messaging</div>
     <h2>A messenger first</h2>
     <div class="prose">
       <p class="lede">Chatting off-grid comes first. A message is accepted even while the radio is away, survives a restart, says why it waits, and can be cancelled until its first frame leaves.</p>
       <p>What the phone keeps is the <b>intent</b> (the chat, the text, its expiry), never a session, a key, a nonce or a ciphertext: after a restart it is encrypted again under a fresh session, and the receiver drops a copy it already has. It expires after 24 hours. <b>Replies and reactions</b> name the message they answer by an 8-byte reference both phones compute from its author and its bytes, so nothing else travels; a reaction costs about what a short text does. <b>Stickers</b> are animated emoji both phones already ship, and a <b>GIF</b> travels as its GIPHY id only, the receiver building the address itself: one packet each, and no API key. Each phone also records group changes as lines in the conversation: who joined, who left, who removed whom, the new name.</p>
-      <p>Your own messages can be <b>edited</b> or <b>taken back</b> for everyone for 24 hours; only their author's change applies, checked twice. Anything can be <b>forwarded</b>, as a new message of yours. A conversation can make its messages <b>disappear</b> after 5 minutes to a week: the setting travels once to the other phones, and each removes a message that long after storing it, so no clocks are compared. And people on the stock MeshCore apps are not left out: they get a <b>plain chat</b>, and channels such as Public show next to your conversations, both marked as not lichen-encrypted.</p>
+      <p>Your own messages can be <b>edited</b> or <b>taken back</b> for everyone for 24 hours; only their author's change applies, checked twice. Anything can be <b>forwarded</b>, as a new message of yours. A conversation can make its messages <b>disappear</b> after 5 minutes to a week: the setting travels once to the other phones, and each removes a message that long after storing it, so no clocks are compared. And people on the stock MeshCore apps are not left out: they get a <b>plain chat</b>, and channels such as Public show next to your conversations, both marked as not lichen-encrypted (more below).</p>
+      <p>The rest is what a messenger needs every day. <b>Links</b> can be tapped, but nothing is fetched to preview them, so nobody learns that you read them; <b>coordinates</b> in a text open the map on a pin. A <b>notification</b> can be answered or marked as read once the phone is unlocked, the answer going through the outbox like any other; with the app lock on, it only says "New message". A draft keeps the message it answers, and a recording left half-way waits in its conversation. <b>Blocking</b> is local: the core drops what that person sends, and they are not told; a blocked member's group posts are hidden, but their position and SOS still show. A conversation can be archived, and comes back when a message arrives unless it is muted.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -318,11 +319,13 @@ footer p { max-width: 75ch; }
 
   <!-- 4. Identity -->
   <section class="sec" id="identity">
-    <div class="eyebrow">§2 and §4.6 · Phone identity, introduction</div>
+    <div class="eyebrow">§2 and §4.6 · Phone identity, introduction, requests</div>
     <h2>Who you are, and how strangers meet</h2>
     <div class="prose">
-      <p class="lede">Your lichen identity is a key made on your phone, from a 32-byte seed kept in the Keychain. Its backup is 24 words. The radio's own key only routes: it never encrypts anything of yours.</p>
+      <p class="lede">Your lichen identity is a key made on your phone, from a 32-byte seed kept in the Keychain or behind the Android Keystore. Its backup is 24 words. The radio's own key only routes: it never encrypts anything of yours.</p>
       <p>Two people who have never talked meet with an <b>introduction</b> in three frames, on the Noise XX pattern: identities travel encrypted under ephemeral keys, and each side proves it holds its identity key. Later sessions start with HELLO / HELLO_ACK, with fresh ephemeral keys every time (forward secrecy), and the keys are bound to everything both sides said: a stolen seed is not enough to answer as one of your contacts (ADR-0029). Comparing the <b>safety number</b>, 60 digits that are the same on both phones, or scanning a <code>lichen:1:</code> card in person, marks a contact verified. A contact who suddenly shows another identity is not adopted: nothing goes to the new key until you accept it. The key's state sits in every conversation's header, one tap from the safety number.</p>
+      <p>Someone you never met who writes first is a <b>request</b>, not yet a contact: anyone in range can use a radio's name, so the identity they bring is not pinned. What they send arrives and waits apart, nothing else of theirs is used (no position, no group, no media fetch), and you choose: <b>accept</b> (they become the contact, unverified), <b>block</b> that identity (not the radio, which may be someone else's) or <b>delete</b> it.</p>
+      <p>On the phone, the history sits in a database encrypted with <b>SQLCipher</b>, under a random key the Keychain or the Keystore holds. An <b>encrypted backup file</b>, which only your 24 words open, carries the messages, contacts, groups and downloaded media to a new phone; it never carries a session or another member's key, so the restored phone shakes hands again.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -355,6 +358,7 @@ footer p { max-width: 75ch; }
       <p class="lede">Each member draws a sender key for the group. Keys travel over pairwise sessions, which are authenticated and forward-secret; when people join, <b>the admin relays every key</b>, so newcomers and members never need a session with each other.</p>
       <p>A post is encrypted once with the sender's key, <b>signed</b> with the sender's identity, and flooded as GRP_DATA. Holding someone's sender key is not enough to speak for them: the signature is checked before anything moves, which is also why relaying keys through the admin gives it nothing new. When someone leaves, every remaining member draws a new key and sends it only to the others. Every post is flooded twice, because a flood lost at its first hop is lost for everyone. When both copies still collide, <b>members recover it from each other</b>: everyone keeps the last hour of posts, a member that sees a gap in someone's counters asks the author or the admin, and gets the original signed envelope back, checked like any other and shown as "arrived late". A member asked for a post it lost too hands it on once it gets it back itself (every post delivered at 10 % loss per link, 96.0 % without, fake network).</p>
       <p>People next to you join <b>by scanning a QR code</b>: it carries the admin's public contact card and a random 16-byte token, valid 10 minutes and revoked when the screen closes, never a key or a group id. A group can start with the admin alone, be renamed, and shows who joined, left or was removed. Nobody else can put you in a group: an invitation from someone you have not verified waits for your answer.</p>
+      <p>When someone joins, every key <b>steps forward</b> one-way, at no airtime cost: the newcomer cannot read what came before. The admin can <b>hand the group over</b> to another member in a signed link, and does so before leaving unless it closes the group. Six to nine minutes after an author's last post, a small signed <b>digest</b> lets the others notice that post if they lost it, and ask for it. A <b>voice note</b> of up to 6 seconds goes to the group too, in at most 5 flooded fragments, its cost shown before sending: the one medium ever flooded, and one that is not asked back when lost.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="controls">
@@ -373,6 +377,7 @@ footer p { max-width: 75ch; }
       <div class="fact"><span class="v">1–32</span><span class="k">members in a group: it may start with the admin alone</span></div>
       <div class="fact"><span class="v">130 s</span><span class="k">two people join by QR: every member holds every key (median of 10, fake network; 489 s before the relay)</span></div>
       <div class="fact"><span class="v">237 s</span><span class="k">a group of 5 created from contacts around one repeater, every key everywhere (median of 10; 412 s before)</span></div>
+      <div class="fact"><span class="v">78.9 %</span><span class="k">of a burst's last posts delivered at 20 % loss per link with the digest, 55.6 % without (fake network)</span></div>
     </div>
   </section>
 
@@ -382,7 +387,7 @@ footer p { max-width: 75ch; }
     <h2>Location: send only when the guess goes wrong</h2>
     <div class="prose">
       <p class="lede">A position is 14 bytes. Sender and receiver both extrapolate the last position along its heading and speed; a new one goes out only when reality drifts more than 50 m from that guess.</p>
-      <p>Precision is chosen per share: exact, 100 m, 1 km or 10 km. A coarse position is the <b>centre of a fixed grid cell</b>, the same for everyone and every time, never random noise that averaging would remove. Standing still, only a heartbeat goes out: every 15 minutes to a contact, every 30 to a group. An SOS sends the exact position to every share and group every 2 minutes.</p>
+      <p>Precision is chosen per share: exact, 100 m, 1 km or 10 km. A coarse position is the <b>centre of a fixed grid cell</b>, the same for everyone and every time, never random noise that averaging would remove. Standing still, only a heartbeat goes out: every 15 minutes to a contact, every 30 to a group. An SOS sends the exact position to every share and group every 2 minutes. Nothing puts a position in a MeshCore advert or in the radio's telemetry unless you turn it on, after a warning.</p>
     </div>
     <figure class="fig" style="margin:0">
       <div class="scroll"><div class="bytes" id="posBytes"></div></div>
@@ -419,7 +424,7 @@ footer p { max-width: 75ch; }
     <div class="eyebrow">§11 · Search</div>
     <h2>Finding someone who cannot say where they are</h2>
     <div class="prose">
-      <p class="lede">An SOS without GPS still sends a short beacon every 2 minutes. Members searching for them measure each one, ping when allowed, share what they measure, and the phone keeps an estimate of where the beacon comes from.</p>
+      <p class="lede">An SOS without GPS still sends a short beacon every 2 minutes. Members searching for them, in the <b>Locate</b> tab, measure each one, ping when allowed, share what they measure, and the phone keeps an estimate of where the beacon comes from.</p>
       <p>The estimate is a <b>particle filter</b>: thousands of guesses weighed by each reading's signal against a path-loss model the phones fit as they go. It draws a heat map and a 95 % ellipse, and a body bearing (pointing the phone and turning) narrows it. It is secondary to messaging, and it only runs for an SOS or with the group's consent.</p>
     </div>
     <figure class="fig" style="margin:0">
@@ -448,7 +453,7 @@ footer p { max-width: 75ch; }
     <h2>Voice, photos and files that fit the radio</h2>
     <div class="prose">
       <p class="lede">Voice is Codec2 700C: 28 bits every 40 ms. Photos are AVIF thumbnails of 160 × 120 pixels: a preview of at most 417 bytes goes first, and the full thumbnail only when the recipient asks.</p>
-      <p>Media go to contacts only, never flooded. Before sending, the core estimates the airtime of the first round; when it would not fit in what is left of the hour, the send is refused with the time it would fit, and nothing is queued. A voice note is listened to before it goes, at the quality chosen for it; a photo opens full screen at the best version on the phone.</p>
+      <p>Media go to contacts only, never flooded, but for a short group voice note (above). Before sending, the core estimates the airtime of the first round; when it would not fit in what is left of the hour, the send is refused with the time it would fit, and nothing is queued. A voice note is listened to before it goes, at the quality chosen for it; a photo opens full screen at the best version on the phone.</p>
       <p><b>Files</b> of any type go too: up to 8 KB in one LoRa datagram, compressed when that helps (a 25 KB GPX track goes as 2.3 KB, 29 s of airtime), with its fragments and airtime shown first; anything larger, a PDF, goes over the Internet bridge below. The receiver opens it with the app for its type; lichen never runs it.</p>
     </div>
     <figure class="fig" style="margin:0">
@@ -487,6 +492,7 @@ footer p { max-width: 75ch; }
       <div class="fact"><span class="v">1,500 B</span><span class="k">the same 10 s in Codec2 1200, 11 fragments</span></div>
       <div class="fact"><span class="v">409 / 975 B</span><span class="k">measured preview and full thumbnail (3 and 7 fragments)</span></div>
       <div class="fact"><span class="v lora">99 s</span><span class="k">airtime of an 8 KB file on one hop at CR 4/8, delivered in 6.0 min (fake network)</span></div>
+      <div class="fact"><span class="v lora">9.6 s</span><span class="k">a 6-second group voice note, both floods, from its sender at CR 4/5</span></div>
     </div>
   </section>
 
@@ -495,7 +501,7 @@ footer p { max-width: 75ch; }
     <div class="eyebrow">§14 · Internet bridge</div>
     <h2>When there is Internet, LoRa only carries the receipt</h2>
     <div class="prose">
-      <p class="lede">For a full-resolution photo or any file up to 64 MiB, one encrypted LoRa datagram announces it: its BLAKE3 hash, its size, a name, and the keys of whoever offers it. The phone then fetches it over the Internet and drops it unless the hash matches.</p>
+      <p class="lede">For a full-resolution photo or any file up to 64 MiB, one encrypted LoRa datagram announces it: its BLAKE3 hash, its size, a name, and the keys of whoever offers it. The phone then fetches it over the Internet, straight into a file, and drops it unless the hash matches.</p>
       <p>The fetch goes over <b>iroh</b> first: QUIC between the phones, through a relay when they cannot see each other, or through relays only when you hide your IP. When iroh cannot reach the sender, it goes over <b>Tor</b>, to an onion service whose key, like the iroh key, is derived from your seed. Sending "via Tor" lists only the onion service, so the recipient never learns your address.</p>
     </div>
     <figure class="fig" style="margin:0">
@@ -529,6 +535,48 @@ footer p { max-width: 75ch; }
     </div>
   </section>
 
+  <!-- 8b. MeshCore -->
+  <section class="sec" id="mesh">
+    <div class="eyebrow">§15 and §16 · MeshCore around you</div>
+    <h2>One app for the whole mesh</h2>
+    <div class="prose">
+      <p class="lede">lichen also does what the stock MeshCore apps do, so one app is enough on a mesh: plain chats with people who use those apps, channels such as Public, room servers, repeaters, and the radio's own settings.</p>
+      <p>Plain chats, channel posts and room posts are encrypted by MeshCore itself, not by lichen, and every screen says so. Channels can be shared and joined by <b>QR code</b>, in the stock app's format. The <b>nodes</b> your radio hears are listed with their type and hops, and those that advertise a position appear on the map. A contact's <b>path</b> is shown hop by hop, and a <b>trace</b> measures the signal of each hop, out and back. A <b>room server</b> keeps posts for whoever logs in; lichen can keep its password and log in at each connection, so that the posts since last time arrive. A <b>repeater</b> shows its status, its neighbours and a small console; its admin password is typed each time and never kept.</p>
+      <p><b>Settings › Radio settings</b> reads and sets what the radio holds: the LoRa preset, the power, the GPS, who may ask for telemetry, and a position in adverts, off by default and behind a warning, since every advert would then show it in clear. The app remembers several radios and switches between them; your conversations stay with the phone, while each radio keeps its own MeshCore contacts and channels. The official app's exported history can be read in once.</p>
+    </div>
+    <figure class="fig" style="margin:0">
+      <div class="scroll">
+        <svg viewBox="0 0 720 220" role="img" aria-label="You, your radio, two repeaters and a room server on a path; a trace goes out and comes back">
+          <text class="tm" x="415" y="40" text-anchor="middle" style="fill:var(--lora)">trace: the SNR of every hop, out and back</text>
+          <line x1="190" y1="54" x2="640" y2="54" stroke="var(--lora)" stroke-width="1.6"/><path d="M640 54 L629.9 49.7 L629.9 58.3 Z" fill="var(--lora)"/>
+          <line x1="640" y1="66" x2="190" y2="66" stroke="var(--ok)" stroke-width="1.6"/><path d="M190 66 L200.1 61.7 L200.1 70.3 Z" fill="var(--ok)"/>
+          <line x1="82" y1="115" x2="148" y2="115" stroke="var(--line)" stroke-width="2" stroke-dasharray="3 5"/>
+          <line x1="212" y1="115" x2="314" y2="115" stroke="var(--lora)" stroke-width="2" stroke-dasharray="6 6"/>
+          <line x1="366" y1="115" x2="474" y2="115" stroke="var(--lora)" stroke-width="2" stroke-dasharray="6 6"/>
+          <line x1="526" y1="115" x2="618" y2="115" stroke="var(--lora)" stroke-width="2" stroke-dasharray="6 6"/>
+          <rect class="node" x="18" y="90" width="64" height="50" rx="10"/><rect x="41" y="100" width="18" height="30" rx="4" fill="none" stroke="var(--tx2)" stroke-width="1.6"/>
+          <rect class="node" x="148" y="90" width="64" height="50" rx="10"/><path d="M170 126 L176 104 V126 L182 104 V126 L187 115" fill="none" stroke="var(--lora)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle class="node" cx="340" cy="115" r="26"/><path d="M330 126 L336 104 V126 L342 104 V126 L347 115" fill="none" stroke="var(--tx2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle class="node" cx="500" cy="115" r="26"/><path d="M490 126 L496 104 V126 L502 104 V126 L507 115" fill="none" stroke="var(--tx2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect class="node" x="618" y="90" width="64" height="50" rx="10"/><path d="M640 126 L646 104 V126 L652 104 V126 L657 115" fill="none" stroke="var(--lora)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <text class="t" x="50" y="165" text-anchor="middle">You</text><text class="t2" x="50" y="182" text-anchor="middle">lichen</text>
+          <text class="t" x="180" y="165" text-anchor="middle">your radio</text><text class="t2" x="180" y="182" text-anchor="middle">settings, battery</text>
+          <text class="t" x="340" y="165" text-anchor="middle">hub</text><text class="t2" x="340" y="182" text-anchor="middle">repeater</text>
+          <text class="t2" x="340" y="199" text-anchor="middle">status · neighbours · console</text>
+          <text class="t" x="500" y="165" text-anchor="middle">crest</text><text class="t2" x="500" y="182" text-anchor="middle">repeater</text>
+          <text class="t" x="650" y="165" text-anchor="middle">Refuge board</text><text class="t2" x="650" y="182" text-anchor="middle">room server</text>
+          <text class="t2" x="650" y="199" text-anchor="middle">posts since the last login</text>
+        </svg>
+      </div>
+      <div class="legend"><span><i style="background:var(--lora)"></i>LoRa, on air</span><span><i style="background:var(--line)"></i>Bluetooth, USB or TCP to the radio</span><span><i style="background:var(--ok)"></i>the trace coming back</span></div>
+    </figure>
+    <div class="facts">
+      <div class="fact"><span class="v">1</span><span class="k">login or status request at a time: they share one slot in the radio, and lichen queues them</span></div>
+      <div class="fact"><span class="v">15 %</span><span class="k">radio battery at which the conversation list warns</span></div>
+      <div class="fact"><span class="v">0</span><span class="k">repeater admin passwords kept on the phone</span></div>
+    </div>
+  </section>
+
   <!-- 9. Budget -->
   <section class="sec" id="budget">
     <div class="eyebrow">§9 and §13.4 · Airtime and budget</div>
@@ -558,8 +606,8 @@ footer p { max-width: 75ch; }
   </section>
 
   <footer>
-    <p>Every figure on this page comes from lichen's own documents: the normative spec (<code>docs/spec/protocol.md</code>), the decisions (ADR-0002 to ADR-0030) and the measurement log (<code>docs/measurements.md</code>), up to 2026-11-15. Fake-network and simulator figures are labelled as such; on-air tests between real radios (an iPhone on a ThinkNode M5 against a stock Heltec V4) are under way.</p>
-    <p>Milestones L0 to L9 are done: protocol, direct messages, groups, the iOS app, location, media, the Internet bridge over iroh and Tor, the search mode, the Android app. Then the messaging work: a dependable outbox, chat essentials, replies and reactions, voice review and the photo viewer, invitations by QR code, groups the admin keeps in sync, files, stickers and GIFs, plain chats with MeshCore users, edits, deletes, forwarding and disappearing messages. A security review on 2026-11-15 led to full 16-byte tags, a handshake bound to its transcript and stricter trust rules (ADR-0028, ADR-0029).</p>
+    <p>Every figure on this page comes from lichen's own documents: the normative spec (<code>docs/spec/protocol.md</code>), the decisions (ADR-0002 to ADR-0046) and the measurement log (<code>docs/measurements.md</code>), up to 2026-11-17. Fake-network and simulator figures are labelled as such; on-air tests between real radios (an iPhone on a ThinkNode M5 against a stock Heltec V4) are under way.</p>
+    <p>Milestones L0 to L9 are done: protocol, direct messages, groups, the iOS app, location, media, the Internet bridge over iroh and Tor, the search mode, the Android app. Then the messaging work: a dependable outbox, chat essentials, replies and reactions, voice review and the photo viewer, invitations by QR code, groups the admin keeps in sync, files, stickers and GIFs, plain chats with MeshCore users, edits, deletes, forwarding and disappearing messages. A security review on 2026-11-15 led to full 16-byte tags, a handshake bound to its transcript and stricter trust rules (ADR-0028, ADR-0029); its second read, on 2026-11-17, to introduction requests (ADR-0046). Since then: the radio's settings and the MeshCore app's history; links, notification replies, blocks, archives and group voice notes; an encrypted database and an encrypted backup; groups whose admin hands over and whose keys step forward at a join; and MeshCore's own tools: nodes, traces, saved radios, channel QR codes, room servers and repeaters.</p>
   </footer>
 </main>
 

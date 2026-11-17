@@ -169,7 +169,7 @@ def fragments(c):
 
 
 def introduction(c):
-    s = Svg(c, 760, 300, "The introduction: INTRO, INTRO_ACK and INTRO_FIN between two phones that never met, then a session")
+    s = Svg(c, 760, 330, "The introduction: INTRO, INTRO_ACK and INTRO_FIN between two phones that never met, then a session; on Bob's phone, Alice is a request until he accepts")
     s.rect(40, 18, 150, 44); s.text(115, 45, "Alice's phone")
     s.rect(570, 18, 150, 44); s.text(645, 45, "Bob's phone")
     s.line(115, 62, 115, 285); s.line(645, 62, 645, 285)
@@ -184,7 +184,8 @@ def introduction(c):
         s.text(380, y - 4, name, 13, mono=True)
         s.text(380, y + 36, what, 11.5, "tx2", weight=400)
     s.rect(230, 262, 300, 28, "ok_bg", None, 8)
-    s.text(380, 281, "a session: one key per direction · 1.8 s of airtime", 12, "ok")
+    s.text(380, 281, "a session: one key per direction · 1.9 s of airtime", 12, "ok")
+    s.text(380, 314, "Bob knew no identity for her radio and did not start it: Alice is a request · Accept, Block or Delete", 11.5, "tx2", weight=400)
     return s
 
 
@@ -214,7 +215,7 @@ def messenger(c):
 
 
 def groups(c):
-    s = Svg(c, 760, 320, "A group around a repeater: a post is flooded twice and signed; a newcomer scans the admin's QR code, asks to join, and gets every key from the admin")
+    s = Svg(c, 760, 340, "A group around a repeater: a post is flooded twice and signed; a newcomer scans the admin's QR code, asks to join, and gets every key from the admin; every key steps forward at a join")
     R = (380, 150)
     members = [(130, 60, "Camille · admin"), (630, 60, "Bob"), (630, 240, "Carol")]
     for x, y, n in members:
@@ -243,6 +244,7 @@ def groups(c):
     s.text(173, 160, "SENDER_KEYS", 11, "ok", "start", 400, True)
     s.text(173, 175, "every key, one bundle", 11, "ok", "start", 400)
     s.text(380, 305, "posts: encrypted once, signed, flooded twice · keys: through the admin, no session between strangers", 11.5, "tx2", weight=400)
+    s.text(380, 325, "at a join every key steps forward: Léa reads nothing from before · the admin can hand over, signed", 11.5, "tx2", weight=400)
     return s
 
 
@@ -281,19 +283,53 @@ def search(c):
 
 
 def media(c):
-    s = Svg(c, 760, 250, "What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 146 bytes")
+    s = Svg(c, 760, 292, "What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 146 bytes; a group voice note of 6 seconds in 5 flooded fragments")
     rows = [("10 s of voice · Codec2 700C", 6, "875 B"), ("the same in Codec2 1200", 11, "1,500 B"),
             ("photo preview · AVIF 160×120", 3, "409 B"), ("full thumbnail, when asked", 7, "975 B"),
-            ("a file · up to 8 KB", 56, "99 s")]
+            ("a file · up to 8 KB", 56, "99 s"), ("6 s of voice to a group", 5, "525 B")]
     y = 30
     for label, n, size in rows:
         s.text(30, y + 17, label, 12.5, "tx", "start")
         shown = min(n, 18)
         for i in range(shown):
             s.rect(260 + i * 15, y + 3, 12, 20, "lora_bg", "lora", 3)
-        tail = f"{n} fragments · {size}" if n <= 18 else f"… {n} fragments · {size} at CR 4/8"
+        if label.endswith("group"):
+            tail = f"{n} fragments, each flooded twice · {size}"
+        elif n <= 18:
+            tail = f"{n} fragments · {size}"
+        else:
+            tail = f"… {n} fragments · {size} at CR 4/8"
         s.text(260 + shown * 15 + 8, y + 18, tail, 11, "tx2", "start", 400, True)
         y += 42
+    return s
+
+
+def mesh(c):
+    s = Svg(c, 760, 270, "Stock MeshCore around you: your radio's settings, repeaters and a room server on the path, a trace hop by hop, the nodes heard")
+    s.text(30, 34, "MeshCore's own tools, in the same app", 13, "tx", "start")
+    nodes = [(60, "You", "lichen", "phone"), (190, "your radio", "settings, battery", "radio"),
+             (345, "hub", "repeater", "repeater"), (500, "crest", "repeater", "repeater"),
+             (660, "Refuge board", "room server", "radio")]
+    s.line(92, 130, 158, 130, dash="3 5")
+    for (x1, *_), (x2, *_) in zip(nodes[1:], nodes[2:]):
+        s.line(x1 + 32, 130, x2 - 32, 130, "lora", 2, "6 6")
+    for x, a, b, kind in nodes:
+        if kind == "repeater":
+            s.add(f'<circle cx="{x}" cy="130" r="26" fill="{c["s2"]}" stroke="{c["line"]}"/>')
+            radio_icon(s, x, 130, "tx2")
+        else:
+            s.rect(x - 32, 105, 64, 50)
+            (phone_icon if kind == "phone" else radio_icon)(s, x, 130)
+        s.text(x, 180, a)
+        s.text(x, 197, b, 11, "tx2", weight=400)
+    # A trace: out along the path and back, the SNR of each hop both ways.
+    s.arrow(200, 78, 650, 78, "lora", 1.6)
+    s.arrow(650, 90, 200, 90, "ok", 1.6)
+    s.text(425, 68, "trace: the SNR of every hop, out and back", 11.5, "lora", mono=True)
+    s.text(345, 214, "status · neighbours · console", 11, "tx2", weight=400)
+    s.text(660, 214, "posts since the last login", 11, "tx2", weight=400)
+    s.text(30, 242, "Nodes the radio hears, with their type, hops and advertised position, also on the map; channels and rooms by QR code.", 11.5, "tx2", "start", 400)
+    s.text(30, 260, "MeshCore chats, channels and rooms keep MeshCore's own encryption and say so; an admin password is never kept.", 11.5, "tx2", "start", 400)
     return s
 
 
@@ -332,7 +368,7 @@ def airtime(c):
     return s
 
 
-FIGURES = [journey, frame, fragments, messenger, introduction, groups, location, search, media, bridge, airtime]
+FIGURES = [journey, frame, fragments, messenger, introduction, groups, location, search, media, bridge, mesh, airtime]
 
 if __name__ == "__main__":
     for fig in FIGURES:
