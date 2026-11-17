@@ -1906,6 +1906,11 @@ impl Net {
         };
         let receivers = self.neighbors.get(tx.from).cloned().unwrap_or_default();
         for r in receivers {
+            // Room servers answer without airtime (see the module's doc): they hear nothing
+            // on the simulated channel, and draw nothing from its randomness.
+            if self.nodes.get(r).is_some_and(|n| n.role == Role::Room) {
+                continue;
+            }
             let overlaps = |o: &Tx| o.id != tx.id && o.start < tx.end && tx.start < o.end;
             let trace = std::env::var_os("LICHEN_TRACE_AIR").is_some();
             let label = || {

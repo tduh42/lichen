@@ -61,9 +61,12 @@ fn nodes_and_the_map() {
     assert_eq!(camille.lat, None, "no position in her adverts");
     // People are still the contacts; the repeaters and the room are nodes only.
     assert!(core.contacts().iter().all(|c| c.name != "hub" || !c.person));
-    // Lucie's advert, heard at 20 s, is not added by the radio.
-    let events = run(&demo, &core, 5_000, 25_000);
-    assert!(events.contains(&LichenEvent::ContactsUpdated));
+    // Lucie's advert, heard at 3 s, is not added by the radio.
+    let events = run(&demo, &core, 5_000, 6_000);
+    assert!(
+        !events.contains(&LichenEvent::ContactsUpdated),
+        "nothing new"
+    );
     let lucie = core
         .nodes()
         .into_iter()

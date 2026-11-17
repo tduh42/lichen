@@ -1571,7 +1571,6 @@ impl Core {
         self.tick_plain(now);
         self.tick_mesh(now);
         self.tick_servers(now);
-        self.tick_battery(now);
         // Round robin: start after the peer served last, so that sessions share the radio.
         let mut keys: Vec<PubKey> = self.peers.keys().copied().collect();
         keys.sort_unstable();

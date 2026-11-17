@@ -826,7 +826,7 @@ A contact's `out_path` (§1) is its route from our radio: one hash per repeater,
 
 ### 16.4 Saved radios (ADR-0042)
 
-The apps keep the radios the phone was paired with (Bluetooth identifier, USB device or TCP address, link, name, node key, last use) in the database, to switch between them. The history, contacts, groups and keys stay with the phone's identity (ADR-0010, ADR-0013), whichever radio carries them; each radio keeps its own MeshCore contacts, channels and settings, and the people a lichen user writes to see another node when the radio changes. The radio's battery is read at connection and again at most every 10 minutes while connected, along with the radio's other traffic so that it never wakes the app by itself (`GET_BATT_AND_STORAGE`, §1.1); at or below 15 % (3.3 V empty, 4.2 V full) the apps warn.
+The apps keep the radios the phone was paired with (Bluetooth identifier, USB device or TCP address, link, name, node key, last use) in the database, to switch between them. The history, contacts, groups and keys stay with the phone's identity (ADR-0010, ADR-0013), whichever radio carries them; each radio keeps its own MeshCore contacts, channels and settings, and the people a lichen user writes to see another node when the radio changes. The radio's battery is read at connection and again at most every 10 minutes while connected, when the app runs anyway, so that it never wakes the app by itself (`GET_BATT_AND_STORAGE`, §1.1); at or below 15 % (3.3 V empty, 4.2 V full) the apps warn.
 
 ### 16.5 Repeaters (ADR-0044)
 

@@ -13,7 +13,7 @@ The radio also has a battery, which lichen showed only in Settings › Radio.
 
 - **Saved radios** (protocol §16.4): the apps save each radio they connect to (how to reach it: Bluetooth identifier, USB device or TCP address; its name; its node key; when it was last used) in the identity's database, list them in Settings, and switch to one or forget it. The radio connected now is marked.
 - **The history stays with the phone's identity** (ADR-0010 unchanged). What each radio keeps is its own: its MeshCore contacts, its channels, its settings, its offline queue. The screen says so: "Your conversations stay on this phone whichever radio you use. Each radio keeps its own MeshCore contacts, channels and settings, and the people you write to see a different node."
-- **Low battery**: the radio's battery is read at connection and at most every 10 minutes while connected, with the radio's other traffic; at or below 15 % (3.3 V empty, 4.2 V full, as the radio card already showed it) the conversation list shows a warning.
+- **Low battery**: the radio's battery is read at connection and at most every 10 minutes while connected, when the app runs anyway; at or below 15 % (3.3 V empty, 4.2 V full, as the radio card already showed it) the conversation list shows a warning.
 
 ## Consequences
 

@@ -118,6 +118,12 @@ impl LichenCore {
         self.lock().core.radio_refresh();
     }
 
+    /// Reads the battery again when 10 minutes passed since it was last read (the low-battery
+    /// warning, ADR-0042): call it as the app runs, with `pump`.
+    pub fn refresh_battery_if_due(&self, now_ms: u64) {
+        self.lock().core.radio_refresh_if_due(now_ms);
+    }
+
     /// LoRa parameters, applied by the radio at once: a radio on other settings no longer
     /// hears its mesh, so the app asks first.
     pub fn set_radio_params(

@@ -88,20 +88,26 @@ impl Core {
         self.mesh.battery_at = None;
     }
 
-    /// The battery is read again every [`BATTERY_EVERY_MS`] at most while the radio is
-    /// connected, for the low-battery warning (ADR-0042): with the radio's other traffic, so
-    /// that it never wakes the app by itself.
-    pub(crate) fn tick_battery(&mut self, now: Millis) {
+    /// Reads the battery again when [`BATTERY_EVERY_MS`] passed since it was last read, for the
+    /// low-battery warning (ADR-0042). The apps call it as they run (it never wakes them, and
+    /// the core's own timing does not depend on it); true when a read went out.
+    pub fn radio_refresh_if_due(&mut self, now: Millis) -> bool {
+        if !self.online {
+            return false;
+        }
         match self.mesh.battery_at {
-            None => self.mesh.battery_at = Some(now),
+            None => {
+                self.mesh.battery_at = Some(now);
+                false
+            }
             Some(t) if now.saturating_sub(t) >= BATTERY_EVERY_MS => {
                 self.mesh.battery_at = Some(now);
                 self.command(&Command::GetBattAndStorage, Expect::Battery);
+                true
             }
-            Some(_) => {}
+            Some(_) => false,
         }
     }
-
 
     /// Reads the battery and storage again (the radio card); nothing before the connection,
     /// which reads them anyway.

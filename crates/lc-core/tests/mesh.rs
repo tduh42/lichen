@@ -450,3 +450,21 @@ fn a_guest_has_no_console() {
     run(&mut m, 20_000);
     assert_eq!(server(&m, hub).console.len(), 1, "only ours");
 }
+
+/// The battery is read again at most every 10 minutes, when the app asks (ADR-0042).
+#[test]
+fn the_battery_is_read_again_when_due() {
+    let mut m = mesh(12);
+    let app = m.app;
+    let due = |m: &mut Mesh, at: u64| {
+        m.net
+            .with_core(app, |c, now| c.radio_refresh_if_due(now + at))
+            .unwrap()
+    };
+    assert!(!due(&mut m, 0), "the first call starts the clock");
+    assert!(!due(&mut m, 5 * 60_000));
+    assert!(due(&mut m, 10 * 60_000));
+    assert!(!due(&mut m, 11 * 60_000));
+    m.net.disconnect(app);
+    assert!(!due(&mut m, 30 * 60_000), "not while the radio is away");
+}

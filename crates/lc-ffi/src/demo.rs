@@ -911,7 +911,9 @@ impl DemoNetwork {
                     text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
                 },
             ),
-            (20 * SEC, Action::HeardAdvert(lucie)),
+            // Early, before the bots' sessions and groups: the scripted scenarios stay as they
+            // were (an extra frame later shifts their timing on the simulated air).
+            (3 * SEC, Action::HeardAdvert(lucie)),
             (
                 200 * SEC,
                 Action::RoomPost {
