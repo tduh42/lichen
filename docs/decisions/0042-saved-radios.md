@@ -19,5 +19,6 @@ The radio also has a battery, which lichen showed only in Settings › Radio.
 
 - Switching radios is a tap; nothing of the history is lost or hidden.
 - A plain MeshCore chat (§15) shows messages sent through different radios in one conversation; the other side saw them from different nodes.
+- The list lives in the database, so a backup (ADR-0037) brings it to a new phone; iOS gives each phone its own Bluetooth identifiers, so a radio saved there may have to be paired again (forget its old entry).
 - To revisit if the maintainer wants a history per radio: the database name would take the node key, and the groups, keys and verifications would have to be shared between those databases or redone per radio.
 - Rejected: one database per radio as the brief asked (see above), until the maintainer confirms it; keeping the list in each app's preferences (twice the code, and not with the rest of the phone's data).
