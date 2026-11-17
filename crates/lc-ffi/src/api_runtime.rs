@@ -63,6 +63,8 @@ impl LichenCore {
             amend_inflight: HashMap::new(),
             timer_inflight: HashMap::new(),
             diag: report::Diag::default(),
+            full_requests: Vec::new(),
+            full_sending: Vec::new(),
         };
         inner.diag.note(0, "core started", None);
         // The history is available before the node connects.

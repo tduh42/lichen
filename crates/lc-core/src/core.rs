@@ -3738,7 +3738,10 @@ impl Core {
                 } else if let Ok(Some(datagram)) = result
                     // Local notices never come from the air (§6).
                     && !Content::is_local(&datagram)
-                    && self.first_time(&c, &datagram, now)
+                    // A media request carries no timestamp: asked again, it is a new request
+                    // for the user (§13.3), not a resend.
+                    && (datagram.first() == Some(&lc_proto::content::MEDIA_REQUEST)
+                        || self.first_time(&c, &datagram, now))
                     && let Some(content) = Content::decode(&datagram)
                 {
                     // A request's (§4.6, ADR-0046): kept for the user, nothing of it used. No

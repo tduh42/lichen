@@ -65,7 +65,8 @@ enum Cmd {
         #[arg(long)]
         advert: bool,
         /// Answer every message: texts echoed with the signal heard, media summarised, the full
-        /// variant of an image preview requested.
+        /// variant of an image preview requested at once. A test bot: it always asks, and the
+        /// app that sent the photo shows the request to its user, who sends it or not (§13.3).
         #[arg(long)]
         echo: bool,
         /// Save received images (.avif) and voice messages (.wav) in this folder.
