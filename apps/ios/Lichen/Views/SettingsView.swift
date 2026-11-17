@@ -489,7 +489,9 @@ struct BlockedView: View {
                     HStack(spacing: 12) {
                         Avatar(name: b.name, key: b.node)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(b.name).font(.system(.body, weight: .semibold))
+                            // A request's identity (ADR-0046), not the radio it came through.
+                            Text(b.request ? String(localized: "Someone using \(b.name)'s radio") : b.name)
+                                .font(.system(.body, weight: .semibold))
                             Text(String(localized: "Since \(Date(timeIntervalSince1970: TimeInterval(b.atMs) / 1000).formatted(date: .abbreviated, time: .omitted))"))
                                 .font(.system(.footnote))
                                 .foregroundStyle(Theme.tx2)

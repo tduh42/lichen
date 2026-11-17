@@ -16,6 +16,8 @@ pub(crate) struct Inner {
     pub(crate) extra: VecDeque<LichenEvent>,
     /// The latest `now_ms` the app gave (to answer requests from inside event handling).
     pub(crate) last_now: u64,
+    /// When a message replayed from a request arrived (ADR-0046): its time in the history.
+    pub(crate) arrived_ms: Option<i64>,
     /// Names the user gave contacts on this phone (node → nickname).
     pub(crate) nicknames: HashMap<PubKey, String>,
     /// Unfinished texts (§6.1), by row id.
@@ -201,6 +203,10 @@ impl Inner {
         // Blocks (ADR-0034).
         for b in store.blocked().unwrap_or_default() {
             self.core.restore_block(b.node, b.identity);
+        }
+        // Requests (ADR-0046): their HELLOs are answered again.
+        for q in store.requests().unwrap_or_default() {
+            self.core.restore_request(q.node, q.identity);
         }
         // A TX power a search lowered before the app stopped: the radio kept it.
         if let Ok(Some(v)) = store.setting(TX_POWER_RESTORE)

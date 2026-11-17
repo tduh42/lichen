@@ -10,6 +10,9 @@ pub struct BlockedContact {
     pub name: String,
     /// Unix ms.
     pub at_ms: i64,
+    /// A request's identity (ADR-0046), not a contact: show "Someone using <name>'s radio";
+    /// `node` is the identity, for `unblock`.
+    pub request: bool,
 }
 
 #[uniffi::export]
@@ -64,6 +67,7 @@ impl LichenCore {
             .into_iter()
             .map(|b| BlockedContact {
                 node: b.node.to_vec(),
+                request: b.identity == Some(b.node),
                 identity: b.identity.map(|i| i.to_vec()),
                 name: b.name,
                 at_ms: b.at,

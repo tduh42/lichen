@@ -21,6 +21,7 @@ import com.tduhamel.lichen.model.radioBatteryLow
 import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.unhex
 import com.tduhamel.lichen.core.GroupInvitation
+import com.tduhamel.lichen.core.IdentityRequest
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.size
@@ -208,6 +209,7 @@ fun ConversationsScreen(
             item { RadioCard(model) }
             item { StatusBanners(model, pair) }
             items(model.invitations, key = { "inv" + it.gid.hex() }) { InvitationCard(model, it) }
+            items(model.requests, key = { "req" + it.identity.hex() }) { RequestCard(model, it) }
             @Composable
             fun rowsOf(list: List<Row>) = list.forEachIndexed { i, row ->
                 if (i > 0) CardDivider(inset = 72.dp)
@@ -496,6 +498,41 @@ fun InvitationCard(model: AppModel, invitation: GroupInvitation) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             PrimaryButton(stringResource(R.string.join), Modifier.weight(1f)) { model.acceptGroup(invitation.gid) }
             SecondaryButton(stringResource(R.string.decline), Modifier.weight(1f)) { model.declineGroup(invitation.gid) }
+        }
+    }
+}
+
+/** Someone using a contact's radio, with an identity it does not have, wants to write
+ * (protocol.md §4.6, ADR-0046): what they sent, as text lines (nothing decoded or fetched),
+ * and Accept, Block or Delete. */
+@Composable
+fun RequestCard(model: AppModel, request: IdentityRequest) {
+    val t = lichen
+    val res = LocalContext.current.resources
+    val shown = 3
+    Column(
+        Modifier.fillMaxWidth().background(t.s1, RoundedCornerShape(14.dp)).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            stringResource(R.string.request_title, request.name),
+            fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+        )
+        Text(stringResource(R.string.request_note), fontSize = 13.sp, color = t.tx2)
+        if (request.messages.size > shown) {
+            Text(stringResource(R.string.request_earlier, request.messages.size - shown), fontSize = 13.sp, color = t.tx2)
+        }
+        request.messages.takeLast(shown).forEach { line ->
+            Text(
+                line.message.display(res, model.nodeKey),
+                fontSize = 15.sp, color = t.tx, maxLines = 4,
+                modifier = Modifier.fillMaxWidth().background(t.s2, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PrimaryButton(stringResource(R.string.accept), Modifier.weight(1f)) { model.acceptRequest(request.identity) }
+            SecondaryButton(stringResource(R.string.block), Modifier.weight(1f)) { model.blockRequest(request.identity) }
+            SecondaryButton(stringResource(R.string.delete), Modifier.weight(1f)) { model.deleteRequest(request.identity) }
         }
     }
 }

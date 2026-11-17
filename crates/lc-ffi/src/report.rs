@@ -98,6 +98,9 @@ impl Diag {
             Event::Beacon { sos: true, .. } => ("SOS beacon received", None),
             Event::Beacon { sos: false, .. } => ("beacon received", None),
             Event::TxPower { dbm, .. } => ("TX power changed", Some((i64::from(*dbm), "dBm"))),
+            Event::Requested { .. } => ("introduction request", None),
+            Event::RequestMessage { snr4, .. } => ("request message received", snr(*snr4)),
+            Event::RequestAccepted { .. } => ("request accepted", None),
             // Events added later are logged by kind alone until they get a word.
             #[allow(unreachable_patterns)]
             _ => ("other event", None),
@@ -484,6 +487,7 @@ mod tests {
         let demo = DemoNetwork::new();
         let core = LichenCore::new("report-test".into(), vec![5; 32], vec![105; 32], None).unwrap();
         core.set_group_consent(false);
+        core.set_request_consent(false);
         let wall = 1_793_000_000_000u64;
         core.set_clock(wall, 0);
         core.connect(0);

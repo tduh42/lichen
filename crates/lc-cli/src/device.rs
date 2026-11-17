@@ -40,8 +40,10 @@ impl Device {
             core: Core::new(Config::new("lichen-cli", identity, seed)),
             verbose: false,
         };
-        // A test bot: it joins the groups that list it, without asking (§10.1).
+        // A test bot: it joins the groups that list it, without asking (§10.1), and pins who
+        // introduces themselves instead of holding them as requests (ADR-0046).
         dev.core.set_group_consent(false);
+        dev.core.set_request_consent(false);
         let now = dev.now();
         // HELLOs carry the time; one stamped 0 gets no answer (second read, N11).
         let unix_ms = std::time::SystemTime::now()

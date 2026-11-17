@@ -58,6 +58,7 @@ import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.decodeImage
+import com.tduhamel.lichen.model.decodeImageFile
 import com.tduhamel.lichen.model.hex
 import java.io.File
 
@@ -171,7 +172,8 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
 
 private fun best(context: Context, m: StoredMessage, a: Message.Announce?, original: File?): Shown? {
     if (a != null && original != null) {
-        runCatching { decodeImage(original.readBytes()) }.getOrNull()?.let { bmp ->
+        // From the file, not read whole (N16); `best` runs in the background.
+        decodeImageFile(original)?.let { bmp ->
             val via = if (a.providers.any { it.transport.toInt() == 1 }) "iroh" else "Tor"
             val size = Formatter.formatShortFileSize(context, a.size.toLong())
             return Shown(bmp, context.getString(R.string.photo_original, size, via), original)
