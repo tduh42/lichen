@@ -58,7 +58,7 @@ Milestone M7 adds the conveniences people expect from a messenger. None changes 
 
 - Both apps link the same spans; a test in Rust covers what is and is not a link or a place.
 - A pair of numbers with three decimals that is not a place ("version 1.2345, 2.3456") is offered as one: tapping it shows a pin somewhere wrong, nothing worse.
-- Store version 13: `blocked`, `chat_prefs.archived`. One event, `ChatPrefsChanged`, when a message brings a conversation back.
+- Store version 14: `blocked`, `chat_prefs.archived`. One event, `ChatPrefsChanged`, when a message brings a conversation back.
 - What a blocked person sends while blocked is lost: nothing is kept to show after an unblock, except group posts already received before the block.
 - Rejected:
   - blocking in the apps only (frames from the blocked node would still be answered, and introductions would still attach an identity);

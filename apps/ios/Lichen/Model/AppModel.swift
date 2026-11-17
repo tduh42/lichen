@@ -1120,7 +1120,7 @@ final class AppModel {
     func node(of chat: ChatID) -> Data? {
         switch chat {
         case let .contact(key), let .mesh(key): key
-        case .group, .channel: nil
+        case .group, .channel, .room: nil
         }
     }
 
@@ -1430,7 +1430,7 @@ final class AppModel {
             return sendMedia(chat) { try core.sendVoice(to: key, voice: voice, sentAt: $0, nowMs: $1) }
         case let .group(gid):
             return sendMedia(chat) { try core.sendGroupVoice(gid: gid, voice: voice, sentAt: $0, nowMs: $1) }
-        case .mesh, .channel:
+        case .mesh, .channel, .room:
             return LichenError.MediaInGroup.display
         }
     }
