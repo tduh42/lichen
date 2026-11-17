@@ -1364,3 +1364,50 @@ fn a_lost_last_post_comes_back() {
         assert_eq!(back, digest, "digest {digest}: {got:?}");
     }
 }
+
+/// §10.7, ADR-0038: Alice, the admin, restores her phone from a backup that leaves the
+/// members' sender keys out. She asks each member for its key, and reads the next post of
+/// every one of them.
+#[test]
+fn a_restored_admin_asks_for_the_keys() {
+    let (mut net, m) = star(55);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, members) = (m[0], &m[1..4]);
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..4], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    settle(&mut net);
+    let snapshot = net
+        .with_core_ref(alice, |c| c.group_snapshot(&gid))
+        .flatten()
+        .unwrap();
+    // Her phone restored: the same identity, the group without the members' keys.
+    net.attach_app(alice, 1);
+    net.with_core(alice, |c, _| {
+        assert!(c.restore_group(&snapshot));
+        c.drop_group_keys(&gid);
+    });
+    net.connect(alice);
+    assert!(
+        net.run_until(net.now + 30 * MIN, |n| keys_complete(n, &m[..4], &gid)),
+        "the members' keys came back"
+    );
+    settle(&mut net);
+    net.take_events(alice);
+    for (j, &i) in members.iter().enumerate() {
+        let text = format!("post {j}");
+        net.with_core(i, |c, now| c.send_group_text(&gid, &text, 1, now))
+            .unwrap()
+            .unwrap();
+        net.run_until(net.now + 2 * MIN, |_| false);
+    }
+    settle(&mut net);
+    let mut got: Vec<String> = group_texts(&net.take_events(alice))
+        .into_iter()
+        .map(|(_, t)| t)
+        .collect();
+    got.sort();
+    assert_eq!(got, vec!["post 0", "post 1", "post 2"]);
+}

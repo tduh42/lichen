@@ -3255,6 +3255,7 @@ impl Core {
                                 | &lc_proto::content::GROUP_SYNC
                                 | &lc_proto::content::GROUP_HANDOVER
                                 | &lc_proto::content::GROUP_DIGEST
+                                | &lc_proto::content::GROUP_KEY_REQUEST
                         )
                     )
                 {

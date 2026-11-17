@@ -96,4 +96,6 @@ pub mod content {
     pub const GROUP_HANDOVER: u8 = 0x18;
     /// §10.6: an author's last message, flooded after a burst (group messages only, ADR-0040).
     pub const GROUP_DIGEST: u8 = 0x19;
+    /// §10.7: the admin asks a member for its current sender key (ADR-0038).
+    pub const GROUP_KEY_REQUEST: u8 = 0x1A;
 }

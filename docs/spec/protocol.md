@@ -276,6 +276,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 | 0x17 | GROUP_SYNC | §10.7 | review of 2026-11-15, SR-12 |
 | 0x18 | GROUP_HANDOVER | §10.8 | ADR-0038 |
 | 0x19 | GROUP_DIGEST | §10.6 (group messages only) | ADR-0040 |
+| 0x1A | GROUP_KEY_REQUEST | §10.7 | ADR-0038 |
 | 0xE0–0xEF | (local) | never on the air: notices the phone records for itself (a member joined, the group was renamed, a contact's radio took another name) | ADR-0021 |
 
 An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
@@ -543,7 +544,7 @@ Group messages are flooded twice and never acknowledged (§10.3): when both copi
 
 **Gaps.** When a member's message (a counter below 2^31, §10.3) is accepted under a key, the message counters it skipped are missing: from the highest message counter received under that key plus one up to the accepted counter minus one, and only those still inside the 64-counter replay window. For the first message received under a key, they start at the key's `next_counter` (§10.2): what its owner sent from there on was sent after the key reached us, by the owner itself or relayed by the admin with the counter it expected next. Nothing before that is missing: it may predate our membership. A receiver remembers at most 16 missing counters per group and forgets one when it arrives. A loss at the end of a burst is noticed when that member sends another message, or its digest.
 
-**Digest (group message, type 0x19 GROUP_DIGEST, ADR-0040).** `key_epoch (1) ‖ counter u32`, the author's last message. Two minutes after the first copy of a member's last message to a group left (§10.3), if no other message of its own left there meanwhile, it floods one digest: signed and copied as any group message (§10.3), under a counter of the core's own range, so it opens no gap. A receiver that verifies it takes as gaps the message counters it lacks under that author's key of `key_epoch`: after the highest it received (from the key's next counter if none) up to `counter` included, inside the replay window. Every message restarts the two minutes: one digest per burst. A message cancelled before it left (§6.1) is neither named by a digest nor kept for others. A digest is 70 bytes of plaintext, one fragment.
+**Digest (group message, type 0x19 GROUP_DIGEST, ADR-0040).** `key_epoch (1) ‖ counter u32`, the author's last message. Two minutes after the first copy of a member's last message to a group left (§10.3), plus `U[0, 60 s)` so that members' timers do not line up with each other's posts, if no other message of its own left there meanwhile, it floods one digest: signed and copied as any group message (§10.3), under a counter of the core's own range, so it opens no gap. A receiver that verifies it takes as gaps the message counters it lacks under that author's key of `key_epoch`: after the highest it received (from the key's next counter if none) up to `counter` included, inside the replay window. Every message restarts the wait: one digest per burst. A message cancelled before it left (§6.1) is neither named by a digest nor kept for others. A digest is 70 bytes of plaintext, one fragment.
 
 ```
 GROUP_MISSING (0x15) = gid (16) ‖ author id (32) ‖ key_epoch (1) ‖ n (1, 1..8) ‖ n × counter u32
@@ -558,19 +559,26 @@ GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..156) ‖ e
 
 **Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 62 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
 
-### 10.7 Asking the admin for the keys (pairwise datagram, type 0x17 GROUP_SYNC)
+### 10.7 Asking for the keys (pairwise datagrams, types 0x17 GROUP_SYNC and 0x1A GROUP_KEY_REQUEST)
 
 ```
-gid (16) ‖ epoch u32
+GROUP_SYNC (0x17)        = gid (16) ‖ epoch u32
+GROUP_KEY_REQUEST (0x1A) = gid (16) ‖ epoch u32
 ```
 
-A member that missed the keys (a SENDER_KEYS lost on the way, a phone away during an admission) would stay unable to read the group until the admin sends them again, an hour later (§10.1). GROUP_SYNC asks for them at once (review of 2026-11-15, SR-12).
+A member that missed the keys (a SENDER_KEYS lost on the way, a phone away during an admission) would stay unable to read the group until the admin sends them again, an hour later (§10.1). GROUP_SYNC asks the admin for them at once (review of 2026-11-15, SR-12).
 
-- **Asking.** A member that is not the admin, holding an envelope from a listed member for a minute without the key to open it (§10.3, early messages), sends GROUP_SYNC to the admin over a pairwise session: `epoch` is the state it holds. At most once every 10 minutes per group.
-- **Answering.** The admin accepts GROUP_SYNC only from a listed member (the session's identity, §4.6), for a group it administers. It sends that member alone the handovers it keeps that are newer than `epoch` (one GROUP_HANDOVER, §10.8), the current GROUP_STATE when `epoch` is older than its own, then one SENDER_KEYS with every current key it holds, its own included, at its own step (§10.2, §10.9). Unlike a newcomer's, each entry's `next_counter` is the key's first counter (the one its owner announced; 0 for the admin's own), not the next one the admin expects: the member holds what was sent under those keys at that step and reads it. At most once per member every 10 minutes; anything else is dropped without an answer.
+- **Asking.** A member that is not the admin, holding an envelope for a minute from a listed member of which it holds **no key at all** (§10.3, early messages), sends GROUP_SYNC to the admin over a pairwise session: `epoch` is the state it holds. At most once every 10 minutes per group. A sender key of a newer epoch than the one held is not asked for: an envelope's clear header (group hash, member byte, key epoch) cannot be checked before the key comes, and anyone could otherwise make every member ask, and the admin answer each with every key. A member that missed a rotation reads again at the owner's next resend (§10.1).
+- **Answering.** The admin accepts GROUP_SYNC only from a listed member (the session's identity, §4.6), for a group it administers. It sends that member alone the handovers it keeps that are newer than `epoch` (one GROUP_HANDOVER, §10.8), the current GROUP_STATE when `epoch` is older than its own, then one SENDER_KEYS with every current key it holds, its own included, at its own step (§10.2, §10.9). Unlike a newcomer's, each entry's `next_counter` is the key's first counter (the one its owner announced; 0 for the admin's own), not the next one the admin expects: the member holds what was sent under those keys at that step and reads it. At most once per member every 10 minutes, and 8 answers per group every 10 minutes; anything else is dropped without an answer.
 - **Cost.** 21 bytes asked; the answer is what an admission costs that member. A member cannot make the admin send anything to anyone else.
 
-Vectors: `testdata/lichen/content.toml` (`[[group_sync]]`, `[[bad_group_control]]`).
+An admin that lost the members' keys (a phone restored from a backup that leaves sender keys out, ADR-0038) would read each member only once that member's key next changes. GROUP_KEY_REQUEST asks a member for its key.
+
+- **Asking.** The admin, holding no key of a listed member, asks that member alone over a pairwise session: once its node is connected after its group was restored, or after holding an envelope of that member for a minute. `epoch` is the admin's state. At most once every 10 minutes per member.
+- **Answering.** A member accepts GROUP_KEY_REQUEST only from its group's admin (the session's identity, §4.6), and answers it alone with one SENDER_KEY: its current key at its step, `next_counter` its next message counter (§10.2). At most once every 10 minutes per group; anything else is dropped without an answer.
+- **No relay.** A key the admin asked for in the last 10 minutes is not forwarded to the others as a first key (§10.2): they hold it. A request is 21 bytes, its answer one SENDER_KEY to the asker: nobody but the admin can ask, and nobody can make a member send its key elsewhere.
+
+Vectors: `testdata/lichen/content.toml` (`[[group_sync]]`, `[[group_key_request]]`, `[[bad_group_control]]`).
 
 ### 10.8 Handing the group over (pairwise datagram, type 0x18 GROUP_HANDOVER, ADR-0038)
 

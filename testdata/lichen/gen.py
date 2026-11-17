@@ -2,7 +2,7 @@
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2), EDIT and
 DELETE (§6.4),
 GROUP_STATE, SENDER_KEY and SENDER_KEYS (§10.1–10.2), GROUP_MISSING, GROUP_RESEND and GROUP_DIGEST
-(§10.6), GROUP_SYNC (§10.7), GROUP_HANDOVER (§10.8, Ed25519 written here from RFC 8032), the key
+(§10.6), GROUP_SYNC and GROUP_KEY_REQUEST (§10.7), GROUP_HANDOVER (§10.8, Ed25519 written here from RFC 8032), the key
 step (§10.9, HKDF from Python's hmac), group invitations and GROUP_JOIN (§10.5), stickers, GIFs
 and GIPHY links (§6.3), small files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
@@ -17,7 +17,7 @@ import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 GROUP_MISSING, GROUP_RESEND, GROUP_SYNC = 0x15, 0x16, 0x17
-SENDER_KEY, GROUP_HANDOVER, GROUP_DIGEST = 0x10, 0x18, 0x19
+SENDER_KEY, GROUP_HANDOVER, GROUP_DIGEST, GROUP_KEY_REQUEST = 0x10, 0x18, 0x19, 0x1A
 STICKER, GIF = 0x0A, 0x0B
 EDIT, DELETE, TIMER = 0x0C, 0x0D, 0x0E
 
@@ -402,6 +402,18 @@ for nm, epoch in [("state 3 held", 3), ("the largest epoch", 0xFFFFFFFF)]:
     print(f'datagram = "{group_sync(gid, epoch).hex()}"')
     print()
 
+def group_key_request(gid: bytes, epoch: int) -> bytes:
+    return bytes([GROUP_KEY_REQUEST]) + gid + struct.pack("<I", epoch)
+
+
+for nm, epoch in [("the admin at state 5", 5), ("the largest epoch", 0xFFFFFFFF)]:
+    print("[[group_key_request]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"epoch = {epoch}")
+    print(f'datagram = "{group_key_request(gid, epoch).hex()}"')
+    print()
+
 for nm, step, epoch, key, nxt in [
     ("a first key", 3, 0, hashlib.sha256(b"lea key").digest(), 0),
     ("after a restart, from counter 12", 0xFFFFFFFF, 200, hashlib.sha256(b"julien key 2").digest(), 12),
@@ -493,6 +505,8 @@ bad = [
     ("handover, a byte after the links", one + b"\x00"),
     ("handover, a link that is not a state", group_handover([bytes(64) + group_sync(gid, 3)])),
     ("handover, a state with a byte too many", group_handover([link(camille_seed, make_admin + b"\x01\x02")])),
+    ("key request, cut in the epoch", group_key_request(gid, 5)[:-1]),
+    ("key request, a byte after the epoch", group_key_request(gid, 5) + b"\x00"),
     ("sender key, cut in the counter", sender_key(gid, 3, 0, k0, 0)[:-1]),
     ("sender key, a byte after the counter", sender_key(gid, 3, 0, k0, 0) + b"\x00"),
     ("sync, cut in the epoch", group_sync(gid, 3)[:-1]),

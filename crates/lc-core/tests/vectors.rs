@@ -179,6 +179,22 @@ fn group_sync() {
     }
 }
 
+/// GROUP_KEY_REQUEST (§10.7): decoded and encoded back to the same bytes.
+#[test]
+fn group_key_requests() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "group_key_request") {
+        let d = h(v, "datagram");
+        let Some(Control::KeyRequest { gid, epoch }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(i64::from(epoch), v["epoch"].as_integer().unwrap());
+        assert_eq!(Control::KeyRequest { gid, epoch }.encode(), d);
+    }
+}
+
 #[test]
 fn group_states() {
     use lc_core::group::Control;
