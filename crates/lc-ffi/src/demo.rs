@@ -426,7 +426,9 @@ impl Demo {
                     return;
                 }
                 if let Some(invite) = lc_core::identity::Invite::decode(&text) {
-                    let _ = self.net.with_core(guest, |c, now| c.join(&invite, now));
+                    let _ = self
+                        .net
+                        .with_core(guest, |c, now| c.join(&invite, true, now));
                 }
             }
             Action::PostIn { from, gid, text } => {

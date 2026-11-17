@@ -643,6 +643,7 @@
     <string name="import_done">%1$d messages directs et %2$d messages de canaux importés.</string>
     <string name="import_already_here">%1$d y étaient déjà.</string>
     <string name="err_not_an_export">Ce fichier n’est pas une base exportée par l’app MeshCore.</string>
+    <string name="err_identity_pending">Ce code indique une autre identité que celle de ce contact. Compare vos numéros de sécurité avant d’accepter le changement.</string>
     <string name="joined_with_invite">%1$s a rejoint le groupe avec ton invitation</string>
     <string name="sunday_hike">Sortie du dimanche</string>
     <string name="invite_unreadable">Cette invitation est illisible.</string>
@@ -663,6 +664,7 @@
     <string name="the_group">le groupe</string>
     <string name="join">Rejoindre</string>
     <string name="join_note">%1$s devient un contact vérifié : tu as scanné son code en personne. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe.</string>
+    <string name="join_note_pasted">Collé, pas scanné : %1$s est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe.</string>
     <string name="asking_admin">Demande à %1$s de t\'ajouter…</string>
     <string name="asking_note">Son téléphone t\'ajoute par LoRa, en général en une ou deux minutes. Tu peux fermer cet écran : le groupe apparaîtra dans tes conversations.</string>
     <string name="already_in">Tu fais déjà partie de %1$s</string>

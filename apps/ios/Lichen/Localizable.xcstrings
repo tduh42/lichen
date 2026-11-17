@@ -5261,6 +5261,16 @@
         }
       }
     },
+    "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
+          }
+        }
+      }
+    },
     "Pause": {
       "localizations": {
         "fr": {
@@ -7387,6 +7397,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce code a expiré"
+          }
+        }
+      }
+    },
+    "This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce code indique une autre identité que celle de ce contact. Compare vos numéros de sécurité avant d’accepter le changement."
           }
         }
       }
