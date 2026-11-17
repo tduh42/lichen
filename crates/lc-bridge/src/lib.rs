@@ -85,7 +85,8 @@ impl std::fmt::Display for FetchError {
 
 impl std::error::Error for FetchError {}
 
-/// Most bytes of offers kept in memory; older ones are read from disk when there is a directory.
+/// Most bytes of offers kept in memory when there is no directory (tests, the demo network);
+/// the oldest are forgotten first.
 const MEM_MAX: usize = 128 << 20;
 /// Requests served at once, all transports together: one more is closed at once (review of
 /// 2026-11-15, SR-33).
@@ -94,7 +95,7 @@ const SERVING_MAX: usize = 8;
 const REQUEST_LIMIT: Duration = Duration::from_secs(30);
 /// A whole answer must go within this.
 pub(crate) const SERVE_LIMIT: Duration = Duration::from_secs(600);
-/// Bytes read at a time from a provider.
+/// Bytes read at a time from a provider, and from an offer's file when serving it.
 const CHUNK: usize = 64 << 10;
 
 /// An offer: its content and when it was (last) offered.
@@ -104,15 +105,18 @@ struct Offered {
     at: SystemTime,
 }
 
-/// Blobs we offer: in memory, and on disk when a directory is given (they survive restarts).
-/// Both expire after [`OFFER_DAYS`] (§14.2, recheck R11); offering the same content again
-/// renews it.
+/// Blobs we offer: on disk when a directory is given (the apps: they survive restarts and are
+/// served from their file, never held in memory, second read of 2026-11-17, N17), in memory
+/// otherwise. Both expire after [`OFFER_DAYS`] (§14.2, recheck R11); offering the same content
+/// again renews it.
 #[derive(Debug)]
 struct Offers {
     dir: Option<PathBuf>,
     mem: Mutex<HashMap<Hash, Offered>>,
     /// Requests being served ([`SERVING_MAX`]).
     serving: tokio::sync::Semaphore,
+    /// Names the files being written apart.
+    writes: std::sync::atomic::AtomicU64,
 }
 
 impl Default for Offers {
@@ -121,6 +125,7 @@ impl Default for Offers {
             dir: None,
             mem: Mutex::default(),
             serving: tokio::sync::Semaphore::new(SERVING_MAX),
+            writes: std::sync::atomic::AtomicU64::new(0),
         }
     }
 }
@@ -132,15 +137,42 @@ fn fresh(at: SystemTime) -> bool {
         .map_or(true, |age| age < Duration::from_secs(OFFER_DAYS * 86_400))
 }
 
+/// What an offer is served from.
+#[derive(Debug)]
+enum Source {
+    Mem(Arc<Vec<u8>>),
+    /// Its file, opened, and its length.
+    File(tokio::fs::File, u64),
+}
+
+/// The name of an offer's file: its hash in hex (anything else in the folder is being written).
+fn is_offer_name(name: &std::ffi::OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|n| n.len() == 64 && n.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
 impl Offers {
     fn path(&self, h: &Hash) -> Option<PathBuf> {
         self.dir.as_ref().map(|d| d.join(hex::encode(h)))
     }
 
-    fn put(&self, bytes: Vec<u8>) -> Hash {
+    fn put(&self, bytes: Vec<u8>) -> Result<Hash, FetchError> {
         let h = hash(&bytes);
         if let Some(p) = self.path(&h) {
-            let _ = std::fs::write(p, &bytes);
+            // Written aside, then renamed over: a request being served keeps reading the file
+            // it opened, whole.
+            let n = self
+                .writes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let mut tmp = p.as_os_str().to_owned();
+            tmp.push(format!(".{}.{n}.tmp", std::process::id()));
+            let tmp = PathBuf::from(tmp);
+            let written = std::fs::write(&tmp, &bytes).and_then(|()| std::fs::rename(&tmp, &p));
+            if let Err(e) = written {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(storage(e));
+            }
+            return Ok(h);
         }
         if let Ok(mut m) = self.mem.lock() {
             m.insert(
@@ -151,7 +183,7 @@ impl Offers {
                 },
             );
             m.retain(|_, o| fresh(o.at));
-            // Bounded: the oldest leave memory first (still on disk when there is a directory).
+            // Bounded: the oldest go first.
             while m.len() > 1 && m.values().map(|o| o.bytes.len()).sum::<usize>() > MEM_MAX {
                 let Some(oldest) = m.iter().min_by_key(|(_, o)| o.at).map(|(k, _)| *k) else {
                     break;
@@ -159,7 +191,7 @@ impl Offers {
                 m.remove(&oldest);
             }
         }
-        h
+        Ok(h)
     }
 
     /// Whether any offer is still served. Expired ones on disk are removed on the way: nothing
@@ -175,7 +207,7 @@ impl Offers {
         {
             for e in entries.flatten() {
                 if e.metadata().and_then(|m| m.modified()).is_ok_and(fresh) {
-                    disk = true;
+                    disk |= is_offer_name(&e.file_name());
                 } else {
                     let _ = std::fs::remove_file(e.path());
                 }
@@ -194,28 +226,66 @@ impl Offers {
         }
     }
 
-    fn get(&self, h: &Hash) -> Option<Arc<Vec<u8>>> {
-        if let Ok(mut m) = self.mem.lock() {
-            match m.get(h) {
-                Some(o) if fresh(o.at) => return Some(o.bytes.clone()),
+    /// Offer `h`, to be served: its content in memory, or its file opened (an expired one is
+    /// removed). The file is not read here: it is checked against `h` while it is sent.
+    async fn open(&self, h: &Hash) -> Option<Source> {
+        let Some(p) = self.path(h) else {
+            let mut m = self.mem.lock().ok()?;
+            return match m.get(h) {
+                Some(o) if fresh(o.at) => Some(Source::Mem(o.bytes.clone())),
                 Some(_) => {
                     m.remove(h);
+                    None
                 }
-                None => {}
-            }
-        }
-        let p = self.path(h)?;
-        let fresh = std::fs::metadata(&p)
-            .and_then(|m| m.modified())
-            .ok()
-            .is_some_and(fresh);
-        if !fresh {
-            let _ = std::fs::remove_file(&p);
+                None => None,
+            };
+        };
+        let file = tokio::fs::File::open(&p).await.ok()?;
+        let meta = file.metadata().await.ok()?;
+        if !meta.modified().is_ok_and(fresh) {
+            let _ = tokio::fs::remove_file(&p).await;
             return None;
         }
-        let bytes = std::fs::read(&p).ok()?;
-        (hash(&bytes) == *h).then(|| Arc::new(bytes))
+        (meta.len() <= MAX_SIZE).then_some(Source::File(file, meta.len()))
     }
+}
+
+/// Sends the `len` bytes of an offer's file, hashed on the way (§14.2, N17): the last chunk
+/// goes only once the whole hashes to `h`. False when it does not (changed or cut on disk):
+/// the requester then gets less than announced, never other content whole.
+async fn send_file<W: AsyncWrite + Unpin>(
+    file: &mut tokio::fs::File,
+    len: u64,
+    h: &Hash,
+    w: &mut W,
+) -> std::io::Result<bool> {
+    let mut hasher = blake3::Hasher::new();
+    let (mut held, mut next) = (vec![0u8; CHUNK], vec![0u8; CHUNK]);
+    let mut held_len = 0;
+    let mut left = len;
+    while left > 0 {
+        let want = usize::try_from(left).unwrap_or(CHUNK).min(CHUNK);
+        let chunk = next
+            .get_mut(..want)
+            .ok_or(std::io::ErrorKind::InvalidInput)?;
+        if file.read_exact(chunk).await.is_err() {
+            return Ok(false);
+        }
+        hasher.update(chunk);
+        if let Some(previous) = held.get(..held_len).filter(|p| !p.is_empty()) {
+            w.write_all(previous).await?;
+        }
+        std::mem::swap(&mut held, &mut next);
+        held_len = want;
+        left -= want as u64;
+    }
+    if *hasher.finalize().as_bytes() != *h {
+        return Ok(false);
+    }
+    if let Some(last) = held.get(..held_len) {
+        w.write_all(last).await?;
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -287,19 +357,66 @@ mod offers {
     }
 
     /// An offer expires after 7 days in memory too (recheck R11); offered again, it is back.
-    #[test]
-    fn offers_expire_in_memory() {
+    #[tokio::test]
+    async fn offers_expire_in_memory() {
         let o = Offers::default();
-        let h = o.put(b"photo".to_vec());
-        assert!(o.get(&h).is_some());
+        let h = o.put(b"photo".to_vec()).unwrap();
+        assert!(o.open(&h).await.is_some());
         if let Ok(mut m) = o.mem.lock()
             && let Some(x) = m.get_mut(&h)
         {
             x.at = SystemTime::now() - Duration::from_secs(OFFER_DAYS * 86_400 + 1);
         }
-        assert!(o.get(&h).is_none());
-        assert_eq!(o.put(b"photo".to_vec()), h);
-        assert!(o.get(&h).is_some());
+        assert!(o.open(&h).await.is_none());
+        assert_eq!(o.put(b"photo".to_vec()), Ok(h));
+        assert!(o.open(&h).await.is_some());
+    }
+
+    /// Asks `offers` for `h` over a pipe; the answer as the requester reads it.
+    async fn ask(offers: &Arc<Offers>, h: &Hash, max: u64) -> Result<Vec<u8>, FetchError> {
+        let (mut ours, theirs) = tokio::io::duplex(1 << 16);
+        let o = offers.clone();
+        let server = tokio::spawn(async move {
+            let (mut r, mut w) = tokio::io::split(theirs);
+            serve(&o, &mut r, &mut w).await
+        });
+        write_request(&mut ours, h).await?;
+        let got = read_response(&mut ours, h, max).await;
+        let _ = server.await;
+        got
+    }
+
+    /// Second read of 2026-11-17, N17: an offer on disk is served from its file a chunk at a
+    /// time, checked against its hash on the way. A file that changed on disk is cut short
+    /// before its last chunk, never sent whole, and is no longer offered.
+    #[tokio::test]
+    async fn a_changed_file_is_cut_short() {
+        let dir = std::env::temp_dir().join(format!("lichen-served-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let offers = Arc::new(Offers {
+            dir: Some(dir.clone()),
+            ..Offers::default()
+        });
+        let blob: Vec<u8> = (0..(3 * CHUNK + 5)).map(|i| (i % 249) as u8).collect();
+        let h = offers.put(blob.clone()).unwrap();
+        assert!(offers.mem.lock().unwrap().is_empty(), "on disk only");
+        assert_eq!(ask(&offers, &h, MAX_SIZE).await, Ok(blob.clone()));
+        // One byte changed in place.
+        {
+            use std::io::{Seek, SeekFrom, Write};
+            let mut f = std::fs::File::options()
+                .write(true)
+                .open(offers.path(&h).unwrap())
+                .unwrap();
+            f.seek(SeekFrom::Start(CHUNK as u64 + 1)).unwrap();
+            f.write_all(&[blob[CHUNK + 1] ^ 0xFF]).unwrap();
+        }
+        let r = ask(&offers, &h, MAX_SIZE).await;
+        assert!(matches!(r, Err(FetchError::Protocol(_))), "{r:?}");
+        assert!(!offers.path(&h).unwrap().exists());
+        assert_eq!(ask(&offers, &h, MAX_SIZE).await, Err(FetchError::NotFound));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Whether anything is still offered decides whether iroh runs (SR-29); expired offers on
@@ -314,12 +431,9 @@ mod offers {
             ..Offers::default()
         };
         assert!(!o.any_fresh());
-        let h = o.put(b"track".to_vec());
+        let h = o.put(b"track".to_vec()).unwrap();
         assert!(o.any_fresh());
-        // A week later: gone from memory, and its file is removed.
-        if let Ok(mut m) = o.mem.lock() {
-            m.clear();
-        }
+        // A week later: its file is removed.
         let old = SystemTime::now() - Duration::from_secs(OFFER_DAYS * 86_400 + 60);
         std::fs::File::options()
             .write(true)
@@ -359,16 +473,29 @@ where
         .await
         .map_err(|_| std::io::Error::from(std::io::ErrorKind::TimedOut))??;
     let (op, h) = req.split_at(1);
-    let found = match (op, <Hash>::try_from(h)) {
-        ([1], Ok(h)) => offers.get(&h),
-        _ => None,
+    let (found, h) = match (op, <Hash>::try_from(h)) {
+        ([1], Ok(h)) => (offers.open(&h).await, h),
+        _ => (None, [0; 32]),
+    };
+    let head = |len: u64| {
+        let mut head = [0u8; 9];
+        head[1..].copy_from_slice(&len.to_le_bytes());
+        head
     };
     match found {
-        Some(bytes) => {
-            let mut head = [0u8; 9];
-            head[1..].copy_from_slice(&(bytes.len() as u64).to_le_bytes());
-            w.write_all(&head).await?;
+        Some(Source::Mem(bytes)) => {
+            w.write_all(&head(bytes.len() as u64)).await?;
             w.write_all(&bytes).await?;
+        }
+        // From the file as it is read, a chunk at a time: eight requests for a 64 MiB offer
+        // no longer hold 512 MiB (N17).
+        Some(Source::File(mut file, len)) => {
+            w.write_all(&head(len)).await?;
+            if !send_file(&mut file, len, &h, w).await? {
+                // Not what we offered any more: no longer offered.
+                offers.remove(&h);
+                return Err(std::io::ErrorKind::InvalidData.into());
+            }
         }
         None => w.write_all(&[1]).await?,
     }
@@ -496,6 +623,9 @@ impl ProtocolHandler for Provider {
         if serve(&self.offers, &mut recv, &mut send).await.is_ok() {
             let _ = send.finish();
             connection.closed().await;
+        } else {
+            // Cut short, not finished: the requester sees an answer that ended early.
+            let _ = send.reset(0u32.into());
         }
         Ok(())
     }
@@ -671,18 +801,20 @@ impl Bridge {
         self.tor.lock().await.take();
     }
 
-    /// Offers `bytes`: returns their hash and size for the announcement.
     /// Stops offering `hash`: its message was deleted (§6.4, review of 2026-11-15, SR-28).
     pub fn revoke(&self, hash: &Hash) {
         self.offers.remove(hash);
     }
 
+    /// Offers `bytes`: returns their hash and size for the announcement. With a directory,
+    /// they are written there and served from that file; a write that fails is a storage
+    /// error.
     pub fn offer(&self, bytes: Vec<u8>) -> Result<(Hash, u64), FetchError> {
         let size = bytes.len() as u64;
         if size > MAX_SIZE {
             return Err(FetchError::TooLarge);
         }
-        Ok((self.offers.put(bytes), size))
+        Ok((self.offers.put(bytes)?, size))
     }
 
     /// Fetches `hash` from a provider of an announcement (`transport`, `key`), at most `max`
