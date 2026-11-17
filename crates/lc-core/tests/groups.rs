@@ -319,7 +319,8 @@ fn setting<T: std::str::FromStr>(name: &str, default: T) -> T {
 /// recovery from the members (§10.6). Every member posts 8 times, a post a minute overall, then
 /// once more (a message that reveals the last gaps; `LICHEN_REVEAL=0` leaves it out, so that
 /// each member's last post ends its burst). `LICHEN_LOSS=20` measures one loss rate,
-/// `LICHEN_SEEDS` sets the number of runs (40).
+/// `LICHEN_SEEDS` sets the number of runs (40), `LICHEN_DIGEST=0` turns the digests after a
+/// burst off (ADR-0040).
 /// `cargo test -p lc-core --release --test groups -- --ignored measure_group_recovery --nocapture`
 #[test]
 #[ignore = "measurement, prints numbers for docs/measurements.md"]
@@ -327,6 +328,7 @@ fn measure_group_recovery() {
     let seeds: u64 = setting("LICHEN_SEEDS", 40);
     let only: u32 = setting("LICHEN_LOSS", 0);
     let reveal = setting("LICHEN_REVEAL", 1u8) != 0;
+    let digest = setting("LICHEN_DIGEST", 1u8) != 0;
     let rounds = if reveal { 9 } else { 8 };
     println!(
         "| Loss per link | | Delivered | Last posts | Recovered (late) | Delay p50 / p90 | Frames per run |"
@@ -341,7 +343,16 @@ fn measure_group_recovery() {
         for seed in 0..seeds {
             let (mut net, m) = star_with_loss(300 + seed, loss);
             for &i in &m {
-                net.with_core(i, |c, _| c.set_group_recovery(recovery));
+                net.with_core(i, |c, _| {
+                    c.set_group_recovery(recovery);
+                    c.set_group_digest(digest);
+                });
+            }
+            if seed == 0 && recovery && digest {
+                let (fragments, airtime) = net
+                    .with_core(m[0], |c, _| c.estimate_group_send(6))
+                    .unwrap();
+                println!("a digest: {fragments} fragment, {airtime} ms of the author's airtime");
             }
             let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
             let gid = net
@@ -482,21 +493,31 @@ fn group_estimate_matches_the_air() {
         .unwrap()
         .unwrap();
     settle(&mut net);
-    for text in ["ok", &"long message ".repeat(12)] {
-        let (fragments, airtime) = net
-            .with_core(m[0], |c, _| c.estimate_group_send(5 + text.len()))
-            .unwrap();
-        let before = net.nodes[m[0]].tx_airtime_ms;
-        net.with_core(m[0], |c, now| c.send_group_text(&gid, text, 1, now))
-            .unwrap()
-            .unwrap();
-        settle(&mut net);
-        let spent = net.nodes[m[0]].tx_airtime_ms - before;
-        assert!(fragments >= 1);
-        assert!(
-            spent.abs_diff(airtime) * 20 <= spent,
-            "{text:?}: estimated {airtime} ms, spent {spent} ms"
-        );
+    // With the digest that follows a burst (ADR-0040), a message alone, then with it: a
+    // 6-byte body of its own.
+    for digest in [false, true] {
+        net.with_core(m[0], |c, _| c.set_group_digest(digest));
+        for text in ["ok", &"long message ".repeat(12)] {
+            let (fragments, mut airtime) = net
+                .with_core(m[0], |c, _| c.estimate_group_send(5 + text.len()))
+                .unwrap();
+            if digest {
+                airtime += net
+                    .with_core(m[0], |c, _| c.estimate_group_send(6).1)
+                    .unwrap();
+            }
+            let before = net.nodes[m[0]].tx_airtime_ms;
+            net.with_core(m[0], |c, now| c.send_group_text(&gid, text, 1, now))
+                .unwrap()
+                .unwrap();
+            settle(&mut net);
+            let spent = net.nodes[m[0]].tx_airtime_ms - before;
+            assert!(fragments >= 1);
+            assert!(
+                spent.abs_diff(airtime) * 20 <= spent,
+                "{text:?}, digest {digest}: estimated {airtime} ms, spent {spent} ms"
+            );
+        }
     }
 }
 
@@ -1043,4 +1064,303 @@ fn a_verified_admin_adds_us() {
             .invitations()
             .is_empty()
     );
+}
+
+/// The identity of node `i`'s phone.
+fn identity(net: &Net, i: usize) -> [u8; 32] {
+    *net.nodes[i].core.as_ref().unwrap().key().unwrap()
+}
+
+/// The admin and member count of group `gid` on node `i`, if it belongs to it.
+fn admin_of(net: &Net, i: usize, gid: &GroupId) -> Option<([u8; 32], usize)> {
+    net.nodes[i]
+        .core
+        .as_ref()?
+        .groups()
+        .find(|g| g.gid == *gid)
+        .map(|g| (g.admin, g.members.len()))
+}
+
+/// Group texts with whether they arrived late.
+fn group_texts_late(events: &[Event]) -> Vec<(String, bool)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            Event::GroupMessage {
+                content: Content::Text { text, .. },
+                late,
+                ..
+            } => Some((text.clone(), *late)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// ADR-0038, §10.8: Alice, the admin, hands the group to Bob and leaves at once. The others
+/// take Bob as admin from her signed state, rotate their keys (she is gone) and see who did
+/// what; Bob runs the group (he adds Eve) and everyone reads each other. 10 % loss per link.
+#[test]
+fn the_admin_hands_over_and_leaves() {
+    use lc_core::content::notice::*;
+    let (mut net, m) = star_with_loss(51, 10);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol, dave, eve) = (m[0], m[1], m[2], m[3], m[4]);
+    let s = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..4], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 90 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    settle(&mut net);
+    for &i in &m {
+        net.take_events(i);
+    }
+    // Only the admin hands over.
+    assert_eq!(
+        net.with_core(bob, |c, now| c.hand_over(&gid, &keys[2], false, now)),
+        Some(Err(Error::NotAllowed))
+    );
+    net.with_core(alice, |c, now| c.hand_over(&gid, &keys[1], true, now))
+        .unwrap()
+        .unwrap();
+    assert_eq!(admin_of(&net, alice, &gid), None, "Alice left at once");
+    let bob_id = identity(&net, bob);
+    assert!(
+        net.run_until(net.now + 90 * MIN, |n| {
+            [bob, carol, dave]
+                .iter()
+                .all(|&i| admin_of(n, i, &gid) == Some((bob_id, 3)))
+                && keys_complete(n, &[bob, carol, dave], &gid)
+        }),
+        "Bob runs the group of three"
+    );
+    let handed = (HANDED_OVER, "alice".to_owned(), s(&["bob"]), String::new());
+    assert_eq!(
+        notices(&mut net, alice),
+        vec![
+            handed.clone(),
+            (WE_LEFT, "alice".into(), vec![], String::new())
+        ]
+    );
+    for i in [bob, carol, dave] {
+        assert_eq!(
+            notices(&mut net, i),
+            vec![
+                handed.clone(),
+                (LEFT, "alice".into(), s(&["alice"]), String::new())
+            ],
+            "node {i}"
+        );
+    }
+
+    // Bob runs it: he adds Eve, whom he met in person.
+    net.know(bob, eve, true);
+    net.know(eve, bob, true);
+    net.introduce(bob, eve);
+    net.with_core(bob, |c, now| c.add_members(&gid, &[keys[4]], now))
+        .unwrap()
+        .unwrap();
+    let four = [bob, carol, dave, eve];
+    assert!(
+        net.run_until(net.now + 90 * MIN, |n| {
+            four.iter()
+                .all(|&i| admin_of(n, i, &gid) == Some((bob_id, 4)))
+                && keys_complete(n, &four, &gid)
+        }),
+        "Eve joined through Bob"
+    );
+    settle(&mut net);
+    for &i in &m {
+        net.take_events(i);
+    }
+    net.with_core(carol, |c, now| {
+        c.send_group_text(&gid, "Bob runs it now", 1, now)
+    })
+    .unwrap()
+    .unwrap();
+    settle(&mut net);
+    for i in [bob, dave, eve] {
+        assert!(
+            group_texts(&net.take_events(i))
+                .iter()
+                .any(|(_, t)| t == "Bob runs it now"),
+            "node {i}"
+        );
+    }
+    assert!(group_texts(&net.take_events(alice)).is_empty());
+}
+
+/// §10.8: Carol's radio is off while Alice makes Bob admin, and Alice is gone for good before
+/// Carol is back, so her handover never reaches Carol. Bob's next state (he renames the group)
+/// does: Carol keeps it aside, asks Bob, takes Alice's handover from him, then his state.
+#[test]
+fn a_member_away_catches_up_with_the_new_admin() {
+    let (mut net, m) = star(52);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol, dave) = (m[0], m[1], m[2], m[3]);
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..4], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    settle(&mut net);
+    let (alice_id, bob_id) = (identity(&net, alice), identity(&net, bob));
+    net.disconnect(carol);
+    net.with_core(alice, |c, now| c.hand_over(&gid, &keys[1], false, now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        [alice, bob, dave]
+            .iter()
+            .all(|&i| admin_of(n, i, &gid) == Some((bob_id, 4)))
+    }));
+    net.disconnect(alice);
+    net.connect(carol);
+    net.run_until(net.now + 2 * MIN, |_| false);
+    assert_eq!(admin_of(&net, carol, &gid), Some((alice_id, 4)));
+    net.with_core(bob, |c, now| c.rename_group(&gid, "Vercors, lundi", now))
+        .unwrap()
+        .unwrap();
+    assert!(
+        net.run_until(net.now + 60 * MIN, |n| {
+            admin_of(n, carol, &gid) == Some((bob_id, 4))
+                && group_name(n, carol, &gid).as_deref() == Some("Vercors, lundi")
+        }),
+        "Carol caught up with Bob"
+    );
+    settle(&mut net);
+    net.take_events(carol);
+    net.with_core(bob, |c, now| {
+        c.send_group_text(&gid, "Welcome back", 1, now)
+    })
+    .unwrap()
+    .unwrap();
+    settle(&mut net);
+    assert!(
+        group_texts(&net.take_events(carol))
+            .iter()
+            .any(|(_, t)| t == "Welcome back")
+    );
+}
+
+/// The payloads of the group envelopes in raw air frames.
+fn envelopes(frames: &[Vec<u8>]) -> Vec<Vec<u8>> {
+    use lc_meshcore::air::{Packet, PayloadType};
+    frames
+        .iter()
+        .filter_map(|f| Packet::decode(f).ok())
+        .filter(|p| p.ptype == PayloadType::GrpData && lc_proto::group::parse(p.payload).is_some())
+        .map(|p| p.payload.to_vec())
+        .collect()
+}
+
+/// ADR-0039, §10.9: Dave joins after Bob's first post. Whatever his radio recorded before, his
+/// keys open none of it, while they open what follows. The members read everything around
+/// the step: Carol lost both copies of Bob's first post and gets it back after the step.
+#[test]
+fn a_newcomer_cannot_open_what_came_before() {
+    use std::sync::{Arc, Mutex};
+    let (mut net, m) = star(53);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol, dave) = (m[0], m[1], m[2], m[3]);
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)));
+    settle(&mut net);
+    for &i in &m {
+        net.take_events(i);
+    }
+    // What Dave's radio hears, and Carol deaf to the group's floods while Bob posts first.
+    let heard: Arc<Mutex<Vec<Vec<u8>>>> = Arc::default();
+    let deaf = Arc::new(Mutex::new(true));
+    let (h, d) = (heard.clone(), deaf.clone());
+    net.deaf = Some(Box::new(move |r, frame| {
+        if r == dave {
+            h.lock().unwrap().push(frame.to_vec());
+        }
+        r == carol && *d.lock().unwrap() && !envelopes(&[frame.to_vec()]).is_empty()
+    }));
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "before Dave", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 90_000, |_| false);
+    *deaf.lock().unwrap() = false;
+    let before = envelopes(&heard.lock().unwrap());
+    assert!(!before.is_empty(), "Dave's radio heard Bob's post");
+
+    net.with_core(alice, |c, now| c.add_members(&gid, &[keys[3]], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..4], &gid)));
+    heard.lock().unwrap().clear();
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "after Dave", 2, now))
+        .unwrap()
+        .unwrap();
+    settle(&mut net);
+    let dave_core = net.nodes[dave].core.as_ref().unwrap();
+    for p in &before {
+        assert!(
+            !dave_core.group_opens(&gid, p),
+            "Dave opens a post from before"
+        );
+    }
+    let after = envelopes(&heard.lock().unwrap());
+    assert!(after.iter().any(|p| dave_core.group_opens(&gid, p)));
+    let dave_texts = group_texts_late(&net.take_events(dave));
+    assert_eq!(dave_texts, vec![("after Dave".to_owned(), false)]);
+    let carol_texts = group_texts_late(&net.take_events(carol));
+    assert!(
+        carol_texts.contains(&("before Dave".to_owned(), true)),
+        "{carol_texts:?}"
+    );
+    assert!(carol_texts.iter().any(|(t, _)| t == "after Dave"));
+}
+
+/// ADR-0040: Carol misses both copies of Bob's last post, and Bob writes nothing more. His
+/// digest, two minutes on, reveals it and she gets it back, marked late; without the digest
+/// it stays lost.
+#[test]
+fn a_lost_last_post_comes_back() {
+    for digest in [true, false] {
+        let (mut net, m) = star(54);
+        let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+        let (alice, bob, carol) = (m[0], m[1], m[2]);
+        for &i in &m {
+            net.with_core(i, |c, _| c.set_group_digest(digest));
+        }
+        let gid = net
+            .with_core(alice, |c, now| c.create_group("Rando", &keys[1..3], now))
+            .unwrap()
+            .unwrap();
+        assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)));
+        settle(&mut net);
+        net.with_core(bob, |c, now| {
+            c.send_group_text(&gid, "on the ridge", 1, now)
+        })
+        .unwrap()
+        .unwrap();
+        settle(&mut net);
+        net.take_events(carol);
+        let deaf = std::sync::Arc::new(std::sync::Mutex::new(true));
+        let d = deaf.clone();
+        net.deaf = Some(Box::new(move |r, frame| {
+            r == carol && *d.lock().unwrap() && !envelopes(&[frame.to_vec()]).is_empty()
+        }));
+        net.with_core(bob, |c, now| {
+            c.send_group_text(&gid, "We turn back at the col", 2, now)
+        })
+        .unwrap()
+        .unwrap();
+        net.run_until(net.now + 90_000, |_| false);
+        *deaf.lock().unwrap() = false;
+        let mut got = Vec::new();
+        net.run_until(net.now + 15 * MIN, |n| {
+            got.extend(group_texts_late(&n.take_events(carol)));
+            false
+        });
+        let back = got.contains(&("We turn back at the col".to_owned(), true));
+        assert_eq!(back, digest, "digest {digest}: {got:?}");
+    }
 }

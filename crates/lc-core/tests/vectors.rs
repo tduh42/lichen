@@ -26,6 +26,14 @@ fn h(v: &Value, k: &str) -> Vec<u8> {
     hex::decode(s(v, k)).unwrap()
 }
 
+fn ints(v: &Value, k: &str) -> Vec<i64> {
+    v[k].as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_integer().unwrap())
+        .collect()
+}
+
 fn ts(v: &Value) -> u32 {
     u32::try_from(v["ts"].as_integer().unwrap()).unwrap()
 }
@@ -218,9 +226,29 @@ fn sender_keys() {
         };
         assert_eq!(gid.to_vec(), h(v, "gid"));
         assert_eq!(keys.len() as i64, v["n"].as_integer().unwrap());
-        let owners: Vec<u8> = keys.iter().flat_map(|k| k.0).collect();
+        let owners: Vec<u8> = keys.iter().flat_map(|k| k.owner).collect();
         assert_eq!(owners, h(v, "owners"));
+        let steps: Vec<i64> = keys.iter().map(|k| i64::from(k.step)).collect();
+        assert_eq!(steps, ints(v, "steps"), "{}", s(v, "name"));
         assert_eq!(Control::SenderKeys { gid, entries: keys }.encode(), d);
+    }
+    for v in entries(&t, "sender_key") {
+        let d = h(v, "datagram");
+        let Some(Control::SenderKey { gid, entry }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(gid.to_vec(), h(v, "gid"));
+        assert_eq!(i64::from(entry.step), v["step"].as_integer().unwrap());
+        assert_eq!(
+            i64::from(entry.key_epoch),
+            v["key_epoch"].as_integer().unwrap()
+        );
+        assert_eq!(entry.key.to_vec(), h(v, "key"));
+        assert_eq!(
+            i64::from(entry.next_counter),
+            v["next_counter"].as_integer().unwrap()
+        );
+        assert_eq!(Control::SenderKey { gid, entry }.encode(), d);
     }
     for v in entries(&t, "bad_group_control") {
         assert_eq!(Control::decode(&h(v, "datagram")), None, "{}", s(v, "name"));
@@ -278,6 +306,84 @@ fn group_recovery() {
             .collect();
         assert_eq!(lengths, want, "{}", s(v, "name"));
         assert_eq!(Control::Resend { gid, payloads }.encode(), d);
+    }
+}
+
+/// The key step (§10.9): HKDF from the oracle, one epoch at a time.
+#[test]
+fn key_steps() {
+    let t = load();
+    for v in entries(&t, "key_step") {
+        let gid: [u8; 16] = h(v, "gid").try_into().unwrap();
+        let key: [u8; 32] = h(v, "key").try_into().unwrap();
+        let from = u32::try_from(v["from"].as_integer().unwrap()).unwrap();
+        let to = u32::try_from(v["to"].as_integer().unwrap()).unwrap();
+        let got = lc_core::group::step_key_to(&gid, &key, from, to).unwrap();
+        assert_eq!(got.to_vec(), h(v, "stepped"), "{}", s(v, "name"));
+    }
+}
+
+/// GROUP_DIGEST (§10.6): the body of a group message.
+#[test]
+fn group_digests() {
+    use lc_core::group::Control;
+    let t = load();
+    for v in entries(&t, "group_digest") {
+        let d = h(v, "body");
+        let Some(Control::Digest { epoch, counter }) = Control::decode(&d) else {
+            panic!("{}", s(v, "name"));
+        };
+        assert_eq!(i64::from(epoch), v["key_epoch"].as_integer().unwrap());
+        assert_eq!(i64::from(counter), v["counter"].as_integer().unwrap());
+        assert_eq!(Control::Digest { epoch, counter }.encode(), d);
+    }
+}
+
+/// GROUP_HANDOVER (§10.8): links signed as the oracle signs them (Ed25519 is deterministic),
+/// each by the admin the link before named.
+#[test]
+fn group_handovers() {
+    use lc_core::group::Control;
+    use lc_meshcore::ecdh::{expand_seed, public_key, sign, verify};
+    use sha2::{Digest, Sha256};
+    let t = load();
+    for v in entries(&t, "group_handover") {
+        let name = s(v, "name");
+        let d = h(v, "datagram");
+        let Some(Control::Handover { links }) = Control::decode(&d) else {
+            panic!("{name}");
+        };
+        let seeds: Vec<[u8; 32]> = ["admin_seed", "julien_seed"]
+            .iter()
+            .map(|k| h(v, k).try_into().unwrap())
+            .collect();
+        let mut admin: [u8; 32] = h(v, "admin").try_into().unwrap();
+        assert_eq!(public_key(&expand_seed(&seeds[0])), admin, "{name}");
+        let successors = h(v, "successors");
+        let epochs = ints(v, "epochs");
+        assert_eq!(links.len(), epochs.len(), "{name}");
+        for (i, link) in links.iter().enumerate() {
+            let (sig, state) = link.split_at(64);
+            let sig: [u8; 64] = sig.try_into().unwrap();
+            let digest: [u8; 32] = Sha256::digest(state).into();
+            let parts: [&[u8]; 2] = [b"lichen/1 handover", &digest];
+            assert!(verify(&admin, &parts, &sig), "{name}: link {i}");
+            assert_eq!(sign(&expand_seed(&seeds[i]), &parts), Some(sig), "{name}");
+            let Some(Control::State {
+                epoch,
+                admin: next,
+                gid,
+                ..
+            }) = Control::decode(state)
+            else {
+                panic!("{name}: link {i} is not a state");
+            };
+            assert_eq!(gid.to_vec(), h(v, "gid"));
+            assert_eq!(i64::from(epoch), epochs[i]);
+            assert_eq!(next.to_vec(), successors[32 * i..32 * (i + 1)].to_vec());
+            admin = next;
+        }
+        assert_eq!(Control::Handover { links }.encode(), d, "{name}");
     }
 }
 

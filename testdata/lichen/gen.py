@@ -1,21 +1,111 @@
 #!/usr/bin/env python3
 """lichen content vectors: message references, REPLY and REACTION (protocol.md §6.2), EDIT and
 DELETE (§6.4),
-GROUP_STATE and SENDER_KEYS (§10.1–10.2), GROUP_MISSING and GROUP_RESEND (§10.6), GROUP_SYNC (§10.7), group invitations and GROUP_JOIN (§10.5), stickers, GIFs and GIPHY links (§6.3), small
-files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
+GROUP_STATE, SENDER_KEY and SENDER_KEYS (§10.1–10.2), GROUP_MISSING, GROUP_RESEND and GROUP_DIGEST
+(§10.6), GROUP_SYNC (§10.7), GROUP_HANDOVER (§10.8, Ed25519 written here from RFC 8032), the key
+step (§10.9, HKDF from Python's hmac), group invitations and GROUP_JOIN (§10.5), stickers, GIFs
+and GIPHY links (§6.3), small files (§13.2 kinds 2 and 3, the DEFLATE streams from Python's zlib).
 
-An independent oracle (Python's hashlib and struct, not the Rust code). Regenerate with:
+An independent oracle (Python's hashlib, hmac and struct, not the Rust code). Regenerate with:
     python3 -I testdata/lichen/gen.py > testdata/lichen/content.toml
 """
 import base64
 import hashlib
+import hmac
 import struct
 import zlib
 
 TEXT, FILE, REPLY, REACTION, GROUP_STATE, GROUP_JOIN, SENDER_KEYS = 0x01, 0x02, 0x08, 0x09, 0x11, 0x13, 0x14
 GROUP_MISSING, GROUP_RESEND, GROUP_SYNC = 0x15, 0x16, 0x17
+SENDER_KEY, GROUP_HANDOVER, GROUP_DIGEST = 0x10, 0x18, 0x19
 STICKER, GIF = 0x0A, 0x0B
 EDIT, DELETE, TIMER = 0x0C, 0x0D, 0x0E
+
+
+# ----- Ed25519, RFC 8032 §5.1 (MeshCore's private key is the expanded seed: clamped scalar ‖
+# prefix, so a signature from a seed is the RFC's) ------------------------------------------
+P = 2**255 - 19
+L = 2**252 + 27742317777372353535851937790883648493
+D = -121665 * pow(121666, P - 2, P) % P
+GY = 4 * pow(5, P - 2, P) % P
+
+
+def _recover_x(y: int, sign: int) -> int:
+    x2 = (y * y - 1) * pow(D * y * y + 1, P - 2, P) % P
+    x = pow(x2, (P + 3) // 8, P)
+    if (x * x - x2) % P != 0:
+        x = x * pow(2, (P - 1) // 4, P) % P
+    if x % 2 != sign:
+        x = P - x
+    return x
+
+
+G = (_recover_x(GY, 0), GY, 1, _recover_x(GY, 0) * GY % P)
+
+
+def _add(a, b):
+    A = (a[1] - a[0]) * (b[1] - b[0]) % P
+    B = (a[1] + a[0]) * (b[1] + b[0]) % P
+    C = 2 * a[3] * b[3] * D % P
+    Dd = 2 * a[2] * b[2] % P
+    E, F, Gg, H = B - A, Dd - C, Dd + C, B + A
+    return (E * F % P, Gg * H % P, F * Gg % P, E * H % P)
+
+
+def _mul(s: int, p):
+    q = (0, 1, 1, 0)
+    while s:
+        if s & 1:
+            q = _add(q, p)
+        p = _add(p, p)
+        s >>= 1
+    return q
+
+
+def _encode(p) -> bytes:
+    zi = pow(p[2], P - 2, P)
+    x, y = p[0] * zi % P, p[1] * zi % P
+    return (y | ((x & 1) << 255)).to_bytes(32, "little")
+
+
+def _expand(seed: bytes):
+    h = hashlib.sha512(seed).digest()
+    a = int.from_bytes(h[:32], "little")
+    a &= (1 << 254) - 8
+    a |= 1 << 254
+    return a, h[32:]
+
+
+def ed_public(seed: bytes) -> bytes:
+    return _encode(_mul(_expand(seed)[0], G))
+
+
+def ed_sign(seed: bytes, msg: bytes) -> bytes:
+    a, prefix = _expand(seed)
+    pub = _encode(_mul(a, G))
+    r = int.from_bytes(hashlib.sha512(prefix + msg).digest(), "little") % L
+    rb = _encode(_mul(r, G))
+    k = int.from_bytes(hashlib.sha512(rb + pub + msg).digest(), "little") % L
+    return rb + ((r + k * a) % L).to_bytes(32, "little")
+
+
+def hkdf(salt: bytes, ikm: bytes, info: bytes) -> bytes:
+    prk = hmac.new(salt, ikm, hashlib.sha256).digest()
+    return hmac.new(prk, info + b"\x01", hashlib.sha256).digest()
+
+
+def _self_check():
+    # RFC 8032 §7.1 test 1 and RFC 5869 A.1 (the first 32 bytes).
+    sk = bytes.fromhex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
+    assert ed_public(sk).hex() == "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+    assert ed_sign(sk, b"").hex() == (
+        "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+    )
+    okm = hkdf(bytes(range(13)), bytes([0x0B] * 22), bytes(range(0xF0, 0xFA)))
+    assert okm.hex() == "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
+
+
+_self_check()
 
 
 def ref(author: bytes, plaintext: bytes) -> bytes:
@@ -49,8 +139,8 @@ def timer(ts: int, seconds: int) -> bytes:
 camille = hashlib.sha256(b"camille").digest()
 julien = hashlib.sha256(b"julien").digest()
 
-print("# lichen content vectors (protocol.md §6.2, §6.3, §6.4, §10.1–10.2, §10.5, §10.6, §13.2), produced by testdata/lichen/gen.py, an")
-print("# independent oracle (Python hashlib). Do not edit by hand: regenerate instead.")
+print("# lichen content vectors (protocol.md §6.2, §6.3, §6.4, §10.1–10.2, §10.5–10.9, §13.2), produced by testdata/lichen/gen.py, an")
+print("# independent oracle (Python hashlib and hmac, Ed25519 from RFC 8032). Do not edit by hand: regenerate instead.")
 print()
 
 hi = text(1_793_000_000, "Hi! I'm at the refuge.")
@@ -211,9 +301,13 @@ def group_state(gid: bytes, epoch: int, admin: bytes, gname: str, members, cause
 
 def sender_keys(gid: bytes, entries) -> bytes:
     v = bytes([SENDER_KEYS]) + gid + bytes([len(entries)])
-    for owner, epoch, key, nxt in entries:
-        v += owner + bytes([epoch]) + key + struct.pack("<I", nxt)
+    for owner, step, epoch, key, nxt in entries:
+        v += owner + struct.pack("<I", step) + bytes([epoch]) + key + struct.pack("<I", nxt)
     return v
+
+
+def sender_key(gid: bytes, step: int, epoch: int, key: bytes, nxt: int) -> bytes:
+    return bytes([SENDER_KEY]) + gid + struct.pack("<I", step) + bytes([epoch]) + key + struct.pack("<I", nxt)
 
 
 gid = hashlib.sha256(b"rando vercors").digest()[:16]
@@ -241,11 +335,11 @@ for nm, epoch, gname, members, cause in states:
     print()
 
 keys = [
-    ("one key", [(julien, 1, hashlib.sha256(b"julien key").digest(), 7)]),
+    ("one key", [(julien, 3, 1, hashlib.sha256(b"julien key").digest(), 7)]),
     ("the admin's and two members'", [
-        (camille, 0, hashlib.sha256(b"camille key").digest(), 0),
-        (julien, 1, hashlib.sha256(b"julien key").digest(), 7),
-        (lea, 255, hashlib.sha256(b"lea key").digest(), 65536),
+        (camille, 3, 0, hashlib.sha256(b"camille key").digest(), 0),
+        (julien, 3, 1, hashlib.sha256(b"julien key").digest(), 7),
+        (lea, 0xFFFFFFFF, 255, hashlib.sha256(b"lea key").digest(), 65536),
     ]),
 ]
 for nm, entries in keys:
@@ -253,7 +347,8 @@ for nm, entries in keys:
     print(f'name = "{nm}"')
     print(f'gid = "{gid.hex()}"')
     print(f"n = {len(entries)}")
-    print(f'owners = "{"".join(o.hex() for o, _, _, _ in entries)}"')
+    print(f'owners = "{"".join(o.hex() for o, _, _, _, _ in entries)}"')
+    print(f"steps = {[st for _, st, _, _, _ in entries]}")
     print(f'datagram = "{sender_keys(gid, entries).hex()}"')
     print()
 
@@ -307,7 +402,99 @@ for nm, epoch in [("state 3 held", 3), ("the largest epoch", 0xFFFFFFFF)]:
     print(f'datagram = "{group_sync(gid, epoch).hex()}"')
     print()
 
+for nm, step, epoch, key, nxt in [
+    ("a first key", 3, 0, hashlib.sha256(b"lea key").digest(), 0),
+    ("after a restart, from counter 12", 0xFFFFFFFF, 200, hashlib.sha256(b"julien key 2").digest(), 12),
+]:
+    print("[[sender_key]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f"step = {step}")
+    print(f"key_epoch = {epoch}")
+    print(f'key = "{key.hex()}"')
+    print(f"next_counter = {nxt}")
+    print(f'datagram = "{sender_key(gid, step, epoch, key, nxt).hex()}"')
+    print()
+
+
+def key_step(gid: bytes, key: bytes, epoch: int) -> bytes:
+    """The key at state `epoch`, from the key at `epoch − 1` (§10.9)."""
+    return hkdf(gid, key, b"lichen/1 key step" + struct.pack("<I", epoch))
+
+
+k0 = hashlib.sha256(b"julien key").digest()
+for nm, start, to in [("one step", 3, 4), ("three steps", 3, 6), ("sixty-four steps, the most", 100, 164)]:
+    k = k0
+    for e in range(start + 1, to + 1):
+        k = key_step(gid, k, e)
+    print("[[key_step]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f'key = "{k0.hex()}"')
+    print(f"from = {start}")
+    print(f"to = {to}")
+    print(f'stepped = "{k.hex()}"')
+    print()
+
+
+def group_digest(epoch: int, counter: int) -> bytes:
+    return bytes([GROUP_DIGEST, epoch]) + struct.pack("<I", counter)
+
+
+for nm, epoch, counter in [("after message 41", 1, 41), ("the first message", 0, 0)]:
+    print("[[group_digest]]")
+    print(f'name = "{nm}"')
+    print(f"key_epoch = {epoch}")
+    print(f"counter = {counter}")
+    print(f'body = "{group_digest(epoch, counter).hex()}"')
+    print()
+
+# Handovers (§10.8): real identities, since links are signed.
+camille_seed = hashlib.sha256(b"camille seed").digest()
+julien_seed = hashlib.sha256(b"julien seed").digest()
+camille_id, julien_id, lea_id = ed_public(camille_seed), ed_public(julien_seed), lea
+real = [(camille_id, camille_node, "Camille"), (julien_id, julien_node, "Julien"), (lea_id, lea_node, "Léa")]
+
+
+def link(seed: bytes, state: bytes) -> bytes:
+    sig = ed_sign(seed, b"lichen/1 handover" + hashlib.sha256(state).digest())
+    return sig + state
+
+
+def group_handover(links) -> bytes:
+    return bytes([GROUP_HANDOVER, len(links)]) + b"".join(struct.pack("<H", len(l) - 64) + l for l in links)
+
+
+make_admin = group_state(gid, 4, julien_id, "Rando Vercors", real)
+leaves = group_state(gid, 4, julien_id, "Rando Vercors", real[1:], 1)
+to_lea = group_state(gid, 6, lea_id, "Rando Vercors", real)
+handovers = [
+    ("camille makes julien admin", [link(camille_seed, make_admin)], [4], [julien_id]),
+    ("camille leaves, julien runs the group", [link(camille_seed, leaves)], [4], [julien_id]),
+    ("a chain: camille to julien, julien to lea", [link(camille_seed, make_admin), link(julien_seed, to_lea)], [4, 6], [julien_id, lea_id]),
+]
+for nm, links, epochs, successors in handovers:
+    print("[[group_handover]]")
+    print(f'name = "{nm}"')
+    print(f'gid = "{gid.hex()}"')
+    print(f'admin = "{camille_id.hex()}"')
+    print(f'admin_seed = "{camille_seed.hex()}"')
+    print(f'julien_seed = "{julien_seed.hex()}"')
+    print(f"epochs = {epochs}")
+    print(f'successors = "{"".join(x.hex() for x in successors)}"')
+    print(f'datagram = "{group_handover(links).hex()}"')
+    print()
+
+one = group_handover([link(camille_seed, make_admin)])
 bad = [
+    ("handover, no link", bytes([GROUP_HANDOVER, 0])),
+    ("handover, five links", group_handover([link(camille_seed, make_admin)] * 5)),
+    ("handover, cut in a link", one[:-1]),
+    ("handover, a byte after the links", one + b"\x00"),
+    ("handover, a link that is not a state", group_handover([bytes(64) + group_sync(gid, 3)])),
+    ("handover, a state with a byte too many", group_handover([link(camille_seed, make_admin + b"\x01\x02")])),
+    ("sender key, cut in the counter", sender_key(gid, 3, 0, k0, 0)[:-1]),
+    ("sender key, a byte after the counter", sender_key(gid, 3, 0, k0, 0) + b"\x00"),
     ("sync, cut in the epoch", group_sync(gid, 3)[:-1]),
     ("sync, a byte after the epoch", group_sync(gid, 3) + b"\x00"),
     ("missing, no counter", group_missing(gid, julien, 1, [])),

@@ -9,7 +9,7 @@ Members recover lost group messages from each other (§10.6, ADR-0024), but only
 
 ## Decision
 
-- **GROUP_DIGEST (0x19), a group message from the core.** `key_epoch (1) ‖ counter u32`: the author's last message. Two minutes after a member's last message, if it sent no other one, it floods one digest, signed and copied as any group message (§10.3), with a counter of the core's own range: it opens no gap itself.
+- **GROUP_DIGEST (0x19), a group message from the core.** `key_epoch (1) ‖ counter u32`: the author's last message. Two minutes after the first copy of a member's last message left, if no other one followed, it floods one digest, signed and copied as any group message (§10.3), with a counter of the core's own range: it opens no gap itself.
 - **A digest reveals what a later message would.** A receiver takes the message counters it lacks under that key, after the highest it received (or from the key's next counter) up to the digest's counter included, inside the replay window, as gaps, and asks for them as usual (§10.6). Only the author can sign a digest: no member can make the others ask for messages that do not exist.
 - **One per burst.** Every message resets the two minutes: someone writing every minute sends one digest when they stop.
 - **Recovery copies are stored with the group.** The kept envelopes (64 per group, an hour) go into the group's stored snapshot with the Unix time they were kept and the step they were sent at (ADR-0039), and come back after a restart for what is left of their hour. They are ciphertext under sender keys the members hold anyway; our own key still never is stored, and our own messages kept that way are only useful to the others.

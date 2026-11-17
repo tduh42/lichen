@@ -221,6 +221,9 @@ pub mod notice {
     /// before. A verified contact keeps the name it was verified under (review of
     /// 2026-11-15, SR-30): the notice is how the user learns of the change.
     pub const NODE_RENAMED: u8 = 12;
+    /// The actor (the admin then) made the subject the group's admin (§10.8, ADR-0038). The
+    /// apps say "you" when either is us.
+    pub const HANDED_OVER: u8 = 40;
 }
 
 fn put_short(v: &mut Vec<u8>, s: &str) {

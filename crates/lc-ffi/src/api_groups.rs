@@ -199,11 +199,30 @@ impl LichenCore {
     }
 
     /// Leaves a group: a member asks the admin to remove it and forgets the group at once; the
-    /// admin closes it for everyone (ADR-0017). The conversation stays on the phone.
+    /// admin closes it for everyone (ADR-0017), unless it hands the group over first
+    /// (`hand_over` with `leave`, ADR-0038). The conversation stays on the phone.
     pub fn leave_group(&self, gid: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
         let g = self::gid(&gid)?;
         let mut i = self.lock();
         i.core.leave_group(&g, now_ms)?;
+        i.persist();
+        Ok(())
+    }
+
+    /// Hands a group we administer to another member, `member` its node (protocol.md §10.8,
+    /// ADR-0038): "Make admin", or, with `leave`, how an admin leaves without closing the
+    /// group. Both sides see a notice (kind 40).
+    pub fn hand_over(
+        &self,
+        gid: Vec<u8>,
+        member: Vec<u8>,
+        leave: bool,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let g = self::gid(&gid)?;
+        let m = key(&member)?;
+        let mut i = self.lock();
+        i.core.hand_over(&g, &m, leave, now_ms)?;
         i.persist();
         Ok(())
     }
