@@ -4827,6 +4827,59 @@ mod tests {
         assert!(core.invitation_snapshot(&gid).is_none());
     }
 
+    /// Second read of 2026-11-17, N6: a group state teaches us members (contacts, identities
+    /// for their nodes) only once it is taken. One from a listed member that names itself
+    /// admin (no handover yet), or a stale one from the admin, leaves the contacts as they were:
+    /// no new node added, no identity pinned on a known node that had none.
+    #[test]
+    fn a_state_not_taken_teaches_no_members() {
+        let (admin, b) = ([0xA1; 32], [0xB1; 32]);
+        let mut core = core_with_group(&[(admin, [1; 32], 0), (b, [2; 32], 0)]);
+        core.groups.get_mut(&GID).unwrap().admin = admin;
+        let me = *core.key().unwrap();
+        let (stranger, known) = ([0x5A; 32], [0x4B; 32]);
+        core.add_contact(known, "known", None);
+        let base = core.groups[&GID].state(None);
+        let state = |who: PubKey, epoch: u32| {
+            let mut s = base.clone();
+            s.admin = who;
+            s.epoch = epoch;
+            s.members.push(Member {
+                key: [0x5B; 32],
+                node: stranger,
+                name: "stranger".into(),
+            });
+            s.members.push(Member {
+                key: [0x4C; 32],
+                node: known,
+                name: "known".into(),
+            });
+            assert!(s.members.iter().any(|m| m.key == me));
+            s
+        };
+        let untouched = |core: &Core| {
+            !core.contacts.contains_key(&stranger)
+                && core
+                    .contacts
+                    .get(&known)
+                    .is_some_and(|c| c.identity.is_none())
+        };
+        // A member names itself admin with a newer state: kept aside for a handover (§10.8).
+        let s = state(b, 2);
+        core.on_group_state(&b, s, 1_000);
+        assert_eq!(core.groups[&GID].admin, admin);
+        assert!(untouched(&core), "learned from a non-admin's state");
+        // The admin's state, but not newer than ours.
+        let s = state(admin, 1);
+        core.on_group_state(&admin, s, 2_000);
+        assert!(untouched(&core), "learned from a stale state");
+        // Newer, from the admin: taken, and its members learned.
+        let s = state(admin, 2);
+        core.on_group_state(&admin, s, 3_000);
+        assert!(core.contacts.contains_key(&stranger));
+        assert_eq!(core.contacts[&known].identity, Some([0x4C; 32]));
+    }
+
     /// Second read of 2026-11-17, N18: anyone with a session can send group states. Eight
     /// from strangers (or eight groups from one) do not push out an invitation the user has
     /// not answered: one is held per admin, its newest, and a full list refuses the next.
