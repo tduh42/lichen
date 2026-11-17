@@ -364,14 +364,16 @@ struct SharePanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Capsule()
-                .fill(Theme.line)
-                .frame(width: 36, height: 5)
-                .frame(maxWidth: .infinity, minHeight: 12)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.snappy) { expanded.toggle() } }
-                .accessibilityAddTraits(.isButton)
-                .accessibilityLabel(expanded ? "Collapse" : "Expand")
+            // A 44-point target around the small handle, over the card's top padding.
+            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+                Capsule()
+                    .fill(Theme.line)
+                    .frame(width: 36, height: 5)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.row)
+            .padding(.vertical, -14)
+            .accessibilityLabel(expanded ? "Collapse" : "Expand")
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Location sharing")
@@ -380,6 +382,7 @@ struct SharePanel: View {
                         .font(.system(.footnote))
                         .foregroundStyle(model.sos ? Theme.sosFg : Theme.tx2)
                 }
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Toggle("Location sharing", isOn: Binding(
                     get: { !model.shares.isEmpty },
@@ -411,6 +414,7 @@ struct SharePanel: View {
                                 .background(Theme.s1, in: Circle())
                             Text(model.shares.isEmpty ? "Share my position…" : "Precision per contact")
                                 .font(.system(.callout))
+                                .fixedSize(horizontal: false, vertical: true)
                             Spacer()
                         }
                         .padding(.horizontal, 16)
@@ -574,7 +578,7 @@ struct ShareSheet: View {
             } label: {
                 HStack(spacing: 4) {
                     Text(current.map(PrecisionText.name) ?? String(localized: "Not shared"))
-                    Image(systemName: "chevron.up.chevron.down").font(.system(.caption2))
+                    Image(systemName: "chevron.up.chevron.down").font(.system(.caption))
                 }
                 .font(.system(.subheadline, weight: .semibold))
                 .foregroundStyle(current == nil ? Theme.tx2 : Theme.tx)

@@ -2351,6 +2351,16 @@
         }
       }
     },
+    "Compass: tap to face north": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boussole : touche pour orienter au nord"
+          }
+        }
+      }
+    },
     "Compressed to %@ · %@ · ≈ %@ s of airtime, %@ %% of your hour": {
       "localizations": {
         "fr": {
@@ -5141,6 +5151,16 @@
         }
       }
     },
+    "Map credits": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crédits de la carte"
+          }
+        }
+      }
+    },
     "Map layers": {
       "localizations": {
         "fr": {
@@ -6741,6 +6761,16 @@
         }
       }
     },
+    "Photo, LoRa preview": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo, aperçu LoRa"
+          }
+        }
+      }
+    },
     "Photo: %@": {
       "localizations": {
         "fr": {
@@ -6827,6 +6857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lire le message vocal"
+          }
+        }
+      }
+    },
+    "Plays it again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le rejoue"
           }
         }
       }
@@ -7337,6 +7377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renommer le groupe"
+          }
+        }
+      }
+    },
+    "Renames them on this phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renomme la personne sur ce téléphone"
           }
         }
       }

@@ -184,7 +184,7 @@ fun FileCard(f: Message.File) {
     val context = LocalContext.current
     Box(
         Modifier
-            .width(250.dp)
+            .width(mediaWidth())
             .clip(RoundedCornerShape(18.dp))
             .background(t.s1)
             .border(1.dp, t.line, RoundedCornerShape(18.dp))

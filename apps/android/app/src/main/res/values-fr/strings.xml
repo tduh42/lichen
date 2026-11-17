@@ -1186,4 +1186,8 @@
     <string name="yes">Oui</string>
     <string name="seconds_value">%1$s s</string>
     <string name="snr_value">SNR %1$s dB</string>
+    <!-- Accessibilité (M5) -->
+    <string name="chosen_option">Sélectionné</string>
+    <string name="direction_arrow">Direction à suivre</string>
+    <string name="file_chosen">Fichier choisi</string>
 </resources>

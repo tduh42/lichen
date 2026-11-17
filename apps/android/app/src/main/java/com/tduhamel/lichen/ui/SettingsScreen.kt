@@ -423,7 +423,7 @@ private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
                         AppLock.DELAYS.forEach { s ->
                             DropdownMenuItem(
                                 text = { Text(lockDelayLabel(s), color = t.tx) },
-                                trailingIcon = { if (s == lock.delay) Icon(Icons.Outlined.Check, null, tint = t.tx) },
+                                trailingIcon = { if (s == lock.delay) Icon(Icons.Outlined.Check, stringResource(R.string.chosen_option), tint = t.tx) },
                                 onClick = {
                                     choosing = false
                                     lock.chooseDelay(s)

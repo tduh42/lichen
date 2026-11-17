@@ -47,7 +47,7 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 
 ## Typo, espacements, rayons
 
-- iOS : grand titre 34/700, corps 16, secondaire 13–14, légende 11–12.
+- iOS : grand titre 34/700, corps 16, secondaire 13–14, légende 12 (le style `.caption` : `.caption2` ne rétrécit pas avec la taille de texte, ce que l’audit d’accessibilité signale).
 - Android : titre de barre 22/400, mêmes tailles pour le reste.
 - Espacements : 4, 8, 12, 16, 24. Marges d'écran 16.
 - Rayons : cartes 14 (iOS) / 16 (Android). Boutons 14 et 50 de haut (iOS) / pilule et 48 de haut (Android). Badges 8.

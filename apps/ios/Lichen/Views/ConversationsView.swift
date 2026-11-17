@@ -296,11 +296,11 @@ private struct ChatRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(row.title).font(.system(.callout, weight: .semibold)).lineLimit(1)
                     if row.pinned {
-                        Image(systemName: "pin.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "pin.fill").font(.system(.caption)).foregroundStyle(Theme.tx2)
                             .accessibilityLabel("Pinned")
                     }
                     if row.muted {
-                        Image(systemName: "bell.slash.fill").font(.system(.caption2)).foregroundStyle(Theme.tx2)
+                        Image(systemName: "bell.slash.fill").font(.system(.caption)).foregroundStyle(Theme.tx2)
                             .accessibilityLabel("Muted")
                     }
                     Spacer()
@@ -362,7 +362,7 @@ struct RadioLine: View {
                     Text(radioHeadline(model))
                         .font(.system(.subheadline))
                         .foregroundStyle(Theme.tx2)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.leading)
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.system(.footnote, weight: .semibold))
@@ -428,7 +428,7 @@ struct RadioCard: View {
                 if model.torStatus == .ready { TransportBadge(kind: .tor, label: "Tor") }
                 if !model.bridgeOnline && model.torStatus != .ready {
                     Text("No Internet bridge")
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .lineLimit(1)
                 }

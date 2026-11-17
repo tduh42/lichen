@@ -46,7 +46,7 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 
 ## Type, spacing, radii
 
-- iOS: large title 34/700, body 16, secondary 13–14, caption 11–12. Android: bar title 22/400, the rest the same.
+- iOS: large title 34/700, body 16, secondary 13–14, caption 12 (the text style `.caption`: `.caption2` does not get smaller with Dynamic Type, which the accessibility audit flags). Android: bar title 22/400, the rest the same.
 - Spacing 4, 8, 12, 16, 24; screen margins 16.
 - Radii: cards 14 (iOS) / 16 (Android); buttons 14 and 50 high (iOS) / pill and 48 high (Android); badges 8.
 

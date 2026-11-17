@@ -201,13 +201,18 @@ struct ChatView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .principal) {
-                // A contact's name: tap to rename it on this phone.
-                VStack(spacing: 2) {
+                let title = VStack(spacing: 2) {
                     Text(model.title(of: chat)).font(.system(.body, weight: .semibold))
                     Text(subtitle).font(.system(.caption)).foregroundStyle(Theme.tx2)
                 }
-                .onTapGesture { if chatKey != nil { renaming = true } }
-                .accessibilityAddTraits(chatKey == nil ? [] : .isButton)
+                // A contact's name: tap to rename it on this phone.
+                if chatKey != nil {
+                    Button { renaming = true } label: { title }
+                        .buttonStyle(.row)
+                        .accessibilityHint("Renames them on this phone")
+                } else {
+                    title
+                }
             }
             if isGroup {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -379,9 +384,10 @@ struct ChatView: View {
                         .font(.system(.caption))
                         .foregroundStyle(c.verified ? Theme.tx2 : Theme.warnFg)
                         .labelStyle(TintedIconLabel(tint: c.verified ? Theme.ok : Theme.warn))
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 4)
             } else if model.secured.contains(key) {
                 Label("Encrypted session", systemImage: "lock")
                     .font(.system(.caption))
@@ -399,9 +405,10 @@ struct ChatView: View {
                     .font(.system(.caption))
                     .foregroundStyle(Theme.warnFg)
                     .labelStyle(TintedIconLabel(tint: Theme.warn))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.top, 4)
         } else if isGroup {
             Label("Signed group messages, flooded", systemImage: "lock")
                 .font(.system(.caption))
@@ -796,7 +803,7 @@ private struct MessageView: View {
                 }
                 Text(footer)
             }
-            .font(.system(.caption2))
+            .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
         }
         .frame(maxWidth: .infinity, alignment: message.outgoing ? .trailing : .leading)
@@ -1100,6 +1107,8 @@ private struct MessageInfoSheet: View {
 struct VoiceNote: View {
     let message: StoredMessage
     @Environment(AppModel.self) private var model
+    /// The waveform's width: 110 points at the default text size, larger with it.
+    @ScaledMetric(relativeTo: .body) private var waveWidth: CGFloat = 110
 
     var body: some View {
         if case let .voice(_, mode, _, durationMs, data) = message.message {
@@ -1133,10 +1142,10 @@ struct VoiceNote: View {
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0).onChanged { v in
                         guard playable else { return }
-                        let f = v.location.x / 110
+                        let f = v.location.x / wave
                         if playing { model.player.seek(f) } else { model.player.play(message, from: f) }
                     })
-                    .frame(width: 110)
+                    .frame(width: wave)
                     .accessibilityElement()
                     .accessibilityLabel("Position")
                     .accessibilityValue(clock(playing ? model.player.position : 0))
@@ -1149,7 +1158,7 @@ struct VoiceNote: View {
                     Text(playing ? "\(clock(model.player.position)) / \(clock(total))" : clock(total))
                         .font(.system(.footnote, weight: .semibold).monospacedDigit())
                     Text(codecName(mode))
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .opacity(0.7)
                 }
             }
@@ -1160,6 +1169,9 @@ struct VoiceNote: View {
             .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
         }
     }
+
+    /// At most 170 points: the play button and the length stay beside it.
+    private var wave: CGFloat { min(waveWidth, 170) }
 }
 
 /// An image over LoRa: the preview or the full thumbnail, and how to get the full one.
@@ -1177,36 +1189,41 @@ private struct ImageCard: View {
                       let url = model.downloads[hash] else { return nil }
                 return DecodedImages.shared.image(url: url, maxPixel: 2048)
             }
+            let ratio = CGFloat(max(width, 1)) / CGFloat(max(height, 1))
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .bottomLeading) {
-                    if let fetched {
-                        Image(uiImage: fetched)
-                            .resizable()
-                            .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                    } else if let ui = DecodedImages.shared.image(data: data, maxPixel: 480) {
-                        Image(uiImage: ui)
-                            .resizable()
-                            .interpolation(.medium)
-                            .aspectRatio(CGFloat(max(width, 1)) / CGFloat(max(height, 1)), contentMode: .fill)
-                            .blur(radius: full ? 0 : 1.5)
-                    } else {
-                        Theme.s2
-                    }
-                    if !full && fetched == nil {
-                        Text("LoRa preview · \(data.count) bytes")
-                            .font(.system(.caption2))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Theme.bg.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
-                            .padding(8)
-                    }
-                }
-                .frame(width: 250, height: 250 * CGFloat(max(height, 1)) / CGFloat(max(width, 1)))
-                .clipped()
                 // Full screen, zoomable.
-                .contentShape(Rectangle())
-                .onTapGesture { viewing = true }
-                .accessibilityAddTraits(.isButton)
+                Button { viewing = true } label: {
+                    Color.clear
+                        .aspectRatio(ratio, contentMode: .fit)
+                        .overlay {
+                            if let fetched {
+                                Image(uiImage: fetched)
+                                    .resizable()
+                                    .aspectRatio(ratio, contentMode: .fill)
+                            } else if let ui = DecodedImages.shared.image(data: data, maxPixel: 480) {
+                                Image(uiImage: ui)
+                                    .resizable()
+                                    .interpolation(.medium)
+                                    .aspectRatio(ratio, contentMode: .fill)
+                                    .blur(radius: full ? 0 : 1.5)
+                            } else {
+                                Theme.s2
+                            }
+                        }
+                        .overlay(alignment: .bottomLeading) {
+                            if !full && fetched == nil {
+                                Text("LoRa preview · \(data.count) bytes")
+                                    .font(.system(.caption))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Theme.bg.opacity(0.85), in: RoundedRectangle(cornerRadius: 6))
+                                    .padding(8)
+                            }
+                        }
+                        .clipped()
+                }
+                .buttonStyle(.row)
+                .accessibilityLabel(full || fetched != nil ? String(localized: "Photo") : String(localized: "Photo, LoRa preview"))
                 .accessibilityHint("Opens the photo full screen")
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -1218,7 +1235,7 @@ private struct ImageCard: View {
                     }
                     HStack(spacing: 6) {
                         TransportBadge(kind: .lora, label: full ? String(localized: "LoRa · full thumbnail") : String(localized: "LoRa · preview"))
-                        if !full && !message.outgoing { Text("full one on request").font(.system(.caption2)).foregroundStyle(Theme.tx2) }
+                        if !full && !message.outgoing { Text("full one on request").font(.system(.caption)).foregroundStyle(Theme.tx2) }
                     }
                     if let announce {
                         BridgeSection(announce: announce, standalone: false)
@@ -1237,7 +1254,7 @@ private struct ImageCard: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
-            .frame(width: 250)
+            .mediaWidth()
             .background(Theme.s1)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
@@ -1369,16 +1386,16 @@ private struct Composer: View {
             }
             if case .channel = chat, !model.isConnected {
                 Label("Radio not connected: channel posts need it", systemImage: "antenna.radiowaves.left.and.right.slash")
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .padding(.leading, 52)
             } else if !model.isConnected {
                 Label("Radio not connected: messages wait for it, up to 24 h", systemImage: "clock")
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .padding(.leading, 52)
             } else if let line = costLine {
-                Text(line).font(.system(.caption2)).foregroundStyle(Theme.tx2).padding(.leading, 52)
+                Text(line).font(.system(.caption)).foregroundStyle(Theme.tx2).padding(.leading, 52)
             }
             if model.recorder.recording, model.recorder.chat == chat {
                 recordingBar
@@ -1645,7 +1662,7 @@ private struct Composer: View {
                     .font(.system(.subheadline, weight: .semibold).monospacedDigit())
                 if let e = estimate {
                     Text("\(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of airtime")
-                        .font(.system(.caption2))
+                        .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                 }
             }
@@ -1742,7 +1759,7 @@ private struct Composer: View {
                 Text(isGroupChat
                      ? String(localized: "Flooded to the group: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s of our airtime; every repeater adds as much")
                      : String(localized: "Voice quality vs time on air: \(fragmentsText(e.fragments)) · ≈ \(String(format: "%.0f", Double(e.airtimeMs) / 1000)) s"))
-                    .font(.system(.caption2))
+                    .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
             }
         }
@@ -1944,20 +1961,32 @@ private struct SendPhotoSheet: View {
                                 .padding(12)
                         }
                     SectionLabel("How to send it to \(model.title(of: chat))")
-                    option(
-                        title: String(localized: "LoRa preview"),
-                        detail: isGroup
-                            ? String(localized: "Contacts only: never flooded to a group")
-                            : String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
-                        badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
-                    )
-                    .onTapGesture { if !isGroup { mode = .lora } }
-                    option(title: String(localized: "Full resolution via iroh"), detail: irohDetail,
-                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
-                    .onTapGesture { if irohOK { mode = .iroh } }
-                    option(title: String(localized: "Full resolution via Tor"), detail: torDetail,
-                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
-                    .onTapGesture { if torOK { mode = .tor } }
+                    Button { mode = .lora } label: {
+                        option(
+                            title: String(localized: "LoRa preview"),
+                            detail: isGroup
+                                ? String(localized: "Contacts only: never flooded to a group")
+                                : String(localized: "160×120 AVIF · \(previewFragments) · direct only; the full thumbnail if they ask"),
+                            badge: costBadge, kind: .lora, selected: chosen == .lora, enabled: !isGroup
+                        )
+                    }
+                    .buttonStyle(.row)
+                    .disabled(isGroup)
+                    .accessibilityAddTraits(chosen == .lora ? .isSelected : [])
+                    Button { mode = .iroh } label: {
+                        option(title: String(localized: "Full resolution via iroh"), detail: irohDetail,
+                               badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!irohOK)
+                    .accessibilityAddTraits(chosen == .iroh ? .isSelected : [])
+                    Button { mode = .tor } label: {
+                        option(title: String(localized: "Full resolution via Tor"), detail: torDetail,
+                               badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!torOK)
+                    .accessibilityAddTraits(chosen == .tor ? .isSelected : [])
                     option(title: String(localized: "Thumbnail now, full resolution later"),
                            detail: String(localized: "Sent when the Internet comes back"),
                            badge: costBadge, kind: .lora, selected: false, enabled: false)
@@ -2173,16 +2202,28 @@ private struct SendFileSheet: View {
                         }
                     }
                     SectionLabel("How to send it to \(model.title(of: chat))")
-                    option(title: String(localized: "Over LoRa"), detail: loraDetail,
-                           badge: lora.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa",
-                           kind: .lora, selected: chosen == .lora, enabled: loraOK)
-                        .onTapGesture { if loraOK { mode = .lora } }
-                    option(title: String(localized: "Via iroh"), detail: irohDetail,
-                           badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
-                        .onTapGesture { if irohOK { mode = .iroh } }
-                    option(title: String(localized: "Via Tor"), detail: torDetail,
-                           badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
-                        .onTapGesture { if torOK { mode = .tor } }
+                    Button { mode = .lora } label: {
+                        option(title: String(localized: "Over LoRa"), detail: loraDetail,
+                               badge: lora.map { String(localized: "≈ \(seconds($0.airtimeMs)) s") } ?? "LoRa",
+                               kind: .lora, selected: chosen == .lora, enabled: loraOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!loraOK)
+                    .accessibilityAddTraits(chosen == .lora ? .isSelected : [])
+                    Button { mode = .iroh } label: {
+                        option(title: String(localized: "Via iroh"), detail: irohDetail,
+                               badge: String(localized: "1 packet"), kind: .iroh, selected: chosen == .iroh, enabled: irohOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!irohOK)
+                    .accessibilityAddTraits(chosen == .iroh ? .isSelected : [])
+                    Button { mode = .tor } label: {
+                        option(title: String(localized: "Via Tor"), detail: torDetail,
+                               badge: String(localized: "1 packet"), kind: .tor, selected: chosen == .tor, enabled: torOK)
+                    }
+                    .buttonStyle(.row)
+                    .disabled(!torOK)
+                    .accessibilityAddTraits(chosen == .tor ? .isSelected : [])
                     if chosen == nil {
                         Banner(kind: .warn, title: String(localized: "This file cannot go over LoRa"),
                                message: String(localized: "Up to 8 KB fit in a LoRa message, once compressed. Turn on iroh or Tor in Settings to send larger files over the Internet."))
@@ -2258,17 +2299,17 @@ private struct FileCard: View {
 
     var body: some View {
         if case let .file(_, name, data) = message.message {
-            FileRow(name: name, size: data.count, badge: TransportBadge(kind: .lora, label: "LoRa"))
-                .padding(12)
-                .frame(width: 250, alignment: .leading)
-                .background(Theme.s1)
-                .clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
-                .contentShape(Rectangle())
-                .onTapGesture { opened = model.openable(name: name, data: data) }
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Opens the file")
-                .quickLookPreview($opened)
+            Button { opened = model.openable(name: name, data: data) } label: {
+                FileRow(name: name, size: data.count, badge: TransportBadge(kind: .lora, label: "LoRa"))
+                    .padding(12)
+                    .mediaWidth()
+                    .background(Theme.s1)
+                    .clipShape(RoundedRectangle(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
+            }
+            .buttonStyle(.row)
+            .accessibilityHint("Opens the file")
+            .quickLookPreview($opened)
         }
     }
 }
@@ -2314,16 +2355,22 @@ private struct BridgeSection: View {
             let content = VStack(alignment: .leading, spacing: 8) {
                 if isFile {
                     // A file (ADR-0022): opened with QuickLook once here.
-                    FileRow(name: name, size: Int(size), badge: EmptyView())
-                        .contentShape(Rectangle())
-                        .onTapGesture { if let file { opened = model.openable(name: name, file: file) } }
-                        .quickLookPreview($opened)
+                    Button { if let file { opened = model.openable(name: name, file: file) } } label: {
+                        FileRow(name: name, size: Int(size), badge: EmptyView())
+                    }
+                    .buttonStyle(.row)
+                    .disabled(file == nil)
+                    .accessibilityHint(file == nil ? "" : String(localized: "Opens the file"))
+                    .quickLookPreview($opened)
                 } else if standalone, let file, let ui = DecodedImages.shared.image(url: file, maxPixel: 2048) {
-                    Image(uiImage: ui).resizable().scaledToFit()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .onTapGesture { viewing = true }
-                        .accessibilityAddTraits(.isButton)
-                        .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
+                    Button { viewing = true } label: {
+                        Image(uiImage: ui).resizable().scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.row)
+                    .accessibilityLabel("Photo")
+                    .accessibilityHint("Opens the photo full screen")
+                    .fullScreenCover(isPresented: $viewing) { PhotoViewer(message: announce) }
                 }
                 if !isFile {
                     HStack {
@@ -2343,7 +2390,7 @@ private struct BridgeSection: View {
                     }
                     if file != nil {
                         Label("hash verified", systemImage: "checkmark.seal")
-                            .font(.system(.caption2))
+                            .font(.system(.caption))
                             .foregroundStyle(Theme.ok)
                     }
                     if isFile, let file {
@@ -2391,7 +2438,7 @@ private struct BridgeSection: View {
             if standalone {
                 content
                     .padding(12)
-                    .frame(width: 250)
+                    .mediaWidth()
                     .background(Theme.s1)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))

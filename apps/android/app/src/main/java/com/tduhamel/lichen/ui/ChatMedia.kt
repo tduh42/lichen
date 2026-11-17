@@ -99,7 +99,7 @@ fun MediaContent(model: AppModel, m: StoredMessage): Boolean {
         is Message.Announce -> if (model.preview(msg.mediaId, ChatId.of(m.chat)) == null) {
             Column(
                 Modifier
-                    .width(250.dp)
+                    .width(mediaWidth())
                     .clip(RoundedCornerShape(18.dp))
                     .background(lichen.s1)
                     .border(1.dp, lichen.line, RoundedCornerShape(18.dp))
@@ -212,7 +212,7 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
     val ratio = img.width.toFloat().coerceAtLeast(1f) / img.height.toFloat().coerceAtLeast(1f)
     Column(
         Modifier
-            .width(250.dp)
+            .width(mediaWidth())
             .clip(RoundedCornerShape(18.dp))
             .background(t.s1)
             .border(1.dp, t.line, RoundedCornerShape(18.dp)),
@@ -542,7 +542,7 @@ fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original
         ) {
             Text(stringResource(R.string.send_a_photo), fontSize = 22.sp, color = t.tx)
             Box(Modifier.fillMaxWidth().height(230.dp).clip(CardShape).background(t.s2), contentAlignment = Alignment.BottomStart) {
-                if (preview != null) Image(preview, null, Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
+                if (preview != null) Image(preview, stringResource(R.string.photo), Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
                 Text(
                     "${image.width}×${image.height} AVIF · preview ${image.preview.size} B · full ${image.full.size} B",
                     fontSize = 12.sp, color = t.tx,

@@ -266,7 +266,7 @@ fun GifCard(model: AppModel, m: StoredMessage, gif: Message.Gif) {
     val label = if (gif.title.isEmpty()) stringResource(R.string.gif) else stringResource(R.string.gif_named, gif.title)
     Column(horizontalAlignment = if (m.outgoing) Alignment.End else Alignment.Start) {
         Box(
-            Modifier.width(220.dp).height(gifHeight(gif.width.toInt(), gif.height.toInt()))
+            Modifier.width(mediaWidth(220.dp)).height(gifHeight(gif.width.toInt(), gif.height.toInt(), mediaWidth(220.dp)))
                 .clip(RoundedCornerShape(16.dp)).background(t.s2)
                 .clickable(enabled = data == null && !loading && gif.provider.toInt() == 1) { asked++ }
                 .semantics { contentDescription = label },
@@ -296,5 +296,8 @@ fun GifCard(model: AppModel, m: StoredMessage, gif: Message.Gif) {
 }
 
 /** The card's height for a GIF of `w` × `h`, 220 dp wide; square when unknown. */
-private fun gifHeight(w: Int, h: Int): Dp =
-    if (w <= 0 || h <= 0) 220.dp else (220f * h / w).coerceIn(90f, 300f).dp
+private fun gifHeight(w: Int, h: Int, width: Dp): Dp {
+    // 90 to 300 high at 220 wide, in proportion when the text is larger.
+    val scale = width / 220.dp
+    return if (w <= 0 || h <= 0) width else (width * h / w).coerceIn(90.dp * scale, 300.dp * scale)
+}

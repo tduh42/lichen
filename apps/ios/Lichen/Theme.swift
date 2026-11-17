@@ -127,6 +127,38 @@ extension View {
 }
 
 /// Primary button: `actBg` / `actFg`, 50 high, radius 14.
+/// A whole row, card or picture as a button (instead of a tap gesture, for VoiceOver and Voice
+/// Control): drawn by its content, dimmed while pressed; disabled, it keeps its own look.
+struct RowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .opacity(configuration.isPressed ? 0.6 : 1)
+    }
+}
+
+extension ButtonStyle where Self == RowButtonStyle {
+    static var row: RowButtonStyle { RowButtonStyle() }
+}
+
+/// A media card's width in a conversation: `base` points at the default text size, growing with
+/// Dynamic Type like the text around it, never wider than the room the bubble has.
+struct MediaWidth: ViewModifier {
+    @ScaledMetric private var width: CGFloat
+
+    init(_ base: CGFloat) {
+        _width = ScaledMetric(wrappedValue: base, relativeTo: .body)
+    }
+
+    func body(content: Content) -> some View {
+        content.frame(maxWidth: width)
+    }
+}
+
+extension View {
+    func mediaWidth(_ base: CGFloat = 250) -> some View { modifier(MediaWidth(base)) }
+}
+
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
 
@@ -201,9 +233,10 @@ struct Badge: View {
     let foreground: Color
 
     var body: some View {
+        // A word or two, never cut: the text beside it gives way.
         Text(text)
-            .font(.system(.caption2, weight: .semibold))
-            .lineLimit(1)
+            .font(.system(.caption, weight: .semibold))
+            .fixedSize()
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
             .background(background, in: RoundedRectangle(cornerRadius: 8))

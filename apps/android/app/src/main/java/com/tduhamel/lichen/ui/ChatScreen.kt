@@ -912,6 +912,7 @@ private fun MessageBubble(
             else -> time
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            // Decorative: the footer says it waits ("Waiting", or why).
             if (m.isWaiting) Icon(Icons.Outlined.Schedule, null, tint = t.tx2, modifier = Modifier.size(12.dp))
             Text(footer, fontSize = 11.sp, color = t.tx2)
         }
@@ -1534,7 +1535,7 @@ private fun TimerMenu(model: AppModel, chat: ChatId, failed: (String) -> Unit) {
                         open = false
                         model.setTimer(chat, s)?.let(failed)
                     },
-                    trailingIcon = { if (s == current) Icon(Icons.Filled.Check, null, tint = t.tx) },
+                    trailingIcon = { if (s == current) Icon(Icons.Filled.Check, stringResource(R.string.chosen_option), tint = t.tx) },
                 )
             }
             HorizontalDivider(color = t.line)

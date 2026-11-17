@@ -17,7 +17,10 @@ struct SearchView: View {
                 if let target {
                     TimelineView(.periodic(from: .now, by: 5)) { _ in content(target) }
                 } else {
-                    empty
+                    // Scrolls when the text is too large for the screen.
+                    GeometryReader { g in
+                        ScrollView { empty.frame(minHeight: g.size.height) }
+                    }
                 }
             }
             .screen()
@@ -62,6 +65,7 @@ struct SearchView: View {
                 .font(.system(.subheadline))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -253,7 +257,7 @@ struct SearchView: View {
                     VStack(spacing: 2) {
                         Text("Ping")
                         Text(wait > 0 ? String(localized: "in \(wait) s") : cost.map { String(localized: "≈ \($0) s air") } ?? "")
-                            .font(.system(.caption2, weight: .regular)).foregroundStyle(Theme.tx2)
+                            .font(.system(.caption, weight: .regular)).foregroundStyle(Theme.tx2)
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle(height: 56))
