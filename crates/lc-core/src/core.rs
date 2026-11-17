@@ -47,6 +47,11 @@ const COMMAND_TIMEOUT_MS: Millis = 5_000;
 const HELLO_TRIES: u8 = 8;
 /// Path discovery probes before reporting `NoPath` (§4.5).
 const PROBE_TRIES: u8 = 3;
+/// Probes answered and remembered (each kind), so that a copy or a replay is not answered.
+const SEEN_PROBES: usize = 64;
+/// Times a path is looked for again after a handshake failed over one only a probe gave,
+/// before the messages fail (second read of 2026-11-17, N4).
+const REPROBES: u8 = 2;
 /// Wait for a PATH_REPLY: uniform in `[PROBE_WAIT_MS, 2 × PROBE_WAIT_MS)`.
 const PROBE_WAIT_MS: Millis = 20_000;
 /// How long a received datagram is remembered to drop identical resends (§6).
@@ -525,6 +530,8 @@ struct Initiating {
     attempt: u8,
     next_retry: Millis,
     path: OwnedPath,
+    /// Paused once for the peer's own introduction (§4.4).
+    yielded: bool,
 }
 
 /// Our introduction to a peer whose identity we do not know (§4.6), until INTRO_ACK.
@@ -536,6 +543,8 @@ struct Introducing {
     attempt: u8,
     next_retry: Millis,
     path: OwnedPath,
+    /// Paused once for the peer's own introduction (§4.4).
+    yielded: bool,
 }
 
 /// The INTRO of an introduction in progress, with its return path `back`.
@@ -637,6 +646,12 @@ struct Peer {
     session_bytes: u64,
     /// No self-introduction before this time (answer to a HELLO we cannot open).
     intro_poke: Millis,
+    /// `path` came from a probe or its reply, which anyone can forge or replay with another
+    /// path (second read of 2026-11-17, N4, N5): until a handshake over it succeeds, a
+    /// handshake that fails over it looks for a path again instead of failing the messages.
+    path_unproven: bool,
+    /// Paths looked for again that way since the last handshake that succeeded.
+    reprobes: u8,
 }
 
 impl Peer {
@@ -731,6 +746,9 @@ pub struct Core {
     pub(crate) scope: Option<[u8; 16]>,
     /// Probes already answered (a flood arrives several times, by several paths).
     seen_probes: VecDeque<ProbeId>,
+    /// Keyed probes answered: kept apart, so that anonymous probes, which anyone can make,
+    /// cannot push them out and let a recorded one be replayed (second read, N5).
+    seen_keyed_probes: VecDeque<ProbeId>,
     /// Answers sent to frames anyone can send, by node, for their limits (SR-04).
     unprompted: VecDeque<(PubKey, Millis)>,
     /// Nodes already reported as speaking a newer version.
@@ -840,6 +858,7 @@ impl Core {
             recent: HashMap::new(),
             scope: None,
             seen_probes: VecDeque::new(),
+            seen_keyed_probes: VecDeque::new(),
             unprompted: VecDeque::new(),
             newer: HashSet::new(),
             groups: HashMap::new(),
@@ -2015,6 +2034,17 @@ impl Core {
         self.peers.insert(k, peer);
     }
 
+    /// A handshake failed over a path only a probe gave (`path` already dropped): look for one
+    /// again, from a keyed probe, instead of failing the messages, a few times (N4, N5).
+    fn look_again(peer: &mut Peer) -> bool {
+        if !std::mem::take(&mut peer.path_unproven) || peer.reprobes >= REPROBES {
+            return false;
+        }
+        peer.reprobes += 1;
+        peer.probing = None;
+        true
+    }
+
     fn drive_peer(&mut self, k: &PubKey, peer: &mut Peer, now: Millis) {
         // HELLO retries.
         if let Some(init) = peer.initiating.as_mut()
@@ -2027,17 +2057,21 @@ impl Core {
                     peer.session = None;
                     peer.pending = None;
                 }
-                // It may have a new identity: introduce again next time (§4.6). When one
-                // already waits for the user, that is why nothing answered.
-                peer.intro_needed = true;
                 // Nor did the path work: the next attempt finds one again (§4.5, SR-02).
                 peer.path = None;
-                let reason = if self.pending_identities.contains_key(k) {
-                    FailReason::IdentityChanged
-                } else {
-                    FailReason::Unreachable
-                };
-                self.fail_queue(peer, reason, now);
+                // A path only a probe gave may be a forged one: look for it again before
+                // giving up on the messages (N4).
+                if !Self::look_again(peer) {
+                    // It may have a new identity: introduce again next time (§4.6). When one
+                    // already waits for the user, that is why nothing answered.
+                    peer.intro_needed = true;
+                    let reason = if self.pending_identities.contains_key(k) {
+                        FailReason::IdentityChanged
+                    } else {
+                        FailReason::Unreachable
+                    };
+                    self.fail_queue(peer, reason, now);
+                }
             } else {
                 init.attempt += 1;
                 let init = init.clone();
@@ -2059,7 +2093,9 @@ impl Core {
                     peer.session = None;
                     peer.pending = None;
                 }
-                self.fail_queue(peer, FailReason::Unreachable, now);
+                if !Self::look_again(peer) {
+                    self.fail_queue(peer, FailReason::Unreachable, now);
+                }
             } else {
                 intro.attempt += 1;
                 let intro = intro.clone();
@@ -2227,8 +2263,16 @@ impl Core {
                         self.events.push_back(Event::Delivered { id: f.msg.id });
                     }
                     None => self.location_done(f.msg.id, false),
-                    // The new handshake will tell: sent again under the new session.
-                    Some(FailReason::Timeout) if peer.suspect => peer.queue.push_front(f.msg),
+                    // The new handshake will tell: sent again under the new session. When no
+                    // handshake runs any more without having settled it, one may start again
+                    // (second read, N2).
+                    Some(FailReason::Timeout) if peer.suspect => {
+                        let mut msg = f.msg;
+                        if peer.initiating.is_none() && peer.introducing.is_none() {
+                            msg.retried = false;
+                        }
+                        peer.queue.push_front(msg);
+                    }
                     Some(reason) => self.fail_message(peer, f.msg, reason, now),
                 }
             }
@@ -2278,6 +2322,7 @@ impl Core {
             attempt: 0,
             next_retry: now + self.hello_backoff(&path),
             path,
+            yielded: false,
         };
         self.send_intro(k, &intro, now);
         peer.initiating = None;
@@ -2427,6 +2472,7 @@ impl Core {
             attempt: 0,
             next_retry,
             path,
+            yielded: false,
         };
         self.send_hello(k, &init, now);
         peer.initiating = Some(init);
@@ -2546,7 +2592,10 @@ impl Core {
             self.on_group_envelope(p.payload, snr4, rssi, now);
             return;
         };
-        if probe.dst != node[0] || self.seen_probes.contains(&probe.id) {
+        if probe.dst != node[0]
+            || self.seen_probes.contains(&probe.id)
+            || self.seen_keyed_probes.contains(&probe.id)
+        {
             return;
         }
         for c in self.candidates(probe.src) {
@@ -2570,10 +2619,18 @@ impl Core {
             else {
                 continue;
             };
-            if self.seen_probes.len() >= 64 {
-                self.seen_probes.pop_front();
+            if !self.unprompted(&c, now) {
+                return;
             }
-            self.seen_probes.push_back(probe.id);
+            let seen = if keying.anonymous {
+                &mut self.seen_probes
+            } else {
+                &mut self.seen_keyed_probes
+            };
+            if seen.len() >= SEEN_PROBES {
+                seen.pop_front();
+            }
+            seen.push_back(probe.id);
             let forward = OwnedPath::from_path(p.path);
             let back = forward.reversed();
             let mut buf = [0u8; FRAME_MAX];
@@ -2581,9 +2638,6 @@ impl Core {
             let mut r = [0u8; 8];
             self.rng.fill_bytes(&mut r);
             let anonymous = keying.anonymous;
-            if !self.unprompted(&c, now) {
-                return;
-            }
             if let Ok(n) = discovery::seal_path_reply(
                 &keying,
                 node[0],
@@ -2599,8 +2653,12 @@ impl Core {
             }
             // An anonymous probe is keyed by public node keys: anyone can send one. It is
             // answered along its path, but that path does not replace ours (SR-02).
+            // A keyed one's path is not authenticated either (repeaters write it): kept
+            // unproven until a handshake over it succeeds (N5).
             if !anonymous {
-                self.peers.entry(c).or_default().path = Some(back);
+                let p = self.peers.entry(c).or_default();
+                p.path = Some(back);
+                p.path_unproven = true;
             }
             return;
         }
@@ -2644,6 +2702,9 @@ impl Core {
             if let Some(p) = self.peers.get_mut(&c) {
                 p.probing = None;
                 p.path = Some(path);
+                // Anyone who heard an anonymous probe can answer it with any path (N4); a keyed
+                // reply is ours, but its path is still the repeaters' word (N5).
+                p.path_unproven = true;
             }
             self.tick(now);
             return;
@@ -2672,15 +2733,45 @@ impl Core {
         let Some(c) = on_path.or(candidates.first()).copied() else {
             return;
         };
+        // Anyone can send an INTRO under a contact's hash byte: it is rate-limited before it
+        // changes anything (SR-04), and it changes nothing of ours until its INTRO_FIN proves
+        // it (second read of 2026-11-17, N2): a forged one used to cancel our own handshake,
+        // leaving a message requeued on a lost session for ever.
+        if !self.unprompted(&c, now) {
+            return;
+        }
         let mut peer = self.peers.remove(&c).unwrap_or_default();
-        // Crossing introductions: the smaller node key's wins (§4.4). A HELLO of ours cannot
-        // succeed: they do not know us.
+        // Crossing introductions: the smaller node key's wins (§4.4). Ours, or a HELLO of ours
+        // (they do not know us), pauses for their INTRO_FIN, which ends it; it is not cancelled,
+        // so a forged INTRO costs one pause, not the handshake (N2). Once per handshake.
         if peer.introducing.is_some() && node < c {
             self.peers.insert(c, peer);
             return;
         }
-        peer.introducing = None;
-        peer.initiating = None;
+        if let Some(path) = peer
+            .introducing
+            .as_ref()
+            .filter(|i| !i.yielded)
+            .map(|i| i.path.clone())
+        {
+            let until = now + 2 * self.hello_backoff(&path);
+            if let Some(i) = peer.introducing.as_mut() {
+                i.yielded = true;
+                i.next_retry = i.next_retry.max(until);
+            }
+        }
+        if let Some(path) = peer
+            .initiating
+            .as_ref()
+            .filter(|i| !i.yielded)
+            .map(|i| i.path.clone())
+        {
+            let until = now + 2 * self.hello_backoff(&path);
+            if let Some(i) = peer.initiating.as_mut() {
+                i.yielded = true;
+                i.next_retry = i.next_retry.max(until);
+            }
+        }
         let return_path = (msg.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
             len_byte: msg.return_path_len,
             bytes: msg.return_path.to_vec(),
@@ -2689,8 +2780,15 @@ impl Core {
             self.peers.insert(c, peer);
             return;
         };
+        // A copy of the INTRO we answered (the initiator did not get our INTRO_ACK) keeps the
+        // first one's return path: a copy anyone made with another path cannot move ours
+        // (second read, N9).
+        let copy = peer
+            .answered_intro
+            .as_ref()
+            .is_some_and(|a| a.tag == msg.tag && a.answer.salt_i == msg.salt);
         let answered = match &peer.answered_intro {
-            Some(a) if a.tag == msg.tag && a.answer.salt_i == msg.salt => a.clone(),
+            Some(a) if copy => a.clone(),
             _ => {
                 let mut salt_r = [0u8; SALT_LEN];
                 self.rng.fill_bytes(&mut salt_r);
@@ -2710,10 +2808,7 @@ impl Core {
                 }
             }
         };
-        if !self.unprompted(&c, now) {
-            self.peers.insert(c, peer);
-            return;
-        }
+        let path = if copy { answered.path.clone() } else { path };
         let mut buf = [0u8; FRAME_MAX];
         if let Ok(n) = intro::seal_intro_ack(
             node[0],
@@ -2796,6 +2891,8 @@ impl Core {
                 p.session_bytes = 0;
                 p.pending = None;
                 p.path = Some(intro.path);
+                p.path_unproven = false;
+                p.reprobes = 0;
                 p.introducing = None;
                 p.intro_needed = false;
                 p.unknown_to_peer = false;
@@ -2845,6 +2942,9 @@ impl Core {
             peer.path = Some(path.clone());
             peer.replace_pending(Session::new(keys, node[0], c[0], self.timing_for(&path)));
             peer.intro_needed = false;
+            // Proven: a handshake or an introduction of ours toward them ends here (§4.4).
+            peer.initiating = None;
+            peer.introducing = None;
             if let Some(a) = peer.answered_intro.as_mut() {
                 a.done = true;
             }
@@ -3039,6 +3139,8 @@ impl Core {
                 p.session_bytes = 0;
                 p.pending = None;
                 p.path = Some(init.path);
+                p.path_unproven = false;
+                p.reprobes = 0;
                 p.initiating = None;
                 p.introducing = None;
                 // The identity we know answered: no need to introduce ourselves again.
