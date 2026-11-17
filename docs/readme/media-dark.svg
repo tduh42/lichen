@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 250" width="760" height="250" role="img">
-<title>What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 146 bytes</title>
-<rect width="760" height="250" rx="16" fill="#1A1A18" stroke="#34342F"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 292" width="760" height="292" role="img">
+<title>What fits the radio: ten seconds of voice, a photo preview and its full thumbnail, a small file, in fragments of 146 bytes; a group voice note of 6 seconds in 5 flooded fragments</title>
+<rect width="760" height="292" rx="16" fill="#1A1A18" stroke="#34342F"/>
 <text x="30" y="47" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">10 s of voice · Codec2 700C</text>
 <rect x="260" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
 <rect x="275" y="33" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
@@ -56,4 +56,11 @@
 <rect x="500" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
 <rect x="515" y="201" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
 <text x="538" y="216" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">… 56 fragments · 99 s at CR 4/8</text>
+<text x="30" y="257" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="500" fill="#F4F4F0" text-anchor="start">6 s of voice to a group</text>
+<rect x="260" y="243" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="275" y="243" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="290" y="243" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="305" y="243" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<rect x="320" y="243" width="12" height="20" rx="3" fill="#3A2A1C" stroke="#FB923C" />
+<text x="343" y="258" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" font-weight="400" fill="#ABABA3" text-anchor="start">5 fragments, each flooded twice · 525 B</text>
 </svg>
