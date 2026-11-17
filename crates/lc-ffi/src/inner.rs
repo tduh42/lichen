@@ -64,12 +64,21 @@ pub(crate) struct Pending {
 
 impl Inner {
     /// A deleted message was an announcement: its offer and its download go too (§6.4,
-    /// review of 2026-11-15, SR-28).
+    /// review of 2026-11-15, SR-28), unless another message still announces the same content.
+    /// A hash is not a message: a contact who announced again content we sent, then deleted
+    /// their message, must not make us stop offering ours or lose our copy (second read of
+    /// 2026-11-17, N7). Unsure (the store failed), they stay.
     pub(crate) fn media_gone(&mut self, content: &Content) {
         if let Content::Announce(a) = content {
-            self.extra.push_back(LichenEvent::MediaGone {
-                hash: a.hash.to_vec(),
-            });
+            let kept = match &self.store {
+                Some(st) => st.announces(&a.hash).unwrap_or(true),
+                None => false,
+            };
+            if !kept {
+                self.extra.push_back(LichenEvent::MediaGone {
+                    hash: a.hash.to_vec(),
+                });
+            }
         }
     }
 
