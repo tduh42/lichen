@@ -1713,3 +1713,255 @@ mod group_voice {
         assert!(crate::voice_datagram_len(&v) as usize + 64 <= 5 * 128);
     }
 }
+
+/// ADR-0046 (second read of 2026-11-17, N3): a request is kept apart from the conversation of
+/// the contact whose radio it came through, survives a restart, and moves into that
+/// conversation only when the user accepts it; blocking it blocks the identity, not the radio.
+#[cfg(test)]
+mod requests {
+    use super::*;
+
+    const BOB: [u8; 32] = [9; 32];
+    const EVE: [u8; 32] = [66; 32];
+
+    fn contact(core: &LichenCore) {
+        let mut i = core.lock();
+        i.core.restore_contact(lc_core::Contact {
+            key: BOB,
+            name: "Bob".into(),
+            out_path: None,
+            identity: None,
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+        i.save_contacts();
+    }
+
+    fn text(t: &str, sent_at: u32) -> Content {
+        Content::Text {
+            sent_at,
+            text: t.into(),
+        }
+    }
+
+    fn message(i: &mut Inner, who: [u8; 32], c: Content) {
+        i.on_event(&Event::RequestMessage {
+            node: BOB,
+            identity: who,
+            plaintext: c.encode(),
+            content: c,
+            snr4: 8,
+            rssi: -90,
+        });
+    }
+
+    #[test]
+    fn a_request_waits_apart_then_moves_in() {
+        let dir = std::env::temp_dir().join(format!("lichen-requests-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let data = Some(dir.to_string_lossy().into_owned());
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![161; 32], data.clone()).unwrap();
+        contact(&core);
+        let bob_chat = ChatRef::Contact { key: BOB.to_vec() };
+        {
+            let mut i = core.lock();
+            for who in [EVE, [70; 32]] {
+                // As the core reports it: it holds the request.
+                i.core.restore_request(BOB, who);
+                i.on_event(&Event::Requested {
+                    node: BOB,
+                    identity: who,
+                });
+            }
+            message(&mut i, EVE, text("hi, it's Bob", 10));
+            message(&mut i, [70; 32], text("it's really me", 11));
+            message(
+                &mut i,
+                [70; 32],
+                Content::Reaction {
+                    sent_at: 12,
+                    target: [1; 8],
+                    emoji: "👍".into(),
+                },
+            );
+        }
+        let names = |core: &LichenCore| {
+            core.requests()
+                .into_iter()
+                .map(|q| {
+                    let lines: Vec<String> = q
+                        .messages
+                        .iter()
+                        .map(|l| match &l.message {
+                            Message::Text { text, .. } => text.clone(),
+                            m => format!("{m:?}"),
+                        })
+                        .collect();
+                    (q.identity, q.name, lines)
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names(&core),
+            vec![
+                (EVE.to_vec(), "Bob".into(), vec!["hi, it's Bob".to_owned()]),
+                (
+                    vec![70; 32],
+                    "Bob".into(),
+                    vec!["it's really me".to_owned()]
+                ),
+            ],
+            "the reaction is not a line"
+        );
+        assert!(core.history(bob_chat.clone(), None, 10).unwrap().is_empty());
+
+        // A restart: the requests come back, in the core too.
+        drop(core);
+        let core = LichenCore::new("t".into(), vec![2; 32], vec![161; 32], data.clone()).unwrap();
+        assert_eq!(names(&core).len(), 2);
+        assert_eq!(core.lock().core.requests().count(), 2);
+
+        // The real Bob is accepted: his message moves into the conversation, at its time.
+        let at = core.requests()[1].messages[0].at_ms;
+        assert_eq!(core.accept_request(vec![70; 32]).unwrap(), BOB.to_vec());
+        let h = core.history(bob_chat.clone(), None, 10).unwrap();
+        assert_eq!(h.len(), 1);
+        assert!(matches!(&h[0].message, Message::Text { text, .. } if text == "it's really me"));
+        assert_eq!(h[0].at_ms, at);
+        assert!(h[0].referable, "its reference uses the accepted identity");
+        assert_eq!(names(&core).len(), 1, "Eve's still waits");
+        let bob = core
+            .contacts()
+            .into_iter()
+            .find(|c| c.key == BOB.to_vec())
+            .unwrap();
+        assert_eq!(bob.identity, Some(vec![70; 32]));
+        assert!(!bob.verified);
+
+        // Eve is blocked: her identity, listed as a request, not Bob's radio.
+        core.block_request(EVE.to_vec()).unwrap();
+        assert!(core.requests().is_empty());
+        let blocked = core.blocked();
+        assert_eq!(blocked.len(), 1);
+        assert!(blocked[0].request);
+        assert_eq!(blocked[0].name, "Bob");
+        assert!(!core.is_blocked(BOB.to_vec()));
+        drop(core);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Deleting a request forgets it and what it sent.
+    #[test]
+    fn a_deleted_request_leaves_nothing() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![163; 32], None).unwrap();
+        contact(&core);
+        {
+            let mut i = core.lock();
+            i.core.restore_request(BOB, EVE);
+            i.on_event(&Event::Requested {
+                node: BOB,
+                identity: EVE,
+            });
+            message(&mut i, EVE, text("spam", 1));
+        }
+        core.delete_request(EVE.to_vec()).unwrap();
+        assert!(core.requests().is_empty());
+        // A message of hers still queued when the user deleted her is not kept.
+        message(&mut core.lock(), EVE, text("more spam", 2));
+        assert!(core.requests().is_empty());
+        assert!(
+            core.lock()
+                .store
+                .as_ref()
+                .unwrap()
+                .request_messages(&EVE)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(core.lock().core.requests().count(), 0);
+        assert!(
+            core.history(ChatRef::Contact { key: BOB.to_vec() }, None, 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+}
+
+/// Second read of 2026-11-17, N14: at launch, the downloads folder keeps only what a stored
+/// message still announces; unfinished `.part` files go, files lichen did not name stay, and
+/// nothing goes without this identity's database on disk (the demo's is in memory).
+#[cfg(test)]
+mod sweep {
+    use super::*;
+    use lc_core::content::Announce;
+
+    fn announced(core: &LichenCore, hash: [u8; 32]) {
+        core.lock().record(store::Message {
+            id: 0,
+            chat: Chat::Contact([9; 32]),
+            outgoing: false,
+            author: None,
+            content: Content::Announce(Announce {
+                sent_at: 1,
+                media_id: [0; 8],
+                kind: 1,
+                hash,
+                size: 2_000,
+                providers: vec![(1, [5; 32])],
+                name: "photo.jpg".into(),
+            }),
+            at_ms: unix_ms(),
+            status: Status::Received,
+            fragments: 0,
+            airtime_ms: 0,
+            snr4: None,
+            read: true,
+            msg_ref: None,
+        });
+    }
+
+    #[test]
+    fn orphan_downloads_go_at_launch() {
+        let root = std::env::temp_dir().join(format!("lichen-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let downloads = root.join("downloads");
+        std::fs::create_dir_all(&downloads).unwrap();
+        let hex = |b: u8| format!("{b:02x}").repeat(32);
+        let kept = format!("{}.jpg", hex(0x66));
+        let orphan = format!("{}.png", hex(0x77));
+        let part = format!("{}.jpg.part", hex(0x66));
+        for name in [
+            &kept,
+            &orphan,
+            &part,
+            &"notes.txt".to_owned(),
+            &format!("{}.bin", "zz".repeat(32)),
+        ] {
+            std::fs::write(downloads.join(name), b"x").unwrap();
+        }
+        let dir = downloads.to_string_lossy().into_owned();
+
+        // In memory (the demo): nothing is touched.
+        let demo = LichenCore::new("t".into(), vec![1; 32], vec![171; 32], None).unwrap();
+        assert_eq!(demo.sweep_downloads(dir.clone()), 0);
+
+        let data = Some(root.join("data").to_string_lossy().into_owned());
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![171; 32], data).unwrap();
+        announced(&core, [0x66; 32]);
+        assert_eq!(core.sweep_downloads(dir), 2);
+        let mut left: Vec<String> = std::fs::read_dir(&downloads)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        let mut expected = vec![
+            kept,
+            "notes.txt".to_owned(),
+            format!("{}.bin", "zz".repeat(32)),
+        ];
+        expected.sort();
+        assert_eq!(left, expected);
+        drop(core);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

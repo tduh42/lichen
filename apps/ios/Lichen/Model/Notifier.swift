@@ -58,6 +58,21 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// A message request (ADR-0046): it opens no conversation (it has none yet) and waits in
+    /// Messages. With the app lock on, "New message" only, as for messages.
+    func request(title: String, body: String) {
+        let c = UNMutableNotificationContent()
+        let hidden = AppLock.hidesNotifications
+        c.title = hidden ? "lichen" : title
+        c.body = hidden ? String(localized: "New message") : body
+        c.sound = .default
+        c.threadIdentifier = "requests"
+        let r = UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil)
+        UNUserNotificationCenter.current().add(r) { error in
+            if let error { NSLog("lichen: notification not posted: \(error.localizedDescription)") }
+        }
+    }
+
     /// An answer typed in a notification could not be sent: said in the same place.
     func notSent(_ chat: ChatID, reason: String) {
         if AppLock.hidesNotifications {

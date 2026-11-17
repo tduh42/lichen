@@ -3,6 +3,37 @@
 use super::*;
 
 impl Inner {
+    /// Request `identity` became contact `node`'s identity (ADR-0046): what it sent goes into
+    /// the conversation as if it had just arrived there (references, reactions, edits and
+    /// timers as for any message), each at the time it came; then the request is gone. Again
+    /// later, nothing is left to move.
+    pub(crate) fn adopt_request(&mut self, node: &PubKey, identity: &PubKey) {
+        let Some(kept) = self
+            .store
+            .as_ref()
+            .and_then(|s| s.request_messages(identity).ok())
+        else {
+            return;
+        };
+        for m in kept {
+            let Some(content) = Content::decode(&m.plaintext) else {
+                continue;
+            };
+            self.arrived_ms = Some(m.at_ms);
+            self.on_event(&Event::Received {
+                from: *node,
+                content,
+                plaintext: m.plaintext,
+                snr4: m.snr4,
+                rssi: 0,
+            });
+            self.arrived_ms = None;
+        }
+        if let Some(st) = &self.store {
+            let _ = st.delete_request(identity);
+        }
+    }
+
     /// Records what an event means for the history. False: a resend already received, to
     /// keep from the app (§6.1).
     pub(crate) fn on_event(&mut self, e: &Event) -> bool {
@@ -149,13 +180,14 @@ impl Inner {
                 }
                 // From the bytes as sent: a re-encoding may differ (§6.2, SR-20).
                 let msg_ref = self.reference(&chat, false, None, plaintext);
+                let at_ms = self.arrived_ms.unwrap_or_else(unix_ms);
                 self.record(store::Message {
                     id: 0,
                     chat,
                     outgoing: false,
                     author: None,
                     content: content.clone(),
-                    at_ms: unix_ms(),
+                    at_ms,
                     status: Status::Received,
                     fragments: 0,
                     airtime_ms: 0,
@@ -309,6 +341,39 @@ impl Inner {
                     read: false,
                     msg_ref: None,
                 });
+            }
+            // Requests (§4.6, ADR-0046): kept apart until the user decides. One the user
+            // settled since the event was queued is not brought back.
+            Event::Requested { node, identity } | Event::RequestMessage { node, identity, .. }
+                if !self
+                    .core
+                    .requests()
+                    .any(|(i, n)| i == identity && n == node) => {}
+            Event::Requested { node, identity } => {
+                if let Some(st) = &self.store {
+                    let _ = st.put_request(identity, node, unix_ms());
+                }
+            }
+            Event::RequestMessage {
+                identity,
+                plaintext,
+                snr4,
+                ..
+            } => {
+                if let Some(st) = &self.store {
+                    let _ = st.add_request_message(
+                        identity,
+                        &store::RequestMessage {
+                            plaintext: plaintext.clone(),
+                            at_ms: unix_ms(),
+                            snr4: *snr4,
+                        },
+                    );
+                }
+            }
+            Event::RequestAccepted { node, identity } => {
+                self.save_contacts();
+                self.adopt_request(node, identity);
             }
             Event::ChannelsUpdated => {
                 if self.core.channels_known()

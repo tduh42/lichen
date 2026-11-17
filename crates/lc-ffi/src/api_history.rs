@@ -2,6 +2,20 @@
 
 use super::*;
 
+/// The content hash a download is named after: `<64 hex digits>.<extension>`.
+pub(crate) fn download_hash(name: &str) -> Option<[u8; 32]> {
+    let (stem, _) = name.split_once('.')?;
+    if stem.len() != 64 || !stem.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for (o, pair) in out.iter_mut().zip(stem.as_bytes().chunks(2)) {
+        let s = std::str::from_utf8(pair).ok()?;
+        *o = u8::from_str_radix(s, 16).ok()?;
+    }
+    Some(out)
+}
+
 #[uniffi::export]
 impl LichenCore {
     /// Messages of `chat` disappear `seconds` after they are stored, from now on; 0: they stay
@@ -214,6 +228,42 @@ impl LichenCore {
                     .collect(),
             })
             .collect()
+    }
+
+    /// At launch, before any download starts (second read of 2026-11-17, N14): removes from the
+    /// app's downloads folder `dir` the `.part` files of downloads an earlier run did not
+    /// finish, and each download (`<hash>.<extension>`) whose hash no stored message announces
+    /// any more (its message deleted, or gone with its timer, while the app could not remove
+    /// it). Other files stay. Nothing is removed without this identity's database on disk:
+    /// one in memory (the demo) announces nothing. Returns how many files went.
+    pub fn sweep_downloads(&self, dir: String) -> u32 {
+        let i = self.lock();
+        let (Some(store), Some(_)) = (i.store.as_ref(), i.data_dir.as_ref()) else {
+            return 0;
+        };
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return 0;
+        };
+        let mut gone = 0;
+        for e in entries.flatten() {
+            if !e.file_type().is_ok_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = e.path();
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            let orphan = if name.ends_with(".part") {
+                true
+            } else {
+                // A store that cannot answer keeps the file.
+                download_hash(name).is_some_and(|h| !store.announces(&h).unwrap_or(true))
+            };
+            if orphan && std::fs::remove_file(&path).is_ok() {
+                gone += 1;
+            }
+        }
+        gone
     }
 
     /// Removes the photos, files and voice messages stored before `before_ms` (Unix ms) from

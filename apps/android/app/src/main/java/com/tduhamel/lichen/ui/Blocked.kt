@@ -66,7 +66,11 @@ fun BlockedScreen(model: AppModel, back: () -> Unit) {
                         ) {
                             Avatar(b.name, b.node)
                             Column(Modifier.weight(1f)) {
-                                Text(b.name, color = t.tx, fontWeight = FontWeight.SemiBold)
+                                // A request's identity (ADR-0046), not the radio it came through.
+                                Text(
+                                    if (b.request) stringResource(R.string.request_blocked_name, b.name) else b.name,
+                                    color = t.tx, fontWeight = FontWeight.SemiBold,
+                                )
                                 Text(
                                     stringResource(R.string.blocked_since, DateFormat.getMediumDateFormat(context).format(Date(b.atMs))),
                                     fontSize = 13.sp, color = t.tx2,

@@ -81,6 +81,7 @@ import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.clock
 import com.tduhamel.lichen.model.decodeImage
+import com.tduhamel.lichen.model.decodeImageFile
 import com.tduhamel.lichen.model.fragmentsText
 import com.tduhamel.lichen.model.hex
 import java.io.File
@@ -268,7 +269,8 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
     }
 }
 
-private fun decodeFile(f: File): android.graphics.Bitmap? = runCatching { decodeImage(f.readBytes()) }.getOrNull()
+/** A download, from its file (N16); the callers run it in the background. */
+private fun decodeFile(f: File): android.graphics.Bitmap? = decodeImageFile(f)
 
 /** Content announced over LoRa and fetched over the Internet bridge (§14, mockup `chat`). */
 @Composable

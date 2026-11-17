@@ -100,6 +100,9 @@ final class AppModel {
     /// Groups that list us and wait for an answer (§10.1): someone not verified in person
     /// cannot put us in a group.
     var invitations: [GroupInvitation] = []
+    /// Someone using a contact's radio, with an identity it does not have, wants to write
+    /// (protocol.md §4.6, ADR-0046): kept apart until the user accepts, blocks or deletes.
+    var requests: [IdentityRequest] = []
     /// Contacts whose phone speaks a newer protocol version (ADR-0029).
     var newerPeers: Set<Data> = []
     /// Each open conversation's disappearing-message timer, seconds; 0: off (§6.5).
@@ -132,6 +135,31 @@ final class AppModel {
     func declineGroup(_ gid: Data) {
         try? core.declineGroup(gid: gid)
         groupsChanged()
+    }
+
+    /// Accepts a request: its identity becomes the contact's (unverified), what it sent moves
+    /// into the conversation, which opens.
+    func acceptRequest(_ identity: Data) {
+        if let node = try? core.acceptRequest(identity: identity) {
+            contacts = core.contacts().filter(\.person)
+            conversations = core.conversations()
+            openRequest = .contact(key: node)
+        }
+        requests = core.requests()
+        pump()
+    }
+
+    /// Blocks a request's identity, not the radio it came through (someone else's).
+    func blockRequest(_ identity: Data) {
+        try? core.blockRequest(identity: identity)
+        requests = core.requests()
+        refreshPrefs()
+    }
+
+    /// Deletes a request and what it sent; if it writes again, it is a new request.
+    func deleteRequest(_ identity: Data) {
+        try? core.deleteRequest(identity: identity)
+        requests = core.requests()
     }
     /// Loaded histories, by conversation (filled when a chat is opened).
     var chats: [ChatID: [StoredMessage]] = [:]
@@ -283,6 +311,7 @@ final class AppModel {
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
+        requests = core.requests()
         channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
@@ -325,6 +354,10 @@ final class AppModel {
         shares = core.shares()
         positions = core.positions(nowMs: now())
         updateLocator()
+        // No download runs yet: those an earlier run left unfinished, and those no stored
+        // message announces any more, go (second read of 2026-11-17, N14). The core does
+        // nothing without this identity's database on disk.
+        if let dir = Self.folder("downloads") { _ = core.sweepDownloads(dir: dir.path) }
         loadDownloads()
         startBridge()
         #if DEBUG
@@ -408,6 +441,7 @@ final class AppModel {
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
+        requests = core.requests()
         channels = core.channels()
         conversations = core.conversations()
         refreshPrefs()
@@ -511,8 +545,16 @@ final class AppModel {
     func startDemo() {
         resetState()
         core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
-        // The demo's people are friends: their groups are joined without asking.
+        // The demo's people are friends: their groups are joined without asking, and their
+        // introductions are not requests (ADR-0046); -requestDemo YES keeps requests on, to see
+        // Camille's first message arrive as one.
         core.setGroupConsent(ask: false)
+        #if DEBUG
+        let requestDemo = UserDefaults.standard.bool(forKey: "requestDemo")
+        #else
+        let requestDemo = false
+        #endif
+        if !requestDemo { core.setRequestConsent(ask: false) }
         let net = DemoNetwork()
         demo = net
         isDemo = true
@@ -652,6 +694,7 @@ final class AppModel {
         nodeKey = nil
         radio = nil
         conflicts = [:]
+        requests = []
         contacts = []
         nodes = []
         groups = []
@@ -944,6 +987,13 @@ final class AppModel {
         case .chatPrefsChanged:
             // An archived conversation came back with a message (ADR-0034).
             refreshPrefs()
+        case let .identityRequested(node, _):
+            // ADR-0046: it waits in Messages; tapping the notification opens the app there.
+            requests = core.requests()
+            notifier.request(title: String(localized: "Message request"),
+                             body: String(localized: "Someone using \(self.name(of: node))'s radio wants to write to you"))
+        case .requestsChanged:
+            requests = core.requests()
         case .channelsUpdated:
             channels = core.channels()
             refreshPrefs()

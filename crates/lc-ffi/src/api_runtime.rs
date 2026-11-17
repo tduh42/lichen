@@ -55,6 +55,7 @@ impl LichenCore {
             nicknames: HashMap::new(),
             extra: VecDeque::new(),
             last_now: 0,
+            arrived_ms: None,
             outbox: HashMap::new(),
             outbox_expiry_ms: OUTBOX_EXPIRY_MS,
             clock_offset: None,

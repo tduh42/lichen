@@ -31,6 +31,7 @@ import com.tduhamel.lichen.core.GifLink
 import com.tduhamel.lichen.ui.clearOldShares
 import com.tduhamel.lichen.core.GroupInfo
 import com.tduhamel.lichen.core.GroupInvitation
+import com.tduhamel.lichen.core.IdentityRequest
 import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
@@ -137,6 +138,8 @@ class AppModel(val app: Application) {
         val joinNow: Boolean = false,
         /** The chat opened with `open` gets this disappearing-message timer, seconds (§6.5). */
         val timer: Int = 0,
+        /** The demo keeps introduction requests on: Camille's first message is one (ADR-0046). */
+        val requestDemo: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -209,6 +212,10 @@ class AppModel(val app: Application) {
      * cannot put us in a group. */
     var invitations by mutableStateOf(listOf<GroupInvitation>())
 
+    /** Someone using a contact's radio, with an identity it does not have, wants to write
+     * (protocol.md §4.6, ADR-0046): kept apart until the user accepts, blocks or deletes. */
+    var requests by mutableStateOf(listOf<IdentityRequest>())
+
     /** Contacts whose phone speaks a newer protocol version (ADR-0029), by hex node key. */
     var newerPeers by mutableStateOf(setOf<String>())
 
@@ -240,6 +247,31 @@ class AppModel(val app: Application) {
     fun declineGroup(gid: ByteArray) {
         runCatching { core.declineGroup(gid) }
         invitations = core.groupInvitations()
+    }
+
+    /** Accepts a request: its identity becomes the contact's (unverified), what it sent moves
+     * into the conversation, which opens. */
+    fun acceptRequest(identity: ByteArray) {
+        runCatching { core.acceptRequest(identity) }.onSuccess { node ->
+            contacts = people()
+            conversations = core.conversations()
+            openChat = ChatId.contact(node)
+        }
+        requests = core.requests()
+        pump()
+    }
+
+    /** Blocks a request's identity, not the radio it came through (someone else's). */
+    fun blockRequest(identity: ByteArray) {
+        runCatching { core.blockRequest(identity) }
+        requests = core.requests()
+        refreshChatPrefs()
+    }
+
+    /** Deletes a request and what it sent; if it writes again, it is a new request. */
+    fun deleteRequest(identity: ByteArray) {
+        runCatching { core.deleteRequest(identity) }
+        requests = core.requests()
     }
     /** The radio's MeshCore channels (protocol.md §15.3). */
     var channels by mutableStateOf(listOf<MeshChannel>())
@@ -513,6 +545,10 @@ class AppModel(val app: Application) {
         refreshAll()
         Notifications.channels(app)
         if (ble.permitted()) ble.start()
+        // No download runs yet: those an earlier run left unfinished, and those no stored
+        // message announces any more, go (second read of 2026-11-17, N14). The core does
+        // nothing without this identity's database on disk.
+        core.sweepDownloads(folder("downloads").path)
         loadDownloads()
         startBridge()
         shares = core.shares()
@@ -654,6 +690,7 @@ class AppModel(val app: Application) {
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
+        requests = core.requests()
         channels = core.channels()
         conversations = core.conversations()
         refreshChatPrefs()
@@ -697,8 +734,11 @@ class AppModel(val app: Application) {
         if (isDemo) return
         resetState()
         replaceCore(makeCore(IdentityStore.randomBytes(32), persistent = false))
-        // The demo's people are friends: their groups are joined without asking.
+        // The demo's people are friends: their groups are joined without asking, and their
+        // introductions are not requests (ADR-0046); debug `requestDemo` keeps requests on, to
+        // see Camille's first message arrive as one.
         core.setGroupConsent(false)
+        if (!debug.requestDemo) core.setRequestConsent(false)
         demo = DemoNetwork().also { net ->
             // Camille offers her photo over Tor too when Tor is on (her own onion service).
             if (torEnabled) runCatching { net.camilleOverTor(folder("demo-tor-state").path, folder("demo-tor-cache").path) }
@@ -822,6 +862,7 @@ class AppModel(val app: Application) {
         nodeKey = null
         radio = null
         conflicts = emptyMap()
+        requests = emptyList()
         contacts = emptyList()
         nodes = emptyList()
         groups = emptyList()
@@ -1150,6 +1191,16 @@ class AppModel(val app: Application) {
             }
             // An archived conversation came back with a message (ADR-0034).
             is LichenEvent.ChatPrefsChanged -> refreshChatPrefs()
+            // ADR-0046: it waits in Messages; the notification opens the app there.
+            is LichenEvent.IdentityRequested -> {
+                requests = core.requests()
+                if (lock.enabled) {
+                    Notifications.request(app, app.getString(R.string.app_name), app.getString(R.string.new_message))
+                } else {
+                    Notifications.request(app, res.getString(R.string.message_request), res.getString(R.string.request_title, name(e.node)))
+                }
+            }
+            is LichenEvent.RequestsChanged -> requests = core.requests()
             is LichenEvent.ChannelsUpdated -> {
                 channels = core.channels()
                 refreshChatPrefs()

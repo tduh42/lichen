@@ -5,7 +5,7 @@
 //! frames out ([`Core::poll_companion`]), calls [`Core::tick`] at [`Core::next_wakeup`], and
 //! reads [`Event`]s.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use lc_meshcore::air::{Packet, PayloadType, Route, transport_code};
 use lc_meshcore::airtime::LoRaParams;
@@ -78,6 +78,10 @@ const UNPROMPTED_TOTAL_MS: Millis = 3_600_000;
 const FIN_TRIES: u8 = 8;
 /// An answered INTRO is remembered this long (§4.6).
 const INTRO_MEMORY_MS: Millis = 600_000;
+/// Requests (§4.6, ADR-0046): at most this many identities wait under one node, and this many
+/// in all; beyond, an introduction from yet another identity ends without a session.
+pub const REQUESTS_PER_NODE: usize = 4;
+pub const REQUESTS_MAX: usize = 32;
 /// Rounds without any ACK, for a datagram the peer never acknowledged, after which the session
 /// is presumed lost (ADR-0006).
 const SILENT_ROUNDS_BEFORE_REHANDSHAKE: u8 = 3;
@@ -362,6 +366,32 @@ pub enum Event {
     NodeTool {
         node: PubKey,
     },
+    /// Someone using contact `node`'s radio, with identity `identity`, introduced themselves
+    /// and the contact has no identity yet: a request, not pinned (§4.6, ADR-0046). The user
+    /// accepts it ([`Core::accept_request`]), blocks it ([`Core::block_request`]) or deletes
+    /// it ([`Core::forget_request`]). Also when a known request comes under another node.
+    Requested {
+        node: PubKey,
+        identity: PubKey,
+    },
+    /// What a request sent (`node`'s radio, identity `identity`): kept apart from the
+    /// contact's conversation until the user accepts it (§4.6).
+    RequestMessage {
+        node: PubKey,
+        identity: PubKey,
+        content: Content,
+        /// The datagram's plaintext as received, as in [`Event::Received`].
+        plaintext: Vec<u8>,
+        snr4: i8,
+        rssi: i8,
+    },
+    /// Request `identity` became contact `node`'s identity: the user accepted it, or an
+    /// introduction we started, a card or an invitation pinned it. What it sent belongs to
+    /// the contact's conversation now.
+    RequestAccepted {
+        node: PubKey,
+        identity: PubKey,
+    },
 }
 
 /// Why a request was refused right away.
@@ -553,6 +583,9 @@ struct Introducing {
     yielded: bool,
     /// Sends before it gives up: fewer for one nobody asked for (N10).
     tries: u8,
+    /// Started only because a HELLO we could not open asked for it, the user having nothing
+    /// to send: its answer is a request, not pinned (§4.6, ADR-0046).
+    prompted: bool,
 }
 
 /// The INTRO of an introduction in progress, with its return path `back`.
@@ -660,6 +693,12 @@ struct Peer {
     path_unproven: bool,
     /// Paths looked for again that way since the last handshake that succeeded.
     reprobes: u8,
+    /// The sessions are a request's, with this identity, not the contact's (§4.6, ADR-0046):
+    /// what arrives under them is kept for the user, and nothing of ours goes over them.
+    request: Option<PubKey>,
+    /// The path to the requester, for its sessions' acknowledgements: never the contact's
+    /// path, which the requester does not prove (§4.6, SR-02).
+    request_path: Option<OwnedPath>,
 }
 
 impl Peer {
@@ -685,6 +724,21 @@ impl Peer {
     fn requeue_in_flight(&mut self) {
         if let Some(f) = self.in_flight.take() {
             self.queue.push_front(f.msg);
+        }
+    }
+
+    /// The sessions are about to be `owner`'s (a request's identity, or `None`: the
+    /// contact's). Another owner's end first: nothing one identity sent is taken for the
+    /// other's (§4.6, ADR-0046).
+    fn own(&mut self, owner: Option<PubKey>) {
+        if self.request != owner {
+            self.requeue_in_flight();
+            self.session = None;
+            self.pending = None;
+            self.pending_path = None;
+            self.answered = None;
+            self.request_path = None;
+            self.request = owner;
         }
     }
 
@@ -818,6 +872,11 @@ pub struct Core {
     /// Nodes and identities the user blocked (ADR-0034).
     blocked_nodes: HashSet<PubKey>,
     blocked_ids: HashSet<PubKey>,
+    /// Requests waiting for the user (§4.6, ADR-0046): identity → the node it came under.
+    requests: BTreeMap<PubKey, PubKey>,
+    /// Introductions we did not start become requests (true for the apps); false pins them at
+    /// once, for test nodes and bots.
+    request_consent: bool,
 }
 
 impl std::fmt::Debug for Core {
@@ -903,6 +962,8 @@ impl Core {
             servers: crate::server::Servers::default(),
             blocked_nodes: HashSet::new(),
             blocked_ids: HashSet::new(),
+            requests: BTreeMap::new(),
+            request_consent: true,
         }
     }
 
@@ -946,6 +1007,7 @@ impl Core {
             }
             c.identity = Some(identity);
             c.verified = verified;
+            self.resolve_request(node, &identity);
         }
     }
 
@@ -994,6 +1056,145 @@ impl Core {
         }
     }
 
+    // ----- requests (§4.6, ADR-0046) ---------------------------------------------------
+
+    /// Introductions we did not start become requests (`ask`, the default, for the apps), or
+    /// pin their identity at once (test nodes, bots, the demo's friends).
+    pub fn set_request_consent(&mut self, ask: bool) {
+        self.request_consent = ask;
+    }
+
+    /// Requests waiting for the user: (identity, the node it came under).
+    pub fn requests(&self) -> impl Iterator<Item = (&PubKey, &PubKey)> {
+        self.requests.iter()
+    }
+
+    /// A request kept by the app, restored at start: its HELLOs are answered again.
+    pub fn restore_request(&mut self, node: PubKey, identity: PubKey) {
+        if self.contacts.contains_key(&node)
+            && !self.blocked_ids.contains(&identity)
+            && self.identity_of(&node) != Some(identity)
+            && Some(identity) != self.key
+        {
+            self.requests.insert(identity, node);
+        }
+    }
+
+    /// The user accepts request `identity`: it becomes the identity of the contact it came
+    /// under, unverified, and a session with it goes on as the contact's. Replaces an
+    /// identity the contact got since (another request accepted, a card): the user chose.
+    /// Returns the contact's node; `None` when no such request waits.
+    pub fn accept_request(&mut self, identity: &PubKey) -> Option<PubKey> {
+        let node = *self.requests.get(identity)?;
+        let old = self.contacts.get(&node)?.identity;
+        if old.is_none() {
+            if let Some(c) = self.contacts.get_mut(&node) {
+                c.identity = Some(*identity);
+                c.verified = false;
+            }
+            self.secrets.remove(&node);
+            self.resolve_request(&node, identity);
+        } else {
+            self.set_identity(&node, *identity, false);
+        }
+        if self.pending_identities.get(&node) == Some(identity) {
+            self.pending_identities.remove(&node);
+        }
+        if let Some(p) = self.peers.get_mut(&node) {
+            p.intro_needed = false;
+        }
+        self.events.push_back(Event::IdentityLearned {
+            node,
+            identity: *identity,
+            changed: old.is_some(),
+        });
+        Some(node)
+    }
+
+    /// The user deletes request `identity`: forgotten, its session ends. A later introduction
+    /// from it is a new request. False when no such request waits.
+    pub fn forget_request(&mut self, identity: &PubKey) -> bool {
+        let Some(node) = self.requests.remove(identity) else {
+            return false;
+        };
+        self.end_request_sessions(&node, identity);
+        true
+    }
+
+    /// The user blocks request `identity`: that identity only, not the node it came under,
+    /// which is someone else's radio (ADR-0034, ADR-0046).
+    pub fn block_request(&mut self, identity: &PubKey) {
+        self.blocked_ids.insert(*identity);
+        self.forget_request(identity);
+    }
+
+    /// Identity `identity` proved itself for contact `node`, which has none, in an
+    /// introduction we did not start: a request (§4.6). False when the limits are reached.
+    fn admit_request(&mut self, node: &PubKey, identity: PubKey) -> bool {
+        if self.requests.get(&identity) == Some(node) {
+            return true;
+        }
+        let here = self.requests.values().filter(|n| *n == node).count();
+        let new = !self.requests.contains_key(&identity);
+        if here >= REQUESTS_PER_NODE || (new && self.requests.len() >= REQUESTS_MAX) {
+            return false;
+        }
+        if let Some(old) = self.requests.insert(identity, *node) {
+            self.end_request_sessions(&old, &identity);
+        }
+        self.events.push_back(Event::Requested {
+            node: *node,
+            identity,
+        });
+        true
+    }
+
+    /// The requests whose HELLO is answered for node `c`: none once it has an identity.
+    fn requests_on(&self, c: &PubKey) -> Vec<PubKey> {
+        if self.identity_of(c).is_some() {
+            return Vec::new();
+        }
+        self.requests
+            .iter()
+            .filter(|(_, n)| *n == c)
+            .map(|(i, _)| *i)
+            .collect()
+    }
+
+    /// `identity` is now contact `node`'s: a request for it is accepted with it, and a
+    /// session held for another request on that node ends (§4.6).
+    fn resolve_request(&mut self, node: &PubKey, identity: &PubKey) {
+        let was = self.requests.remove(identity);
+        if let Some(other) = was.filter(|n| n != node) {
+            self.end_request_sessions(&other, identity);
+        }
+        if let Some(p) = self.peers.get_mut(node) {
+            match p.request {
+                Some(r) if r == *identity => {
+                    p.request = None;
+                    p.request_path = None;
+                }
+                Some(_) => p.own(None),
+                None => {}
+            }
+        }
+        if was.is_some() {
+            self.events.push_back(Event::RequestAccepted {
+                node: *node,
+                identity: *identity,
+            });
+        }
+    }
+
+    /// Ends the sessions node `node` holds for request `identity`.
+    fn end_request_sessions(&mut self, node: &PubKey, identity: &PubKey) {
+        if let Some(p) = self.peers.get_mut(node)
+            && p.request == Some(*identity)
+        {
+            p.own(None);
+        }
+    }
+
     /// Marks contact `node` verified or not (safety numbers compared, §4.7). Verifying needs
     /// the identity whose number the user compared: refused (false) if the contact's identity
     /// is no longer `identity`. Withdrawing verification always works.
@@ -1031,9 +1232,12 @@ impl Core {
         identity
     }
 
-    /// A block kept by the app, restored at start.
+    /// A block kept by the app, restored at start. A request's block names its identity as
+    /// the node too (ADR-0046): the identity alone is blocked.
     pub fn restore_block(&mut self, node: PubKey, identity: Option<PubKey>) {
-        self.blocked_nodes.insert(node);
+        if identity != Some(node) {
+            self.blocked_nodes.insert(node);
+        }
         if let Some(i) = identity {
             self.blocked_ids.insert(i);
         }
@@ -1210,19 +1414,22 @@ impl Core {
         }
         let id = self.next_id;
         self.next_id += 1;
-        self.peers
-            .entry(*to)
-            .or_default()
-            .queue
-            .push_back(Outgoing {
-                id,
-                datagram,
-                retried: false,
-                internal: false,
-                not_before: 0,
-                tries: 0,
-                started: false,
-            });
+        let peer = self.peers.entry(*to).or_default();
+        peer.queue.push_back(Outgoing {
+            id,
+            datagram,
+            retried: false,
+            internal: false,
+            not_before: 0,
+            tries: 0,
+            started: false,
+        });
+        // The user writes to them: an introduction a HELLO prompted is ours now (§4.6), with
+        // an introduction's tries (N10).
+        if let Some(i) = peer.introducing.as_mut() {
+            i.prompted = false;
+            i.tries = HELLO_TRIES;
+        }
         self.tick(now);
         Ok(id)
     }
@@ -2275,6 +2482,23 @@ impl Core {
             peer.answered_intro = None;
         }
 
+        // A request's sessions (§4.6, ADR-0046) only acknowledge what arrives, along the
+        // requester's path; what we send the contact goes as if there were no session.
+        if peer.request.is_some() {
+            if let Some(rp) = peer.request_path.clone() {
+                let timing = self.jittered(self.timing_for(&rp), rp.bytes.len());
+                if let Some(s) = peer.active() {
+                    s.set_timing(timing);
+                }
+                let mut buf = [0u8; FRAME_MAX];
+                while let Some(len) = peer.active().and_then(|s| s.poll_ack(now, &mut buf)) {
+                    let frame = buf.get(..len).unwrap_or(&[]).to_vec();
+                    self.send_raw(&rp, &frame, now);
+                }
+            }
+            while peer.active().and_then(Session::take_event).is_some() {}
+        }
+
         let Some(path) = self.path_for(k, peer) else {
             if !peer.has_work(now) {
                 peer.probing = None;
@@ -2293,7 +2517,7 @@ impl Core {
         };
         peer.probing = None;
 
-        if peer.session.is_none() && peer.pending.is_none() {
+        if (peer.session.is_none() && peer.pending.is_none()) || peer.request.is_some() {
             if peer.has_work(now) && peer.initiating.is_none() && peer.introducing.is_none() {
                 self.begin_session(k, peer, path, now);
             }
@@ -2466,6 +2690,7 @@ impl Core {
             path,
             yielded: false,
             tries: HELLO_TRIES,
+            prompted: false,
         };
         self.send_intro(k, &intro, now);
         peer.initiating = None;
@@ -2537,6 +2762,7 @@ impl Core {
             identity,
             changed: false,
         });
+        self.resolve_request(node, &identity);
         true
     }
 
@@ -3018,7 +3244,20 @@ impl Core {
                 }
                 return;
             }
-            if !self.learn_identity(&c, ack.identity) {
+            // An introduction a HELLO prompted, the user having nothing to send: whoever
+            // answered is a request, not pinned (§4.6, ADR-0046).
+            let request = intro.prompted && self.request_consent && self.identity_of(&c).is_none();
+            if request {
+                if !self.admit_request(&c, ack.identity) {
+                    if let Some(p) = self.peers.get_mut(&c) {
+                        p.introducing = None;
+                    }
+                    return;
+                }
+            } else if (self.requests.contains_key(&ack.identity)
+                && self.identity_of(&c).is_some_and(|k| k != ack.identity))
+                || !self.learn_identity(&c, ack.identity)
+            {
                 // The contact is known under another identity: no session with this one (§4.6).
                 if let Some(mut p) = self.peers.remove(&c) {
                     p.introducing = None;
@@ -3038,7 +3277,22 @@ impl Core {
                 path: intro.path.clone(),
             };
             self.send_fin(&c, &fin, now);
+            if request {
+                if let Some(p) = self.peers.get_mut(&c) {
+                    p.own(Some(ack.identity));
+                    p.session = Some(Box::new(session));
+                    p.session_since = now;
+                    p.session_bytes = 0;
+                    p.pending = None;
+                    p.request_path = Some(intro.path);
+                    p.introducing = None;
+                    p.fin = Some(fin);
+                }
+                self.tick(now);
+                return;
+            }
             if let Some(p) = self.peers.get_mut(&c) {
+                p.own(None);
                 p.requeue_in_flight();
                 p.session = Some(Box::new(session));
                 p.session_since = now;
@@ -3089,7 +3343,18 @@ impl Core {
             if self.blocked_ids.contains(&id_i) {
                 return;
             }
-            if !self.learn_identity(&c, id_i) {
+            // An introduction we did not start, for a contact with no identity yet: a request,
+            // not pinned; anyone in range can send one under its node's hash byte (§4.6,
+            // ADR-0046; second read of 2026-11-17, N3).
+            let request = self.identity_of(&c).is_none() && self.request_consent;
+            if request {
+                if !self.admit_request(&c, id_i) {
+                    return;
+                }
+            } else if self.requests.contains_key(&id_i) && self.identity_of(&c) != Some(id_i) {
+                // It already waits for the user as a request: no session, no other warning.
+                return;
+            } else if !self.learn_identity(&c, id_i) {
                 // The contact is known under another identity: no session with this one (§4.6).
                 return;
             }
@@ -3097,15 +3362,26 @@ impl Core {
                 return;
             };
             let path = answered.path.clone();
-            peer.path = Some(path.clone());
+            peer.own(request.then_some(id_i));
+            if request {
+                peer.request_path = Some(path.clone());
+            } else {
+                peer.path = Some(path.clone());
+            }
             peer.replace_pending(Session::new(keys, node[0], c[0], self.timing_for(&path)));
+            if let Some(a) = peer.answered_intro.as_mut() {
+                a.done = true;
+            }
+            if request {
+                // Ours toward the contact, if the user wrote, goes on: it is not proven.
+                self.peers.insert(c, peer);
+                self.tick(now);
+                return;
+            }
             peer.intro_needed = false;
             // Proven: a handshake or an introduction of ours toward them ends here (§4.4).
             peer.initiating = None;
             peer.introducing = None;
-            if let Some(a) = peer.answered_intro.as_mut() {
-                a.done = true;
-            }
             self.peers.insert(c, peer);
             self.tick(now);
             return;
@@ -3116,10 +3392,21 @@ impl Core {
         let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
             return;
         };
+        // The contact's identity, or, while it has none, each request under its node (§4.6):
+        // a requester whose session we lost (a restart) writes again by HELLO.
+        let mut tries: Vec<(PubKey, PubKey, [u8; 32], Option<PubKey>)> = Vec::new();
         for c in self.candidates(h.src) {
-            let (Some(s), Some(pid)) = (self.secret(&c), self.identity_of(&c)) else {
-                continue;
-            };
+            if let (Some(s), Some(pid)) = (self.secret(&c), self.identity_of(&c)) {
+                tries.push((c, pid, s, None));
+            } else {
+                for r in self.requests_on(&c) {
+                    if let Some(s) = shared_secret(&prv, &r) {
+                        tries.push((c, r, s, Some(r)));
+                    }
+                }
+            }
+        }
+        for (c, pid, s, request) in tries {
             let ends = Ends {
                 me: &me,
                 peer: &pid,
@@ -3144,7 +3431,8 @@ impl Core {
             }
             self.peer_version(&c, hello.version);
             let mut peer = self.peers.remove(&c).unwrap_or_default();
-            self.answer_hello(&c, &mut peer, &s, &hello, now);
+            peer.own(request);
+            self.answer_hello(&c, &mut peer, &s, &pid, &hello, now);
             self.peers.insert(c, peer);
             return;
         }
@@ -3161,9 +3449,13 @@ impl Core {
                 if let Some(path) = self.path_for(&c, &peer) {
                     self.start_intro(&c, &mut peer, path, now);
                     // Someone else's HELLO started it, and anyone can replay one: a few INTROs,
-                    // not a whole introduction's worth (second read of 2026-11-17, N10).
+                    // not a whole introduction's worth (second read of 2026-11-17, N10). And
+                    // it is theirs, unless we have something for them: whoever answers it is a
+                    // request (§4.6, ADR-0046).
+                    let ours = !peer.queue.is_empty() || peer.in_flight.is_some();
                     if let Some(i) = peer.introducing.as_mut() {
                         i.tries = POKE_TRIES;
+                        i.prompted = !ours;
                     }
                 }
             }
@@ -3176,14 +3468,14 @@ impl Core {
         c: &PubKey,
         peer: &mut Peer,
         s: &[u8; 32],
+        pid: &PubKey,
         hello: &Hello<'_>,
         now: Millis,
     ) {
-        let (Some(me), Some(node), Some(pid), Some(prv)) =
-            (self.key, self.node, self.identity_of(c), self.prv)
-        else {
+        let (Some(me), Some(node), Some(prv)) = (self.key, self.node, self.prv) else {
             return;
         };
+        let pid = *pid;
         // Crossing HELLOs: the smaller node key's handshake wins (§4.4). Ours pauses once for
         // theirs, which ends it when its session is confirmed; a HELLO replayed within its ten
         // minutes costs one pause, not our handshake (second read of 2026-11-17, N11).
@@ -3208,7 +3500,13 @@ impl Core {
             len_byte: hello.return_path_len,
             bytes: hello.return_path.to_vec(),
         });
-        let Some(path) = return_path.or_else(|| self.path_for(c, peer)) else {
+        // A request's sessions go along the requester's path, never the contact's (§4.6).
+        let known = if peer.request.is_some() {
+            peer.request_path.clone()
+        } else {
+            self.path_for(c, peer)
+        };
+        let Some(path) = return_path.or(known) else {
             return;
         };
         // A recorded HELLO can be replayed by anyone: its answers are limited too (SR-04).
@@ -3257,11 +3555,18 @@ impl Core {
             // replayed or not, leaves the working path and the session in use as they are
             // (review of 2026-11-15, SR-03). With no path yet, this one serves meanwhile.
             peer.pending_path = Some(path.clone());
-            if peer.path.is_none() {
-                peer.path = Some(path.clone());
+            if peer.request.is_some() {
+                // Ours toward the contact, if the user wrote, goes on (§4.6).
+                if peer.request_path.is_none() {
+                    peer.request_path = Some(path.clone());
+                }
+            } else {
+                if peer.path.is_none() {
+                    peer.path = Some(path.clone());
+                }
+                // We know each other: our own introduction is no longer needed (§4.6).
+                peer.introducing = None;
             }
-            // We know each other: our own introduction is no longer needed (§4.6).
-            peer.introducing = None;
             peer.answered = Some(answered);
         }
         let frame = buf.get(..n).unwrap_or(&[]).to_vec();
@@ -3358,7 +3663,11 @@ impl Core {
                 // start now (SR-03).
                 peer.promote_pending();
                 if let Some(p) = peer.pending_path.take() {
-                    peer.path = Some(p);
+                    if peer.request.is_some() {
+                        peer.request_path = Some(p);
+                    } else {
+                        peer.path = Some(p);
+                    }
                 }
                 peer.session_since = now;
                 peer.session_bytes = 0;
@@ -3375,33 +3684,51 @@ impl Core {
                 peer.initiating = None;
                 peer.introducing = None;
             }
+            let request = peer.request;
             self.peers.insert(c, peer);
             if let Some((result, _)) = outcome {
-                if let Ok(Some(datagram)) = &result
-                    && matches!(
-                        datagram.first(),
-                        Some(
-                            &lc_proto::content::GROUP_STATE
-                                | &lc_proto::content::SENDER_KEY
-                                | &lc_proto::content::GROUP_LEAVE
-                                | &lc_proto::content::GROUP_JOIN
-                                | &lc_proto::content::SENDER_KEYS
-                                | &lc_proto::content::GROUP_MISSING
-                                | &lc_proto::content::GROUP_RESEND
-                                | &lc_proto::content::GROUP_SYNC
-                                | &lc_proto::content::GROUP_HANDOVER
-                                | &lc_proto::content::GROUP_DIGEST
-                                | &lc_proto::content::GROUP_KEY_REQUEST
-                        )
+                let control = matches!(&result, Ok(Some(d)) if matches!(
+                    d.first(),
+                    Some(
+                        &lc_proto::content::GROUP_STATE
+                            | &lc_proto::content::SENDER_KEY
+                            | &lc_proto::content::GROUP_LEAVE
+                            | &lc_proto::content::GROUP_JOIN
+                            | &lc_proto::content::SENDER_KEYS
+                            | &lc_proto::content::GROUP_MISSING
+                            | &lc_proto::content::GROUP_RESEND
+                            | &lc_proto::content::GROUP_SYNC
+                            | &lc_proto::content::GROUP_HANDOVER
+                            | &lc_proto::content::GROUP_DIGEST
+                            | &lc_proto::content::GROUP_KEY_REQUEST
                     )
-                {
-                    self.on_group_control(&c, datagram, now);
+                ));
+                if control {
+                    // Nothing of a request's is used (§4.6, ADR-0046).
+                    if let (Ok(Some(datagram)), None) = (&result, request) {
+                        self.on_group_control(&c, datagram, now);
+                    }
                 } else if let Ok(Some(datagram)) = result
                     // Local notices never come from the air (§6).
                     && !Content::is_local(&datagram)
                     && self.first_time(&c, &datagram, now)
                     && let Some(content) = Content::decode(&datagram)
                 {
+                    // A request's (§4.6, ADR-0046): kept for the user, nothing of it used. No
+                    // group datagram (above), no position, no media request.
+                    if let Some(identity) = request {
+                        if !matches!(content, Content::Location(_) | Content::MediaRequest { .. }) {
+                            self.events.push_back(Event::RequestMessage {
+                                node: c,
+                                identity,
+                                content,
+                                plaintext: datagram,
+                                snr4,
+                                rssi,
+                            });
+                        }
+                        return;
+                    }
                     if let Content::Location(p) = content {
                         self.on_position(c, None, p, snr4, now);
                         return;

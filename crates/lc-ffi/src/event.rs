@@ -191,6 +191,15 @@ pub enum LichenEvent {
     /// A conversation's preferences changed by themselves (an archived one came back with a
     /// message, ADR-0034): read `chat_prefs()` again.
     ChatPrefsChanged,
+    /// Someone using contact `node`'s radio, with an identity the contact does not have,
+    /// wants to write (§4.6, ADR-0046): a request, shown with `requests()`; the user accepts,
+    /// blocks or deletes it. For the notification.
+    IdentityRequested {
+        node: Vec<u8>,
+        identity: Vec<u8>,
+    },
+    /// A request's messages changed, or a request was settled: read `requests()` again.
+    RequestsChanged,
 }
 
 pub(crate) fn snr(snr4: i8) -> f32 {
@@ -354,6 +363,11 @@ impl LichenEvent {
                 sos,
                 battery,
             },
+            Event::Requested { node, identity } => Self::IdentityRequested {
+                node: node.to_vec(),
+                identity: identity.to_vec(),
+            },
+            Event::RequestMessage { .. } | Event::RequestAccepted { .. } => Self::RequestsChanged,
         }
     }
 }

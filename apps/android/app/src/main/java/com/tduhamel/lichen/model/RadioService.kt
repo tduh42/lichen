@@ -128,6 +128,23 @@ object Notifications {
             .setContentIntent(open(context, null))
             .build()
 
+    /** A message request (ADR-0046): it opens the app on Messages, where it waits; it has no
+     * conversation yet. */
+    fun request(context: Context, title: String, text: String) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            return
+        }
+        val b = NotificationCompat.Builder(context, MESSAGES)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(open(context, null))
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+        NotificationManagerCompat.from(context).notify("requests".hashCode(), b.build())
+    }
+
     /** A received message, unless notifications are not allowed; `actions`: Reply and Mark as
      * read (ADR-0034), which the app lock leaves out. */
     fun message(context: Context, chat: ChatId, title: String, text: String, actions: Boolean = false) {

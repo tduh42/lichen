@@ -463,6 +463,17 @@ fn describe(core: &Core, e: &Event) -> String {
         },
         Event::NodesUpdated => format!("{} nodes known", core.nodes().len()),
         Event::NodeTool { node } => format!("{}: trace or server answer", name_of(core, node)),
+        Event::Requested { node, identity } => format!(
+            "someone using {}'s radio wants to write: identity {} (a request)",
+            name_of(core, node),
+            lc_core::identity::fingerprint(identity).join(" ")
+        ),
+        Event::RequestMessage { node, content, .. } => {
+            format!("request via {}'s radio: {content:?}", name_of(core, node))
+        }
+        Event::RequestAccepted { node, .. } => {
+            format!("{}: request accepted", name_of(core, node))
+        }
     }
 }
 

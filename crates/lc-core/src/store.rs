@@ -45,7 +45,8 @@ pub use rusqlite::Error;
 /// `radios` (table added, nothing migrated).
 /// 14: blocking and archiving (ADR-0034): `blocked` (table added), `chat_prefs.archived`
 /// (added to older databases).
-const VERSION: i32 = 14;
+/// 15: introduction requests (ADR-0046): `requests`, `request_messages` (tables added).
+const VERSION: i32 = 15;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -308,6 +309,18 @@ CREATE TABLE IF NOT EXISTS blocked (
     name TEXT NOT NULL,
     at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS requests (
+    identity BLOB PRIMARY KEY,
+    node BLOB NOT NULL,
+    at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS request_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    identity BLOB NOT NULL,
+    plaintext BLOB NOT NULL,
+    at_ms INTEGER NOT NULL,
+    snr4 INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS amendments (
     chat_kind INTEGER NOT NULL,
     chat BLOB NOT NULL,
@@ -414,6 +427,28 @@ pub struct Blocked {
     /// Unix ms.
     pub at: i64,
 }
+
+/// An introduction request waiting for the user (§4.6, ADR-0046): an identity, the node it
+/// came under, and when it first came.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Request {
+    pub identity: PubKey,
+    pub node: PubKey,
+    /// Unix ms.
+    pub at: i64,
+}
+
+/// What a request sent, as received (`content_type ‖ body`), kept until the user decides.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RequestMessage {
+    pub plaintext: Vec<u8>,
+    /// Unix ms.
+    pub at_ms: i64,
+    pub snr4: i8,
+}
+
+/// A request keeps its last this many messages.
+pub const REQUEST_MESSAGES_MAX: i64 = 50;
 
 /// Text as search compares it: lower case, accents removed (canonical decomposition, combining
 /// marks dropped), so that "ecole" finds "École".
@@ -1389,6 +1424,85 @@ impl Store {
             "DELETE FROM blocked WHERE node = ?1",
             params![node.as_slice()],
         )?;
+        Ok(())
+    }
+
+    // ----- introduction requests (ADR-0046) --------------------------------------------
+
+    /// Request `identity` came under `node` (again, or under another node: it moves there).
+    pub fn put_request(&self, identity: &PubKey, node: &PubKey, at_ms: i64) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO requests (identity, node, at) VALUES (?1, ?2, ?3)
+             ON CONFLICT (identity) DO UPDATE SET node = excluded.node",
+            params![identity.as_slice(), node.as_slice(), at_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Every request, the oldest first.
+    pub fn requests(&self) -> Result<Vec<Request>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT identity, node, at FROM requests ORDER BY at, identity")?;
+        let rows = st.query_map([], |r| {
+            let identity: Vec<u8> = r.get(0)?;
+            let node: Vec<u8> = r.get(1)?;
+            let at: i64 = r.get(2).unwrap_or(0);
+            Ok(identity
+                .as_slice()
+                .try_into()
+                .ok()
+                .zip(node.as_slice().try_into().ok())
+                .map(|(identity, node)| Request { identity, node, at }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Keeps what request `identity` sent; only its last [`REQUEST_MESSAGES_MAX`] stay.
+    pub fn add_request_message(&self, identity: &PubKey, m: &RequestMessage) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT INTO request_messages (identity, plaintext, at_ms, snr4)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![identity.as_slice(), m.plaintext, m.at_ms, m.snr4],
+        )?;
+        let n = self.conn.execute(
+            "DELETE FROM request_messages WHERE identity = ?1 AND id NOT IN
+             (SELECT id FROM request_messages WHERE identity = ?1 ORDER BY id DESC LIMIT ?2)",
+            params![identity.as_slice(), REQUEST_MESSAGES_MAX],
+        )?;
+        if n > 0 {
+            self.scrub();
+        }
+        Ok(())
+    }
+
+    /// What request `identity` sent, the oldest first.
+    pub fn request_messages(&self, identity: &PubKey) -> Result<Vec<RequestMessage>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT plaintext, at_ms, snr4 FROM request_messages WHERE identity = ?1 ORDER BY id",
+        )?;
+        let rows = st.query_map(params![identity.as_slice()], |r| {
+            Ok(RequestMessage {
+                plaintext: r.get(0)?,
+                at_ms: r.get(1)?,
+                snr4: r.get::<_, i64>(2).map(|v| v as i8)?,
+            })
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    /// Removes request `identity` and what it sent: accepted (its messages went to the
+    /// conversation), deleted or blocked.
+    pub fn delete_request(&self, identity: &PubKey) -> Result<(), Error> {
+        self.conn.execute(
+            "DELETE FROM request_messages WHERE identity = ?1",
+            params![identity.as_slice()],
+        )?;
+        self.conn.execute(
+            "DELETE FROM requests WHERE identity = ?1",
+            params![identity.as_slice()],
+        )?;
+        self.scrub();
         Ok(())
     }
 
