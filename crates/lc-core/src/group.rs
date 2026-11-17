@@ -1299,11 +1299,16 @@ impl Core {
         self.invite_admissions.remove(token);
     }
 
-    /// Asks to join a group with a scanned invitation (§10.5). The admin becomes a contact,
-    /// verified (scanned in person), and gets GROUP_JOIN over a pairwise session, sent again
-    /// until it arrives. A zero-hop advert goes first: the admin's node, nearby, learns ours
-    /// and can answer the handshake (§4.6). [`Event::GroupJoined`] follows once admitted.
-    pub fn join(&mut self, invite: &Invite, now: Millis) -> Result<(), Error> {
+    /// Asks to join a group with an invitation (§10.5). The admin becomes a contact and gets
+    /// GROUP_JOIN over a pairwise session, sent again until it arrives. A zero-hop advert goes
+    /// first: the admin's node, nearby, learns ours and can answer the handshake (§4.6).
+    /// [`Event::GroupJoined`] follows once admitted.
+    ///
+    /// Scanned `in_person`, the invitation verifies the admin like a contact card (§4.7).
+    /// Pasted or received some other way it proves nothing: a new admin is added unverified,
+    /// and an identity other than the one the admin's node has waits for the user like any
+    /// identity change ([`Error::IdentityPending`], nothing sent).
+    pub fn join(&mut self, invite: &Invite, in_person: bool, now: Millis) -> Result<(), Error> {
         let me = self.key.ok_or(Error::NoIdentity)?;
         if invite.admin == me || self.node == Some(invite.node) {
             return Err(Error::NotAllowed);
@@ -1321,11 +1326,17 @@ impl Core {
         self.add_contact(invite.node, &name, path);
         // Scanned in person, like a contact card (§4.7): it verifies the admin, and replaces an
         // identity the admin's node no longer has, through the same steps as an accepted
-        // change, so the app is told (review of 2026-11-15, SR-19).
-        if !self.present_identity(&invite.node, invite.admin) {
-            self.accept_identity(&invite.node, &invite.admin, true);
+        // change, so the app is told (review of 2026-11-15, SR-19). Pasted, it must not: a
+        // code sent by message could otherwise rebind a verified contact's node to whoever
+        // wrote it (second read of 2026-11-17, N1).
+        let adopted = self.present_identity(&invite.node, invite.admin)
+            || (in_person && self.accept_identity(&invite.node, &invite.admin, true));
+        if !adopted {
+            return Err(Error::IdentityPending);
         }
-        self.set_verified(&invite.node, &invite.admin, true);
+        if in_person {
+            self.set_verified(&invite.node, &invite.admin, true);
+        }
         self.joining
             .retain(|(a, at)| *a != invite.admin && at + JOINING_MS > now);
         self.joining.push((invite.admin, now));

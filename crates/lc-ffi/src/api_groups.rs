@@ -169,16 +169,24 @@ impl LichenCore {
         })
     }
 
-    /// Joins with a scanned invitation: the admin becomes a contact, verified (scanned in
-    /// person), and is asked to add us; `GroupJoined` follows once admitted (§10.5).
-    pub fn accept_invite(&self, text: String, now_ms: u64) -> Result<ContactInfo, LichenError> {
+    /// Joins with an invitation: the admin becomes a contact and is asked to add us;
+    /// `GroupJoined` follows once admitted (§10.5). Only an invitation `scanned` in person
+    /// verifies the admin; a pasted one adds it unverified, and fails with `IdentityPending`
+    /// when it names an identity other than the one the admin's node has (second read of
+    /// 2026-11-17, N1).
+    pub fn accept_invite(
+        &self,
+        text: String,
+        scanned: bool,
+        now_ms: u64,
+    ) -> Result<ContactInfo, LichenError> {
         let invite = lc_core::identity::Invite::decode(&text).ok_or(LichenError::BadCode)?;
         let mut i = self.lock();
         if i.core.key() == Some(&invite.admin) {
             return Err(LichenError::BadCode);
         }
         i.last_now = now_ms;
-        i.core.join(&invite, now_ms)?;
+        i.core.join(&invite, scanned, now_ms)?;
         i.save_contacts();
         let out = i
             .core

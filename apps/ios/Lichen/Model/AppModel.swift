@@ -1457,11 +1457,11 @@ final class AppModel {
         }
     }
 
-    /// Asks the admin of a scanned invitation to add us (they become a verified contact); the
-    /// group arrives as `groupJoined`.
-    func acceptInvite(_ text: String, _ info: InviteInfo) -> String? {
+    /// Asks the admin of an invitation to add us; the group arrives as `groupJoined`. Only a
+    /// `scanned` invitation verifies the admin (second read of 2026-11-17, N1).
+    func acceptInvite(_ text: String, _ info: InviteInfo, scanned: Bool) -> String? {
         do {
-            _ = try core.acceptInvite(text: text, nowMs: now())
+            _ = try core.acceptInvite(text: text, scanned: scanned, nowMs: now())
             joining[info.admin] = info.groupName
             contacts = core.contacts().filter(\.person)
             pump()
@@ -2189,6 +2189,7 @@ extension LichenError {
         case .Expired: return String(localized: "This invitation has expired: ask for a new one.")
         case .InvalidSetting: return String(localized: "The radio does not take this setting.")
         case .NotAnExport: return String(localized: "This file is not a database exported by the MeshCore app.")
+        case .IdentityPending: return String(localized: "This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.")
         }
     }
 }
