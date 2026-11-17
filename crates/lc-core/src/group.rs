@@ -977,7 +977,7 @@ impl Invitation {
 
 /// Groups one phone belongs to at most; a further invitation is declined (SR-13).
 pub const MAX_GROUPS: usize = 32;
-/// Invitations waiting for the user at most; the oldest goes first.
+/// Invitations waiting for the user at most, one per admin; a further one is refused (N18).
 const MAX_INVITATIONS: usize = 8;
 /// How long an invitation waits for the user.
 const INVITATION_MS: Millis = 7 * 24 * 3_600_000;
@@ -2933,8 +2933,9 @@ impl Core {
 
     /// A state for a group we do not belong to (§10.1, SR-13). One that lists us is an
     /// invitation: joined at once when the user asked for it with a scanned invitation
-    /// (§10.5) or its admin is a contact verified in person, held for the user otherwise. A newer state from the same admin replaces a
-    /// held one; one that no longer lists us withdraws it.
+    /// (§10.5) or its admin is a contact verified in person, held for the user otherwise (at
+    /// most 8, one per admin, N18). A newer state from the same admin replaces a held one; one
+    /// that no longer lists us withdraws it.
     fn invitation(&mut self, state: State, listed: bool, now: Millis) {
         let gid = state.gid;
         self.expire_invitations(now);
@@ -2968,9 +2969,19 @@ impl Core {
             self.join_group(state, now);
             return;
         }
-        if self.invitations.len() >= MAX_INVITATIONS {
-            let old = self.invitations.remove(0);
-            self.dirty_invitations.insert(old.state.gid);
+        // One per admin: its new invitation replaces the one it sent before. When the list is
+        // full, a new one is refused rather than pushing out one the user may not have seen:
+        // anyone with a session can send states (second read of 2026-11-17, N18).
+        if let Some(pos) = self
+            .invitations
+            .iter()
+            .position(|i| i.state.admin == state.admin)
+        {
+            let old = self.invitations.remove(pos).state.gid;
+            self.pending_keys.retain(|p| p.gid != old);
+            self.dirty_invitations.insert(old);
+        } else if self.invitations.len() >= MAX_INVITATIONS {
+            return;
         }
         self.events.push_back(Event::GroupInvited {
             gid,
@@ -4814,6 +4825,65 @@ mod tests {
         // Answered: the stored invitation goes.
         assert!(core.take_dirty_invitations().contains(&gid));
         assert!(core.invitation_snapshot(&gid).is_none());
+    }
+
+    /// Second read of 2026-11-17, N18: anyone with a session can send group states. Eight
+    /// from strangers (or eight groups from one) do not push out an invitation the user has
+    /// not answered: one is held per admin, its newest, and a full list refuses the next.
+    #[test]
+    fn forged_states_do_not_evict_an_invitation() {
+        let mut core = Core::new(Config::new("t", [200; 32], [1; 32]));
+        core.node = Some([0xEE; 32]);
+        let me = *core.key().unwrap();
+        let state = |gid: GroupId, admin: PubKey, name: &str| State {
+            gid,
+            epoch: 1,
+            admin,
+            name: name.into(),
+            members: vec![
+                Member {
+                    key: admin,
+                    node: [admin[0]; 32],
+                    name: "admin".into(),
+                },
+                Member {
+                    key: me,
+                    node: [0xEE; 32],
+                    name: "me".into(),
+                },
+            ],
+            cause: None,
+        };
+        let camille = [0x21; 32];
+        core.on_group_state(&camille, state([9; 16], camille, "Refuge"), 1_000);
+        let held = |core: &Core| -> Vec<String> {
+            core.invitations()
+                .iter()
+                .map(|i| i.name().to_owned())
+                .collect()
+        };
+        // Eight groups from one stranger: its newest only.
+        let eve = [0x66; 32];
+        for i in 0..8u8 {
+            core.on_group_state(&eve, state([0x40 + i; 16], eve, &format!("e{i}")), 2_000);
+        }
+        assert_eq!(held(&core), vec!["Refuge", "e7"]);
+        // Eight strangers: the list fills, then refuses; nothing held goes.
+        for i in 0..8u8 {
+            let x = [0x70 + i; 32];
+            core.on_group_state(&x, state([0x50 + i; 16], x, &format!("x{i}")), 3_000);
+        }
+        let got = held(&core);
+        assert_eq!(got.len(), MAX_INVITATIONS);
+        assert_eq!(&got[..2], ["Refuge", "e7"]);
+        assert!(!got.contains(&"x6".to_owned()));
+        // Camille's next state still replaces hers, and she can be joined.
+        let mut renamed = state([9; 16], camille, "Refuge tonight");
+        renamed.epoch = 2;
+        core.on_group_state(&camille, renamed, 4_000);
+        assert_eq!(held(&core)[0], "Refuge tonight");
+        core.accept_group(&[9; 16], 5_000).unwrap();
+        assert!(core.groups.contains_key(&[9; 16]));
     }
 
     /// The two flooded payloads of a long text from `sender` at `counter`, signed by `signer`.
