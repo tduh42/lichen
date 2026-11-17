@@ -581,6 +581,16 @@
         }
       }
     },
+    "%lld messages, %lld media files, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld messages, %2$lld fichiers médias, %3$@"
+          }
+        }
+      }
+    },
     "%lld new messages": {
       "localizations": {
         "en": {
@@ -1011,6 +1021,26 @@
         }
       }
     },
+    "A backup file and its 24 words: replaces this identity and its messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un fichier de sauvegarde et ses 24 mots : remplace cette identité et ses messages"
+          }
+        }
+      }
+    },
+    "A backup leaves out disappearing messages, what was still waiting to be sent, and location sharing. After a restore, your contacts and groups see you as after a restart.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une sauvegarde laisse de côté les messages éphémères, ce qui attendait encore d’être envoyé et le partage de position. Après une restauration, tes contacts et tes groupes te voient comme après un redémarrage."
+          }
+        }
+      }
+    },
     "A channel secret is 32 hexadecimal digits.": {
       "localizations": {
         "fr": {
@@ -1117,16 +1147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une version plus récente est utilisée par %@. Une partie de ce qu'ils envoient peut ne pas s'afficher."
-          }
-        }
-      }
-    },
-    "A password-protected file: coming later": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fichier protégé par mot de passe : plus tard"
           }
         }
       }
@@ -1551,6 +1571,36 @@
         }
       }
     },
+    "Backup": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde"
+          }
+        }
+      }
+    },
+    "Backup ready": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde prête"
+          }
+        }
+      }
+    },
+    "Backup saved": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sauvegarde enregistrée"
+          }
+        }
+      }
+    },
     "Bandwidth": {
       "localizations": {
         "fr": {
@@ -1707,6 +1757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les canaux que suit ta radio, comme dans les applis MeshCore. Pas chiffrés par lichen."
+          }
+        }
+      }
+    },
+    "Choose the backup file": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisir le fichier de sauvegarde"
           }
         }
       }
@@ -2891,6 +2951,16 @@
         }
       }
     },
+    "Export a backup": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporter une sauvegarde"
+          }
+        }
+      }
+    },
     "Extra acknowledgements": {
       "localizations": {
         "fr": {
@@ -3057,6 +3127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fréquence (MHz)"
+          }
+        }
+      }
+    },
+    "From Files, iCloud Drive or a USB drive": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Depuis Fichiers, iCloud Drive ou une clé USB"
           }
         }
       }
@@ -4381,6 +4461,16 @@
         }
       }
     },
+    "Messages, contacts, groups, settings and media in one file your 24 words open.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages, contacts, groupes, réglages et médias dans un fichier que tes 24 mots ouvrent."
+          }
+        }
+      }
+    },
     "Microphone access is off": {
       "localizations": {
         "fr": {
@@ -4607,6 +4697,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas de connexion Internet : impossible de le proposer."
+          }
+        }
+      }
+    },
+    "No backup was made": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune sauvegarde n’a été faite"
           }
         }
       }
@@ -5037,6 +5137,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sur ce téléphone seulement : les applis MeshCore gardent leur copie. Une capture d’écran peut aussi garder les messages."
+          }
+        }
+      }
+    },
+    "One file with your messages, contacts, groups, settings and media. Only your 24 words open it: keep both, but not together.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un fichier avec tes messages, contacts, groupes, réglages et médias. Seuls tes 24 mots l’ouvrent : garde les deux, mais pas ensemble."
           }
         }
       }
@@ -5501,6 +5611,16 @@
         }
       }
     },
+    "Preparing the backup…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Préparation de la sauvegarde…"
+          }
+        }
+      }
+    },
     "Preset": {
       "localizations": {
         "fr": {
@@ -5891,6 +6011,16 @@
         }
       }
     },
+    "Restore a backup": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restaurer une sauvegarde"
+          }
+        }
+      }
+    },
     "Restore an identity": {
       "localizations": {
         "fr": {
@@ -5907,6 +6037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Restaurer depuis mes 24 mots"
+          }
+        }
+      }
+    },
+    "Restoring…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restauration…"
           }
         }
       }
@@ -6077,6 +6217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enregistrer le code PIN"
+          }
+        }
+      }
+    },
+    "Save to Files": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer dans Fichiers"
           }
         }
       }
@@ -6257,6 +6407,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyer un advert"
+          }
+        }
+      }
+    },
+    "Send it somewhere else…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’envoyer ailleurs…"
           }
         }
       }
@@ -6901,6 +7061,16 @@
         }
       }
     },
+    "The 24 words of this identity": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les 24 mots de cette identité"
+          }
+        }
+      }
+    },
     "The SOS stays on until you stop it. It does not replace 112.": {
       "localizations": {
         "fr": {
@@ -7351,6 +7521,26 @@
         }
       }
     },
+    "There is nothing to back up yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rien à sauvegarder pour l’instant."
+          }
+        }
+      }
+    },
+    "These 24 words are not the ones of this backup.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ces 24 mots ne sont pas ceux de cette sauvegarde."
+          }
+        }
+      }
+    },
     "These messages use MeshCore's own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.": {
       "localizations": {
         "fr": {
@@ -7387,6 +7577,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le SOS a été arrêté."
+          }
+        }
+      }
+    },
+    "This backup is damaged or incomplete: nothing was restored.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette sauvegarde est abîmée ou incomplète : rien n’a été restauré."
+          }
+        }
+      }
+    },
+    "This backup was made by a newer version of lichen: update the app first.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour."
           }
         }
       }
@@ -7447,6 +7657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce fichier n’est pas une base exportée par l’app MeshCore."
+          }
+        }
+      }
+    },
+    "This file is not a lichen backup.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce fichier n’est pas une sauvegarde lichen."
           }
         }
       }
@@ -8487,6 +8707,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tes messages ne peuvent pas être enregistrés pour le moment"
+          }
+        }
+      }
+    },
+    "Your messages, contacts, groups and media in one file your 24 words open": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes messages, contacts, groupes et médias dans un fichier que tes 24 mots ouvrent"
+          }
+        }
+      }
+    },
+    "Your messages, contacts, groups, settings and media come back from a backup file. It replaces the identity and the messages on this phone.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes messages, contacts, groupes, réglages et médias reviennent d’un fichier de sauvegarde. Il remplace l’identité et les messages de ce téléphone."
           }
         }
       }

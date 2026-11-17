@@ -209,6 +209,7 @@ struct IdentityProblemView: View {
     @Environment(AppModel.self) private var model
     let problem: AppModel.IdentityProblem
     @State private var restoring = false
+    @State private var restoringBackup = false
     @State private var confirmNew = false
     @State private var error: String?
 
@@ -235,6 +236,8 @@ struct IdentityProblemView: View {
             if problem != .storage {
                 Button("Restore from my 24 words") { restoring = true }
                     .buttonStyle(.secondary)
+                Button("Restore a backup") { restoringBackup = true }
+                    .buttonStyle(.secondary)
             }
             if problem == .corrupt {
                 Button("Start a new identity", role: .destructive) { confirmNew = true }
@@ -245,6 +248,7 @@ struct IdentityProblemView: View {
         .padding(24)
         .screen()
         .sheet(isPresented: $restoring) { RestoreSheet() }
+        .sheet(isPresented: $restoringBackup) { RestoreBackupSheet() }
         .confirmationDialog(
             "Start a new identity?", isPresented: $confirmNew, titleVisibility: .visible
         ) {

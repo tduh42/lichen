@@ -258,6 +258,7 @@ internal fun RestoreSheet(model: AppModel, dismiss: () -> Unit) {
 fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
     val t = lichen
     var restoring by remember { mutableStateOf(false) }
+    var restoringBackup by remember { mutableStateOf(false) }
     var confirmNew by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     Column(
@@ -286,6 +287,7 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
         PrimaryButton(stringResource(R.string.try_again), Modifier.fillMaxWidth()) { model.retryIdentity() }
         if (problem != AppModel.IdentityProblem.STORAGE) {
             SecondaryButton(stringResource(R.string.restore_from_words)) { restoring = true }
+            SecondaryButton(stringResource(R.string.restore_backup)) { restoringBackup = true }
         }
         if (problem == AppModel.IdentityProblem.CORRUPT) {
             TextButton({ confirmNew = true }, Modifier.fillMaxWidth()) {
@@ -294,6 +296,7 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
         }
     }
     if (restoring) RestoreSheet(model) { restoring = false }
+    if (restoringBackup) RestoreBackupSheet(model, { restoringBackup = false })
     if (confirmNew) {
         AlertDialog(
             onDismissRequest = { confirmNew = false },

@@ -18,7 +18,7 @@ read in its `build.rs`):
 
 | feature | Apple targets (iOS, simulator, macOS host) | Android | Linux host (CI) |
 |---|---|---|---|
-| `bundled-sqlcipher` | CommonCrypto (`SQLCIPHER_CRYPTO_CC`), links Security and CoreFoundation: **no extra C** | links `-lcrypto`, which the NDK does not have: **does not build** | the system's `libcrypto` (OpenSSL 3, dynamic; tests only) |
+| `bundled-sqlcipher` | CommonCrypto (`SQLCIPHER_CRYPTO_CC`), links Security and CoreFoundation: **no extra C** (built and linked on this branch) | links `-lcrypto`, which the NDK's API 31 sysroot does not have: **does not build** | the system's `libcrypto` (OpenSSL 3, dynamic; tests only) |
 | `bundled-sqlcipher-vendored-openssl` | OpenSSL built from source instead of CommonCrypto | OpenSSL built from source (`openssl-src`), linked statically: **builds** | same |
 
 Features can differ per target (`[target.'cfg(…)'.dependencies]`, resolver 3), so Apple can keep
@@ -26,17 +26,18 @@ CommonCrypto whatever Android uses.
 
 ## Options for Android
 
-1. **Vendored OpenSSL** (`openssl-src`, OpenSSL 3, Apache-2.0): about 500,000 lines of C, built for
-   `aarch64-linux-android` by its own Perl configure; only `libcrypto` is linked (AES-256-CBC,
-   HMAC-SHA512, PBKDF2, random). Measured below. Maintained upstream; CVEs in parts lichen does
-   not reach (TLS is in `libssl`, not linked) still mean dependency updates.
+1. **Vendored OpenSSL** (`openssl-src` 300.6.1, OpenSSL 3.6.3, Apache-2.0): 548,000 lines of C
+   (344,000 in `crypto/`), built for `aarch64-linux-android` by its own Perl configure; only
+   `libcrypto` is linked (AES-256-CBC, HMAC-SHA512, PBKDF2, random). It builds with the NDK as it
+   is, and adds 4 MB to the APK (below). Maintained upstream; advisories in parts lichen does not
+   reach (TLS is in `libssl`, not linked) still mean dependency updates.
 2. **A crypto provider in Rust**: SQLCipher calls a provider through a table of functions
    (`SQLCIPHER_CRYPTO_CUSTOM`); one written over RustCrypto (`aes`, `cbc`, `hmac`, `sha2`,
    `pbkdf2`) adds no C, but adds `unsafe` FFI code (a second module beside `codec2_c.rs`) and needs
    a patched `libsqlite3-sys` (its `build.rs` links `-lcrypto` on every non-Apple target). Our
    own crypto glue under the database: to be fuzzed and checked against SQLCipher's vectors.
-3. **libtomcrypt** (public domain, about 60,000 lines of C): a provider SQLCipher supports; same
-   patched `build.rs`, and one more C library to build for Android.
+3. **libtomcrypt** (public domain, a much smaller C library): a provider SQLCipher supports; the
+   same patched `build.rs`, and one more C library of ours to build for Android.
 4. **SQLite3 Multiple Ciphers** in place of SQLCipher: its own ciphers in C, no crypto library,
    reads SQLCipher's format; not approved, and not supported by `rusqlite`.
 
@@ -78,8 +79,16 @@ and its cost is size, measured below. Option 2 is the fallback if the size or th
 
 ## Consequences
 
-- Sizes (arm64, release, measured on this branch; see the table in the final report and
-  `docs/measurements.md` once decided).
+- Sizes, measured on this branch (release core, arm64; `docs/measurements.md`):
+
+  | | SQLite (now) | SQLCipher | difference |
+  |---|---|---|---|
+  | Android `liblc_ffi.so`, stripped, vendored OpenSSL | 33,142,312 B | 37,113,464 B | +3.97 MB (+12 %) |
+  | Android debug APK (the library is stored uncompressed) | 161,738,706 B | 165,710,042 B | +3.97 MB |
+  | iOS app (simulator debug dylib), CommonCrypto | 74,628,992 B | 74,677,568 B | +49 KB |
+
+  On iOS the app links as it is: CommonCrypto is part of the system library, and the app
+  already links `Security` (its Keychain code imports it).
 - Every read and write pays AES and an HMAC per 4 KiB page; lichen's database is small and its
   writes are few (a message, a status).
 - Rejected: encrypting columns in the app (search, indexes and every query would change; the
