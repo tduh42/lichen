@@ -672,11 +672,13 @@
       }
     },
     "%lld messages, %lld media files, %@": {
+    "%lld messages · %lld media": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld messages, %2$lld fichiers médias, %3$@"
+            "value": "%lld messages · %lld médias"
           }
         }
       }
@@ -731,11 +733,16 @@
         }
       }
     },
+<<<<<<< HEAD
     "%lld of %lld, the strongest first.": {
+=======
+    "%lld removed": {
+>>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
+<<<<<<< HEAD
             "value": "%lld sur %lld, les plus forts d’abord."
           }
         }
@@ -747,6 +754,9 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld reçus · %lld envoyés · %lld en attente"
+=======
+            "value": "%lld supprimés"
+>>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
           }
         }
       }
@@ -2103,6 +2113,16 @@
         }
       }
     },
+    "Clear media": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effacer les médias"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "fr": {
@@ -3433,6 +3453,16 @@
         }
       }
     },
+    "Files": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichiers"
+          }
+        }
+      }
+    },
     "Find your people": {
       "localizations": {
         "fr": {
@@ -3479,6 +3509,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Diffusé à tout le canal, sans accusé de réception"
+          }
+        }
+      }
+    },
+    "Flooded to the group: %@ · ≈ %@ s of our airtime; every repeater adds as much": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diffusé au groupe : %@ · ≈ %@ s de notre temps d’antenne ; chaque répéteur en ajoute autant"
           }
         }
       }
@@ -4033,6 +4073,16 @@
         }
       }
     },
+    "In all: %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En tout : %@"
+          }
+        }
+      }
+    },
     "In lichen: Add a contact › Scan. They join %@ and you become a verified contact for them.": {
       "localizations": {
         "fr": {
@@ -4054,11 +4104,13 @@
       }
     },
     "Included": {
+    "Internet": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Inclus"
+            "value": "Internet"
           }
         }
       }
@@ -4933,6 +4985,46 @@
         }
       }
     },
+    "Media older than 1 year": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus d’un an"
+          }
+        }
+      }
+    },
+    "Media older than 30 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus de 30 jours"
+          }
+        }
+      }
+    },
+    "Media older than 90 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias de plus de 90 jours"
+          }
+        }
+      }
+    },
+    "Media, files and voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Médias, fichiers et vocaux"
+          }
+        }
+      }
+    },
     "Member": {
       "localizations": {
         "fr": {
@@ -5523,6 +5615,26 @@
         }
       }
     },
+    "No conversations yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore de conversation."
+          }
+        }
+      }
+    },
+    "No files in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun fichier dans cette conversation."
+          }
+        }
+      }
+    },
     "No longer in the group: %@": {
       "localizations": {
         "fr": {
@@ -5583,6 +5695,16 @@
         }
       }
     },
+    "No photos in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune photo dans cette conversation."
+          }
+        }
+      }
+    },
     "No radio connected": {
       "localizations": {
         "fr": {
@@ -5639,6 +5761,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun transport ne joint l'expéditeur : active iroh ou Tor."
+          }
+        }
+      }
+    },
+    "No voice messages in this conversation.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun message vocal dans cette conversation."
           }
         }
       }
@@ -5779,6 +5911,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Non remis : %@"
+          }
+        }
+      }
+    },
+    "Not downloaded": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas téléchargé"
           }
         }
       }
@@ -6353,12 +6495,32 @@
         }
       }
     },
+    "Photo, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo, %@"
+          }
+        }
+      }
+    },
     "Photo: %@": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Photo : %@"
+          }
+        }
+      }
+    },
+    "Photos": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos"
           }
         }
       }
@@ -6373,12 +6535,22 @@
         }
       }
     },
-    "Photos and voice messages go to contacts only: in a group they would have to be flooded.": {
+    "Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les photos et les messages vocaux vont seulement aux contacts : dans un groupe, il faudrait les inonder."
+            "value": "Les photos et les fichiers vont seulement aux contacts : dans un groupe, il faudrait les inonder. Les messages vocaux courts peuvent aller à un groupe."
+          }
+        }
+      }
+    },
+    "Photos, files and voice messages older than that are removed from this phone, as “Delete for me” does: their place in the conversation goes too. The other phones keep theirs.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les photos, fichiers et messages vocaux plus anciens sont supprimés de ce téléphone, comme avec « Supprimer pour moi » : leur place dans la conversation disparaît aussi. Les autres téléphones gardent les leurs."
           }
         }
       }
@@ -6833,12 +7005,20 @@
         }
       }
     },
+<<<<<<< HEAD
     "Remember on this phone": {
+=======
+    "Remove": {
+>>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
+<<<<<<< HEAD
             "value": "Retenir sur ce téléphone"
+=======
+            "value": "Supprimer"
+>>>>>>> 7e7b470 (iOS: French for media, storage, sharing and group voice notes)
           }
         }
       }
@@ -7579,6 +7759,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seuil d'envoi"
+          }
+        }
+      }
+    },
+    "Send to": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyer à"
           }
         }
       }
@@ -8844,6 +9034,7 @@
       }
     },
     "This backup is damaged or incomplete: nothing was restored.": {
+    "This cannot be undone.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -8859,6 +9050,7 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour."
+            "value": "C’est définitif."
           }
         }
       }
@@ -9441,6 +9633,16 @@
         }
       }
     },
+    "Usage per conversation; clear old photos, files and voice messages.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’espace par conversation ; effacer les anciens photos, fichiers et messages vocaux."
+          }
+        }
+      }
+    },
     "Use %@ again": {
       "localizations": {
         "fr": {
@@ -9527,6 +9729,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Par iroh"
+          }
+        }
+      }
+    },
+    "Voice": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vocaux"
           }
         }
       }
