@@ -510,7 +510,8 @@ fn group_estimate_matches_the_air() {
             net.with_core(m[0], |c, now| c.send_group_text(&gid, text, 1, now))
                 .unwrap()
                 .unwrap();
-            settle(&mut net);
+            // Past the digest's six to nine minutes (§10.6).
+            net.run_until(net.now + 12 * MIN, |_| false);
             let spent = net.nodes[m[0]].tx_airtime_ms - before;
             assert!(fragments >= 1);
             assert!(

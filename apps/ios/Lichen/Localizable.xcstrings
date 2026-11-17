@@ -6151,12 +6151,12 @@
         }
       }
     },
-    "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys.": {
+    "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. You read what the group sends from now on, not what came before.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
+            "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède."
           }
         }
       }

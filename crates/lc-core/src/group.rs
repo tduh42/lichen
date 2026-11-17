@@ -85,8 +85,9 @@ const STEP_MAX: u32 = 64;
 /// Handover links each member keeps, and a GROUP_HANDOVER carries at most (§10.8, ADR-0038).
 pub const HANDOVER_LINKS: usize = 4;
 /// Our digest goes this long after our last message to a group left, plus up to half as much
-/// again, if no other one followed (§10.6, ADR-0040): members' timers do not line up.
-pub const DIGEST_AFTER_MS: Millis = 120_000;
+/// again, if no other one followed (§10.6, ADR-0040): the end of a burst, not a pause in it,
+/// and members' timers do not line up.
+pub const DIGEST_AFTER_MS: Millis = 360_000;
 
 /// The key at state epoch `epoch`, from the key at `epoch − 1` (§10.9): one-way.
 fn step_key(gid: &GroupId, key: &[u8; 32], epoch: u32) -> Secret {
@@ -608,7 +609,8 @@ impl Group {
             put_name(&mut v, &m.name);
         }
         v.push(self.my_epoch);
-        let keys: Vec<(&PubKey, &MemberKeys)> = self.keys.iter().take(255).collect();
+        let mut keys: Vec<(&PubKey, &MemberKeys)> = self.keys.iter().take(255).collect();
+        keys.sort_unstable_by_key(|(k, _)| **k);
         v.push(keys.len() as u8);
         for (k, mk) in keys {
             v.extend_from_slice(k);
@@ -625,13 +627,14 @@ impl Group {
             v.extend_from_slice(&(l.len() as u16).to_le_bytes());
             v.extend_from_slice(l);
         }
-        let since: Vec<(&PubKey, &u32)> = self
+        let mut since: Vec<(&PubKey, &u32)> = self
             .recovery
             .since
             .iter()
             .filter(|(k, _)| self.is_member(k))
             .take(255)
             .collect();
+        since.sort_unstable_by_key(|(k, _)| **k);
         v.push(since.len() as u8);
         for (k, e) in since {
             v.extend_from_slice(k);
@@ -999,29 +1002,17 @@ fn put_name(v: &mut Vec<u8>, name: &str) {
 }
 
 /// A [`Group::snapshot`] without the other members' sender keys and replay windows: the
-/// group's state, its members and our key epoch, what a backup keeps of it (ADR-0037). Restored,
-/// it draws our next key as after a restart, and the others' keys come again (§10.7). None when
-/// `snapshot` does not decode.
+/// group's state, its members, our key epoch, the handover links and when members were added,
+/// what a backup keeps of it (ADR-0037). The messages kept for recovery (§10.6) stay out with
+/// the keys. Restored, it draws our next key as after a restart, and the others' keys come
+/// again (§10.7). None when `snapshot` does not decode.
 pub fn snapshot_without_keys(snapshot: &[u8]) -> Option<Vec<u8>> {
-    let (&version, rest) = snapshot.split_first()?;
-    if version != SNAPSHOT_VERSION && version != 2 {
-        return None;
-    }
-    let mut b = rest;
-    let b = &mut b;
-    // gid, epoch, admin, name.
-    take(b, 16 + 4 + 32)?;
-    take_name(b)?;
-    let n = usize::from(*take(b, 1)?.first()?);
-    for _ in 0..n {
-        take(b, 64)?;
-        take_name(b)?;
-    }
-    // Our key epoch, then no member key.
-    take(b, 1)?;
-    let mut v = snapshot.get(..snapshot.len() - b.len())?.to_vec();
-    v.push(0);
-    Some(v)
+    let mut g = Group::from_snapshot(snapshot, Secret([0; 32]))?;
+    // Decoding drew our next key epoch: the stored one goes back as it was.
+    g.my_epoch = g.my_epoch.wrapping_sub(1);
+    g.keys.clear();
+    g.recovery.kept.clear();
+    Some(g.snapshot())
 }
 
 fn take<'a>(b: &mut &'a [u8], n: usize) -> Option<&'a [u8]> {
@@ -5234,9 +5225,9 @@ mod tests {
         assert!(asked(&core).is_empty());
     }
 
-    /// ADR-0040: our digest goes two to three minutes after our last message left, once per burst,
-    /// from our own counter range; a message meanwhile pushes it back. A message cancelled
-    /// before it left is neither named nor kept (§6.1).
+    /// ADR-0040: our digest goes six to nine minutes after our last message left, once per
+    /// burst, from our own counter range; a message meanwhile pushes it back. A message
+    /// cancelled before it left is neither named nor kept (§6.1).
     #[test]
     fn our_digest_goes_once_after_a_burst() {
         let a = [0xA1; 32];
@@ -5251,22 +5242,22 @@ mod tests {
         assert_eq!(run(&mut core, 1_000, 59_000), 0);
         core.send_group_text(&GID, "two", 1, 60_000).unwrap();
         assert_eq!(
-            run(&mut core, 61_000, 179_000),
+            run(&mut core, 61_000, 419_000),
             0,
-            "not two minutes after the last one"
+            "not six minutes after the last one"
         );
-        assert_eq!(run(&mut core, 180_000, 260_000), 1, "one digest");
-        assert_eq!(run(&mut core, 201_000, 400_000), 1, "once");
+        assert_eq!(run(&mut core, 420_000, 700_000), 1, "one digest");
+        assert_eq!(run(&mut core, 701_000, 1_200_000), 1, "once");
         let kept = |core: &Core| core.groups[&GID].recovery.kept.len();
         assert_eq!(kept(&core), 2);
         // Cancelled before it left (the radio busy meanwhile): no digest names it, nobody
         // gets it from us.
-        core.next_slot = 510_000;
+        core.next_slot = 1_310_000;
         let id = core
-            .send_group_text(&GID, "never mind", 1, 500_000)
+            .send_group_text(&GID, "never mind", 1, 1_300_000)
             .unwrap();
         assert_eq!(core.cancel(id), Ok(()));
-        assert_eq!(run(&mut core, 501_000, 800_000), 1);
+        assert_eq!(run(&mut core, 1_301_000, 2_000_000), 1);
         assert_eq!(kept(&core), 2);
     }
 
