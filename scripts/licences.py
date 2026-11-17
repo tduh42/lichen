@@ -75,8 +75,9 @@ def crates(texts, text_ids):
                     reached.add(dep["pkg"])
                     todo.append(dep["pkg"])
     out = []
-    for pid in reached:
-        p = packages[pid]
+    # In name order, so that the texts are numbered the same way on every run.
+    ordered = sorted((packages[pid] for pid in reached), key=lambda p: (p["name"].lower(), p["version"]))
+    for p in ordered:
         if p["source"] is None:  # our own crates: lichen's licence
             continue
         folder = Path(p["manifest_path"]).parent
@@ -99,7 +100,6 @@ def crates(texts, text_ids):
             "url": p.get("repository") or p.get("homepage") or f"https://crates.io/crates/{p['name']}",
             "texts": ids,
         })
-    out.sort(key=lambda c: (c["name"].lower(), c["version"]))
     return out
 
 
