@@ -8,7 +8,7 @@ lichen is licensed under the GNU General Public License, version 3 or later (`LI
 |---|---|---|
 | [Codec2](https://github.com/drowe67/codec2) 1.2.0, speech codec (a subset, unmodified), by David Rowe and contributors | `crates/lc-media/codec2/` | LGPL-2.1 (`crates/lc-media/codec2/COPYING`) |
 | [Noto Animated Emoji](https://googlefonts.github.io/noto-emoji-animation/), 107 Lottie animations, © Google, compressed, not modified | `assets/stickers/noto/` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
-| MeshCore test vectors, copied from oxymesh (data, produced by independent oracles) | `testdata/meshcore/` | MIT |
+| MeshCore test vectors `air.toml` and `companion.toml`, copied from oxymesh (data, produced by independent oracles); `settings.toml` and `mesh.toml` are lichen's own, written by its oracles from the firmware's handlers | `testdata/meshcore/` | MIT |
 
 ## Used by the apps
 
