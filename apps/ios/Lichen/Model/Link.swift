@@ -127,6 +127,7 @@ extension AppModel {
             "Tor: \(torEnabled ? "on" : "off") (\(torStatus))",
             "GIFs: \(gifAutoLoad ? "load automatically" : "tap to load")",
             "voice mode: \(voiceMode)",
+            "radio details: \(UserDefaults.standard.bool(forKey: radioDetailsKey) ? "shown" : "behind a tap")",
             "app lock: \(lock.enabled ? "on" : "off")",
             "language: \(Locale.preferredLanguages.first ?? "?")",
         ]

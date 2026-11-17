@@ -440,3 +440,20 @@ The apps' cores now build SQLCipher 4.14.0: CommonCrypto on iOS, OpenSSL 3.6.3's
 Building OpenSSL from source, cold, on a 12-core Mac: 29.7 s for `aarch64-linux-android` (99 s user, 41 s system), 28.4 s for the host. `scripts/build-android-core.sh` then takes 67 s, `scripts/build-ios-core.sh` 142 s (three targets), OpenSSL already built.
 
 First start after the update (`cargo test -p lc-core --features sqlcipher --release --test sqlcipher -- --ignored --nocapture`): 100,000 messages and 300 media, 34.1 MB in clear, encrypted in place in 0.15 s; opened again in 1 ms; a page of 100 messages read in 0.6 ms.
+
+## 2026-11-17 — A long iOS chat, before and after the lazy list (M5)
+
+`TEST_RUNNER_LICHEN_MEASURE=1 xcodebuild test … -only-testing:LichenUITests/LongChatTests`, iPhone 17 simulator (iOS 27.2) on an Apple Silicon Mac, Debug build, the demo network with `-fill 5000`: 5,000 older messages with Camille (pages of 100). Before: `ChatView` in a `VStack` (every loaded message built); after: a `LazyVStack` (the rows on screen). The simulator records no hitches, so a flick's smoothness is the app's CPU time and the time until it is idle again, five or six flicks each.
+
+| | Before (VStack) | After (LazyVStack) |
+|---|---|---|
+| Open on the last page: navigation transition | 0.54 s | 0.53 s |
+| Open and back, until idle | 3.90 s | 3.68 s |
+| Open on a search result 3,000 messages back (`-focus`), until it shows | 18.0 s | 3.0 s |
+| Flick, 3,000 messages loaded: until idle / app CPU | 12.4 s / 12.2 s | 2.7 s / 0.63 s |
+| Flick, last page: until idle / app CPU | 0.98 s / 0.21 s | 0.99 s / 0.21 s |
+
+- On its last page the chat was already quick: 100 messages built at once cost nothing visible.
+- Far back it stalled: a search result, a quote or many earlier pages put thousands of messages in the stack, and every scroll position change rebuilt them all (12 s of CPU per flick). The lazy list builds what is on screen; the 2.4 s left of a flick is its deceleration.
+- The jump's 3 s are the 3,000 messages read from the store and the scrolls that land on the result again once the rows around it have their real heights.
+- Kept: opening at the end or on the unread divider, the earlier page that keeps the message at the top, the new-message pill and jumps to a quote or a search result (`ChatNavigationTests.testALongChatKeepsItsPlaces`).

@@ -83,7 +83,7 @@ private struct WelcomeView: View {
             VStack(alignment: .leading, spacing: 16) {
                 point("No cell towers", "Messages go from radio to radio.")
                 point("End-to-end encrypted", "Only you and the people you write to can read your messages. Check their key in person.")
-                point("Find your people", "Location sharing and search mode.")
+                point("Find your people", "Location sharing, and locating by radio.")
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Spacer()

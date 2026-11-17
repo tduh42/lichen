@@ -141,12 +141,12 @@
         }
       }
     },
-    "%@ is searching for you": {
+    "%@ is locating you": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ te recherche"
+            "value": "%@ cherche à te localiser"
           }
         }
       }
@@ -1321,16 +1321,6 @@
         }
       }
     },
-    "A radio search needs a group you share with them.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Une recherche radio demande un groupe en commun."
-          }
-        }
-      }
-    },
     "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore's own encryption to the room: the room and everyone logged in read them.": {
       "localizations": {
         "fr": {
@@ -1807,6 +1797,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Archivées, %lld"
+          }
+        }
+      }
+    },
+    "Arrived late, handed on by a member": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrivé en retard, relayé par un membre"
           }
         }
       }
@@ -2351,6 +2351,16 @@
         }
       }
     },
+    "Compass: tap to face north": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Boussole : touche pour orienter au nord"
+          }
+        }
+      }
+    },
     "Compressed to %@ · %@ · ≈ %@ s of airtime, %@ %% of your hour": {
       "localizations": {
         "fr": {
@@ -2831,6 +2841,16 @@
         }
       }
     },
+    "Delivered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remis"
+          }
+        }
+      }
+    },
     "Delivered · %@ s of airtime": {
       "localizations": {
         "fr": {
@@ -3197,6 +3217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Modifier"
+          }
+        }
+      }
+    },
+    "Edited": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifié"
           }
         }
       }
@@ -3571,12 +3601,12 @@
         }
       }
     },
-    "Follow the search": {
+    "Follow in Locate": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suivre la recherche"
+            "value": "Suivre dans Localiser"
           }
         }
       }
@@ -3637,6 +3667,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Transférer"
+          }
+        }
+      }
+    },
+    "Fragments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragments"
+          }
+        }
+      }
+    },
+    "Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragments, temps d’antenne et signal sous chaque message, et la carte radio dans Messages. Sinon : appui long › Infos."
           }
         }
       }
@@ -3861,6 +3911,46 @@
         }
       }
     },
+    "Group · %lld members": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld member"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld members"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membre"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membres"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Group · %lld members · flood": {
       "localizations": {
         "en": {
@@ -3997,6 +4087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cœurs"
+          }
+        }
+      }
+    },
+    "Hides the radio's details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masque les détails de la radio"
           }
         }
       }
@@ -4157,6 +4257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inclus"
+          }
+        }
+      }
+    },
+    "Info": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Infos"
           }
         }
       }
@@ -4741,6 +4851,66 @@
         }
       }
     },
+    "Locate": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser"
+          }
+        }
+      }
+    },
+    "Locate %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser %@"
+          }
+        }
+      }
+    },
+    "Locate by radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser par radio"
+          }
+        }
+      }
+    },
+    "Locate · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser · %@"
+          }
+        }
+      }
+    },
+    "Locating by radio needs a group you share with them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser par radio demande un groupe en commun."
+          }
+        }
+      }
+    },
+    "Locating · %@%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localisation · %@%@"
+          }
+        }
+      }
+    },
     "Location": {
       "localizations": {
         "fr": {
@@ -4781,12 +4951,12 @@
         }
       }
     },
-    "Location sharing and search mode.": {
+    "Location sharing, and locating by radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Position partagée et mode recherche."
+            "value": "Position partagée et localisation par radio."
           }
         }
       }
@@ -4977,6 +5147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zone de carte"
+          }
+        }
+      }
+    },
+    "Map credits": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crédits de la carte"
           }
         }
       }
@@ -5551,12 +5731,12 @@
         }
       }
     },
-    "No GPS position: search for them by radio from lichen.": {
+    "No GPS position: locate them by radio from lichen.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pas de position GPS : lance une recherche radio depuis lichen."
+            "value": "Pas de position GPS : localise par radio depuis lichen."
           }
         }
       }
@@ -5801,26 +5981,6 @@
         }
       }
     },
-    "No search is running for this person.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune recherche en cours pour cette personne."
-          }
-        }
-      }
-    },
-    "No search under way": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune recherche en cours"
-          }
-        }
-      }
-    },
     "No transport reaches the sender: turn iroh or Tor on.": {
       "localizations": {
         "fr": {
@@ -5847,6 +6007,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Personne"
+          }
+        }
+      }
+    },
+    "Nobody being located": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune localisation en cours"
           }
         }
       }
@@ -5957,6 +6127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas modifié"
+          }
+        }
+      }
+    },
+    "Not delivered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non remis"
           }
         }
       }
@@ -6501,6 +6681,16 @@
         }
       }
     },
+    "Paused": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pause"
+          }
+        }
+      }
+    },
     "Paused: radio disconnected": {
       "localizations": {
         "fr": {
@@ -6567,6 +6757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Photo, %@"
+          }
+        }
+      }
+    },
+    "Photo, LoRa preview": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo, aperçu LoRa"
           }
         }
       }
@@ -6657,6 +6857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lire le message vocal"
+          }
+        }
+      }
+    },
+    "Plays it again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le rejoue"
           }
         }
       }
@@ -7001,6 +7211,16 @@
         }
       }
     },
+    "Received": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçu"
+          }
+        }
+      }
+    },
     "Received over LoRa · direct": {
       "localizations": {
         "fr": {
@@ -7157,6 +7377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renommer le groupe"
+          }
+        }
+      }
+    },
+    "Renames them on this phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renomme la personne sur ce téléphone"
           }
         }
       }
@@ -7431,6 +7661,16 @@
         }
       }
     },
+    "SNR %@ dB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SNR %@ dB"
+          }
+        }
+      }
+    },
     "SOS": {
       "localizations": {
         "fr": {
@@ -7611,36 +7851,6 @@
         }
       }
     },
-    "Search": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche"
-          }
-        }
-      }
-    },
-    "Search by radio": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rechercher par radio"
-          }
-        }
-      }
-    },
-    "Search for %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rechercher %@"
-          }
-        }
-      }
-    },
     "Search messages": {
       "localizations": {
         "fr": {
@@ -7651,32 +7861,12 @@
         }
       }
     },
-    "Search · %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche · %@"
-          }
-        }
-      }
-    },
     "Searching over Bluetooth…": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Recherche en Bluetooth…"
-          }
-        }
-      }
-    },
-    "Searching · %@%@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche · %@%@"
           }
         }
       }
@@ -7851,6 +8041,16 @@
         }
       }
     },
+    "Sending": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi en cours"
+          }
+        }
+      }
+    },
     "Sending %lld / %lld fragments": {
       "localizations": {
         "fr": {
@@ -7917,6 +8117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Capteurs"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé"
           }
         }
       }
@@ -8161,6 +8371,16 @@
         }
       }
     },
+    "Show radio details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les détails radio"
+          }
+        }
+      }
+    },
     "Show the code": {
       "localizations": {
         "fr": {
@@ -8191,12 +8411,32 @@
         }
       }
     },
+    "Shows the airtime left and the transports": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche le temps d’antenne restant et les transports"
+          }
+        }
+      }
+    },
     "Shows them": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Les affiche"
+          }
+        }
+      }
+    },
+    "Signal": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal"
           }
         }
       }
@@ -8311,22 +8551,22 @@
         }
       }
     },
-    "Start the search": {
+    "Start locating": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lancer la recherche"
+            "value": "Lancer la localisation"
           }
         }
       }
     },
-    "Start the search: every reception of their radio narrows it down.": {
+    "Start locating: every reception of their radio narrows it down.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lance la recherche : chaque réception de sa radio réduit la zone."
+            "value": "Lance la localisation : chaque réception de sa radio réduit la zone."
           }
         }
       }
@@ -8441,6 +8681,16 @@
         }
       }
     },
+    "Stop locating": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter la localisation"
+          }
+        }
+      }
+    },
     "Stop sharing": {
       "localizations": {
         "fr": {
@@ -8457,16 +8707,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter le SOS"
-          }
-        }
-      }
-    },
-    "Stop the search": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Arrêter la recherche"
           }
         }
       }
@@ -9041,12 +9281,12 @@
         }
       }
     },
-    "Their phone sends beacons: search for them by radio.": {
+    "Their phone sends beacons: locate them by radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son téléphone envoie des balises : recherche par radio."
+            "value": "Son téléphone envoie des balises : localise par radio."
           }
         }
       }
@@ -9911,6 +10151,16 @@
         }
       }
     },
+    "Waiting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente"
+          }
+        }
+      }
+    },
     "Waiting for GPS": {
       "localizations": {
         "fr": {
@@ -10041,12 +10291,12 @@
         }
       }
     },
-    "When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.": {
+    "When a member of your groups sends an SOS, follow it here, with or without their GPS. To locate someone else, open a group and choose them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour rechercher quelqu’un d’autre, ouvre un groupe et choisis la personne."
+            "value": "Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour localiser quelqu’un d’autre, ouvre un groupe et choisis la personne."
           }
         }
       }
@@ -10161,12 +10411,32 @@
         }
       }
     },
+    "Written": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrit"
+          }
+        }
+      }
+    },
     "Written while my radio is off": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Écrit pendant que ma radio est éteinte"
+          }
+        }
+      }
+    },
+    "Yes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oui"
           }
         }
       }
@@ -10197,6 +10467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu fais déjà partie de %@"
+          }
+        }
+      }
+    },
+    "You are not locating this person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu ne localises pas cette personne."
           }
         }
       }
@@ -10551,22 +10831,22 @@
         }
       }
     },
+    "Your phone answers their locating pings even outside SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton téléphone répond à leurs pings de localisation, même hors SOS"
+          }
+        }
+      }
+    },
     "Your phone answers their pings: SOS, or you let the group locate you.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ton téléphone répond à leurs pings : SOS, ou tu laisses le groupe te localiser."
-          }
-        }
-      }
-    },
-    "Your phone answers their search pings even outside SOS": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ton téléphone répond à leurs pings de recherche, même hors SOS"
           }
         }
       }
@@ -10631,12 +10911,12 @@
         }
       }
     },
-    "Your radio transmits at %d dBm for the search, then goes back.": {
+    "Your radio transmits at %d dBm while locating, then goes back.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ta radio émet à %d dBm pour la recherche, puis revient à la normale."
+            "value": "Ta radio émet à %d dBm pendant la localisation, puis revient à la normale."
           }
         }
       }

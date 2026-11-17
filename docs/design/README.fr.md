@@ -21,9 +21,10 @@ Les maquettes dans `mockups/` font foi pour la mise en page. Ce fichier donne le
 1. **Thème sombre par défaut.** Le thème clair est prévu (colonne `light` de `tokens.json`) et accessible en option.
 2. **L'orange signifie LoRa et marque, rien d'autre.** Les actions principales sont blanches en sombre (`act_bg`), encre en clair. Ne jamais utiliser l'orange pour un bouton générique.
 3. **Le transport est toujours écrit**, jamais porté par la seule couleur : badge « LoRa · 2 sauts », « iroh », « Tor ».
-4. **Tout envoi radio affiche son coût avant d'être lancé** : nombre de fragments et secondes d'antenne. Le budget d'antenne restant est visible en permanence (conversations, réglages).
+4. **Tout envoi radio affiche son coût avant d'être lancé** : nombre de fragments et secondes d'antenne. Le budget d'antenne restant est toujours à un geste : la ligne radio de Messages ouvre la carte radio, les Réglages l'affichent, et un bandeau prévient quand il est épuisé.
 5. **Typographie** : police système pour l'interface (SF Pro, Roboto). Space Grotesk 700 pour le wordmark et les grands chiffres (budget, cap, distance, empreintes, numéros de sécurité), en chiffres tabulaires.
-6. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
+6. **Calme par défaut** : un message montre son heure et un mot d'état (« Remis ») ; ses fragments, son temps d'antenne et son signal sont dans appui long › Infos, ou sous chaque message avec Réglages › Afficher les détails radio (désactivé par défaut).
+7. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
 
 ## Couleurs (résumé, détail dans `tokens.json`)
 
@@ -46,7 +47,7 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 
 ## Typo, espacements, rayons
 
-- iOS : grand titre 34/700, corps 16, secondaire 13–14, légende 11–12.
+- iOS : grand titre 34/700, corps 16, secondaire 13–14, légende 12 (le style `.caption` : `.caption2` ne rétrécit pas avec la taille de texte, ce que l’audit d’accessibilité signale).
 - Android : titre de barre 22/400, mêmes tailles pour le reste.
 - Espacements : 4, 8, 12, 16, 24. Marges d'écran 16.
 - Rayons : cartes 14 (iOS) / 16 (Android). Boutons 14 et 50 de haut (iOS) / pilule et 48 de haut (Android). Badges 8.
@@ -59,11 +60,11 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 | Appairage | `appairage` | Scan BLE, liste des radios (nom, RSSI, version companion), saisie du code à 6 chiffres affiché sur la radio |
 | Identité et clés | `identite` | Pseudo, empreinte de clé (6 groupes de 4 hex), alerte sauvegarde, phrase 24 mots, fichier chiffré |
 | Ajouter un contact | `contact` | Onglets Mon code / Scanner, QR, numéro de sécurité (6 groupes de 5 chiffres), « correspondent » / « différents » |
-| Conversations | `conversations` | État radio, budget d'antenne, transports disponibles, liste avec badge de transport et non-lus |
+| Conversations | `conversations` | État radio sur une ligne (un geste : budget d'antenne, transports disponibles), liste avec badge de transport et non-lus |
 | Discussion | `chat` | Texte, envoi fragmenté avec progression et ACK, photo annoncée (aperçu LoRa + téléchargement iroh/Tor), vocal Codec2, coût estimé dans la zone de saisie |
 | Envoi de photo | `media` | Choix du mode : aperçu LoRa, iroh, Tor, différé. Coût par option |
 | Carte et position | `carte` | Membres et précision partagée, partage limité dans le temps, bouton SOS |
-| Mode recherche | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
+| Localiser (mode recherche) | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
 | Groupe | `groupe` | Membres et état de leur clé, rotation des clés après un départ, consentement à être localisé, limite de sauts |
 | Réglages | `reglages` | Radio connectée, budget, preset, mode répéteur, iroh / Tor / relais uniquement, précision par défaut |
 | SOS | `sos` | Bouton à maintenir 3 s, contenu envoyé, destinataires, mode d'envoi |
@@ -74,8 +75,8 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 ## Navigation
 
 - Premier lancement : Accueil → Appairage → Identité → Ajouter un contact → Conversations.
-- Onglets : Messages, Carte, Recherche, Réglages.
-- SOS depuis la Carte. SOS reçu → Mode recherche.
+- Onglets : Messages, Carte, Localiser, Réglages (« Localiser » est le mode recherche radio : « Rechercher » ne sert qu'aux messages).
+- SOS depuis la Carte. SOS reçu → Localiser.
 - Discussion → Envoi de photo en feuille modale (`.sheet` sur iOS, `ModalBottomSheet` sur Android).
 
 ## Composants partagés

@@ -4,7 +4,7 @@
     <!-- Onglets -->
     <string name="tab_messages">Messages</string>
     <string name="tab_map">Carte</string>
-    <string name="tab_search">Recherche</string>
+    <string name="tab_search">Localiser</string>
     <string name="tab_settings">Réglages</string>
 
     <!-- Conversations -->
@@ -160,7 +160,7 @@
     <string name="err_media_in_group">Les photos et les fichiers vont seulement aux contacts : dans un groupe, il faudrait les inonder. Les messages vocaux courts peuvent aller à un groupe.</string>
     <string name="err_bad_image">Impossible de lire cette image.</string>
     <string name="err_not_a_preview">Il n\'y a pas de version complète à demander.</string>
-    <string name="err_not_searching">Aucune recherche en cours pour cette personne.</string>
+    <string name="err_not_searching">Tu ne localises pas cette personne.</string>
     <string name="err_too_soon">Possible à nouveau dans %1$d s.</string>
     <string name="err_no_position">Ta position n\'est pas encore connue.</string>
     <string name="fail_no_path">aucun chemin trouvé</string>
@@ -338,7 +338,7 @@
     <string name="mic_unavailable">Impossible d\'ouvrir le micro : une autre app l\'utilise peut-être.</string>
     <!-- Position, carte, SOS, recherche (L9d) -->
     <string name="sos">SOS</string>
-    <string name="searching_for_you">%1$s te recherche</string>
+    <string name="searching_for_you">%1$s cherche à te localiser</string>
     <string name="sos_on">SOS actif</string>
     <string name="map_layers">Couches de la carte</string>
     <string name="map_style">Style de carte</string>
@@ -399,13 +399,13 @@
     <string name="beacon">Balise</string>
     <string name="beacon_note">Toutes les 2 minutes, jusqu\'à ce qu\'il l\'arrête</string>
     <string name="active">active</string>
-    <string name="start_search">Lancer la recherche</string>
+    <string name="start_search">Lancer la localisation</string>
     <string name="reply">Répondre</string>
     <string name="show_on_map">Voir sur la carte</string>
     <string name="dismiss">Fermer</string>
-    <string name="search_name">Recherche · %1$s</string>
-    <string name="no_search">Aucune recherche en cours</string>
-    <string name="no_search_note">Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour rechercher quelqu’un d’autre, ouvre un groupe et touche la personne.</string>
+    <string name="search_name">Localiser · %1$s</string>
+    <string name="no_search">Aucune localisation en cours</string>
+    <string name="no_search_note">Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour localiser quelqu’un d’autre, ouvre un groupe et touche la personne.</string>
     <string name="ping">Pinger</string>
     <string name="add_bearing">Ajouter un cap</string>
     <string name="lower_power">Baisser sa puissance</string>
@@ -446,7 +446,7 @@
     <string name="end_to_end">Chiffré de bout en bout</string>
     <string name="end_to_end_note">Seuls toi et les personnes à qui tu écris pouvez lire tes messages. Vérifie leur clé en personne.</string>
     <string name="find_your_people">Retrouver les siens</string>
-    <string name="find_your_people_note">Position partagée et mode recherche.</string>
+    <string name="find_your_people_note">Position partagée et localisation par radio.</string>
     <string name="connect_my_radio">Connecter ma radio</string>
     <string name="later">Plus tard</string>
     <string name="continue_">Continuer</string>
@@ -474,35 +474,35 @@
     <string name="estimated">estimé</string>
     <string name="estimated_saturated">estimé, saturé</string>
     <string name="export">Exporter</string>
-    <string name="follow_search">Suivre la recherche</string>
+    <string name="follow_search">Suivre dans Localiser</string>
     <string name="from_compass">D’après la boussole</string>
     <string name="heard_ago">entendu %1$s</string>
     <string name="heard_cap">Entendu %1$s</string>
     <string name="last_reading">Ta dernière mesure : %1$d dBm, %2$s</string>
     <string name="let_group_locate">Laisser ce groupe me localiser</string>
-    <string name="let_group_locate_note">Ton téléphone répond à leurs pings de recherche, même hors SOS</string>
+    <string name="let_group_locate_note">Ton téléphone répond à leurs pings de localisation, même hors SOS</string>
     <string name="location">Localisation</string>
     <string name="measures_calibrated">%1$d mesures · portée calibrée sur son GPS</string>
     <string name="measures_count">%1$d mesures</string>
     <string name="no_compass">Pas de boussole : règle-la à la main</string>
     <string name="no_gps">Pas de position GPS</string>
-    <string name="no_gps_note">Son téléphone envoie des balises : recherche par radio.</string>
+    <string name="no_gps_note">Son téléphone envoie des balises : localise par radio.</string>
     <string name="no_measure">Pas encore de mesure</string>
     <string name="not_heard_yet">pas encore entendu</string>
     <string name="ping_in">Ping dans %1$d s</string>
     <string name="target_unknown">Position inconnue</string>
-    <string name="target_unknown_note">Lance la recherche : chaque réception de sa radio réduit la zone.</string>
+    <string name="target_unknown_note">Lance la localisation : chaque réception de sa radio réduit la zone.</string>
     <string name="power_10">10 dBm pendant 10 min</string>
     <string name="power_2">2 dBm pendant 10 min</string>
-    <string name="power_lowered">Ta radio émet à %1$d dBm pour la recherche, puis revient à la normale.</string>
-    <string name="search_by_radio">Rechercher par radio</string>
+    <string name="power_lowered">Ta radio émet à %1$d dBm pendant la localisation, puis revient à la normale.</string>
+    <string name="search_by_radio">Localiser par radio</string>
     <string name="search_by_radio_note">Ta radio mesure chaque émission qu’elle entend directement, là où tu es ; le groupe partage ses mesures et chaque téléphone calcule où la personne se trouve probablement.</string>
-    <string name="search_for">Rechercher %1$s</string>
+    <string name="search_for">Localiser %1$s</string>
     <string name="search_map_label">Carte : %1$s est probablement à moins de %2$s du centre</string>
-    <string name="search_needs_group">Une recherche radio demande un groupe en commun.</string>
+    <string name="search_needs_group">Localiser par radio demande un groupe en commun.</string>
     <string name="searched_note">Ton téléphone répond à leurs pings : SOS, ou tu laisses le groupe te localiser.</string>
     <string name="searching_note">La personne répond aux pings en SOS, ou si elle laisse le groupe la localiser.</string>
-    <string name="searching_status">Recherche · %1$s%2$s</string>
+    <string name="searching_status">Localisation · %1$s%2$s</string>
     <string name="silent">muet</string>
     <string name="sos_beacons_meanwhile">En attendant, tes groupes reçoivent une balise sans position toutes les 2 minutes, pour te localiser par radio.</string>
     <string name="sos_ended">SOS terminé</string>
@@ -513,7 +513,7 @@
     <string name="sos_no_radio">Rien ne part tant que ta radio n’est pas revenue.</string>
     <string name="sos_nobody">Personne ne le reçoit</string>
     <string name="sos_nobody_note">Partage ta position avec un contact ou rejoins un groupe.</string>
-    <string name="sos_notification_no_gps">Pas de position GPS : lance une recherche radio depuis lichen.</string>
+    <string name="sos_notification_no_gps">Pas de position GPS : localise par radio depuis lichen.</string>
     <string name="sos_sent_note">À nouveau toutes les 2 minutes. Elle part dès que la radio a du temps d’antenne, et personne ne confirme la réception : surveille les réponses.</string>
     <string name="sos_sent_to">En file %1$s pour %2$d conversations</string>
     <string name="sos_refused">%1$d conversations ne peuvent pas recevoir ta position</string>
@@ -522,7 +522,7 @@
     <string name="sos_silent_note">Ses balises ne t’arrivent plus : déplace-toi, ou demande au groupe.</string>
     <string name="sos_starting">Démarrage</string>
     <string name="sos_starting_note">La première position part dans un instant.</string>
-    <string name="stop_search">Arrêter la recherche</string>
+    <string name="stop_search">Arrêter la localisation</string>
     <string name="their_tx">Sa radio émet à %1$d dBm.</string>
     <string name="trusted_15">Fiable à ±15°.</string>
     <string name="trusted_40">Fiable à ±40° (le corps masque le signal).</string>
@@ -1157,4 +1157,37 @@
     <string name="request_note">N’importe qui à portée peut écrire sous le nom d’une radio. Accepte seulement si tu sais qui c’est ; accepter ne vérifie pas cette personne.</string>
     <string name="request_earlier">Messages plus anciens : %1$d</string>
     <string name="request_blocked_name">Quelqu’un qui utilise la radio de %1$s</string>
+    <!-- Détails radio derrière un geste (M5) -->
+    <string name="radio_details">Afficher les détails radio</string>
+    <string name="radio_details_note">Fragments, temps d’antenne et signal sous chaque message, et la carte radio dans Messages. Sinon : appui long › Infos.</string>
+    <string name="radio_line_hint">Afficher les détails de la radio</string>
+    <string name="radio_line_close">Masquer les détails de la radio</string>
+    <plurals name="group_members">
+        <item quantity="one">Groupe · %1$d membre</item>
+        <item quantity="many">Groupe · %1$d membres</item>
+        <item quantity="other">Groupe · %1$d membres</item>
+    </plurals>
+    <string name="state_waiting">En attente</string>
+    <string name="state_paused">En pause</string>
+    <string name="state_sending">Envoi en cours</string>
+    <string name="state_delivered">Remis</string>
+    <string name="state_not_delivered">Non remis</string>
+    <string name="state_sent">Envoyé</string>
+    <string name="message_info">Infos</string>
+    <string name="info_sent">Envoyé</string>
+    <string name="info_received">Reçu</string>
+    <string name="info_written">Écrit</string>
+    <string name="info_status">État</string>
+    <string name="info_arrived_late">Arrivé en retard, relayé par un membre</string>
+    <string name="info_fragments">Fragments</string>
+    <string name="info_airtime">Temps d’antenne</string>
+    <string name="info_signal">Signal</string>
+    <string name="info_edited">Modifié</string>
+    <string name="yes">Oui</string>
+    <string name="seconds_value">%1$s s</string>
+    <string name="snr_value">SNR %1$s dB</string>
+    <!-- Accessibilité (M5) -->
+    <string name="chosen_option">Sélectionné</string>
+    <string name="direction_arrow">Direction à suivre</string>
+    <string name="file_chosen">Fichier choisi</string>
 </resources>

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Search" (mockup `recherche`): follow an SOS, and search for a group member by radio
+/// "Locate" (mockup `recherche`): follow an SOS, and search for a group member by radio
 /// (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and
 /// how far, the receptions everyone shared, and the actions (ping, bearing, lower power).
 struct SearchView: View {
@@ -17,7 +17,10 @@ struct SearchView: View {
                 if let target {
                     TimelineView(.periodic(from: .now, by: 5)) { _ in content(target) }
                 } else {
-                    empty
+                    // Scrolls when the text is too large for the screen.
+                    GeometryReader { g in
+                        ScrollView { empty.frame(minHeight: g.size.height) }
+                    }
                 }
             }
             .screen()
@@ -26,7 +29,7 @@ struct SearchView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    Text(target.map { String(localized: "Search · \(model.name(of: $0))") } ?? String(localized: "Search"))
+                    Text(target.map { String(localized: "Locate · \(model.name(of: $0))") } ?? String(localized: "Locate"))
                         .font(.system(.body, weight: .semibold))
                 }
             }
@@ -57,11 +60,12 @@ struct SearchView: View {
     private var empty: some View {
         VStack(spacing: 12) {
             Image(systemName: "scope").font(.system(size: 44)).foregroundStyle(Theme.tx2)
-            Text("No search under way").font(.system(.body, weight: .semibold))
-            Text("When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.")
+            Text("Nobody being located").font(.system(.body, weight: .semibold))
+            Text("When a member of your groups sends an SOS, follow it here, with or without their GPS. To locate someone else, open a group and choose them.")
                 .font(.system(.subheadline))
                 .foregroundStyle(Theme.tx2)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -137,7 +141,7 @@ struct SearchView: View {
             }
         } else if let s = search {
             let heard = s.lastHeardS.map { String(localized: "heard \(MapScreen.ago($0))") } ?? String(localized: "not heard yet")
-            Banner(kind: .lora, title: String(localized: "Searching · \(heard)\(battery)"),
+            Banner(kind: .lora, title: String(localized: "Locating · \(heard)\(battery)"),
                    message: String(localized: "They answer pings in SOS or when they let the group locate them."))
         }
     }
@@ -208,7 +212,7 @@ struct SearchView: View {
                         .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 } else if goal == nil {
                     Text("Position unknown").font(.system(.body, weight: .semibold))
-                    Text("Start the search: every reception of their radio narrows it down.")
+                    Text("Start locating: every reception of their radio narrows it down.")
                         .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                 } else {
                     Text("Waiting for your position").font(.system(.body, weight: .semibold))
@@ -224,17 +228,17 @@ struct SearchView: View {
 
     private func startCard(_ t: Data) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Search by radio").font(.system(.body, weight: .semibold))
+            Text("Locate by radio").font(.system(.body, weight: .semibold))
             Text("Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.")
                 .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Start the search") {
+            Button("Start locating") {
                 error = model.startSearch(t)
             }
             .buttonStyle(.primary)
             .disabled(model.searchGroup(for: t) == nil)
             if model.searchGroup(for: t) == nil {
-                Text("A radio search needs a group you share with them.")
+                Text("Locating by radio needs a group you share with them.")
                     .font(.system(.footnote)).foregroundStyle(Theme.tx2)
             }
         }
@@ -253,7 +257,7 @@ struct SearchView: View {
                     VStack(spacing: 2) {
                         Text("Ping")
                         Text(wait > 0 ? String(localized: "in \(wait) s") : cost.map { String(localized: "≈ \($0) s air") } ?? "")
-                            .font(.system(.caption2, weight: .regular)).foregroundStyle(Theme.tx2)
+                            .font(.system(.caption, weight: .regular)).foregroundStyle(Theme.tx2)
                     }
                 }
                 .buttonStyle(SecondaryButtonStyle(height: 56))
@@ -285,7 +289,7 @@ struct SearchView: View {
                 Button(role: .destructive) {
                     model.stopSearch(t)
                 } label: {
-                    Text("Stop the search")
+                    Text("Stop locating")
                         .font(.system(.subheadline, weight: .semibold))
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }

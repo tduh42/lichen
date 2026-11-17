@@ -116,7 +116,7 @@ class AppModel(val app: Application) {
         val media: Boolean = false,
         /** Share our position (100 m) with this contact at launch. */
         val share: String? = null,
-        /** An SOS from Julien (screenshots of the alert and the Search tab). */
+        /** An SOS from Julien (screenshots of the alert and the Locate tab). */
         val sosDemo: Boolean = false,
         /** The welcome screens: shown (true), skipped (false), or as saved (null). */
         val onboarding: Boolean? = null,
@@ -362,7 +362,7 @@ class AppModel(val app: Application) {
     /** The sender (hex) whose full-screen SOS alert is up, until dismissed. */
     var sosAlert by mutableStateOf<String?>(null)
 
-    /** The person (hex) the Search tab shows; `openSearch` asks the tab to open on them. */
+    /** The person (hex) the Locate tab shows; `openSearch` asks the tab to open on them. */
     var searchTarget by mutableStateOf<String?>(null)
     var openSearch by mutableStateOf<String?>(null)
 
@@ -390,7 +390,7 @@ class AppModel(val app: Application) {
     /** What our SOS is doing. */
     var sosStatus by mutableStateOf<SosStatus?>(null)
 
-    /** The compass heading (degrees from true north) while the Search tab is on screen. */
+    /** The compass heading (degrees from true north) while the Locate tab is on screen. */
     var heading by mutableStateOf<Double?>(null)
     private val compass = Compass(app) { heading = it }
     internal var lastBatteryReport = 0L
@@ -403,7 +403,7 @@ class AppModel(val app: Application) {
         if (changed) updateLocator()
     }
 
-    /** The compass, while the Search tab is on screen. */
+    /** The compass, while the Locate tab is on screen. */
     fun useHeading(on: Boolean) {
         if (on && compass.available) {
             compass.start()
@@ -442,6 +442,16 @@ class AppModel(val app: Application) {
     fun chooseGifAutoLoad(on: Boolean) {
         gifAutoLoad = on
         prefs.edit { putBoolean(GIF_AUTO, on) }
+    }
+
+    /** Fragments, airtime and signal on every message, and the radio card on Messages: off,
+     * they wait behind a long press › Info and a tap on the radio line. */
+    var radioDetails by mutableStateOf(prefs.getBoolean(RADIO_DETAILS, false))
+        private set
+
+    fun chooseRadioDetails(on: Boolean) {
+        radioDetails = on
+        prefs.edit { putBoolean(RADIO_DETAILS, on) }
     }
 
     /** GIFs load by themselves: asked for, or through Tor. */
@@ -720,7 +730,7 @@ class AppModel(val app: Application) {
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
             "map" -> tab = Tab.MAP
-            "search" -> tab = Tab.SEARCH
+            "locate" -> tab = Tab.SEARCH
             "settings" -> tab = Tab.SETTINGS
         }
         if (options.demo) startDemo()
@@ -2317,6 +2327,7 @@ class AppModel(val app: Application) {
         put("lichen.relayOnly", relayOnly)
         put("lichen.gifAuto", gifAutoLoad)
         put("lichen.voiceMode", voiceMode)
+        put("lichen.radioDetails", radioDetails)
         put("appearance", appearance.name.lowercase())
         prefs.getString(MAP_STYLE, null)?.let { put("map.style", it.lowercase()) }
     }.toString().toByteArray()
@@ -2331,6 +2342,7 @@ class AppModel(val app: Application) {
         (o.opt("lichen.relayOnly") as? Boolean)?.let { chooseRelayOnly(it) }
         (o.opt("lichen.gifAuto") as? Boolean)?.let { chooseGifAutoLoad(it) }
         (o.opt("lichen.voiceMode") as? Int)?.takeIf { it in listOf(0, 2, 3) }?.let { chooseVoiceMode(it) }
+        (o.opt("lichen.radioDetails") as? Boolean)?.let { chooseRadioDetails(it) }
         (o.opt("appearance") as? String)?.let { v ->
             Appearance.entries.firstOrNull { it.name.equals(v, ignoreCase = true) }?.let { chooseAppearance(it) }
         }
@@ -2518,6 +2530,7 @@ class AppModel(val app: Application) {
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"
         private const val GIF_AUTO = "lichen.gifAuto"
+        private const val RADIO_DETAILS = "lichen.radioDetails"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
         private const val MAP_STYLE = "map.style"

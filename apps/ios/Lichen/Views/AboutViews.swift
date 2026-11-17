@@ -21,7 +21,7 @@ struct ReportView: View {
                     .buttonStyle(.primary)
                 }
                 Text(verbatim: report)
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .card(padding: 12)
@@ -139,7 +139,7 @@ struct LicenceView: View {
                 }
                 ForEach(Array(texts.enumerated()), id: \.offset) { _, text in
                     Text(verbatim: text)
-                        .font(.system(.caption2, design: .monospaced))
+                        .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .card(padding: 12)

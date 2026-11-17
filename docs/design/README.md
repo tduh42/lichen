@@ -20,9 +20,10 @@ The design of the lichen apps (2026-11-06), for iOS (SwiftUI) and Android (Jetpa
 1. **Dark theme by default.** The light theme exists (`light` in `tokens.json`) as an option.
 2. **Orange means LoRa and the brand, nothing else.** Primary actions are white in dark (`act_bg`), ink in light. Never orange for a generic button.
 3. **The transport is always written**, never carried by colour alone: badge "LoRa · 2 hops", "iroh", "Tor".
-4. **Every radio send shows its cost before it starts**: fragments and seconds of airtime. The airtime left is always visible (conversations, settings).
+4. **Every radio send shows its cost before it starts**: fragments and seconds of airtime. The airtime left is always one tap away: the radio line of Messages opens the radio card, Settings shows it, and a banner says when it runs out.
 5. **Type**: the system font for the interface (SF Pro, Roboto). Space Grotesk 700 for the wordmark and big figures (budget, bearing, distance, fingerprints, safety numbers), tabular figures.
-6. **Accessibility**: targets ≥ 44 pt (iOS) / 48 dp (Android), text contrast ≥ 4.5:1, accessibility labels on every icon button.
+6. **Calm by default**: a message shows its time and a status word ("Delivered"); its fragments, airtime and signal are in long press › Info, or under every message with Settings › Show radio details (off by default).
+7. **Accessibility**: targets ≥ 44 pt (iOS) / 48 dp (Android), text contrast ≥ 4.5:1, accessibility labels on every icon button.
 
 ## Colours (details in `tokens.json`)
 
@@ -45,7 +46,7 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 
 ## Type, spacing, radii
 
-- iOS: large title 34/700, body 16, secondary 13–14, caption 11–12. Android: bar title 22/400, the rest the same.
+- iOS: large title 34/700, body 16, secondary 13–14, caption 12 (the text style `.caption`: `.caption2` does not get smaller with Dynamic Type, which the accessibility audit flags). Android: bar title 22/400, the rest the same.
 - Spacing 4, 8, 12, 16, 24; screen margins 16.
 - Radii: cards 14 (iOS) / 16 (Android); buttons 14 and 50 high (iOS) / pill and 48 high (Android); badges 8.
 
@@ -57,11 +58,11 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 | Pairing | `appairage` | BLE scan, radios (name, RSSI, companion version), 6-digit code shown on the radio |
 | Identity and keys | `identite` | nickname, key fingerprint (6 groups of 4 hex), backup warning, 24-word phrase, encrypted file |
 | Add a contact | `contact` | tabs My code / Scan, QR, safety number (6 groups of 5 digits), "match" / "differ" |
-| Conversations | `conversations` | radio state, airtime budget, available transports, list with transport badge and unread |
+| Conversations | `conversations` | radio state in one line (a tap: airtime budget, available transports), list with transport badge and unread |
 | Chat | `chat` | text, fragmented send with progress and ACK, announced photo (LoRa preview + iroh/Tor download), Codec2 voice, estimated cost in the composer |
 | Send a photo | `media` | mode: LoRa preview, iroh, Tor, deferred; cost per option |
 | Map and location | `carte` | members and shared precision, time-limited sharing, SOS button |
-| Search mode | `recherche` | SOS banner, likely area, searchers' bearings, bearing + distance + uncertainty, measurements, Ping / Add a bearing / Lower power |
+| Locate (search mode) | `recherche` | SOS banner, likely area, searchers' bearings, bearing + distance + uncertainty, measurements, Ping / Add a bearing / Lower power |
 | Group | `groupe` | members and their key state, key rotation after a departure, consent to be located, hop limit |
 | Settings | `reglages` | connected radio, budget, preset, repeater mode, iroh / Tor / relay only, default precision |
 | SOS | `sos` | hold for 3 s, what is sent, to whom, how |
@@ -72,7 +73,7 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 ## Navigation
 
 - First launch: Welcome → Pairing → Identity → Add a contact → Conversations.
-- Tabs: Messages, Map, Search, Settings. SOS from the Map; SOS received → Search mode.
+- Tabs: Messages, Map, Locate, Settings ("Locate" is the radio search mode: "Search" is for messages only). SOS from the Map; SOS received → Locate.
 - Chat → Send a photo as a sheet (`.sheet` on iOS, `ModalBottomSheet` on Android).
 
 ## Shared components

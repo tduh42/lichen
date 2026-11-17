@@ -21,8 +21,10 @@ final class ChatNavigationTests: XCTestCase {
         app.descendants(matching: .any)["composer"]
     }
 
+    /// Her lichen conversation, with a session: the key button in the bar (the session line at
+    /// the top of the list is not built while a long chat shows its end).
     private func encrypted(_ app: XCUIApplication) -> XCUIElement {
-        app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'Encrypted session'")).firstMatch
+        app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Verify their key", "Key verified"])).firstMatch
     }
 
     /// A chat opened from elsewhere (as a notification opens it) closes with Back, and the
@@ -128,5 +130,35 @@ final class ChatNavigationTests: XCTestCase {
         let window = app.windows.firstMatch.frame
         XCTAssertGreaterThan(end.frame.minY, window.minY, "end above the screen")
         XCTAssertLessThanOrEqual(end.frame.minY, composer.frame.minY, "end below the screen: \(end.frame) vs \(composer.frame)")
+    }
+
+    /// A long chat (a lazy list since M5) keeps its places: it opens on the unread divider, the
+    /// page before keeps the message that was at the top, and the pill of a new message goes
+    /// down to it.
+    func testALongChatKeepsItsPlaces() {
+        let app = launch(["-open", "Camille", "-fill", "5000"])
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        let divider = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH 'unread messages'")).firstMatch
+        XCTAssertTrue(divider.waitForExistence(timeout: 10), "no unread divider")
+        XCTAssertTrue(divider.isHittable, "the divider is off screen")
+        // Up to the first message of the page, then the page before it.
+        let list = app.scrollViews.firstMatch
+        let earlier = app.buttons["Show earlier messages"]
+        for _ in 0..<20 where !(earlier.exists && earlier.isHittable) { list.swipeDown(velocity: .fast) }
+        XCTAssertTrue(earlier.isHittable, "no earlier page")
+        let top = app.staticTexts["Earlier message 4901"]
+        XCTAssertTrue(top.exists)
+        earlier.tap()
+        sleep(2)
+        XCTAssertTrue(top.isHittable, "the earlier page moved the view")
+        XCTAssertTrue(app.staticTexts["Earlier message 4900"].exists, "the page before is not there")
+        // Camille's first message comes while we read above: the pill, then the end.
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS 'new message'")).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 180), "no pill")
+        pill.tap()
+        sleep(2)
+        let end = app.descendants(matching: .any)["chat.end"]
+        XCTAssertTrue(end.exists && end.frame.minY <= inChat(app).frame.minY, "not at the end")
     }
 }

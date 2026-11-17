@@ -88,6 +88,9 @@ struct MapLibreView: UIViewRepresentable {
         map.attributionButtonPosition = .bottomRight
         map.attributionButtonMargins = CGPoint(x: 8, y: 8)
         map.logoView.isHidden = true
+        // VoiceOver names MapLibre's own controls.
+        map.attributionButton.accessibilityLabel = String(localized: "Map credits")
+        map.compassView.accessibilityLabel = String(localized: "Compass: tap to face north")
         map.setCenter(CLLocationCoordinate2D(latitude: 45.0, longitude: 5.5), zoomLevel: 9, animated: false)
         context.coordinator.style = style
         return map
@@ -342,6 +345,10 @@ final class ItemAnnotationView: MLNAnnotationView {
     func show(_ a: ItemAnnotation) {
         let size = a.image.size
         imageView.image = a.image
+        // A marker reads as its label ("Camille, 100 m"): its image is only drawn.
+        isAccessibilityElement = true
+        accessibilityLabel = a.item.kind == .me ? String(localized: "You")
+            : a.item.label.isEmpty ? a.item.initials : a.item.label
         imageView.frame = CGRect(origin: .zero, size: size)
         frame.size = size
         let anchor = a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2
