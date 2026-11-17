@@ -1,6 +1,6 @@
 # ADR-0024 — Members recover lost group messages from each other
 
-- Status: accepted
+- Status: accepted; amended by ADR-0040 (a digest after each burst; kept envelopes stored with the group)
 - Date: 2026-11-09
 
 ## Context

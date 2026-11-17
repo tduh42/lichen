@@ -1,6 +1,6 @@
 # ADR-0017 — Inviting into a group, and leaving it
 
-- Status: accepted (audit M08)
+- Status: accepted (audit M08); amended by ADR-0038 (the admin hands over before leaving) and ADR-0039 (keys step on additions)
 - Date: 2026-11-08
 
 ## Context

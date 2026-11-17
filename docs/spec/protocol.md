@@ -486,7 +486,7 @@ gid (16) ‖ step u32 ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32
 SENDER_KEYS (0x14) = gid (16) ‖ n (1, 1..32) ‖ n × (owner id (32) ‖ step u32 ‖ key_epoch (1) ‖ key (32) ‖ next_counter u32)
 ```
 
-- The admin relays and bundles every key at its own epoch, stepped forward first (§10.9): a newcomer admitted by state `E` gets no key from before `E`.
+- The admin relays and bundles every key at its own epoch or later, stepped forward first (§10.9): a newcomer admitted by state `E` gets no key from before `E`.
 - A receiver accepts SENDER_KEYS only from the group's admin (the session's identity, §4.6), and keeps an entry for an owner not listed yet as a key that came before its state. An entry for itself is its own last key, from before it lost the group (§10.5): when that `key_epoch` is the one it holds or newer, it draws a new key one epoch past it and sends it as after a restart, so the others take it as newer. A relayed key never replaces a newer one: an entry with the `key_epoch` it holds is ignored, and it is adopted only when the receiver holds no key of that owner or the entry is newer (`(e − current) mod 256` in 1..127). A SENDER_KEY from its owner is always adopted, also another key at the epoch held (its owner lost its state); the same key again changes nothing (review of 2026-11-15, SR-20). Two keys are compared at the same step: the earlier one is stepped forward to the later one's.
 - Our own sender key and its counter are never stored: after a restart, the app draws a new key (`key_epoch + 1`) and sends it to the members once the node is connected, so a counter is never reused under a key (as for sessions, ADR-0003). The other members' keys and replay windows are stored with the group (ADR-0010): they do not resend them.
 - A receiver keeps the current and the previous key of each member (messages in flight during a rekey), and drops keys of members who left. It also remembers, in memory, the last 8 keys before those with their replay windows: a key it held before comes back with its window, under whatever `key_epoch`, so that relaying keys around the epoch ring cannot replay old traffic. A SENDER_KEYS counts only its first entry per owner (review of 2026-11-15, SR-18).
@@ -577,7 +577,7 @@ Vectors: `testdata/lichen/content.toml` (`[[group_sync]]`, `[[bad_group_control]
 ```
 GROUP_HANDOVER (0x18) = n (1, 1..4) ‖ n × (len u16 ‖ signature (64) ‖ state (len bytes))
 state     = a GROUP_STATE datagram (§10.1, its type byte 0x11 included) whose `admin` is the successor
-signature = Ed25519(the identity of the admin that hands over, "lichen/1 handover" ‖ state)
+signature = Ed25519(the identity of the admin that hands over, "lichen/1 handover" ‖ SHA-256(state))
 ```
 
 Each `signature ‖ state` is a **link**: the admin of the state before it names the admin of this one.
