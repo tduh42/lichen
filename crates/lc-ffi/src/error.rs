@@ -52,6 +52,14 @@ pub enum LichenError {
     /// What was pasted names an identity other than the one this contact has: the change
     /// waits for the user, who compares safety numbers (§4.6).
     IdentityPending,
+    /// Not a lichen backup file (ADR-0037).
+    NotABackup,
+    /// A backup made by a newer version of lichen: update the app first.
+    NewerBackup,
+    /// The 24 words are valid, but not the ones of this backup.
+    WrongBackupWords,
+    /// The backup file is cut short or was changed: nothing was restored.
+    BackupDamaged,
 }
 
 impl std::fmt::Display for LichenError {

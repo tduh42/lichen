@@ -28,6 +28,16 @@ cargo clippy --workspace --all-targets -- -D warnings
 step "test"
 cargo test --workspace --quiet
 
+step "SQLCipher (ADR-0036, feature sqlcipher)"
+# On Apple platforms SQLCipher uses CommonCrypto: nothing more to build. Elsewhere it needs a
+# crypto library the build does not provide yet (see the ADR).
+if [ "$(uname -s)" = Darwin ]; then
+  cargo test -p lc-core --features sqlcipher --quiet --test sqlcipher
+  cargo clippy -p lc-core --features sqlcipher --all-targets -- -D warnings
+else
+  echo "skipped: macOS only for now"
+fi
+
 step "no_std (thumbv7em-none-eabihf, no allocator)"
 if rustup target list --installed | grep -q thumbv7em-none-eabihf; then
   pkgs=()

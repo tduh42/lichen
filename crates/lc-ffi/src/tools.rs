@@ -10,6 +10,13 @@ pub fn seed_from_phrase(words: Vec<String>) -> Result<Vec<u8>, LichenError> {
         .ok_or(LichenError::BadCode)
 }
 
+/// Whether this core can encrypt its database (SQLCipher built in, ADR-0036): the apps keep a
+/// database key and pass it to [`LichenCore::with_database_key`] only then.
+#[uniffi::export]
+pub fn database_encryption() -> bool {
+    lc_core::cipher::AVAILABLE
+}
+
 /// A GIPHY link turned into a GIF (§6.3): its id and title (from the link's slug, may be
 /// empty). None unless `text` is only such a link.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]

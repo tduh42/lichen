@@ -199,7 +199,7 @@
     <string name="restore_identity">Restore an identity</string>
     <string name="restore_identity_note">From its 24 words: replaces this one</string>
     <string name="encrypted_backup">Encrypted backup</string>
-    <string name="encrypted_backup_note">A password-protected file: coming later</string>
+    <string name="encrypted_backup_note">Your messages, contacts, groups and media in one file your 24 words open</string>
     <string name="recovery_phrase_intro">Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.</string>
     <string name="wrote_them_down">I wrote them down</string>
     <string name="restore_intro">Type the 24 words of the identity to restore, separated by spaces. It replaces the identity on this phone.</string>
@@ -916,4 +916,23 @@
     <string name="report_note">What lichen did lately, for its developers: versions, your radio’s model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.</string>
     <string name="report_share">Share the report</string>
     <string name="report_subject">lichen problem report</string>
+    <!-- Encrypted backup (ADR-0037). -->
+    <string name="backup">Backup</string>
+    <string name="export_backup">Export a backup</string>
+    <string name="export_backup_note">Messages, contacts, groups, settings and media in one file your 24 words open.</string>
+    <string name="backup_made">%1$d messages and %2$d media files, %3$s. Keep the file and your 24 words, but not together: with both, anyone can read your messages.</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_failed">No backup was made</string>
+    <string name="backup_nothing">There is nothing to back up yet.</string>
+    <string name="restore_backup">Restore a backup</string>
+    <string name="restore_backup_note">A backup file and its 24 words: replaces this identity and its messages</string>
+    <string name="restore_backup_intro">Your messages, contacts, groups, settings and media come back from a backup file. It replaces the identity and the messages on this phone.</string>
+    <string name="choose_backup_file">Choose the backup file</string>
+    <string name="choose_backup_file_note">From your files, a cloud drive or a USB drive</string>
+    <string name="backup_words">The 24 words of this identity</string>
+    <string name="restoring">Restoring…</string>
+    <string name="err_not_a_backup">This file is not a lichen backup.</string>
+    <string name="err_newer_backup">This backup was made by a newer version of lichen: update the app first.</string>
+    <string name="err_wrong_backup_words">These 24 words are not the ones of this backup.</string>
+    <string name="err_backup_damaged">This backup is damaged or incomplete: nothing was restored.</string>
 </resources>

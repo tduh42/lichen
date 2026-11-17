@@ -50,7 +50,7 @@ fun Onboarding(model: AppModel) {
         }
     }
     when (step) {
-        Step.WELCOME -> Welcome(pair = { step = Step.PAIRING }, later = { step = Step.IDENTITY })
+        Step.WELCOME -> Welcome(model, pair = { step = Step.PAIRING }, later = { step = Step.IDENTITY })
         Step.PAIRING -> PairingScreen(model, back = { step = Step.WELCOME }, done = { step = Step.IDENTITY })
         Step.IDENTITY -> IdentityScreen(model, back = { step = Step.WELCOME }, next = { step = Step.CONTACT })
         Step.CONTACT -> ContactScreen(model, back = { step = Step.IDENTITY }, next = { model.markOnboarded(true) })
@@ -58,8 +58,9 @@ fun Onboarding(model: AppModel) {
 }
 
 @Composable
-private fun Welcome(pair: () -> Unit, later: () -> Unit) {
+private fun Welcome(model: AppModel, pair: () -> Unit, later: () -> Unit) {
     val t = lichen
+    var restoring by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxSize()
@@ -86,7 +87,12 @@ private fun Welcome(pair: () -> Unit, later: () -> Unit) {
         TextButton(onClick = later, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
             Text(stringResource(R.string.later), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
         }
+        // A phone that replaces another (ADR-0037): everything comes back from the file.
+        TextButton(onClick = { restoring = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.restore_backup), fontSize = 14.sp, color = t.tx2)
+        }
     }
+    if (restoring) RestoreBackupSheet(model, { restoring = false }) { model.markOnboarded(true) }
 }
 
 @Composable

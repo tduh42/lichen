@@ -393,3 +393,15 @@ Field finding: a photo to a phone on a stock Heltec V4 over Bluetooth never got 
 | Photo preview | 426 | 417 (3 fragments) |
 
 Earlier fake-network figures in this log were measured with 149-byte fragments; a large transfer now takes about 2 % more fragments.
+
+## 2026-11-16 — SQLCipher's size (ADR-0036, proposed)
+
+Release core for arm64, the same branch built with SQLite (now) and with SQLCipher 4.14.0 (`libsqlite3-sys` 0.38.2): CommonCrypto on iOS, OpenSSL 3.6.3 built from source (`openssl-src` 300.6.1) on Android, the only way `rusqlite` builds SQLCipher there.
+
+| | SQLite | SQLCipher | Difference |
+|---|---|---|---|
+| Android `liblc_ffi.so`, stripped | 33,142,312 B | 37,113,464 B | +3.97 MB (+12 %) |
+| Android debug APK | 161,738,706 B | 165,710,042 B | +3.97 MB |
+| iOS app, simulator debug dylib | 74,628,992 B | 74,677,568 B | +49 KB |
+
+The OpenSSL sources hold 548,000 lines of C (344,000 in `crypto/`); only `libcrypto` is linked. On iOS nothing is added but SQLCipher's own code.

@@ -273,6 +273,15 @@ fun SettingsScreen(
                     }
                 }
             }
+            // The encrypted backup (ADR-0037).
+            if (model.canBackUp) {
+                item { SectionLabel(stringResource(R.string.backup), Modifier.padding(top = 10.dp)) }
+                item {
+                    CardList {
+                        BackupExportRow(model, stringResource(R.string.export_backup), stringResource(R.string.export_backup_note))
+                    }
+                }
+            }
             item { SectionLabel(stringResource(R.string.demo), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {

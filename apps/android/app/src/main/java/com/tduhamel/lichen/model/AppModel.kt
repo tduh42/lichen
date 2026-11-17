@@ -15,7 +15,9 @@ import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.RadioSettings
 import com.tduhamel.lichen.core.InviteCode
+import com.tduhamel.lichen.core.BackupSummary
 import com.tduhamel.lichen.core.Budget
+import com.tduhamel.lichen.core.RestoredBackup
 import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.Conversation
 import com.tduhamel.lichen.core.DemoNetwork
@@ -51,8 +53,10 @@ import kotlin.math.sqrt
 import kotlin.math.PI
 import kotlin.math.sin
 import com.tduhamel.lichen.core.seedFromPhrase
+import com.tduhamel.lichen.core.databaseEncryption
 import com.tduhamel.lichen.core.fitFileName
 import java.io.File
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -538,12 +542,26 @@ class AppModel(val app: Application) {
         pump()
     }
 
-    private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
-        "lichen-android",
-        IdentityStore.randomBytes(32),
-        seed,
-        if (persistent) dataDirectory()?.path else null,
-    )
+    /** The database is encrypted when the core can (ADR-0036): with an empty key (the Keystore
+     * cannot give it now) the core opens no database rather than a clear one. Without SQLCipher in
+     * the core, nothing changes. */
+    private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore =
+        if (persistent && databaseEncryption()) {
+            LichenCore.withDatabaseKey(
+                "lichen-android",
+                IdentityStore.randomBytes(32),
+                seed,
+                dataDirectory()?.path,
+                DatabaseKey(app).read(),
+            )
+        } else {
+            LichenCore(
+                "lichen-android",
+                IdentityStore.randomBytes(32),
+                seed,
+                if (persistent) dataDirectory()?.path else null,
+            )
+        }
 
     /** Per-node databases live in the app's private files. */
     private fun dataDirectory(): File? = File(app.filesDir, "lichen").takeIf { it.isDirectory || it.mkdirs() }
@@ -2004,6 +2022,117 @@ class AppModel(val app: Application) {
         res.getString(R.string.identity_not_saved)
     }
 
+    // ----- encrypted backup (ADR-0037, docs/spec/backup.md) -----
+
+    /** What making a backup came to. */
+    sealed interface BackupOutcome {
+        data class Made(val summary: BackupSummary) : BackupOutcome
+        data class Failed(val reason: String) : BackupOutcome
+    }
+
+    /** The name the save dialog proposes. */
+    fun backupFileName(): String = "lichen-${java.time.LocalDate.now()}.lichen-backup"
+
+    /** Whether there is something of ours to back up (not the demo, an identity in use). */
+    val canBackUp: Boolean get() = !isDemo && identityProblem == null
+
+    /** The settings a backup carries (backup.md §4), under the names both apps use; the
+     * appearance and the map style in lower case, as iOS writes them. */
+    private fun backupSettings(): ByteArray = JSONObject().apply {
+        put("lichen.myName", myName)
+        put("lichen.tor", torEnabled)
+        put("lichen.iroh", irohEnabled)
+        put("lichen.relayOnly", relayOnly)
+        put("lichen.gifAuto", gifAutoLoad)
+        put("lichen.voiceMode", voiceMode)
+        put("appearance", appearance.name.lowercase())
+        prefs.getString(MAP_STYLE, null)?.let { put("map.style", it.lowercase()) }
+    }.toString().toByteArray()
+
+    /** The settings of a restored backup: the keys this app knows, with values of the right type. */
+    private fun applyBackupSettings(bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        val o = runCatching { JSONObject(String(bytes)) }.getOrNull() ?: return
+        (o.opt("lichen.myName") as? String)?.let { changeName(it) }
+        (o.opt("lichen.tor") as? Boolean)?.let { chooseTor(it) }
+        (o.opt("lichen.iroh") as? Boolean)?.let { chooseIroh(it) }
+        (o.opt("lichen.relayOnly") as? Boolean)?.let { chooseRelayOnly(it) }
+        (o.opt("lichen.gifAuto") as? Boolean)?.let { chooseGifAutoLoad(it) }
+        (o.opt("lichen.voiceMode") as? Int)?.takeIf { it in listOf(0, 2, 3) }?.let { chooseVoiceMode(it) }
+        (o.opt("appearance") as? String)?.let { v ->
+            Appearance.entries.firstOrNull { it.name.equals(v, ignoreCase = true) }?.let { chooseAppearance(it) }
+        }
+        (o.opt("map.style") as? String)?.uppercase()?.takeIf { it in MAP_STYLES }?.let { v ->
+            prefs.edit { putString(MAP_STYLE, v) }
+        }
+    }
+
+    /** Writes a backup into [uri], the document the user created with the system's picker: made
+     * in the cache first (the core writes a path), copied, then removed. Off the main thread; the
+     * app keeps working meanwhile. A failed backup removes the document. */
+    suspend fun exportBackup(uri: android.net.Uri): BackupOutcome {
+        if (!canBackUp) return BackupOutcome.Failed(res.getString(R.string.backup_nothing))
+        val c = core
+        val settings = backupSettings()
+        val tmp = File(app.cacheDir, "export.lichen-backup")
+        return withContext(Dispatchers.IO) {
+            val made = try {
+                val summary = c.exportBackup(tmp.path, settings)
+                app.contentResolver.openOutputStream(uri, "wt")?.use { out -> tmp.inputStream().use { it.copyTo(out) } }
+                    ?: throw java.io.IOException("no output stream")
+                BackupOutcome.Made(summary)
+            } catch (e: LichenException) {
+                BackupOutcome.Failed(e.display(res))
+            } catch (_: java.io.IOException) {
+                BackupOutcome.Failed(LichenException.Storage().display(res))
+            } finally {
+                tmp.delete()
+            }
+            if (made is BackupOutcome.Failed) {
+                runCatching { android.provider.DocumentsContract.deleteDocument(app.contentResolver, uri) }
+            }
+            made
+        }
+    }
+
+    /** Restores the backup at [uri] with its 24 words: its identity, messages, contacts, groups,
+     * settings and media replace this phone's. Copied to the cache first, removed after. Null once
+     * done, otherwise why not (nothing was changed). */
+    suspend fun restoreBackup(uri: android.net.Uri, words: List<String>): String? {
+        val dir = dataDirectory() ?: return LichenException.Storage().display(res)
+        val c = core
+        val copy = File(app.cacheDir, "restore.lichen-backup")
+        val read: Result<RestoredBackup> = withContext(Dispatchers.IO) {
+            try {
+                val opened = app.contentResolver.openInputStream(uri)?.use { input ->
+                    copy.outputStream().use { input.copyTo(it) }
+                }
+                if (opened == null) Result.failure(LichenException.NotABackup())
+                else Result.success(c.restoreBackup(copy.path, words, dir.path))
+            } catch (e: LichenException) {
+                Result.failure(e)
+            } catch (_: java.io.IOException) {
+                Result.failure(LichenException.Storage())
+            } finally {
+                copy.delete()
+            }
+        }
+        val restored = read.getOrElse { e -> return (e as? LichenException ?: LichenException.Storage()).display(res) }
+        try {
+            identityStore.replace(restored.identitySeed)
+        } catch (_: IdentityWriteException) {
+            // The data is in place, but the identity is not saved: the app goes on with its own,
+            // its store open again.
+            identitySeed?.let { useIdentity(it) }
+            return res.getString(R.string.identity_not_saved)
+        }
+        markBackedUp()
+        useIdentity(restored.identitySeed)
+        applyBackupSettings(restored.settings)
+        loadDownloads()
+        return null
+    }
+
     // ----- groups -----
 
     fun createGroup(name: String, members: List<ByteArray>): String? = try {
@@ -2102,6 +2231,9 @@ class AppModel(val app: Application) {
         private const val GIF_AUTO = "lichen.gifAuto"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
+        private const val MAP_STYLE = "map.style"
+        /** MapStyle's names (ui/LichenMap.kt), for a restored setting. */
+        private val MAP_STYLES = setOf("AUTO", "DARK", "LIBERTY", "POSITRON", "BRIGHT")
         /** Drafts by identity; the older ones (`lichen.draft.<route>`) are left unread. */
         private const val DRAFT = "lichen.draftById."
         private const val HISTORY_PAGE = 100u

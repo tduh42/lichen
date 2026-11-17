@@ -27,6 +27,7 @@ pub use demo::DemoNetwork;
 uniffi::setup_scaffolding!();
 
 mod amendments;
+mod api_backup;
 mod api_contacts;
 mod api_groups;
 mod api_history;
@@ -56,6 +57,7 @@ mod tools;
 #[cfg(test)]
 mod unit;
 
+pub use api_backup::{BackupSummary, RestoredBackup};
 pub use api_import::ImportReport;
 pub use api_radio::{RadioSettings, RadioVar, Telemetry};
 pub use chat::*;

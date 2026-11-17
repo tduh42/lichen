@@ -95,6 +95,49 @@ enum Keychain {
         return Data(bytes)
     }
 
+    // MARK: the database key (ADR-0036)
+
+    private static let databaseService = "com.tduhamel.lichen.database"
+
+    private static var databaseBase: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: databaseService,
+            kSecAttrAccount as String: "database-key",
+        ]
+    }
+
+    /// The key of the message databases (SQLCipher, ADR-0036): 32 random bytes drawn once, kept
+    /// in the Keychain for this device only, readable after the first unlock. Used only when the
+    /// core can encrypt (`databaseEncryption()`). Nil when the Keychain cannot be read or written
+    /// now: the app then keeps no database rather than a clear one. A key that is gone (the
+    /// Keychain was reset) makes the databases unreadable: the history then comes back from a
+    /// backup (ADR-0037).
+    static func databaseKey() -> Data? {
+        var query = databaseBase
+        query[kSecReturnData as String] = true
+        var item: CFTypeRef?
+        switch SecItemCopyMatching(query as CFDictionary, &item) {
+        case errSecSuccess:
+            guard let key = item as? Data, key.count == 32 else { return nil }
+            return key
+        case errSecItemNotFound:
+            guard let key = try? secureRandom(32) else { return nil }
+            var add = databaseBase
+            add[kSecValueData as String] = key
+            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return nil }
+            // Read back: what the next start will find.
+            var again = databaseBase
+            again[kSecReturnData as String] = true
+            var back: CFTypeRef?
+            guard SecItemCopyMatching(again as CFDictionary, &back) == errSecSuccess, back as? Data == key else { return nil }
+            return key
+        default:
+            return nil
+        }
+    }
+
     /// Seeds for the core's random generator and for throwaway identities (demo).
     static func randomSeed() -> Data {
         // SecRandomCopyBytes does not fail on a working system; an all-zero seed would be worse
