@@ -1147,4 +1147,32 @@
     <string name="request_note">Anyone in range can write under a radio\'s name. Accept only if you know who this is; accepting does not verify them.</string>
     <string name="request_earlier">Earlier messages: %1$d</string>
     <string name="request_blocked_name">Someone using %1$s\'s radio</string>
+    <!-- Radio details behind a tap (M5) -->
+    <string name="radio_details">Show radio details</string>
+    <string name="radio_details_note">Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.</string>
+    <string name="radio_line_hint">Show the radio’s details</string>
+    <string name="radio_line_close">Hide the radio’s details</string>
+    <plurals name="group_members">
+        <item quantity="one">Group · %1$d member</item>
+        <item quantity="other">Group · %1$d members</item>
+    </plurals>
+    <string name="state_waiting">Waiting</string>
+    <string name="state_paused">Paused</string>
+    <string name="state_sending">Sending</string>
+    <string name="state_delivered">Delivered</string>
+    <string name="state_not_delivered">Not delivered</string>
+    <string name="state_sent">Sent</string>
+    <string name="message_info">Info</string>
+    <string name="info_sent">Sent</string>
+    <string name="info_received">Received</string>
+    <string name="info_written">Written</string>
+    <string name="info_status">Status</string>
+    <string name="info_arrived_late">Arrived late, handed on by a member</string>
+    <string name="info_fragments">Fragments</string>
+    <string name="info_airtime">Airtime</string>
+    <string name="info_signal">Signal</string>
+    <string name="info_edited">Edited</string>
+    <string name="yes">Yes</string>
+    <string name="seconds_value">%1$s s</string>
+    <string name="snr_value">SNR %1$s dB</string>
 </resources>

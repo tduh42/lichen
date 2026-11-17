@@ -41,6 +41,7 @@ struct ChatView: View {
     @State private var blocking = false
     /// Chat info › Media, files and voice (ADR-0034).
     @State private var showingMedia = false
+    @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -466,12 +467,15 @@ struct ChatView: View {
             // Renamed: the node's own name first.
             let hops = [c.flatMap { $0.nodeName != $0.name ? $0.nodeName : nil }, hopsBadge(c?.hops)]
                 .compactMap { $0 }.joined(separator: " · ")
-            if let snr = model.lastSnr[key] {
+            // The signal is a radio detail (Settings › Show radio details).
+            if radioDetails, let snr = model.lastSnr[key] {
                 return String(localized: "\(hops) · SNR \(String(format: "%.0f", snr)) dB")
             }
             return hops
         case let .group(gid):
             guard let g = model.groups.first(where: { $0.gid == gid }) else { return "" }
+            // What it is and how many; the flood and the keys are radio details.
+            if !radioDetails { return String(localized: "Group · \(g.members.count) members") }
             let others = max(g.members.count - 1, 0)
             if Int(g.keysKnown) < others {
                 return String(localized: "\(g.members.count) members · keys \(Int(g.keysKnown))/\(others)")
@@ -738,6 +742,9 @@ private struct MessageView: View {
     /// Deleting for everyone (true) or for this phone (false), to confirm.
     @State private var deleting: Bool?
     @State private var forwarding = false
+    /// Long press › Info: when, how it went, fragments, airtime, signal.
+    @State private var info = false
+    @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
@@ -751,6 +758,7 @@ private struct MessageView: View {
             bubble
                 .contextMenu { actions }
                 .sheet(isPresented: $forwarding) { ForwardSheet(message: message) }
+                .sheet(isPresented: $info) { MessageInfoSheet(message: message, isGroup: isGroup) }
                 .confirmationDialog(deleting == true ? String(localized: "Delete for everyone?") : String(localized: "Delete for you?"),
                                     isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                                     titleVisibility: .visible) {
@@ -768,11 +776,20 @@ private struct MessageView: View {
                 ReactionChips(message: message, error: $error)
             }
             if message.outgoing, !isGroup, case let .sending(sent, total) = message.status, total > 1 {
-                FragmentProgress(sent: Int(sent), total: Int(total))
-                    .frame(width: 220)
-                    .padding(.top, 2)
+                // A long message's progress; its fragments are a radio detail.
+                if radioDetails {
+                    FragmentProgress(sent: Int(sent), total: Int(total))
+                        .frame(width: 220)
+                        .padding(.top, 2)
+                } else {
+                    Bar(fraction: Double(sent) / Double(total))
+                        .frame(width: 120)
+                        .padding(.top, 2)
+                        .accessibilityHidden(true)
+                }
             }
-            // When it was sent (ours) or received, then how it went.
+            // When it was sent (ours) or received, then how it went: a word, or with the radio
+            // details, the fragments and the airtime.
             HStack(spacing: 4) {
                 if message.isWaiting {
                     Image(systemName: "clock").accessibilityHidden(true)
@@ -792,6 +809,14 @@ private struct MessageView: View {
         .sheet(isPresented: $selecting) {
             if case let .text(_, text) = message.message { SelectTextSheet(text: text) }
         }
+        #if DEBUG
+        .onChange(of: message.status, initial: true) {
+            if debugInfo, case .delivered = message.status {
+                model.debugScreen = nil
+                info = true
+            }
+        }
+        #endif
     }
 
     private var isText: Bool {
@@ -864,6 +889,7 @@ private struct MessageView: View {
                 Label("Delete for everyone", systemImage: "trash")
             }
         }
+        Button { info = true } label: { Label("Info", systemImage: "info.circle") }
         Button(role: .destructive) { deleting = false } label: {
             Label("Delete for me", systemImage: "trash.slash")
         }
@@ -873,7 +899,8 @@ private struct MessageView: View {
         let time = message.date.formatted(date: .omitted, time: .shortened)
         let edited = message.edited ? String(localized: "edited") : nil
         if message.outgoing {
-            return ([time, edited] + [caption]).compactMap { $0 }.joined(separator: " · ")
+            let status = radioDetails ? message.caption(isGroup: isGroup) : message.statusWord
+            return [time, edited, status].compactMap { $0 }.joined(separator: " · ")
         }
         if let edited { return "\(time) · \(edited)" }
         // Lost on the air and handed on by a member (§10.6): shown where it arrived.
@@ -942,7 +969,37 @@ private struct MessageView: View {
         }
     }
 
-    private var caption: String? {
+    #if DEBUG
+    /// -screen info: the Info sheet of the first message of ours.
+    private var debugInfo: Bool { model.debugScreen == "info" && message.outgoing }
+    #endif
+}
+
+extension StoredMessage {
+    /// How one of ours went, in a word: the details are in long press › Info.
+    var statusWord: String? {
+        switch status {
+        case .received: return nil
+        case let .waiting(reason, started, _):
+            if case .radio = reason, started { return String(localized: "Paused") }
+            return String(localized: "Waiting")
+        case .sending: return String(localized: "Sending")
+        case .delivered: return String(localized: "Delivered")
+        case .failed: return String(localized: "Not delivered")
+        case .flooded: return String(localized: "Sent")
+        }
+    }
+
+    /// Info's status: delivered in a word (its fragments and airtime have their own rows),
+    /// else why it waits, how far it went, why it failed.
+    func infoStatus(isGroup: Bool) -> String? {
+        if case .delivered = status { return statusWord }
+        return caption(isGroup: isGroup)
+    }
+
+    /// How one of ours went, in full: why it waits, its fragments and airtime.
+    func caption(isGroup: Bool) -> String? {
+        let message = self
         switch message.status {
         case .received: return nil
         case let .waiting(reason, started, expiresAtMs):
@@ -977,12 +1034,65 @@ private struct MessageView: View {
         }
     }
 
-    private var airtime: String { String(format: "%.1f", Double(message.airtimeMs) / 1000) }
+    var airtime: String { String(format: "%.1f", Double(airtimeMs) / 1000) }
 
     /// "24 h", "35 min": how long a waiting text still has before it expires (§6.1).
     private func timeLeft(_ expiresAtMs: Int64) -> String {
         let s = max(0, Double(expiresAtMs) / 1000 - Date().timeIntervalSince1970)
         return s >= 3600 ? "\(Int((s / 3600).rounded(.up))) h" : "\(max(1, Int((s / 60).rounded(.up)))) min"
+    }
+}
+
+/// Long press › Info: when it was sent or received (and written, when earlier), how it went, its
+/// fragments, airtime and signal.
+private struct MessageInfoSheet: View {
+    let message: StoredMessage
+    let isGroup: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent(message.outgoing ? String(localized: "Sent") : String(localized: "Received"),
+                                   value: message.date.formatted(date: .abbreviated, time: .shortened))
+                    if let written {
+                        LabeledContent(String(localized: "Written"), value: written.formatted(date: .abbreviated, time: .shortened))
+                    }
+                    if let status = message.infoStatus(isGroup: isGroup) {
+                        LabeledContent(String(localized: "Status"), value: status)
+                    } else if message.late {
+                        LabeledContent(String(localized: "Status"), value: String(localized: "Arrived late, handed on by a member"))
+                    }
+                    if message.fragments > 0 {
+                        LabeledContent(String(localized: "Fragments"), value: String(Int(message.fragments)))
+                    }
+                    if message.airtimeMs > 0 {
+                        LabeledContent(String(localized: "Airtime"), value: String(localized: "\(message.airtime) s"))
+                    }
+                    if let snr = message.snrDb {
+                        LabeledContent(String(localized: "Signal"), value: String(localized: "SNR \(String(format: "%.0f", snr)) dB"))
+                    }
+                    if message.edited {
+                        LabeledContent(String(localized: "Edited"), value: String(localized: "Yes"))
+                    }
+                }
+                .listRowBackground(Theme.s1)
+            }
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
+            .navigationTitle("Info")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// When its author wrote it, if not when it arrived.
+    private var written: Date? {
+        message.late ? (message.writtenEarlier ?? message.message.date) : message.writtenEarlier
     }
 }
 

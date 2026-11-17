@@ -1157,4 +1157,33 @@
     <string name="request_note">N’importe qui à portée peut écrire sous le nom d’une radio. Accepte seulement si tu sais qui c’est ; accepter ne vérifie pas cette personne.</string>
     <string name="request_earlier">Messages plus anciens : %1$d</string>
     <string name="request_blocked_name">Quelqu’un qui utilise la radio de %1$s</string>
+    <!-- Détails radio derrière un geste (M5) -->
+    <string name="radio_details">Afficher les détails radio</string>
+    <string name="radio_details_note">Fragments, temps d’antenne et signal sous chaque message, et la carte radio dans Messages. Sinon : appui long › Infos.</string>
+    <string name="radio_line_hint">Afficher les détails de la radio</string>
+    <string name="radio_line_close">Masquer les détails de la radio</string>
+    <plurals name="group_members">
+        <item quantity="one">Groupe · %1$d membre</item>
+        <item quantity="many">Groupe · %1$d membres</item>
+        <item quantity="other">Groupe · %1$d membres</item>
+    </plurals>
+    <string name="state_waiting">En attente</string>
+    <string name="state_paused">En pause</string>
+    <string name="state_sending">Envoi en cours</string>
+    <string name="state_delivered">Remis</string>
+    <string name="state_not_delivered">Non remis</string>
+    <string name="state_sent">Envoyé</string>
+    <string name="message_info">Infos</string>
+    <string name="info_sent">Envoyé</string>
+    <string name="info_received">Reçu</string>
+    <string name="info_written">Écrit</string>
+    <string name="info_status">État</string>
+    <string name="info_arrived_late">Arrivé en retard, relayé par un membre</string>
+    <string name="info_fragments">Fragments</string>
+    <string name="info_airtime">Temps d’antenne</string>
+    <string name="info_signal">Signal</string>
+    <string name="info_edited">Modifié</string>
+    <string name="yes">Oui</string>
+    <string name="seconds_value">%1$s s</string>
+    <string name="snr_value">SNR %1$s dB</string>
 </resources>

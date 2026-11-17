@@ -21,9 +21,10 @@ Les maquettes dans `mockups/` font foi pour la mise en page. Ce fichier donne le
 1. **Thème sombre par défaut.** Le thème clair est prévu (colonne `light` de `tokens.json`) et accessible en option.
 2. **L'orange signifie LoRa et marque, rien d'autre.** Les actions principales sont blanches en sombre (`act_bg`), encre en clair. Ne jamais utiliser l'orange pour un bouton générique.
 3. **Le transport est toujours écrit**, jamais porté par la seule couleur : badge « LoRa · 2 sauts », « iroh », « Tor ».
-4. **Tout envoi radio affiche son coût avant d'être lancé** : nombre de fragments et secondes d'antenne. Le budget d'antenne restant est visible en permanence (conversations, réglages).
+4. **Tout envoi radio affiche son coût avant d'être lancé** : nombre de fragments et secondes d'antenne. Le budget d'antenne restant est toujours à un geste : la ligne radio de Messages ouvre la carte radio, les Réglages l'affichent, et un bandeau prévient quand il est épuisé.
 5. **Typographie** : police système pour l'interface (SF Pro, Roboto). Space Grotesk 700 pour le wordmark et les grands chiffres (budget, cap, distance, empreintes, numéros de sécurité), en chiffres tabulaires.
-6. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
+6. **Calme par défaut** : un message montre son heure et un mot d'état (« Remis ») ; ses fragments, son temps d'antenne et son signal sont dans appui long › Infos, ou sous chaque message avec Réglages › Afficher les détails radio (désactivé par défaut).
+7. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
 
 ## Couleurs (résumé, détail dans `tokens.json`)
 
@@ -59,7 +60,7 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 | Appairage | `appairage` | Scan BLE, liste des radios (nom, RSSI, version companion), saisie du code à 6 chiffres affiché sur la radio |
 | Identité et clés | `identite` | Pseudo, empreinte de clé (6 groupes de 4 hex), alerte sauvegarde, phrase 24 mots, fichier chiffré |
 | Ajouter un contact | `contact` | Onglets Mon code / Scanner, QR, numéro de sécurité (6 groupes de 5 chiffres), « correspondent » / « différents » |
-| Conversations | `conversations` | État radio, budget d'antenne, transports disponibles, liste avec badge de transport et non-lus |
+| Conversations | `conversations` | État radio sur une ligne (un geste : budget d'antenne, transports disponibles), liste avec badge de transport et non-lus |
 | Discussion | `chat` | Texte, envoi fragmenté avec progression et ACK, photo annoncée (aperçu LoRa + téléchargement iroh/Tor), vocal Codec2, coût estimé dans la zone de saisie |
 | Envoi de photo | `media` | Choix du mode : aperçu LoRa, iroh, Tor, différé. Coût par option |
 | Carte et position | `carte` | Membres et précision partagée, partage limité dans le temps, bouton SOS |

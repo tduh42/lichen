@@ -206,7 +206,9 @@ fun ConversationsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 88.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { RadioCard(model) }
+            // The radio in one line; its card (airtime, transports) a tap away, or always with
+            // Settings › Show radio details.
+            item { RadioLine(model) }
             item { StatusBanners(model, pair) }
             items(model.invitations, key = { "inv" + it.gid.hex() }) { InvitationCard(model, it) }
             items(model.requests, key = { "req" + it.identity.hex() }) { RequestCard(model, it) }
@@ -428,35 +430,75 @@ fun shortTime(context: android.content.Context, atMs: Long): String = when {
     else -> DateFormat.getDateFormat(context).format(Date(atMs))
 }
 
-/** Radio, airtime left this hour, transports (ADR-0007). */
+/** "Demo radio connected", "No radio connected"… */
 @Composable
-fun RadioCard(model: AppModel) {
+private fun radioHeadline(model: AppModel): String = when (val s = model.radioState) {
+    is RadioState.Connected -> stringResource(R.string.radio_connected, model.nodeName.ifEmpty { s.name })
+    is RadioState.Connecting -> stringResource(R.string.radio_connecting, s.name)
+    RadioState.Scanning -> stringResource(R.string.radio_scanning)
+    RadioState.Off -> stringResource(R.string.bluetooth_off)
+    RadioState.Idle -> stringResource(R.string.no_radio)
+}
+
+/** The radio's state in one line, under the title; a tap opens its card (the airtime left,
+ * the transports) and another closes it. With Settings › Show radio details: the card. */
+@Composable
+fun RadioLine(model: AppModel) {
     val t = lichen
-    val headline = when (val s = model.radioState) {
-        is RadioState.Connected -> stringResource(R.string.radio_connected, model.nodeName.ifEmpty { s.name })
-        is RadioState.Connecting -> stringResource(R.string.radio_connecting, s.name)
-        RadioState.Scanning -> stringResource(R.string.radio_scanning)
-        RadioState.Off -> stringResource(R.string.bluetooth_off)
-        RadioState.Idle -> stringResource(R.string.no_radio)
+    var open by remember { mutableStateOf(false) }
+    if (model.radioDetails) {
+        RadioCard(model)
+        return
     }
+    if (open) {
+        RadioCard(model) { open = false }
+        return
+    }
+    val hint = stringResource(R.string.radio_line_hint)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clip(CardShape)
+            .clickable(onClickLabel = hint) { open = true }
+            .padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(Modifier.size(8.dp).background(if (model.isConnected) t.ok else t.tx2, CircleShape))
+        Text(
+            radioHeadline(model), fontSize = 14.sp, color = t.tx2,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
+        Icon(Icons.Outlined.ExpandMore, null, tint = t.tx2)
+    }
+}
+
+/** Radio, airtime left this hour, transports (ADR-0007); `close` folds it back into its line. */
+@Composable
+fun RadioCard(model: AppModel, close: (() -> Unit)? = null) {
+    val t = lichen
+    val closeLabel = stringResource(R.string.radio_line_close)
     Column(
         Modifier
             .fillMaxWidth()
             .clip(CardShape)
             .background(t.s1)
+            .then(if (close != null) Modifier.clickable(onClickLabel = closeLabel, onClick = close) else Modifier)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(8.dp).background(if (model.isConnected) t.ok else t.tx2, CircleShape))
             Text(
-                headline, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+                radioHeadline(model), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
             val r = model.radio
             if (r != null && model.isConnected) {
                 Text("${model.linkKind} · SF${r.sf} / ${bandwidth(r.bwHz)}", fontSize = 13.sp, color = t.tx2)
             }
+            if (close != null) Icon(Icons.Outlined.ExpandLess, null, tint = t.tx2)
         }
         AirtimeMeter(model.budget.usedMs, model.budget.limitMs)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {

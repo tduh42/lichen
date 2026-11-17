@@ -1811,6 +1811,16 @@
         }
       }
     },
+    "Arrived late, handed on by a member": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrivé en retard, relayé par un membre"
+          }
+        }
+      }
+    },
     "Ask %@ to show a new code.": {
       "localizations": {
         "fr": {
@@ -2831,6 +2841,16 @@
         }
       }
     },
+    "Delivered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remis"
+          }
+        }
+      }
+    },
     "Delivered · %@ s of airtime": {
       "localizations": {
         "fr": {
@@ -3197,6 +3217,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Modifier"
+          }
+        }
+      }
+    },
+    "Edited": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modifié"
           }
         }
       }
@@ -3641,6 +3671,26 @@
         }
       }
     },
+    "Fragments": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragments"
+          }
+        }
+      }
+    },
+    "Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fragments, temps d’antenne et signal sous chaque message, et la carte radio dans Messages. Sinon : appui long › Infos."
+          }
+        }
+      }
+    },
     "Frequency (MHz)": {
       "localizations": {
         "fr": {
@@ -3861,6 +3911,46 @@
         }
       }
     },
+    "Group · %lld members": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld member"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Group · %lld members"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membre"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Groupe · %lld membres"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Group · %lld members · flood": {
       "localizations": {
         "en": {
@@ -3997,6 +4087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cœurs"
+          }
+        }
+      }
+    },
+    "Hides the radio's details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masque les détails de la radio"
           }
         }
       }
@@ -4157,6 +4257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inclus"
+          }
+        }
+      }
+    },
+    "Info": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Infos"
           }
         }
       }
@@ -5961,6 +6071,16 @@
         }
       }
     },
+    "Not delivered": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non remis"
+          }
+        }
+      }
+    },
     "Not delivered within 24 hours, so it will not go out later. If part of it went out, it may have arrived.": {
       "localizations": {
         "fr": {
@@ -6501,6 +6621,16 @@
         }
       }
     },
+    "Paused": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pause"
+          }
+        }
+      }
+    },
     "Paused: radio disconnected": {
       "localizations": {
         "fr": {
@@ -7001,6 +7131,16 @@
         }
       }
     },
+    "Received": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçu"
+          }
+        }
+      }
+    },
     "Received over LoRa · direct": {
       "localizations": {
         "fr": {
@@ -7431,6 +7571,16 @@
         }
       }
     },
+    "SNR %@ dB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SNR %@ dB"
+          }
+        }
+      }
+    },
     "SOS": {
       "localizations": {
         "fr": {
@@ -7851,6 +8001,16 @@
         }
       }
     },
+    "Sending": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi en cours"
+          }
+        }
+      }
+    },
     "Sending %lld / %lld fragments": {
       "localizations": {
         "fr": {
@@ -7917,6 +8077,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Capteurs"
+          }
+        }
+      }
+    },
+    "Sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé"
           }
         }
       }
@@ -8161,6 +8331,16 @@
         }
       }
     },
+    "Show radio details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher les détails radio"
+          }
+        }
+      }
+    },
     "Show the code": {
       "localizations": {
         "fr": {
@@ -8191,12 +8371,32 @@
         }
       }
     },
+    "Shows the airtime left and the transports": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Affiche le temps d’antenne restant et les transports"
+          }
+        }
+      }
+    },
     "Shows them": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Les affiche"
+          }
+        }
+      }
+    },
+    "Signal": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal"
           }
         }
       }
@@ -9911,6 +10111,16 @@
         }
       }
     },
+    "Waiting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente"
+          }
+        }
+      }
+    },
     "Waiting for GPS": {
       "localizations": {
         "fr": {
@@ -10161,12 +10371,32 @@
         }
       }
     },
+    "Written": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Écrit"
+          }
+        }
+      }
+    },
     "Written while my radio is off": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Écrit pendant que ma radio est éteinte"
+          }
+        }
+      }
+    },
+    "Yes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oui"
           }
         }
       }

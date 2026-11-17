@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var importResult: String?
     @State private var exportingBackup = false
     @State private var radioOpen = false
+    @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
         @Bindable var model = model
@@ -93,6 +94,12 @@ struct SettingsView: View {
                             .buttonStyle(.plain)
                             .disabled(!model.isConnected)
                             .opacity(model.isConnected ? 1 : 0.5)
+                            CardDivider()
+                            // Off: fragments, airtime and signal wait behind long press › Info.
+                            CardRow(title: String(localized: "Show radio details"),
+                                    subtitle: String(localized: "Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.")) {
+                                Toggle("Show radio details", isOn: $radioDetails).labelsHidden()
+                            }
                         }
                         SectionLabel("Internet transports").padding(.top, 10)
                         CardList {

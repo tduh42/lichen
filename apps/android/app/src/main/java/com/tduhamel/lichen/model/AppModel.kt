@@ -444,6 +444,16 @@ class AppModel(val app: Application) {
         prefs.edit { putBoolean(GIF_AUTO, on) }
     }
 
+    /** Fragments, airtime and signal on every message, and the radio card on Messages: off,
+     * they wait behind a long press › Info and a tap on the radio line. */
+    var radioDetails by mutableStateOf(prefs.getBoolean(RADIO_DETAILS, false))
+        private set
+
+    fun chooseRadioDetails(on: Boolean) {
+        radioDetails = on
+        prefs.edit { putBoolean(RADIO_DETAILS, on) }
+    }
+
     /** GIFs load by themselves: asked for, or through Tor. */
     val gifsLoadThemselves: Boolean get() = gifAutoLoad || torStatus == TorStatus.READY
 
@@ -2317,6 +2327,7 @@ class AppModel(val app: Application) {
         put("lichen.relayOnly", relayOnly)
         put("lichen.gifAuto", gifAutoLoad)
         put("lichen.voiceMode", voiceMode)
+        put("lichen.radioDetails", radioDetails)
         put("appearance", appearance.name.lowercase())
         prefs.getString(MAP_STYLE, null)?.let { put("map.style", it.lowercase()) }
     }.toString().toByteArray()
@@ -2331,6 +2342,7 @@ class AppModel(val app: Application) {
         (o.opt("lichen.relayOnly") as? Boolean)?.let { chooseRelayOnly(it) }
         (o.opt("lichen.gifAuto") as? Boolean)?.let { chooseGifAutoLoad(it) }
         (o.opt("lichen.voiceMode") as? Int)?.takeIf { it in listOf(0, 2, 3) }?.let { chooseVoiceMode(it) }
+        (o.opt("lichen.radioDetails") as? Boolean)?.let { chooseRadioDetails(it) }
         (o.opt("appearance") as? String)?.let { v ->
             Appearance.entries.firstOrNull { it.name.equals(v, ignoreCase = true) }?.let { chooseAppearance(it) }
         }
@@ -2518,6 +2530,7 @@ class AppModel(val app: Application) {
         private const val RELAY_ONLY = "lichen.relayOnly"
         private const val TOR = "lichen.tor"
         private const val GIF_AUTO = "lichen.gifAuto"
+        private const val RADIO_DETAILS = "lichen.radioDetails"
         private const val ONBOARDED = "onboarded"
         private const val VOICE_MODE = "lichen.voiceMode"
         private const val MAP_STYLE = "map.style"

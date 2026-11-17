@@ -557,10 +557,13 @@ private fun subtitle(model: AppModel, chat: ChatId): String {
         val c = model.contact(key)
         // Renamed: the node's own name first.
         val hops = listOfNotNull(c?.nodeName?.takeIf { it != c.name }, hopsBadge(res, c?.hops)).joinToString(" · ")
-        val snr = model.lastSnr[chat.hex] ?: return hops
+        // The signal is a radio detail (Settings › Show radio details).
+        val snr = model.lastSnr[chat.hex]?.takeIf { model.radioDetails } ?: return hops
         return stringResource(R.string.hops_snr, hops, "%.0f".format(snr))
     }
     val g = model.group(chat) ?: return ""
+    // What it is and how many; the flood and the keys are radio details.
+    if (!model.radioDetails) return pluralStringResource(R.plurals.group_members, g.members.size, g.members.size)
     val others = maxOf(g.members.size - 1, 0)
     return if (g.keysKnown.toInt() < others) {
         stringResource(R.string.group_keys, g.members.size, g.keysKnown.toInt(), others)
@@ -685,6 +688,8 @@ private fun MessageBubble(
     val retriable = m.outgoing && status is MessageStatus.Failed && (m.message is Message.Text || m.message is Message.Voice)
     var menu by remember { mutableStateOf(false) }
     var selecting by remember { mutableStateOf(false) }
+    /** Long press › Info: when, how it went, fragments, airtime, signal. */
+    var info by remember { mutableStateOf(false) }
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     // Every message can at least be deleted from this phone.
@@ -812,6 +817,14 @@ private fun MessageBubble(
                 )
             }
             DropdownMenuItem(
+                text = { Text(stringResource(R.string.message_info)) },
+                leadingIcon = { Icon(Icons.Outlined.Info, null) },
+                onClick = {
+                    menu = false
+                    info = true
+                },
+            )
+            DropdownMenuItem(
                 text = { Text(stringResource(R.string.delete_for_me), color = t.sos) },
                 leadingIcon = { Icon(Icons.Outlined.DeleteOutline, null, tint = t.sos) },
                 onClick = {
@@ -821,6 +834,7 @@ private fun MessageBubble(
             )
         }
         if (forwarding) ForwardSheet(model, m) { forwarding = false }
+        if (info) MessageInfoDialog(m, isGroup) { info = false }
         deleting?.let { everyone ->
             AlertDialog(
                 onDismissRequest = { deleting = null },
@@ -873,15 +887,22 @@ private fun MessageBubble(
         }
         if (m.reactions.isNotEmpty()) ReactionChips(model, m, onError)
         if (m.outgoing && !isGroup && status is MessageStatus.Sending && status.total.toInt() > 1) {
-            FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
+            // A long message's progress; its fragments are a radio detail.
+            if (model.radioDetails) {
+                FragmentProgress(status.sent.toInt(), status.total.toInt(), Modifier.width(220.dp).padding(top = 2.dp))
+            } else {
+                Bar(status.sent.toFloat() / status.total.toFloat(), Modifier.width(120.dp).padding(top = 2.dp))
+            }
         }
-        // When it was sent (ours) or received, then how it went.
+        // When it was sent (ours) or received, then how it went: a word, or with the radio
+        // details, the fragments and the airtime.
         val context = LocalContext.current
         val time = timeOf(context, m.atMs)
         val written = m.writtenEarlierMs
         val edited = if (m.edited) stringResource(R.string.edited) else null
         val footer = when {
-            m.outgoing -> listOfNotNull(time, edited, caption(m, isGroup)).joinToString(" · ")
+            m.outgoing -> listOfNotNull(time, edited, if (model.radioDetails) caption(m, isGroup) else statusWord(m))
+                .joinToString(" · ")
             edited != null -> "$time · $edited"
             // Lost on the air and handed on by a member (§10.6): shown where it arrived.
             m.late -> stringResource(R.string.arrived_late, time, timeOf(context, m.writtenAtMs ?: m.atMs))
@@ -995,6 +1016,56 @@ private fun SelectTextDialog(text: String, close: () -> Unit) {
         text = {
             SelectionContainer(Modifier.verticalScroll(rememberScrollState())) {
                 Text(text, fontSize = 16.sp, color = t.tx)
+            }
+        },
+        confirmButton = { TextButton(onClick = close) { Text(stringResource(R.string.done), color = t.tx) } },
+        containerColor = t.s1,
+    )
+}
+
+/** How one of ours went, in a word: the details are in long press › Info. */
+@Composable
+private fun statusWord(m: StoredMessage): String? = when (val s = m.status) {
+    MessageStatus.Received -> null
+    is MessageStatus.Waiting -> stringResource(if (s.reason == WaitReason.Radio && s.started) R.string.state_paused else R.string.state_waiting)
+    is MessageStatus.Sending -> stringResource(R.string.state_sending)
+    MessageStatus.Delivered -> stringResource(R.string.state_delivered)
+    is MessageStatus.Failed -> stringResource(R.string.state_not_delivered)
+    MessageStatus.Flooded -> stringResource(R.string.state_sent)
+}
+
+/** Long press › Info: when it was sent or received (and written, when earlier), how it went,
+ * its fragments, airtime and signal. */
+@Composable
+private fun MessageInfoDialog(m: StoredMessage, isGroup: Boolean, close: () -> Unit) {
+    val t = lichen
+    val context = LocalContext.current
+    val res = LocalResources.current
+    val rows = buildList {
+        add(stringResource(if (m.outgoing) R.string.info_sent else R.string.info_received) to dateTimeOf(context, m.atMs))
+        val written = if (m.late) m.writtenAtMs else m.writtenEarlierMs
+        if (written != null && written != m.atMs) add(stringResource(R.string.info_written) to dateTimeOf(context, written))
+        // Delivered in a word: its fragments and airtime have their own rows.
+        (if (m.status == MessageStatus.Delivered) statusWord(m) else caption(m, isGroup))?.let {
+            add(stringResource(R.string.info_status) to it)
+        }
+        if (m.late) add(stringResource(R.string.info_status) to stringResource(R.string.info_arrived_late))
+        if (m.fragments.toInt() > 0) add(stringResource(R.string.info_fragments) to fragmentsText(res, m.fragments.toInt()))
+        if (m.airtimeMs > 0u) add(stringResource(R.string.info_airtime) to stringResource(R.string.seconds_value, secondsText(m.airtimeMs)))
+        m.snrDb?.let { add(stringResource(R.string.info_signal) to stringResource(R.string.snr_value, "%.0f".format(it))) }
+        if (m.edited) add(stringResource(R.string.info_edited) to stringResource(R.string.yes))
+    }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(R.string.message_info)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                rows.forEach { (label, value) ->
+                    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(label, fontSize = 14.sp, color = t.tx2, modifier = Modifier.width(110.dp))
+                        Text(value, fontSize = 14.sp, color = t.tx, modifier = Modifier.weight(1f))
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = close) { Text(stringResource(R.string.done), color = t.tx) } },

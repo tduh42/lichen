@@ -2325,6 +2325,7 @@ final class AppModel {
             "lichen.voiceMode": voiceMode,
         ]
         let d = UserDefaults.standard
+        s[radioDetailsKey] = d.bool(forKey: radioDetailsKey)
         if let a = d.string(forKey: "appearance") { s["appearance"] = a }
         if let m = d.string(forKey: "map.style") { s["map.style"] = m }
         return (try? JSONSerialization.data(withJSONObject: s, options: [.sortedKeys])) ?? Data()
@@ -2339,6 +2340,7 @@ final class AppModel {
         if let v = s["lichen.relayOnly"] as? Bool { relayOnly = v }
         if let v = s["lichen.gifAuto"] as? Bool { gifAutoLoad = v }
         if let v = s["lichen.voiceMode"] as? Int, [0, 2, 3].contains(v) { voiceMode = v }
+        if let v = s[radioDetailsKey] as? Bool { UserDefaults.standard.set(v, forKey: radioDetailsKey) }
         // Android writes these in capitals.
         if let v = (s["appearance"] as? String)?.lowercased(), Appearance(rawValue: v) != nil {
             UserDefaults.standard.set(v, forKey: "appearance")

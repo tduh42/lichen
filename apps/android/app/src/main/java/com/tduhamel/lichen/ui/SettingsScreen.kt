@@ -182,6 +182,11 @@ fun SettingsScreen(
                             Icon(Icons.Outlined.Edit, null, tint = t.tx2)
                         }
                     }
+                    CardDivider()
+                    // Off: fragments, airtime and signal wait behind long press › Info.
+                    CardRow(stringResource(R.string.radio_details), stringResource(R.string.radio_details_note)) {
+                        LichenSwitch(model.radioDetails, model::chooseRadioDetails)
+                    }
                 }
             }
             item { SectionLabel(stringResource(R.string.internet_transports), Modifier.padding(top = 10.dp)) }

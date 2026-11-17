@@ -86,6 +86,7 @@ strings, booleans or integers:
 | `lichen.tor`, `lichen.iroh`, `lichen.relayOnly` | booleans: Internet bridge transports (ADR-0015) |
 | `lichen.gifAuto` | boolean: GIFs load by themselves (ADR-0025) |
 | `lichen.voiceMode` | integer: the Codec2 mode of new voice messages, 0, 2 or 3 (§13.1) |
+| `lichen.radioDetails` | boolean: fragments, airtime and signal under every message, and the radio card on Messages |
 | `appearance` | string: `system`, `light` or `dark` |
 | `map.style` | string: `auto`, `dark`, `liberty`, `positron` or `bright` |
 
