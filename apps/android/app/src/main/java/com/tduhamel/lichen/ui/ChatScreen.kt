@@ -265,6 +265,12 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.markRead(chat)
     }
     LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
+    // A request for the full variant of our photo grows its bubble (§13.3): followed like a new
+    // message when we were at the bottom, so its buttons are on screen.
+    val fullAsked = model.fullRequests[chat]?.size ?: 0
+    LaunchedEffect(fullAsked) {
+        if (opened && fullAsked > 0 && atBottom) list.animateScrollToItem(rows - 1)
+    }
     // A message from a search: once the earlier pages holding it are in the list.
     LaunchedEffect(highlight, messages.size) {
         val h = highlight ?: return@LaunchedEffect

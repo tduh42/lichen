@@ -282,14 +282,13 @@ private fun FullRequestCard(model: AppModel, m: StoredMessage, chat: ChatId, r: 
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(stringResource(R.string.full_photo_request, model.title(chat), seconds), fontSize = 13.sp, color = t.tx)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SecondaryButton(stringResource(R.string.not_now), Modifier.weight(1f)) {
-                onError(model.answerFull(m.id, chat, send = false))
-            }
-            SecondaryButton(
-                stringResource(R.string.send), Modifier.weight(1f),
-                background = t.loraBg, foreground = t.loraFg, enabled = model.isConnected,
-            ) { onError(model.answerFull(m.id, chat, send = true)) }
+        // One above the other: side by side, "Pas maintenant" broke inside its words.
+        SecondaryButton(
+            stringResource(R.string.send),
+            background = t.loraBg, foreground = t.loraFg, enabled = model.isConnected,
+        ) { onError(model.answerFull(m.id, chat, send = true)) }
+        SecondaryButton(stringResource(R.string.not_now)) {
+            onError(model.answerFull(m.id, chat, send = false))
         }
     }
 }
