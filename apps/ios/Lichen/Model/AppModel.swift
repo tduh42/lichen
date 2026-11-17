@@ -229,6 +229,11 @@ final class AppModel {
         /// The message database cannot be opened (full or damaged storage): nothing could be
         /// sent or kept (recheck R02).
         case storage
+        /// The key of the encrypted database cannot be read now (ADR-0036): try again.
+        case databaseKeyUnavailable
+        /// The database is encrypted but its key is gone (the Keychain was reset): a new key
+        /// would not open it. Restore a backup, or start again with an empty history.
+        case databaseKeyLost
     }
     @ObservationIgnored let companion = Companion()
     /// The companion over TCP (Wi-Fi, or `lichen bridge`): used instead of Bluetooth while the
@@ -266,8 +271,9 @@ final class AppModel {
         switch Self.loadIdentity() {
         case let .success(seed):
             identitySeed = seed
-            core = Self.makeCore(seed: seed)
-            if !core.storageOk() { identityProblem = .storage }
+            let (made, problem) = Self.persistentCore(seed: seed)
+            core = made
+            identityProblem = problem
             savedRadios = core.savedRadios()
         case let .failure(problem):
             identityProblem = problem
@@ -333,12 +339,15 @@ final class AppModel {
         }
         debugScreen = args.string(forKey: "screen")
         if debugScreen == "privacy" { tab = .settings }
-        // -identityProblem unavailable|corrupt|notSaved: the identity failure screen.
+        // -identityProblem unavailable|corrupt|notSaved|storage|databaseKey|databaseKeyLost: the
+        // identity (or database) failure screen.
         switch args.string(forKey: "identityProblem") {
         case "unavailable": identityProblem = .unavailable
         case "corrupt": identityProblem = .corrupt
         case "notSaved": identityProblem = .notSaved
         case "storage": identityProblem = .storage
+        case "databaseKey": identityProblem = .databaseKeyUnavailable
+        case "databaseKeyLost": identityProblem = .databaseKeyLost
         default: break
         }
 
@@ -391,9 +400,9 @@ final class AppModel {
         }
         resetState()
         identitySeed = seed
-        identityProblem = nil
-        core = Self.makeCore(seed: seed)
-        if !core.storageOk() { identityProblem = .storage }
+        let (made, problem) = Self.persistentCore(seed: seed)
+        core = made
+        identityProblem = problem
         savedRadios = core.savedRadios()
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
@@ -410,17 +419,48 @@ final class AppModel {
         pump()
     }
 
-    private static func makeCore(seed: Data, persistent: Bool = true) -> LichenCore {
-        // The database is encrypted when the core can (ADR-0036); a key that cannot be read
-        // keeps the history closed (`storageOk` false), never in clear. Without SQLCipher in the
-        // core, nothing changes.
-        if persistent, databaseEncryption() {
-            // Empty when the Keychain cannot give it now: the core then opens no database.
-            let key = Keychain.databaseKey() ?? Data()
-            // The seed and the key are 32 bytes (or the key empty): construction cannot fail.
+    /// The core of our identity with its database, or a throwaway one and why the database
+    /// cannot be used. The database is encrypted (ADR-0036): its key is drawn at the first
+    /// start, then always read; a database already encrypted is never given a new key.
+    private static func persistentCore(seed: Data) -> (LichenCore, IdentityProblem?) {
+        switch databaseKey(seed: seed) {
+        case let .success(key):
+            let core = makeCore(seed: seed, databaseKey: key)
+            return (core, core.storageOk() ? nil : .storage)
+        case let .failure(problem):
+            return (makeCore(seed: Keychain.randomSeed(), persistent: false), problem)
+        }
+    }
+
+    /// The database key, drawn at the first start; nil when the core keeps its database in
+    /// clear (built without SQLCipher).
+    private static func databaseKey(seed: Data) -> Result<Data?, IdentityProblem> {
+        guard databaseEncryption(), let dir = dataDirectory() else { return .success(nil) }
+        switch Keychain.readDatabaseKey() {
+        case let .found(key):
+            return .success(key)
+        case .unavailable:
+            return .failure(.databaseKeyUnavailable)
+        case .absent, .lost:
+            switch try? encryptedDatabase(dataDir: dir, identitySeed: seed) {
+            case true?:
+                // A database already encrypted needs its own key: a new one would not open it.
+                return .failure(.databaseKeyLost)
+            case false?:
+                guard let key = try? Keychain.createDatabaseKey() else { return .failure(.databaseKeyUnavailable) }
+                return .success(key)
+            case nil:
+                return .failure(.databaseKeyUnavailable)
+            }
+        }
+    }
+
+    private static func makeCore(seed: Data, persistent: Bool = true, databaseKey: Data? = nil) -> LichenCore {
+        if persistent, let databaseKey {
+            // The seed and the key are 32 bytes: construction cannot fail.
             return try! LichenCore.withDatabaseKey(
                 appName: "lichen-ios", rngSeed: Keychain.randomSeed(), identitySeed: seed,
-                dataDir: dataDirectory(), databaseKey: key
+                dataDir: dataDirectory(), databaseKey: databaseKey
             )
         }
         // The seed is 32 bytes and the identity 64 or absent: construction cannot fail.
@@ -430,6 +470,20 @@ final class AppModel {
             identitySeed: seed,
             dataDir: persistent ? dataDirectory() : nil
         )
+    }
+
+    /// The user starts again with an empty history after the database key was lost
+    /// (`databaseKeyLost`): the unreadable database goes (messages, contacts, groups), a new key
+    /// is drawn. The identity and the downloads stay.
+    func discardUnreadableHistory() -> String? {
+        guard let seed = identitySeed, let dir = Self.dataDirectory() else { return LichenError.Storage.display }
+        do {
+            try discardDatabase(dataDir: dir, identitySeed: seed)
+        } catch {
+            return LichenError.Storage.display
+        }
+        useIdentity(seed)
+        return nil
     }
 
     /// Everything lichen keeps lives in Application Support/lichen (file protection until first
@@ -549,8 +603,9 @@ final class AppModel {
         switch Self.loadIdentity() {
         case let .success(seed):
             identitySeed = seed
-            core = Self.makeCore(seed: seed)
-            if !core.storageOk() { identityProblem = .storage }
+            let (made, problem) = Self.persistentCore(seed: seed)
+            core = made
+            identityProblem = problem
             savedRadios = core.savedRadios()
         case let .failure(problem):
             identityProblem = problem

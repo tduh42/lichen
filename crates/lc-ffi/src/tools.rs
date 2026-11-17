@@ -17,6 +17,44 @@ pub fn database_encryption() -> bool {
     lc_core::cipher::AVAILABLE
 }
 
+/// The database file of the identity of `identity_seed` in `data_dir`.
+fn database_of(data_dir: &str, identity_seed: &[u8]) -> Result<PathBuf, LichenError> {
+    let seed: [u8; 32] = identity_seed
+        .try_into()
+        .map_err(|_| LichenError::InvalidKey)?;
+    let identity = lc_meshcore::ecdh::public_key(&lc_meshcore::ecdh::expand_seed(&seed));
+    Ok(database_file(std::path::Path::new(data_dir), &identity))
+}
+
+/// Whether the identity of `identity_seed` already has an encrypted database in `data_dir`
+/// (ADR-0036). The app asks before drawing a database key: with such a database and no key, a
+/// new key would not open it, and the app says the key is lost instead.
+#[uniffi::export]
+pub fn encrypted_database(data_dir: String, identity_seed: Vec<u8>) -> Result<bool, LichenError> {
+    let file = database_of(&data_dir, &identity_seed)?;
+    let size = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
+    let plain = lc_core::cipher::is_plain(&file).map_err(|_| LichenError::Storage)?;
+    Ok(size > 0 && !plain)
+}
+
+/// Removes the database of the identity of `identity_seed` from `data_dir`, with its journal
+/// files: the user chose to start again with an empty history after its key was lost
+/// (ADR-0036). Downloads and the identity stay.
+#[uniffi::export]
+pub fn discard_database(data_dir: String, identity_seed: Vec<u8>) -> Result<(), LichenError> {
+    let file = database_of(&data_dir, &identity_seed)?;
+    for suffix in ["", "-wal", "-shm", "-journal"] {
+        let mut path = file.as_os_str().to_owned();
+        path.push(suffix);
+        match std::fs::remove_file(PathBuf::from(path)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(LichenError::Storage),
+        }
+    }
+    Ok(())
+}
+
 /// A GIPHY link turned into a GIF (§6.3): its id and title (from the link's slug, may be
 /// empty). None unless `text` is only such a link.
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]

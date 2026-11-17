@@ -1132,4 +1132,12 @@
     </plurals>
     <!-- Voice notes in groups (ADR-0035) -->
     <string name="group_voice_cost">Flooded to the group: %1$s · ≈ %2$s s of our airtime; every repeater adds as much</string>
+    <!-- The database key (ADR-0036). -->
+    <string name="database_key_unavailable_title">Your messages can’t be opened right now</string>
+    <string name="database_key_unavailable">Your messages are encrypted on this phone, and the key that opens them can’t be read at the moment. Nothing was changed: unlock the phone, then try again.</string>
+    <string name="database_key_lost_title">Your messages can’t be opened</string>
+    <string name="database_key_lost">Your messages are encrypted on this phone, and the key that opened them is gone: the phone’s secure storage was reset. Without it they can’t be read. Restore a backup, or start again with an empty history.</string>
+    <string name="empty_history">Start with an empty history</string>
+    <string name="empty_history_confirm">Start with an empty history?</string>
+    <string name="empty_history_warning">Your messages, contacts and groups on this phone are removed for good. Your identity stays: your contacts still know you. Restore a backup instead if you have one.</string>
 </resources>

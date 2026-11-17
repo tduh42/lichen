@@ -17,7 +17,8 @@ required-features = ["cli"]
 
 [features]
 cli = ["uniffi/cli"]
-# The database encrypted at rest (ADR-0036), on every platform at once: the apps follow
+# The database encrypted at rest (ADR-0036), on every platform at once: on in the apps' core
+# builds (scripts/build-ios-core.sh, scripts/build-android-core.sh); the apps follow
 # `database_encryption()`.
 sqlcipher = ["lc-core/sqlcipher"]
 

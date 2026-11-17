@@ -46,6 +46,9 @@ getrandom = "0.4"
 uniffi = "0.32"
 # 0.40: Arti's directory cache (tor-dirmgr) needs < 0.41, and only one SQLite can be linked.
 rusqlite = { version = "0.40", features = ["bundled"] }
+# rusqlite's own SQLite: named only to build SQLCipher on OpenSSL compiled from source where the
+# system has no crypto library an app may link (Android; ADR-0036). Same version as rusqlite's.
+libsqlite3-sys = { version = "0.38", default-features = false }
 unicode-normalization = "0.1"
 # Small files compressed before LoRa (ADR-0023): pure Rust, no unsafe.
 miniz_oxide = "0.9"

@@ -14,6 +14,8 @@ lichen is licensed under the GNU General Public License, version 3 or later (`LI
 
 | What | Platform | Licence |
 |---|---|---|
+| [SQLCipher](https://www.zetetic.net/sqlcipher/) 4.14.0 on [SQLite](https://sqlite.org/) 3.51.3, the encrypted database (ADR-0036), built in by the `libsqlite3-sys` crate | iOS, Android | BSD-3-Clause (SQLite: public domain) |
+| [OpenSSL](https://www.openssl.org/) 3.6.3, its `libcrypto` only, SQLCipher's crypto on Android, built from source by the `openssl-src` crate (iOS uses Apple's CommonCrypto) | Android | Apache-2.0 |
 | [MapLibre Native](https://github.com/maplibre/maplibre-native) 6.31.0 / 13.7.1 | iOS / Android | BSD-2-Clause |
 | [Lottie](https://github.com/airbnb/lottie-ios) 4.6.1 / lottie-compose 6.7.1 | iOS / Android | Apache-2.0 |
 | [ZXing](https://github.com/zxing/zxing) core 3.5.4 (QR decoding) | Android | Apache-2.0 |

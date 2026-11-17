@@ -58,6 +58,8 @@ import kotlin.math.PI
 import kotlin.math.sin
 import com.tduhamel.lichen.core.seedFromPhrase
 import com.tduhamel.lichen.core.databaseEncryption
+import com.tduhamel.lichen.core.discardDatabase
+import com.tduhamel.lichen.core.encryptedDatabase
 import com.tduhamel.lichen.core.fitFileName
 import java.io.File
 import org.json.JSONObject
@@ -150,6 +152,13 @@ class AppModel(val app: Application) {
 
         /** The message database cannot be opened: nothing could be sent or kept (recheck R02). */
         STORAGE,
+
+        /** The key of the encrypted database cannot be read now (ADR-0036): try again. */
+        DATABASE_KEY_UNAVAILABLE,
+
+        /** The database is encrypted but its key is gone (the Keystore was reset): a new key
+         * would not open it. Restore a backup, or start again with an empty history. */
+        DATABASE_KEY_LOST,
     }
 
     enum class TorStatus { OFF, CONNECTING, PUBLISHING, READY, FAILED }
@@ -534,9 +543,57 @@ class AppModel(val app: Application) {
         val seed = loadIdentity()
         identitySeed = seed
         if (seed == null) return makeCore(IdentityStore.randomBytes(32), persistent = false)
-        val made = makeCore(seed, persistent = true)
+        return persistentCore(seed)
+    }
+
+    /** The core of [seed] with its database, or a throwaway one; sets [identityProblem]. The
+     * database is encrypted (ADR-0036): its key is drawn at the first start, then always read; a
+     * database already encrypted is never given a new key. */
+    private fun persistentCore(seed: ByteArray): LichenCore {
+        val dir = dataDirectory()
+        val key: ByteArray? = if (!databaseEncryption() || dir == null) null else {
+            val keys = DatabaseKey(app)
+            when (val r = keys.read()) {
+                is DatabaseKeyRead.Found -> r.key
+                DatabaseKeyRead.Unavailable -> return storageless(IdentityProblem.DATABASE_KEY_UNAVAILABLE)
+                DatabaseKeyRead.Absent, DatabaseKeyRead.Lost -> when (runCatching { encryptedDatabase(dir.path, seed) }.getOrNull()) {
+                    // Its key is gone: a new one would not open it.
+                    true -> return storageless(IdentityProblem.DATABASE_KEY_LOST)
+                    false -> keys.create() ?: return storageless(IdentityProblem.DATABASE_KEY_UNAVAILABLE)
+                    null -> return storageless(IdentityProblem.DATABASE_KEY_UNAVAILABLE)
+                }
+            }
+        }
+        val made = if (key == null) makeCore(seed, persistent = true) else LichenCore.withDatabaseKey(
+            "lichen-android",
+            IdentityStore.randomBytes(32),
+            seed,
+            dir?.path,
+            key,
+        )
         identityProblem = if (made.storageOk()) null else IdentityProblem.STORAGE
         return made
+    }
+
+    /** A throwaway core while the database cannot be used, and why. */
+    private fun storageless(problem: IdentityProblem): LichenCore {
+        identityProblem = problem
+        return makeCore(IdentityStore.randomBytes(32), persistent = false)
+    }
+
+    /** The user starts again with an empty history after the database key was lost
+     * ([IdentityProblem.DATABASE_KEY_LOST]): the unreadable database goes (messages, contacts,
+     * groups), a new key is drawn. The identity and the downloads stay. */
+    fun discardUnreadableHistory(): String? {
+        val seed = identitySeed ?: return LichenException.Storage().display(res)
+        val dir = dataDirectory() ?: return LichenException.Storage().display(res)
+        return try {
+            discardDatabase(dir.path, seed)
+            useIdentity(seed)
+            null
+        } catch (e: LichenException) {
+            e.display(res)
+        }
     }
 
     /** Reads the identity again ([IdentityProblemScreen]); the app starts with it once it is back. */
@@ -563,8 +620,7 @@ class AppModel(val app: Application) {
         if (isDemo) stopDemo()
         resetState()
         identitySeed = seed
-        replaceCore(makeCore(seed, persistent = true))
-        identityProblem = if (core.storageOk()) null else IdentityProblem.STORAGE
+        replaceCore(persistentCore(seed))
         refreshAll()
         shares = core.shares()
         positions = core.positions(now())
@@ -574,26 +630,13 @@ class AppModel(val app: Application) {
         pump()
     }
 
-    /** The database is encrypted when the core can (ADR-0036): with an empty key (the Keystore
-     * cannot give it now) the core opens no database rather than a clear one. Without SQLCipher in
-     * the core, nothing changes. */
-    private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore =
-        if (persistent && databaseEncryption()) {
-            LichenCore.withDatabaseKey(
-                "lichen-android",
-                IdentityStore.randomBytes(32),
-                seed,
-                dataDirectory()?.path,
-                DatabaseKey(app).read(),
-            )
-        } else {
-            LichenCore(
-                "lichen-android",
-                IdentityStore.randomBytes(32),
-                seed,
-                if (persistent) dataDirectory()?.path else null,
-            )
-        }
+    /** A core with a database in clear ([persistent]) or in memory; [persistentCore] encrypts it. */
+    private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
+        "lichen-android",
+        IdentityStore.randomBytes(32),
+        seed,
+        if (persistent) dataDirectory()?.path else null,
+    )
 
     /** Per-node databases live in the app's private files. */
     private fun dataDirectory(): File? = File(app.filesDir, "lichen").takeIf { it.isDirectory || it.mkdirs() }
@@ -634,6 +677,8 @@ class AppModel(val app: Application) {
             "corrupt" -> identityProblem = IdentityProblem.CORRUPT
             "notsaved" -> identityProblem = IdentityProblem.NOT_SAVED
             "storage" -> identityProblem = IdentityProblem.STORAGE
+            "databasekey" -> identityProblem = IdentityProblem.DATABASE_KEY_UNAVAILABLE
+            "databasekeylost" -> identityProblem = IdentityProblem.DATABASE_KEY_LOST
         }
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {

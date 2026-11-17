@@ -107,35 +107,47 @@ enum Keychain {
         ]
     }
 
-    /// The key of the message databases (SQLCipher, ADR-0036): 32 random bytes drawn once, kept
-    /// in the Keychain for this device only, readable after the first unlock. Used only when the
-    /// core can encrypt (`databaseEncryption()`). Nil when the Keychain cannot be read or written
-    /// now: the app then keeps no database rather than a clear one. A key that is gone (the
-    /// Keychain was reset) makes the databases unreadable: the history then comes back from a
-    /// backup (ADR-0037).
-    static func databaseKey() -> Data? {
+    /// What reading the database key found (ADR-0036).
+    enum DatabaseKeyRead: Equatable {
+        case found(Data)
+        /// None stored yet.
+        case absent
+        /// The Keychain cannot give it now (before the first unlock).
+        case unavailable
+        /// Something is stored, but not a 32-byte key.
+        case lost
+    }
+
+    /// The key of the message databases (SQLCipher, ADR-0036): 32 random bytes drawn once,
+    /// kept in the Keychain for this device only, readable after the first unlock.
+    static func readDatabaseKey() -> DatabaseKeyRead {
         var query = databaseBase
         query[kSecReturnData as String] = true
         var item: CFTypeRef?
         switch SecItemCopyMatching(query as CFDictionary, &item) {
         case errSecSuccess:
-            guard let key = item as? Data, key.count == 32 else { return nil }
-            return key
+            guard let key = item as? Data, key.count == 32 else { return .lost }
+            return .found(key)
         case errSecItemNotFound:
-            guard let key = try? secureRandom(32) else { return nil }
-            var add = databaseBase
-            add[kSecValueData as String] = key
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return nil }
-            // Read back: what the next start will find.
-            var again = databaseBase
-            again[kSecReturnData as String] = true
-            var back: CFTypeRef?
-            guard SecItemCopyMatching(again as CFDictionary, &back) == errSecSuccess, back as? Data == key else { return nil }
-            return key
+            return .absent
         default:
-            return nil
+            return .unavailable
         }
+    }
+
+    /// Draws and saves the database key: only after `readDatabaseKey()` found none (or a lost
+    /// one, which it replaces) and no database waits for an older one.
+    static func createDatabaseKey() throws -> Data {
+        if readDatabaseKey() == .lost { SecItemDelete(databaseBase as CFDictionary) }
+        let key = try secureRandom(32)
+        var add = databaseBase
+        add[kSecValueData as String] = key
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        let status = SecItemAdd(add as CFDictionary, nil)
+        guard status == errSecSuccess else { throw IdentityWriteError.write(status) }
+        // Read back: what the next start will find.
+        guard readDatabaseKey() == .found(key) else { throw IdentityWriteError.verify }
+        return key
     }
 
     /// Seeds for the core's random generator and for throwaway identities (demo).

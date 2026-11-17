@@ -3,7 +3,8 @@
 # emulator) in apps/android/app/src/main/jniLibs, and the Kotlin bindings in
 # apps/android/app/src/main/java/com/tduhamel/lichen/core. Both are generated and git-ignored.
 # Usage: scripts/build-android-core.sh
-# Needs cargo-ndk, `rustup target add aarch64-linux-android` and the NDK below (CLAUDE.md).
+# Needs cargo-ndk, `rustup target add aarch64-linux-android` and the NDK below (CLAUDE.md), and
+# perl and make: the database is SQLCipher on OpenSSL's libcrypto, built from source (ADR-0036).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export ANDROID_HOME="${ANDROID_HOME:-/opt/homebrew/share/android-commandlinetools}"
@@ -13,15 +14,15 @@ export CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS="-C link-arg=-Wl,-z,max-page
 
 main=apps/android/app/src/main
 # Android 12 (API 31) is the app's minimum (ADR-0012: AVIF decoding by the system).
-cargo ndk -t arm64-v8a --platform 31 build -q -p lc-ffi --release
+cargo ndk -t arm64-v8a --platform 31 build -q -p lc-ffi --release --features sqlcipher
 rm -rf "$main/jniLibs" && mkdir -p "$main/jniLibs/arm64-v8a"
 cp target/aarch64-linux-android/release/liblc_ffi.so "$main/jniLibs/arm64-v8a/"
 # Host library: the bindings are generated from its metadata, and the JVM unit tests load it.
-cargo build -q -p lc-ffi --release
+cargo build -q -p lc-ffi --release --features sqlcipher
 
 out="$main/java"
 rm -rf "$out/com/tduhamel/lichen/core" "$main/generated"
 case "$(uname -s)" in Darwin) host=dylib ;; *) host=so ;; esac
-cargo run -q -p lc-ffi --release --features cli --bin uniffi-bindgen -- \
+cargo run -q -p lc-ffi --release --features cli,sqlcipher --bin uniffi-bindgen -- \
   generate --library "target/release/liblc_ffi.$host" --language kotlin --no-format --out-dir "$out"
 echo "$main/jniLibs/arm64-v8a/liblc_ffi.so and $out/com/tduhamel/lichen/core are ready"

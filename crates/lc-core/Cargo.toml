@@ -21,10 +21,15 @@ miniz_oxide.workspace = true
 bip39.workspace = true
 toml.workspace = true
 
+# SQLCipher's crypto outside Apple platforms (Android, Linux hosts): OpenSSL's libcrypto, built
+# from source and linked statically (ADR-0036). Apple platforms use CommonCrypto.
+[target.'cfg(not(target_vendor = "apple"))'.dependencies]
+libsqlite3-sys = { workspace = true, optional = true, features = ["bundled-sqlcipher-vendored-openssl"] }
+
 [features]
-# The store encrypted at rest (ADR-0036): SQLCipher in place of SQLite. Off until every platform
-# builds it: Android needs a crypto library for it (see the ADR).
-sqlcipher = ["rusqlite/bundled-sqlcipher"]
+# The store encrypted at rest (ADR-0036): SQLCipher in place of SQLite. On in the apps' core builds
+# (scripts/build-*-core.sh); host tests run with and without it (scripts/check.sh).
+sqlcipher = ["rusqlite/bundled-sqlcipher", "dep:libsqlite3-sys"]
 
 [dev-dependencies]
 hex.workspace = true

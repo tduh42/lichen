@@ -260,7 +260,11 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
     var restoring by remember { mutableStateOf(false) }
     var restoringBackup by remember { mutableStateOf(false) }
     var confirmNew by remember { mutableStateOf(false) }
+    var confirmEmpty by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val identityAtFault = problem in setOf(
+        AppModel.IdentityProblem.UNAVAILABLE, AppModel.IdentityProblem.CORRUPT, AppModel.IdentityProblem.NOT_SAVED,
+    )
     Column(
         Modifier.fillMaxSize().background(t.bg).windowInsetsPadding(WindowInsets.systemBars).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -268,7 +272,14 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
         Spacer(Modifier.weight(1f))
         Icon(Icons.Outlined.Key, null, tint = t.sos, modifier = Modifier.size(40.dp))
         Text(
-            stringResource(if (problem == AppModel.IdentityProblem.STORAGE) R.string.storage_problem_title else R.string.identity_problem_title),
+            stringResource(
+                when (problem) {
+                    AppModel.IdentityProblem.STORAGE -> R.string.storage_problem_title
+                    AppModel.IdentityProblem.DATABASE_KEY_UNAVAILABLE -> R.string.database_key_unavailable_title
+                    AppModel.IdentityProblem.DATABASE_KEY_LOST -> R.string.database_key_lost_title
+                    else -> R.string.identity_problem_title
+                },
+            ),
             fontSize = 24.sp, fontWeight = FontWeight.Bold, color = t.tx,
         )
         Text(
@@ -278,6 +289,8 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
                     AppModel.IdentityProblem.CORRUPT -> R.string.identity_problem_corrupt
                     AppModel.IdentityProblem.NOT_SAVED -> R.string.identity_problem_not_saved
                     AppModel.IdentityProblem.STORAGE -> R.string.storage_problem
+                    AppModel.IdentityProblem.DATABASE_KEY_UNAVAILABLE -> R.string.database_key_unavailable
+                    AppModel.IdentityProblem.DATABASE_KEY_LOST -> R.string.database_key_lost
                 },
             ),
             fontSize = 15.sp, color = t.tx2,
@@ -285,9 +298,16 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
         error?.let { Banner(BannerKind.SOS, it) }
         Spacer(Modifier.weight(1f))
         PrimaryButton(stringResource(R.string.try_again), Modifier.fillMaxWidth()) { model.retryIdentity() }
-        if (problem != AppModel.IdentityProblem.STORAGE) {
+        if (identityAtFault) {
             SecondaryButton(stringResource(R.string.restore_from_words)) { restoring = true }
+        }
+        if (identityAtFault || problem == AppModel.IdentityProblem.DATABASE_KEY_LOST) {
             SecondaryButton(stringResource(R.string.restore_backup)) { restoringBackup = true }
+        }
+        if (problem == AppModel.IdentityProblem.DATABASE_KEY_LOST) {
+            TextButton({ confirmEmpty = true }, Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.empty_history), color = t.sos, fontSize = 15.sp)
+            }
         }
         if (problem == AppModel.IdentityProblem.CORRUPT) {
             TextButton({ confirmNew = true }, Modifier.fillMaxWidth()) {
@@ -297,6 +317,21 @@ fun IdentityProblemScreen(model: AppModel, problem: AppModel.IdentityProblem) {
     }
     if (restoring) RestoreSheet(model) { restoring = false }
     if (restoringBackup) RestoreBackupSheet(model, { restoringBackup = false })
+    if (confirmEmpty) {
+        AlertDialog(
+            onDismissRequest = { confirmEmpty = false },
+            title = { Text(stringResource(R.string.empty_history_confirm)) },
+            text = { Text(stringResource(R.string.empty_history_warning)) },
+            confirmButton = {
+                TextButton({
+                    confirmEmpty = false
+                    error = model.discardUnreadableHistory()
+                }) { Text(stringResource(R.string.empty_history), color = t.sos) }
+            },
+            dismissButton = { TextButton({ confirmEmpty = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
+            containerColor = t.s1,
+        )
+    }
     if (confirmNew) {
         AlertDialog(
             onDismissRequest = { confirmNew = false },

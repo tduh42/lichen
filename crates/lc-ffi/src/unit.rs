@@ -1409,6 +1409,116 @@ mod backup {
         assert!(!locked.storage_ok());
         let _ = std::fs::remove_dir_all(d);
     }
+
+    /// A plain database waits for no key; discarding a database removes it and its journals.
+    #[test]
+    fn a_plain_database_waits_for_no_key() {
+        let d = dir("plain-db");
+        let at = d.display().to_string();
+        drop(LichenCore::new("t".into(), vec![1; 32], vec![156; 32], Some(at.clone())).unwrap());
+        let file = database_file(
+            &d,
+            &lc_meshcore::ecdh::public_key(&lc_meshcore::ecdh::expand_seed(&[156; 32])),
+        );
+        assert!(file.exists());
+        assert_eq!(encrypted_database(at.clone(), vec![156; 32]), Ok(false));
+        assert_eq!(
+            encrypted_database(at.clone(), vec![157; 32]),
+            Ok(false),
+            "none yet"
+        );
+        assert_eq!(
+            encrypted_database(at.clone(), vec![1; 31]),
+            Err(LichenError::InvalidKey)
+        );
+        discard_database(at.clone(), vec![156; 32]).unwrap();
+        assert!(!file.exists());
+        discard_database(at, vec![156; 32]).unwrap();
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[cfg(feature = "sqlcipher")]
+    fn keyed(seed: u8, d: &std::path::Path, key: Option<Vec<u8>>) -> Arc<LichenCore> {
+        LichenCore::with_database_key(
+            "t".into(),
+            vec![1; 32],
+            vec![seed; 32],
+            Some(d.display().to_string()),
+            key,
+        )
+        .unwrap()
+    }
+
+    #[cfg(feature = "sqlcipher")]
+    fn texts(c: &LichenCore) -> Vec<String> {
+        c.history(
+            ChatRef::Contact {
+                key: vec![0x4D; 32],
+            },
+            None,
+            10,
+        )
+        .unwrap()
+        .into_iter()
+        .filter_map(|m| match m.message {
+            Message::Text { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect()
+    }
+
+    /// ADR-0036 in the binding layer: a phone's plain database is encrypted at the first start
+    /// with a key, then opens only with that key; the app learns that an encrypted database
+    /// waits for its key, and can discard it when the key is lost; a backup restored over it
+    /// is encrypted again at the next start.
+    #[cfg(feature = "sqlcipher")]
+    #[test]
+    fn the_database_under_its_key() {
+        let d = dir("encrypted");
+        let (dir_s, seed) = (d.display().to_string(), vec![155; 32]);
+        let key = Some(vec![0x6B; 32]);
+        // An existing phone: its plain history.
+        let plain = keyed(155, &d, None);
+        plain
+            .lock()
+            .store
+            .as_ref()
+            .unwrap()
+            .insert(&text("At the refuge?"))
+            .unwrap();
+        drop(plain);
+        assert_eq!(encrypted_database(dir_s.clone(), seed.clone()), Ok(false));
+
+        let c = keyed(155, &d, key.clone());
+        assert!(c.storage_ok());
+        assert_eq!(texts(&c), ["At the refuge?"]);
+        drop(c);
+        assert_eq!(encrypted_database(dir_s.clone(), seed.clone()), Ok(true));
+        assert!(
+            !keyed(155, &d, Some(vec![0x6C; 32])).storage_ok(),
+            "another key"
+        );
+        assert!(!keyed(155, &d, None).storage_ok(), "no key");
+        let c = keyed(155, &d, key.clone());
+        assert_eq!(texts(&c), ["At the refuge?"]);
+
+        // A backup of the encrypted store, restored over it: plain until the next start.
+        let again = d.join("again.backup").display().to_string();
+        c.export_backup(again.clone(), Vec::new()).unwrap();
+        c.restore_backup(again, c.recovery_phrase(), dir_s.clone())
+            .unwrap();
+        drop(c);
+        assert_eq!(encrypted_database(dir_s.clone(), seed.clone()), Ok(false));
+        assert_eq!(texts(&keyed(155, &d, key.clone())), ["At the refuge?"]);
+        assert_eq!(encrypted_database(dir_s.clone(), seed.clone()), Ok(true));
+
+        // The key is lost: the user starts again with an empty history.
+        discard_database(dir_s.clone(), seed.clone()).unwrap();
+        assert_eq!(encrypted_database(dir_s.clone(), seed), Ok(false));
+        let fresh = keyed(155, &d, Some(vec![0x7A; 32]));
+        assert!(fresh.storage_ok() && texts(&fresh).is_empty());
+        let _ = std::fs::remove_dir_all(d);
+    }
 }
 
 /// Links and places come with UTF-16 offsets, what the apps' strings count (ADR-0034).
