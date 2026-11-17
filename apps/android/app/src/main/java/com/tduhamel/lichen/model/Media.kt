@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.core.Message
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.decodeVoice
+import java.io.File
 import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -246,17 +247,31 @@ fun pickPhoto(resolver: ContentResolver, uri: Uri, maxSide: Int = 640): PickedPh
     PickedPhoto(original, buf.array(), bitmap.width, bitmap.height)
 }.getOrNull()
 
+/** What the decoder does once it has read an image's header, before any pixel: refuses one
+ * that declares more than 16,384 pixels on a side or 64 million in all, and asks for at most
+ * `maxSide` on the longer side, which the decoder reaches by sampling as it decodes (JPEG,
+ * HEIC and WebP decode at 1/2, 1/4 or 1/8 directly): what it holds is the size asked for, not
+ * the image's (review of 2026-11-15, SR-27). */
+private fun bounded(maxSide: Int) = ImageDecoder.OnHeaderDecodedListener { d, info, _ ->
+    val (w, h) = info.size.width to info.size.height
+    require(w in 1..16_384 && h in 1..16_384 && w.toLong() * h <= 64_000_000L)
+    val scale = minOf(1.0, maxSide.toDouble() / max(w, h))
+    d.setTargetSize(max(1, (w * scale).roundToInt()), max(1, (h * scale).roundToInt()))
+}
+
 /** Decodes an image (AVIF thumbnails from Android 12, JPEG, PNG, HEIC…) at most `maxSide` on
- * its longer side, or null. Its header is read first: one that declares more than 16,384
- * pixels on a side, or 64 million in all, is refused instead of decoded whole. A received
- * image is a few hundred bytes that can declare any size (review of 2026-11-15, SR-27). */
+ * its longer side, or null, header first ([bounded]). A received image is a few hundred bytes
+ * that can declare any size (review of 2026-11-15, SR-27). Call it off the main thread. */
 fun decodeImage(bytes: ByteArray, maxSide: Int = 2048): Bitmap? = runCatching {
-    ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { d, info, _ ->
-        val (w, h) = info.size.width to info.size.height
-        require(w in 1..16_384 && h in 1..16_384 && w.toLong() * h <= 64_000_000L)
-        val scale = minOf(1.0, maxSide.toDouble() / max(w, h))
-        d.setTargetSize(max(1, (w * scale).roundToInt()), max(1, (h * scale).roundToInt()))
-    }
+    ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes)), bounded(maxSide))
+}.getOrNull()
+
+/** Decodes a downloaded image from its file, header first ([bounded]): the decoder reads the
+ * file as it goes, never the whole of it into memory. A download is up to 64 MiB (§14.2);
+ * reading it whole to decode it held all of it at once (second read of 2026-11-17, N16).
+ * Call it off the main thread. */
+fun decodeImageFile(file: File, maxSide: Int = 2048): Bitmap? = runCatching {
+    ImageDecoder.decodeBitmap(ImageDecoder.createSource(file), bounded(maxSide))
 }.getOrNull()
 
 /** A file name from the image's format, as the iOS app names them. */

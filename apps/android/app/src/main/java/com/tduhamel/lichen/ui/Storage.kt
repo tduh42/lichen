@@ -60,6 +60,7 @@ import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.decodeImage
+import com.tduhamel.lichen.model.decodeImageFile
 import com.tduhamel.lichen.model.hex
 
 /** What a media message is, for Chat info › Media, files and voice (ADR-0034). */
@@ -157,7 +158,8 @@ private fun Thumbnail(model: AppModel, m: StoredMessage, open: () -> Unit) {
     }
     val fetched = announce?.let { model.downloads[it.hash.hex()] }
     val bitmap = rememberInBackground(m.id, fetched) {
-        (fetched?.let { f -> runCatching { decodeImage(f.readBytes(), 480) }.getOrNull() } ?: (msg as? Message.Image)?.let { decodeImage(it.data, 240) })
+        // A download from its file, never read whole (N16).
+        (fetched?.let { f -> decodeImageFile(f, 480) } ?: (msg as? Message.Image)?.let { decodeImage(it.data, 240) })
             ?.asImageBitmap()
     }
     Box(
