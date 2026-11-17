@@ -11,6 +11,8 @@ ignore = [
     { id = "RUSTSEC-2026-0459", reason = "Bundled SQLite before 3.54 can return stale memory when it opens a database with a crafted -wal file. lichen opens databases it created in its own private directory, and an imported MeshCore app export only as a copy without any -wal, read-only and immutable (ADR-0033). The fix needs rusqlite >= 0.41, which Arti 0.48 (tor-dirmgr: rusqlite < 0.41) does not accept: upgrade with the next Arti release, and never open a database file from outside with its -wal." },
     { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained (no known flaw); a compile-time macro pulled by dependencies." },
     { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained (no known flaw); pulled by dependencies, lichen's config uses toml." },
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained (no known flaw, announced 2026-11-17); it comes with Arti 0.48 (Tor) and is not used by lichen's own code. Look again at each Arti update." },
+    { id = "RUSTSEC-2026-0542", reason = "humantime is unmaintained because it wraps chrono (no known flaw, 2026-11-17); Arti 0.48 parses its configuration durations with it. Look again at each Arti update." },
 ]
 
 [licenses]
