@@ -384,6 +384,9 @@ pub enum Error {
     Expired,
     /// A radio setting outside what the radio takes (protocol §1.1).
     Invalid,
+    /// What was pasted names an identity other than the one this contact has: the change
+    /// waits for the user, who compares safety numbers (§4.6).
+    IdentityPending,
 }
 
 /// Core configuration. Its `Debug` leaves the seeds out (review of 2026-11-15, SR-34).

@@ -27,7 +27,7 @@ struct AddContactView: View {
             }
 
             if let invite {
-                JoinPanel(text: invite.text, info: invite.info) { finish() }
+                JoinPanel(text: invite.text, info: invite.info, inPerson: invite.inPerson) { finish() }
             } else if let added {
                 VerifyPanel(node: added.key) {
                     // Their conversation opens, ready for the first message (the list shows
@@ -70,7 +70,7 @@ struct AddContactView: View {
         error = nil
         if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lichen:1:g:") {
             switch model.parseInvite(text) {
-            case let .success(info): invite = ScannedInvite(text: text, info: info)
+            case let .success(info): invite = ScannedInvite(text: text, info: info, inPerson: inPerson)
             case let .failure(e):
                 error = e == .BadCode ? String(localized: "This invitation could not be read.") : e.display
             }
@@ -112,6 +112,8 @@ struct AddContactView: View {
 private struct ScannedInvite {
     let text: String
     let info: InviteInfo
+    /// Scanned with the camera, not pasted: only then does it verify the admin.
+    let inPerson: Bool
 }
 
 /// A scanned group invitation (§10.5): what it is, then the request to the admin until the
@@ -119,6 +121,7 @@ private struct ScannedInvite {
 private struct JoinPanel: View {
     let text: String
     let info: InviteInfo
+    let inPerson: Bool
     let done: () -> Void
     @Environment(AppModel.self) private var model
     @State private var asked = false
@@ -173,7 +176,9 @@ private struct JoinPanel: View {
                        message: String(localized: "Ask \(admin) to show a new code."))
                 Button("Close") { done() }.buttonStyle(.secondary)
             } else {
-                Text("\(admin) becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.")
+                Text(inPerson
+                     ? String(localized: "\(admin) becomes a verified contact: you scanned their code in person. Members can read what was sent under the group's current keys.")
+                     : String(localized: "Pasted, not scanned: \(admin) is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys."))
                     .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Join") { join() }
@@ -193,7 +198,7 @@ private struct JoinPanel: View {
     }
 
     private func join() {
-        error = model.acceptInvite(text, info)
+        error = model.acceptInvite(text, info, scanned: inPerson)
         if error == nil { asked = true }
     }
 }

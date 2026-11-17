@@ -64,7 +64,8 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
     val t = lichen
     var scanning by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<ContactInfo?>(null) }
-    var invite by remember { mutableStateOf<Pair<String, InviteInfo>?>(null) }
+    // The invitation, and whether it was scanned (only then does it verify the admin).
+    var invite by remember { mutableStateOf<Triple<String, InviteInfo, Boolean>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // A contact card adds the contact (verified only when scanned in person); a group
     // invitation asks to join (§10.5).
@@ -72,7 +73,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         error = null
         if (text.trim().startsWith("lichen:1:g:")) {
             val (info, e) = model.parseInvite(text)
-            invite = info?.let { text to it }
+            invite = info?.let { Triple(text, it, inPerson) }
             error = e
             return
         }
@@ -105,7 +106,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
             val c = added
             val inv = invite
             if (inv != null) {
-                JoinPanel(model, inv.first, inv.second, done = next ?: back)
+                JoinPanel(model, inv.first, inv.second, inv.third, done = next ?: back)
             } else if (c != null) {
                 VerifyPanel(model, c.key, null) {
                     // Their conversation opens, ready for the first message (the list shows
@@ -140,14 +141,14 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
 /** A scanned group invitation (§10.5): what it is, then the request to the admin until the
  * group arrives. */
 @Composable
-private fun JoinPanel(model: AppModel, text: String, info: InviteInfo, done: () -> Unit) {
+private fun JoinPanel(model: AppModel, text: String, info: InviteInfo, inPerson: Boolean, done: () -> Unit) {
     val t = lichen
     val admin = info.adminName.ifEmpty { stringResource(R.string.the_admin) }
     val name = info.groupName.ifEmpty { stringResource(R.string.the_group) }
     var asked by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     fun join() {
-        error = model.acceptInvite(text, info)
+        error = model.acceptInvite(text, info, scanned = inPerson)
         if (error == null) asked = true
     }
     // Debug extra `joinNow`: as if "Join" were tapped.
@@ -190,7 +191,7 @@ private fun JoinPanel(model: AppModel, text: String, info: InviteInfo, done: () 
                 SecondaryButton(stringResource(R.string.close), onClick = done)
             }
             else -> {
-                Text(stringResource(R.string.join_note, admin), fontSize = 13.sp, color = t.tx2)
+                Text(stringResource(if (inPerson) R.string.join_note else R.string.join_note_pasted, admin), fontSize = 13.sp, color = t.tx2)
                 PrimaryButton(stringResource(R.string.join)) { join() }
                 SecondaryButton(stringResource(R.string.cancel), onClick = done)
             }

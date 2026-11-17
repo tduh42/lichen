@@ -2038,10 +2038,10 @@ class AppModel(val app: Application) {
         null to if (e is LichenException.BadCode) res.getString(R.string.invite_unreadable) else e.display(res)
     }
 
-    /** Asks the admin of a scanned invitation to add us (they become a verified contact); the
-     * group arrives as `GroupJoined`. */
-    fun acceptInvite(text: String, info: InviteInfo): String? = try {
-        core.acceptInvite(text.trim(), now())
+    /** Asks the admin of an invitation to add us; the group arrives as `GroupJoined`. Only a
+     * `scanned` invitation verifies the admin (second read of 2026-11-17, N1). */
+    fun acceptInvite(text: String, info: InviteInfo, scanned: Boolean): String? = try {
+        core.acceptInvite(text.trim(), scanned, now())
         joining = joining + (info.admin.hex() to info.groupName)
         contacts = people()
         pump()

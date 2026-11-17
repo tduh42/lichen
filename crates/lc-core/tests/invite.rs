@@ -117,7 +117,7 @@ fn two_people_join_with_one_invitation() {
     assert_eq!(inv.group_name, "Rando Vercors");
     assert_eq!(inv.admin_name, "alice");
     for &x in &j {
-        net.with_core(x, |c, now| c.join(&inv, now))
+        net.with_core(x, |c, now| c.join(&inv, true, now))
             .unwrap()
             .unwrap();
     }
@@ -217,7 +217,7 @@ fn a_revoked_invitation_admits_no_one() {
     let (mut net, m, j, gid) = setup(22, 1);
     let inv = invite(&mut net, m[0], &gid);
     net.with_core(m[0], |c, _| c.revoke_invite(&inv.token));
-    net.with_core(j[0], |c, now| c.join(&inv, now))
+    net.with_core(j[0], |c, now| c.join(&inv, true, now))
         .unwrap()
         .unwrap();
     nobody_admitted(&mut net, &m, j[0], &gid);
@@ -228,7 +228,7 @@ fn a_forged_token_admits_no_one() {
     let (mut net, m, j, gid) = setup(23, 1);
     let mut inv = invite(&mut net, m[0], &gid);
     inv.token[0] ^= 1;
-    net.with_core(j[0], |c, now| c.join(&inv, now))
+    net.with_core(j[0], |c, now| c.join(&inv, true, now))
         .unwrap()
         .unwrap();
     nobody_admitted(&mut net, &m, j[0], &gid);
@@ -242,12 +242,13 @@ fn an_expired_invitation_admits_no_one() {
     net.run_until(net.now + 13 * MIN, |_| false);
     // The joiner's app refuses it (its clock is right)…
     assert_eq!(
-        net.with_core(j[0], |c, now| c.join(&inv, now)).unwrap(),
+        net.with_core(j[0], |c, now| c.join(&inv, true, now))
+            .unwrap(),
         Err(Error::Expired)
     );
     // …and the admin's, if the joiner's clock is wrong.
     inv.expires += 3600;
-    net.with_core(j[0], |c, now| c.join(&inv, now))
+    net.with_core(j[0], |c, now| c.join(&inv, true, now))
         .unwrap()
         .unwrap();
     nobody_admitted(&mut net, &m, j[0], &gid);
@@ -260,7 +261,7 @@ fn key_timeline() {
     let (mut net, m, j, gid) = setup(21, 2);
     let inv = invite(&mut net, m[0], &gid);
     for &x in &j {
-        net.with_core(x, |c, now| c.join(&inv, now))
+        net.with_core(x, |c, now| c.join(&inv, true, now))
             .unwrap()
             .unwrap();
     }
@@ -300,7 +301,7 @@ fn join_timings() {
         let (mut net, m, j, gid) = setup(100 + seed, 2);
         let inv = invite(&mut net, m[0], &gid);
         for &x in &j {
-            net.with_core(x, |c, now| c.join(&inv, now))
+            net.with_core(x, |c, now| c.join(&inv, true, now))
                 .unwrap()
                 .unwrap();
         }
@@ -337,7 +338,7 @@ fn a_restored_phone_joins_again_and_is_heard() {
         n.nodes[bob].core.as_ref().is_some_and(|c| c.ready())
     }));
     net.with_core(bob, |c, now| c.set_clock(UNIX0 + now, now));
-    net.with_core(bob, |c, now| c.join(&inv, now))
+    net.with_core(bob, |c, now| c.join(&inv, true, now))
         .unwrap()
         .unwrap();
     assert!(
@@ -381,7 +382,7 @@ fn a_member_who_missed_a_rotation_asks_and_reads() {
     let (mut net, m, j, gid) = setup(24, 1);
     let (alice, bob, carol, dave) = (m[0], m[1], m[2], j[0]);
     let inv = invite(&mut net, alice, &gid);
-    net.with_core(dave, |c, now| c.join(&inv, now))
+    net.with_core(dave, |c, now| c.join(&inv, true, now))
         .unwrap()
         .unwrap();
     let everyone = [alice, bob, carol, dave];
@@ -431,4 +432,53 @@ fn a_member_who_missed_a_rotation_asks_and_reads() {
     println!("read {} s after the post", (net.now - start) / 1000);
     // His request answered, nothing waits for him any more.
     assert!(net.run_until(net.now + 5 * MIN, |n| unreached(n).is_empty()));
+}
+
+/// Second read of 2026-11-17, N1: an invitation pasted from a message proves nothing. One that
+/// names another identity for a verified contact's node is refused (the change waits for the
+/// user) and leaves the contact as it was; a genuine one pasted adds the admin unverified.
+#[test]
+fn a_pasted_invitation_neither_verifies_nor_rebinds() {
+    let (mut net, m, j, gid) = setup(23, 2);
+    let inv = invite(&mut net, m[0], &gid);
+    let alice_node = net.key(m[0]);
+    let alice_id = net.with_core_ref(m[0], |c| *c.key().unwrap()).unwrap();
+    // Dave knows alice, verified in person.
+    net.with_core(j[0], |c, _| {
+        c.add_contact(alice_node, "alice", None);
+        c.set_identity(&alice_node, alice_id, true);
+    });
+    // Someone sends Dave an invitation that names their own identity with alice's node.
+    let mut forged = inv.clone();
+    forged.admin = [77; 32];
+    let r = net
+        .with_core(j[0], |c, now| c.join(&forged, false, now))
+        .unwrap();
+    assert!(matches!(r, Err(Error::IdentityPending)), "{r:?}");
+    net.with_core(j[0], |c, _| {
+        let a = c.contacts().find(|k| k.key == alice_node).unwrap();
+        assert_eq!((a.identity, a.verified), (Some(alice_id), true));
+        assert_eq!(c.pending_identity(&alice_node), Some(&[77; 32]));
+    });
+    // Scanned in person, the same code would replace it: the user stood in front of it.
+    // Pasted, alice's genuine invitation is fine and keeps her verified.
+    net.with_core(j[0], |c, now| c.join(&inv, false, now))
+        .unwrap()
+        .unwrap();
+    net.with_core(j[0], |c, _| {
+        let a = c.contacts().find(|k| k.key == alice_node).unwrap();
+        assert_eq!((a.identity, a.verified), (Some(alice_id), true));
+    });
+    // Eve has never met alice: pasted, the invitation adds her unverified.
+    net.with_core(j[1], |c, now| c.join(&inv, false, now))
+        .unwrap()
+        .unwrap();
+    net.with_core(j[1], |c, _| {
+        let a = c.contacts().find(|k| k.key == alice_node).unwrap();
+        assert_eq!((a.identity, a.verified), (Some(alice_id), false));
+    });
+    // Both still get in.
+    assert!(net.run_until(net.now + 60 * MIN, |n| {
+        j.iter().all(|&x| size(n, x, &gid) == Some(5))
+    }));
 }

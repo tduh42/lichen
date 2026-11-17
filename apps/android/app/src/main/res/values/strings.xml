@@ -636,6 +636,7 @@
     <string name="import_done">%1$d direct messages and %2$d channel posts imported.</string>
     <string name="import_already_here">%1$d were already here.</string>
     <string name="err_not_an_export">This file is not a database exported by the MeshCore app.</string>
+    <string name="err_identity_pending">This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.</string>
     <string name="joined_with_invite">%1$s joined with your invitation</string>
     <string name="sunday_hike">Sunday hike</string>
     <string name="invite_unreadable">This invitation could not be read.</string>
@@ -656,6 +657,7 @@
     <string name="the_group">the group</string>
     <string name="join">Join</string>
     <string name="join_note">%1$s becomes a verified contact: you scanned their code in person. Members can read what was sent under the group\'s current keys.</string>
+    <string name="join_note_pasted">Pasted, not scanned: %1$s is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group\'s current keys.</string>
     <string name="asking_admin">Asking %1$s to add you…</string>
     <string name="asking_note">Their phone adds you over LoRa, usually within a minute or two. You can close this screen: the group appears in your conversations.</string>
     <string name="already_in">You are already in %1$s</string>

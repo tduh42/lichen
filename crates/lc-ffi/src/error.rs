@@ -49,6 +49,9 @@ pub enum LichenError {
     InvalidSetting,
     /// Not a database the MeshCore app exported (ADR-0033).
     NotAnExport,
+    /// What was pasted names an identity other than the one this contact has: the change
+    /// waits for the user, who compares safety numbers (§4.6).
+    IdentityPending,
 }
 
 impl std::fmt::Display for LichenError {
@@ -81,6 +84,7 @@ impl From<lc_core::Error> for LichenError {
             lc_core::Error::NoClock => Self::NoClock,
             lc_core::Error::Expired => Self::Expired,
             lc_core::Error::Invalid => Self::InvalidSetting,
+            lc_core::Error::IdentityPending => Self::IdentityPending,
         }
     }
 }
