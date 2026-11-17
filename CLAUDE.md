@@ -12,7 +12,7 @@ The original design: `docs/spec/design.md` (French original `design.fr.md`); nor
 - **Self-contained** (ADR-0001): no code dependency on oxymesh or loranet. Only the optional `sim/` workspace, outside the build, may use oxymesh's simulator. The vectors in `testdata/meshcore/` are copied from oxymesh (data, not code), except `settings.toml`, written from the firmware's handlers by `settings.py`.
 - **Never reuse a nonce** (ADR-0003): every session key is fresh, `tag` is a per-direction counter, `attempt` is part of the nonce. A proptest checks it.
 - **The identity is the phone's** (ADR-0013): a seed in the Keychain / Keystore, never the node's key; the node key only routes (frame headers, paths). A contact is a node plus, once known, an identity and a verified flag; strangers meet through the introduction (§4.6).
-- **Never put a location in a MeshCore advert or telemetry without the user's explicit choice** (ADR-0032), never flood media (no media in groups before the bridge, L7); a medium that does not fit in the hour's airtime is refused, not queued (§13.4). A coarse location is a fixed grid cell centre, never random noise (ADR-0011).
+- **Never put a location in a MeshCore advert or telemetry without the user's explicit choice** (ADR-0032), never flood media (no media in groups before the bridge, L7), except a group voice note of at most 5 fragments, its cost shown before sending (ADR-0035); a medium that does not fit in the hour's airtime is refused, not queued (§13.4). A coarse location is a fixed grid cell centre, never random noise (ADR-0011).
 - **Duty cycle**: values in `config/eu868.toml`, never hard-coded; the budget is computed on the host before every costly send.
 
 ## 2. Architecture
