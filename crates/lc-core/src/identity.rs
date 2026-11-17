@@ -6,6 +6,21 @@ use sha2::{Digest, Sha256, Sha512};
 use crate::core::PubKey;
 
 /// The 24 words of an identity seed (BIP-39, English list).
+/// Unicode's bidirectional formatting characters: they reorder the text after them, so that a
+/// name can read as another (review of 2026-11-15, SR-35).
+pub const fn is_bidi_control(c: char) -> bool {
+    matches!(
+        c,
+        '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
+    )
+}
+
+/// A name another node chose, as lichen keeps and shows it: without bidirectional controls
+/// (second read of 2026-11-17, N15).
+pub fn shown_name(name: &str) -> String {
+    name.chars().filter(|c| !is_bidi_control(*c)).collect()
+}
+
 pub fn recovery_phrase(seed: &[u8; 32]) -> Vec<String> {
     bip39::Mnemonic::from_entropy(seed)
         .map(|m| m.words().map(str::to_owned).collect())

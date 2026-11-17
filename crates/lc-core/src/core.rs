@@ -60,6 +60,8 @@ const PROBE_WAIT_MS: Millis = 20_000;
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
 /// A HELLO we cannot open triggers our own introduction at most this often (§4.6).
 const INTRO_POKE_MS: Millis = 600_000;
+/// INTROs a self-introduction answering a HELLO we cannot open sends at most (N10).
+const POKE_TRIES: u8 = 3;
 /// A HELLO more than this far from our clock is not answered (§4.4, SR-03).
 const HELLO_FRESH_S: u64 = 600;
 /// Answers to frames anyone can send (INTRO_ACK, PATH_REPLY, HELLO_ACK, the INTRO that a HELLO
@@ -549,6 +551,8 @@ struct Introducing {
     path: OwnedPath,
     /// Paused once for the peer's own introduction (§4.4).
     yielded: bool,
+    /// Sends before it gives up: fewer for one nobody asked for (N10).
+    tries: u8,
 }
 
 /// The INTRO of an introduction in progress, with its return path `back`.
@@ -712,6 +716,9 @@ impl Peer {
             f.on_pending = false;
         }
         self.session = self.pending.take();
+        // The peer's handshake is confirmed: one of ours toward it, paused, is moot (§4.4).
+        self.initiating = None;
+        self.introducing = None;
     }
 }
 
@@ -1867,7 +1874,7 @@ impl Core {
                 // A companion keeps a few hundred contacts; a radio that sends more is not
                 // followed past this (review of 2026-11-15, SR-32).
                 if self.contacts.contains_key(&key) || self.contacts.len() < CONTACTS_MAX {
-                    let name = String::from_utf8_lossy(c.name).into_owned();
+                    let name = crate::identity::shown_name(&String::from_utf8_lossy(c.name));
                     let out_path = c.out_path.map(OwnedPath::from_path);
                     let (identity, verified) = self
                         .contacts
@@ -2221,7 +2228,7 @@ impl Core {
         if let Some(intro) = peer.introducing.as_mut()
             && now >= intro.next_retry
         {
-            if intro.attempt + 1 >= HELLO_TRIES {
+            if intro.attempt + 1 >= intro.tries {
                 peer.introducing = None;
                 peer.path = None;
                 if std::mem::take(&mut peer.suspect) {
@@ -2458,6 +2465,7 @@ impl Core {
             next_retry: now + self.hello_backoff(&path),
             path,
             yielded: false,
+            tries: HELLO_TRIES,
         };
         self.send_intro(k, &intro, now);
         peer.initiating = None;
@@ -3125,11 +3133,12 @@ impl Core {
             // Freshness (§4.4, review of 2026-11-15, SR-03): a HELLO carries its sender's
             // time. One more than ten minutes away from ours is a replay, or a clock gone
             // wrong, and gets no answer. Its resends within those minutes get the same one.
+            // A HELLO stamped 0 (a sender without a clock) is not fresh either once we know
+            // the time: it would stay valid for ever (second read of 2026-11-17, N11).
             let t = u64::from(handshake::salt_time(&hello.salt));
-            if t != 0
-                && self
-                    .unix_s(now)
-                    .is_some_and(|ours| ours.abs_diff(t) > HELLO_FRESH_S)
+            if self
+                .unix_s(now)
+                .is_some_and(|ours| t == 0 || ours.abs_diff(t) > HELLO_FRESH_S)
             {
                 return;
             }
@@ -3151,6 +3160,11 @@ impl Core {
                 peer.intro_poke = now + INTRO_POKE_MS;
                 if let Some(path) = self.path_for(&c, &peer) {
                     self.start_intro(&c, &mut peer, path, now);
+                    // Someone else's HELLO started it, and anyone can replay one: a few INTROs,
+                    // not a whole introduction's worth (second read of 2026-11-17, N10).
+                    if let Some(i) = peer.introducing.as_mut() {
+                        i.tries = POKE_TRIES;
+                    }
                 }
             }
             self.peers.insert(c, peer);
@@ -3170,12 +3184,25 @@ impl Core {
         else {
             return;
         };
-        // Crossing HELLOs: the smaller node key's handshake wins (§4.4).
+        // Crossing HELLOs: the smaller node key's handshake wins (§4.4). Ours pauses once for
+        // theirs, which ends it when its session is confirmed; a HELLO replayed within its ten
+        // minutes costs one pause, not our handshake (second read of 2026-11-17, N11).
         if peer.initiating.is_some() {
             if node < *c {
                 return;
             }
-            peer.initiating = None;
+            if let Some(path) = peer
+                .initiating
+                .as_ref()
+                .filter(|i| !i.yielded)
+                .map(|i| i.path.clone())
+            {
+                let until = now + 2 * self.hello_backoff(&path);
+                if let Some(i) = peer.initiating.as_mut() {
+                    i.yielded = true;
+                    i.next_retry = i.next_retry.max(until);
+                }
+            }
         }
         let return_path = (hello.return_path_len != PATH_UNKNOWN).then(|| OwnedPath {
             len_byte: hello.return_path_len,

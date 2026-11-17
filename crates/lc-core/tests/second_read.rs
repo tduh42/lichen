@@ -275,3 +275,86 @@ fn a_missed_first_probe_still_delivers() {
 fn a_forged_answer_to_an_anonymous_probe() {
     assert_eq!(anonymous_reply(true).as_deref(), Some("delivered"));
 }
+
+/// N10: Alice knows Bob's identity, Bob does not know hers, so he cannot open her HELLO and
+/// introduces himself instead. Nobody asked for that introduction and anyone can replay a
+/// HELLO to start one: it sends a few INTROs, not a whole introduction's worth (8).
+#[test]
+fn an_unasked_introduction_sends_few_intros() {
+    let (mut net, a, b) = net3(41, true);
+    let (alice, bob) = (net.key(a), net.key(b));
+    let bob_id = net.with_core_ref(b, |c| *c.key().unwrap()).unwrap();
+    net.with_core(a, |c, _| c.set_identity(&bob, bob_id, true));
+    // Alice hears none of Bob's INTROs: he sends them again until he gives up.
+    let intros: Arc<Mutex<usize>> = Arc::default();
+    let count = intros.clone();
+    net.deaf = Some(Box::new(move |r, frame| {
+        let intro = r == a
+            && Packet::decode(frame).is_ok_and(|p| {
+                p.ptype == PayloadType::RawCustom
+                    && Header::decode(p.payload)
+                        .is_ok_and(|(h, _)| h.kind == Kind::Control && h.index == 3)
+            });
+        if intro {
+            *count.lock().unwrap() += 1;
+        }
+        intro
+    }));
+    net.with_core(a, |c, now| c.send_text(&bob, "hello", 1, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 9 * MIN, |_| false);
+    let sent = *intros.lock().unwrap();
+    eprintln!("INTROs from one unasked introduction: {sent}");
+    assert!((1..=3).contains(&sent), "{sent} INTROs");
+    let _ = alice;
+}
+
+/// N11: a HELLO stamped 0 (its sender had no clock) used to stay fresh for ever, so a recorded
+/// one could be replayed at any time. Once the receiver knows the time, it gets no answer.
+#[test]
+fn a_hello_stamped_zero_gets_no_answer() {
+    let (mut net, a, b) = net3(42, true);
+    net.introduce(a, b);
+    let bob = net.key(b);
+    // Alice's app does not know the time: its clock says 1970.
+    net.with_core(a, |c, now| c.set_clock(0, now));
+    let id = net
+        .with_core(a, |c, now| c.send_text(&bob, "no clock", 1, now))
+        .unwrap()
+        .unwrap();
+    let mut ev = Vec::new();
+    net.run_until(net.now + 5 * MIN, |n| {
+        ev.extend(n.take_events(a));
+        outcome(&ev, id).is_some()
+    });
+    assert_ne!(outcome(&ev, id).as_deref(), Some("delivered"));
+}
+
+/// N15: a node's name, as its radio advertises it, loses the characters that reorder text: a
+/// name cannot pose as another one.
+#[test]
+fn node_names_lose_bidirectional_controls() {
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 43);
+    let a = net.add_companion(1, "alice");
+    let b = net.add_companion(2, "Bob\u{202E}nilliM");
+    let hub = net.add_repeater(50, "hub");
+    net.link(a, hub);
+    net.link(b, hub);
+    net.know(a, b, true);
+    net.connect(a);
+    net.connect(b);
+    let bob = net.key(b);
+    assert!(net.run_until(20 * S, |n| {
+        n.nodes[a]
+            .core
+            .as_ref()
+            .is_some_and(|c| c.contacts().any(|k| k.key == bob))
+    }));
+    let name = net
+        .with_core_ref(a, |c| {
+            c.contacts().find(|k| k.key == bob).unwrap().name.clone()
+        })
+        .unwrap();
+    assert_eq!(name, "BobnilliM");
+}
