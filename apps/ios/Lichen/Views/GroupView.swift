@@ -91,7 +91,7 @@ struct GroupView: View {
         SectionLabel("Location").padding(.top, 10)
         CardList {
             CardRow(title: String(localized: "Let this group locate me"),
-                    subtitle: String(localized: "Your phone answers their search pings even outside SOS")) {
+                    subtitle: String(localized: "Your phone answers their locating pings even outside SOS")) {
                 Toggle("Let this group locate me", isOn: Binding(get: { consent }, set: {
                     consent = $0
                     model.setSearchConsent(gid, $0)
@@ -258,7 +258,7 @@ struct GroupView: View {
                         model.tab = .search
                     }
                 } label: {
-                    Label("Search for \(m.name)", systemImage: "scope")
+                    Label("Locate \(m.name)", systemImage: "scope")
                 }
             }
             if isAdmin && !me {

@@ -112,7 +112,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                     g.members.forEachIndexed { i, m ->
                         if (i > 0) CardDivider(inset = 68.dp)
                         MemberRow(model, m, g, removable = isAdmin, remove = { removing = m }, promote = { promoting = m }) {
-                            // Search for a member: the Search tab opens on them.
+                            // Locate a member: the Locate tab opens on them.
                             error = model.startSearch(m.key)
                             if (error == null) model.openSearch = m.key.hex()
                         }

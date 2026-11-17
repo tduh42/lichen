@@ -61,8 +61,8 @@ extension AppModel {
                                       started: now, lastHeard: now, ended: false)
         if searchTarget.flatMap({ incidents[$0] })?.state() != .active { searchTarget = from }
         #if DEBUG
-        // -screen search: straight to the search, for screenshots.
-        if debugScreen == "search" {
+        // -screen locate: straight to the search, for screenshots.
+        if debugScreen == "locate" {
             _ = startSearch(from)
             tab = .search
             return
@@ -72,7 +72,7 @@ extension AppModel {
         notifier.sos(.contact(key: from),
                      title: String(localized: "SOS from \(name(of: from))"),
                      body: position == nil
-                        ? String(localized: "No GPS position: search for them by radio from lichen.")
+                        ? String(localized: "No GPS position: locate them by radio from lichen.")
                         : String(localized: "Their exact position is on the map; open lichen to follow it."))
     }
 
@@ -91,7 +91,7 @@ extension AppModel {
 
     // MARK: searching (protocol.md §11)
 
-    /// The people the Search tab can show: incidents not ended, and every search we run.
+    /// The people the Locate tab can show: incidents not ended, and every search we run.
     var searchTargets: [Data] {
         var out = activeIncidents.map(\.from)
         for s in searches where !out.contains(s.node) { out.append(s.node) }
@@ -112,7 +112,7 @@ extension AppModel {
     /// Starts a search for `node`; an error to show, or nil.
     func startSearch(_ node: Data) -> String? {
         guard let gid = searchGroup(for: node) else {
-            return String(localized: "A radio search needs a group you share with them.")
+            return String(localized: "Locating by radio needs a group you share with them.")
         }
         do {
             try core.startSearch(gid: gid, target: node, nowMs: now())
@@ -212,7 +212,7 @@ extension AppModel {
         if on { locationUsers.insert(who) } else { locationUsers.remove(who) }
     }
 
-    /// The compass, while the Search tab is on screen.
+    /// The compass, while the Locate tab is on screen.
     func useHeading(_ on: Bool) {
         if on {
             locator.onHeading = { [weak self] h in self?.heading = h }

@@ -89,7 +89,7 @@ import com.tduhamel.lichen.model.unhex
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** "Search" (mockup `recherche`): follow an SOS, and search for a group member by radio
+/** "Locate" (mockup `recherche`): follow an SOS, and search for a group member by radio
  * (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and how
  * far, the receptions everyone shared, and the actions (ping, bearing, lower power). */
 @OptIn(ExperimentalMaterial3Api::class)

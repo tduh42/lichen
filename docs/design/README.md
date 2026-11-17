@@ -62,7 +62,7 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 | Chat | `chat` | text, fragmented send with progress and ACK, announced photo (LoRa preview + iroh/Tor download), Codec2 voice, estimated cost in the composer |
 | Send a photo | `media` | mode: LoRa preview, iroh, Tor, deferred; cost per option |
 | Map and location | `carte` | members and shared precision, time-limited sharing, SOS button |
-| Search mode | `recherche` | SOS banner, likely area, searchers' bearings, bearing + distance + uncertainty, measurements, Ping / Add a bearing / Lower power |
+| Locate (search mode) | `recherche` | SOS banner, likely area, searchers' bearings, bearing + distance + uncertainty, measurements, Ping / Add a bearing / Lower power |
 | Group | `groupe` | members and their key state, key rotation after a departure, consent to be located, hop limit |
 | Settings | `reglages` | connected radio, budget, preset, repeater mode, iroh / Tor / relay only, default precision |
 | SOS | `sos` | hold for 3 s, what is sent, to whom, how |
@@ -73,7 +73,7 @@ Each semantic colour has a `_bg` (badge or banner background) and a `_fg` (text 
 ## Navigation
 
 - First launch: Welcome → Pairing → Identity → Add a contact → Conversations.
-- Tabs: Messages, Map, Search, Settings. SOS from the Map; SOS received → Search mode.
+- Tabs: Messages, Map, Locate, Settings ("Locate" is the radio search mode: "Search" is for messages only). SOS from the Map; SOS received → Locate.
 - Chat → Send a photo as a sheet (`.sheet` on iOS, `ModalBottomSheet` on Android).
 
 ## Shared components

@@ -64,7 +64,7 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 | Discussion | `chat` | Texte, envoi fragmenté avec progression et ACK, photo annoncée (aperçu LoRa + téléchargement iroh/Tor), vocal Codec2, coût estimé dans la zone de saisie |
 | Envoi de photo | `media` | Choix du mode : aperçu LoRa, iroh, Tor, différé. Coût par option |
 | Carte et position | `carte` | Membres et précision partagée, partage limité dans le temps, bouton SOS |
-| Mode recherche | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
+| Localiser (mode recherche) | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
 | Groupe | `groupe` | Membres et état de leur clé, rotation des clés après un départ, consentement à être localisé, limite de sauts |
 | Réglages | `reglages` | Radio connectée, budget, preset, mode répéteur, iroh / Tor / relais uniquement, précision par défaut |
 | SOS | `sos` | Bouton à maintenir 3 s, contenu envoyé, destinataires, mode d'envoi |
@@ -75,8 +75,8 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 ## Navigation
 
 - Premier lancement : Accueil → Appairage → Identité → Ajouter un contact → Conversations.
-- Onglets : Messages, Carte, Recherche, Réglages.
-- SOS depuis la Carte. SOS reçu → Mode recherche.
+- Onglets : Messages, Carte, Localiser, Réglages (« Localiser » est le mode recherche radio : « Rechercher » ne sert qu'aux messages).
+- SOS depuis la Carte. SOS reçu → Localiser.
 - Discussion → Envoi de photo en feuille modale (`.sheet` sur iOS, `ModalBottomSheet` sur Android).
 
 ## Composants partagés

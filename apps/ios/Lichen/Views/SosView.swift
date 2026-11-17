@@ -174,7 +174,7 @@ struct SosReceivedView: View {
                     }
                 } else {
                     CardRow(title: String(localized: "No GPS position"),
-                            subtitle: String(localized: "Their phone sends beacons: search for them by radio."))
+                            subtitle: String(localized: "Their phone sends beacons: locate them by radio."))
                 }
                 CardDivider()
                 CardRow(title: String(localized: "Beacon"),
@@ -189,7 +189,7 @@ struct SosReceivedView: View {
             if let error { Banner(kind: .warn, title: error) }
             Spacer(minLength: 0)
             VStack(spacing: 8) {
-                Button(model.search(for: from) == nil ? "Start the search" : "Follow the search") {
+                Button(model.search(for: from) == nil ? "Start locating" : "Follow in Locate") {
                     if model.search(for: from) == nil, model.searchGroup(for: from) != nil {
                         if let e = model.startSearch(from) {
                             error = e

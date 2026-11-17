@@ -141,12 +141,12 @@
         }
       }
     },
-    "%@ is searching for you": {
+    "%@ is locating you": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ te recherche"
+            "value": "%@ cherche à te localiser"
           }
         }
       }
@@ -1317,16 +1317,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une radio réglée autrement n’entend plus les radios de son réseau : choisis le préréglage de ta région, ou les valeurs de ta communauté locale."
-          }
-        }
-      }
-    },
-    "A radio search needs a group you share with them.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Une recherche radio demande un groupe en commun."
           }
         }
       }
@@ -3601,12 +3591,12 @@
         }
       }
     },
-    "Follow the search": {
+    "Follow in Locate": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suivre la recherche"
+            "value": "Suivre dans Localiser"
           }
         }
       }
@@ -4851,6 +4841,66 @@
         }
       }
     },
+    "Locate": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser"
+          }
+        }
+      }
+    },
+    "Locate %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser %@"
+          }
+        }
+      }
+    },
+    "Locate by radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser par radio"
+          }
+        }
+      }
+    },
+    "Locate · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser · %@"
+          }
+        }
+      }
+    },
+    "Locating by radio needs a group you share with them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localiser par radio demande un groupe en commun."
+          }
+        }
+      }
+    },
+    "Locating · %@%@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localisation · %@%@"
+          }
+        }
+      }
+    },
     "Location": {
       "localizations": {
         "fr": {
@@ -4891,12 +4941,12 @@
         }
       }
     },
-    "Location sharing and search mode.": {
+    "Location sharing, and locating by radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Position partagée et mode recherche."
+            "value": "Position partagée et localisation par radio."
           }
         }
       }
@@ -5661,12 +5711,12 @@
         }
       }
     },
-    "No GPS position: search for them by radio from lichen.": {
+    "No GPS position: locate them by radio from lichen.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pas de position GPS : lance une recherche radio depuis lichen."
+            "value": "Pas de position GPS : localise par radio depuis lichen."
           }
         }
       }
@@ -5911,26 +5961,6 @@
         }
       }
     },
-    "No search is running for this person.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune recherche en cours pour cette personne."
-          }
-        }
-      }
-    },
-    "No search under way": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aucune recherche en cours"
-          }
-        }
-      }
-    },
     "No transport reaches the sender: turn iroh or Tor on.": {
       "localizations": {
         "fr": {
@@ -5957,6 +5987,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Personne"
+          }
+        }
+      }
+    },
+    "Nobody being located": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune localisation en cours"
           }
         }
       }
@@ -7761,36 +7801,6 @@
         }
       }
     },
-    "Search": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche"
-          }
-        }
-      }
-    },
-    "Search by radio": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rechercher par radio"
-          }
-        }
-      }
-    },
-    "Search for %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rechercher %@"
-          }
-        }
-      }
-    },
     "Search messages": {
       "localizations": {
         "fr": {
@@ -7801,32 +7811,12 @@
         }
       }
     },
-    "Search · %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche · %@"
-          }
-        }
-      }
-    },
     "Searching over Bluetooth…": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Recherche en Bluetooth…"
-          }
-        }
-      }
-    },
-    "Searching · %@%@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recherche · %@%@"
           }
         }
       }
@@ -8511,22 +8501,22 @@
         }
       }
     },
-    "Start the search": {
+    "Start locating": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lancer la recherche"
+            "value": "Lancer la localisation"
           }
         }
       }
     },
-    "Start the search: every reception of their radio narrows it down.": {
+    "Start locating: every reception of their radio narrows it down.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Lance la recherche : chaque réception de sa radio réduit la zone."
+            "value": "Lance la localisation : chaque réception de sa radio réduit la zone."
           }
         }
       }
@@ -8641,6 +8631,16 @@
         }
       }
     },
+    "Stop locating": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrêter la localisation"
+          }
+        }
+      }
+    },
     "Stop sharing": {
       "localizations": {
         "fr": {
@@ -8657,16 +8657,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Arrêter le SOS"
-          }
-        }
-      }
-    },
-    "Stop the search": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Arrêter la recherche"
           }
         }
       }
@@ -9241,12 +9231,12 @@
         }
       }
     },
-    "Their phone sends beacons: search for them by radio.": {
+    "Their phone sends beacons: locate them by radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son téléphone envoie des balises : recherche par radio."
+            "value": "Son téléphone envoie des balises : localise par radio."
           }
         }
       }
@@ -10251,12 +10241,12 @@
         }
       }
     },
-    "When a member of your groups sends an SOS, follow it here, with or without their GPS. To search for someone else, open a group and choose them.": {
+    "When a member of your groups sends an SOS, follow it here, with or without their GPS. To locate someone else, open a group and choose them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour rechercher quelqu’un d’autre, ouvre un groupe et choisis la personne."
+            "value": "Quand un membre de tes groupes envoie un SOS, suis-le ici, avec ou sans GPS. Pour localiser quelqu’un d’autre, ouvre un groupe et choisis la personne."
           }
         }
       }
@@ -10427,6 +10417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tu fais déjà partie de %@"
+          }
+        }
+      }
+    },
+    "You are not locating this person.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu ne localises pas cette personne."
           }
         }
       }
@@ -10781,22 +10781,22 @@
         }
       }
     },
+    "Your phone answers their locating pings even outside SOS": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ton téléphone répond à leurs pings de localisation, même hors SOS"
+          }
+        }
+      }
+    },
     "Your phone answers their pings: SOS, or you let the group locate you.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ton téléphone répond à leurs pings : SOS, ou tu laisses le groupe te localiser."
-          }
-        }
-      }
-    },
-    "Your phone answers their search pings even outside SOS": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ton téléphone répond à leurs pings de recherche, même hors SOS"
           }
         }
       }
@@ -10861,12 +10861,12 @@
         }
       }
     },
-    "Your radio transmits at %d dBm for the search, then goes back.": {
+    "Your radio transmits at %d dBm while locating, then goes back.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ta radio émet à %d dBm pour la recherche, puis revient à la normale."
+            "value": "Ta radio émet à %d dBm pendant la localisation, puis revient à la normale."
           }
         }
       }

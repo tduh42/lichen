@@ -206,7 +206,7 @@ final class AppModel {
     var incidents: [Data: SosIncident] = [:]
     /// The incident whose full-screen alert is up, until dismissed.
     var sosAlert: SenderID?
-    /// The person the Search tab shows.
+    /// The person the Locate tab shows.
     var searchTarget: Data?
     /// Searches we run (protocol.md §11); `searchVersion` changes with their estimates.
     var searches: [SearchState] = []
@@ -216,7 +216,7 @@ final class AppModel {
     var loweredPower: Int8?
     /// What our SOS is doing.
     var sosStatus: SosStatus?
-    /// The compass heading, degrees from true north, while the Search tab is on screen.
+    /// The compass heading, degrees from true north, while the Locate tab is on screen.
     var heading: Double?
     @ObservationIgnored var lastBatteryReport: Date?
     /// Conversations with older messages to load, and those whose history failed to load.
@@ -366,7 +366,7 @@ final class AppModel {
         if args.bool(forKey: "demo") { startDemo() }
         switch args.string(forKey: "tab") {
         case "map": tab = .map
-        case "search": tab = .search
+        case "locate": tab = .search
         case "settings": tab = .settings
         default: break
         }
@@ -1044,7 +1044,7 @@ final class AppModel {
             // A member asks where we are and we answer (SOS or this group's consent, §11).
             let chat = ChatID.group(gid: gid)
             notifier.message(chat, title: title(of: chat),
-                             body: String(localized: "\(name(of: by)) is searching for you"), actions: false)
+                             body: String(localized: "\(name(of: by)) is locating you"), actions: false)
             searchedBy = core.searchedBy(nowMs: now())
         case .searchUpdated:
             searchVersion += 1
@@ -2647,7 +2647,7 @@ extension LichenError {
             return String(localized: "Photos and files go to contacts only: in a group they would have to be flooded. Short voice messages can go to a group.")
         case .BadImage: return String(localized: "This image could not be read.")
         case .NotAPreview: return String(localized: "There is no full version to ask for.")
-        case .NotSearching: return String(localized: "No search is running for this person.")
+        case .NotSearching: return String(localized: "You are not locating this person.")
         case let .TooSoon(waitS): return String(localized: "Possible again in \(waitS) s.")
         case .NoPosition: return String(localized: "Your position is not known yet.")
         case .Storage: return String(localized: "The phone's storage could not be read or written.")

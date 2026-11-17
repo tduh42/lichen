@@ -590,8 +590,8 @@ struct StatusBanners: View {
                 let names = ListFormatter.localizedString(byJoining: Array(Set(model.searchedBy.map { model.name(of: $0.by) })).sorted())
                 Banner(
                     kind: .sos,
-                    title: String(localized: "\(names) is searching for you"),
-                    message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm for the search, then goes back.") }
+                    title: String(localized: "\(names) is locating you"),
+                    message: model.loweredPower.map { String(localized: "Your radio transmits at \($0) dBm while locating, then goes back.") }
                         ?? String(localized: "Your phone answers their pings: SOS, or you let the group locate you."),
                     action: (String(localized: "Open"), { model.openRequest = .group(gid: first.gid) })
                 )

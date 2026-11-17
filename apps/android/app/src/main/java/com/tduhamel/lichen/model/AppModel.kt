@@ -116,7 +116,7 @@ class AppModel(val app: Application) {
         val media: Boolean = false,
         /** Share our position (100 m) with this contact at launch. */
         val share: String? = null,
-        /** An SOS from Julien (screenshots of the alert and the Search tab). */
+        /** An SOS from Julien (screenshots of the alert and the Locate tab). */
         val sosDemo: Boolean = false,
         /** The welcome screens: shown (true), skipped (false), or as saved (null). */
         val onboarding: Boolean? = null,
@@ -362,7 +362,7 @@ class AppModel(val app: Application) {
     /** The sender (hex) whose full-screen SOS alert is up, until dismissed. */
     var sosAlert by mutableStateOf<String?>(null)
 
-    /** The person (hex) the Search tab shows; `openSearch` asks the tab to open on them. */
+    /** The person (hex) the Locate tab shows; `openSearch` asks the tab to open on them. */
     var searchTarget by mutableStateOf<String?>(null)
     var openSearch by mutableStateOf<String?>(null)
 
@@ -390,7 +390,7 @@ class AppModel(val app: Application) {
     /** What our SOS is doing. */
     var sosStatus by mutableStateOf<SosStatus?>(null)
 
-    /** The compass heading (degrees from true north) while the Search tab is on screen. */
+    /** The compass heading (degrees from true north) while the Locate tab is on screen. */
     var heading by mutableStateOf<Double?>(null)
     private val compass = Compass(app) { heading = it }
     internal var lastBatteryReport = 0L
@@ -403,7 +403,7 @@ class AppModel(val app: Application) {
         if (changed) updateLocator()
     }
 
-    /** The compass, while the Search tab is on screen. */
+    /** The compass, while the Locate tab is on screen. */
     fun useHeading(on: Boolean) {
         if (on && compass.available) {
             compass.start()
@@ -730,7 +730,7 @@ class AppModel(val app: Application) {
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
             "map" -> tab = Tab.MAP
-            "search" -> tab = Tab.SEARCH
+            "locate" -> tab = Tab.SEARCH
             "settings" -> tab = Tab.SETTINGS
         }
         if (options.demo) startDemo()

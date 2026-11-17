@@ -77,7 +77,7 @@ struct RootView: View {
                 .tabItem { Label("Map", systemImage: "map") }
                 .tag(AppModel.Tab.map)
             SearchView()
-                .tabItem { Label("Search", systemImage: "scope") }
+                .tabItem { Label("Locate", systemImage: "scope") }
                 .tag(AppModel.Tab.search)
                 .badge(model.activeIncidents.count)
             SettingsView()
