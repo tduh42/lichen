@@ -425,3 +425,18 @@ The OpenSSL sources hold 548,000 lines of C (344,000 in `crypto/`); only `libcry
 - **The digest** brings back a burst's lost last post: when nothing follows the 8th post, 78.9 % of them arrive instead of 55.6 %, and 95.5 % of all posts instead of 91.7 %, about what a later message revealing the gaps gives (96.0 %). The 486 more frames per run are mostly the recovery it sets off (247 more posts recovered); the digests themselves are five per run here, one per member, two copies each: 1.43 s of the author's airtime per digest at SF8 / 62.5 kHz / CR 4/5 (a 97-byte envelope, 0.71 s a copy), about 2.9 s with the repeater's relays.
 - **A first digest that waited two minutes failed:** every post got one, sent exactly when another member posted on the minute; both floods collided at the repeater and the recovery traffic that followed fed on itself: 61.7 % delivered (77.2 % with the two minutes drawn up to three), 4080 frames per run. Six minutes plus up to three keeps the digest to the end of a burst.
 - Recovery still loses posts at 20 % per link: the request and the answer each need a session through a repeater that drops one frame in five, and members who lost the same post ask at the same time (ADR-0024).
+
+## 2026-11-17 — SQLCipher switched on (ADR-0036, accepted)
+
+The apps' cores now build SQLCipher 4.14.0: CommonCrypto on iOS, OpenSSL 3.6.3's libcrypto built from source (`openssl-src` 300.6.1) on Android. Release core for arm64, the same commit built without and with the `sqlcipher` feature:
+
+| | SQLite | SQLCipher | Difference |
+|---|---|---|---|
+| Android `liblc_ffi.so`, stripped | 33,225,008 B | 37,224,272 B | +4.0 MB (+12 %) |
+| Android release APK | 54,152,810 B | 58,166,890 B | +4.0 MB (+7.4 %) |
+
+(Debug APKs are packaged incrementally and their size says nothing; the iOS cost, +49 KB, is the 2026-11-16 figure above.)
+
+Building OpenSSL from source, cold, on a 12-core Mac: 29.7 s for `aarch64-linux-android` (99 s user, 41 s system), 28.4 s for the host. `scripts/build-android-core.sh` then takes 67 s, `scripts/build-ios-core.sh` 142 s (three targets), OpenSSL already built.
+
+First start after the update (`cargo test -p lc-core --features sqlcipher --release --test sqlcipher -- --ignored --nocapture`): 100,000 messages and 300 media, 34.1 MB in clear, encrypted in place in 0.15 s; opened again in 1 ms; a page of 100 messages read in 0.6 ms.

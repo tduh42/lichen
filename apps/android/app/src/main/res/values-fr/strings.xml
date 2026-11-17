@@ -1142,4 +1142,12 @@
     </plurals>
     <!-- Voice notes in groups (ADR-0035) -->
     <string name="group_voice_cost">Diffusé au groupe : %1$s · ≈ %2$s s de notre temps d’antenne ; chaque répéteur en ajoute autant</string>
+    <!-- The database key (ADR-0036). -->
+    <string name="database_key_unavailable_title">Tes messages ne peuvent pas être ouverts pour l’instant</string>
+    <string name="database_key_unavailable">Tes messages sont chiffrés sur ce téléphone, et la clé qui les ouvre ne peut pas être lue pour le moment. Rien n’a été modifié : déverrouille le téléphone, puis réessaie.</string>
+    <string name="database_key_lost_title">Tes messages ne peuvent pas être ouverts</string>
+    <string name="database_key_lost">Tes messages sont chiffrés sur ce téléphone, et la clé qui les ouvrait a disparu : le stockage sécurisé du téléphone a été réinitialisé. Sans elle, ils ne peuvent pas être lus. Restaure une sauvegarde, ou repars avec un historique vide.</string>
+    <string name="empty_history">Repartir avec un historique vide</string>
+    <string name="empty_history_confirm">Repartir avec un historique vide ?</string>
+    <string name="empty_history_warning">Tes messages, contacts et groupes sur ce téléphone sont supprimés pour de bon. Ton identité reste : tes contacts te reconnaissent toujours. Restaure plutôt une sauvegarde si tu en as une.</string>
 </resources>

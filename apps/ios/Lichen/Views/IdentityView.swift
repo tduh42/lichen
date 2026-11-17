@@ -211,7 +211,22 @@ struct IdentityProblemView: View {
     @State private var restoring = false
     @State private var restoringBackup = false
     @State private var confirmNew = false
+    @State private var confirmEmpty = false
     @State private var error: String?
+
+    /// The identity itself is the problem (not the database).
+    private var identityAtFault: Bool {
+        [.unavailable, .corrupt, .notSaved].contains(problem)
+    }
+
+    private var title: String {
+        switch problem {
+        case .storage: String(localized: "Your messages can’t be saved right now")
+        case .databaseKeyUnavailable: String(localized: "Your messages can’t be opened right now")
+        case .databaseKeyLost: String(localized: "Your messages can’t be opened")
+        default: String(localized: "Your identity can’t be used right now")
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -219,8 +234,7 @@ struct IdentityProblemView: View {
             Image(systemName: "person.badge.key")
                 .font(.system(size: 40, weight: .regular))
                 .foregroundStyle(Theme.sos)
-            Text(problem == .storage ? String(localized: "Your messages can’t be saved right now")
-                 : String(localized: "Your identity can’t be used right now"))
+            Text(title)
                 .font(.system(.title2, weight: .bold))
                 .foregroundStyle(Theme.tx)
             Text(explanation)
@@ -233,11 +247,18 @@ struct IdentityProblemView: View {
             Spacer()
             Button("Try again") { model.retryIdentity() }
                 .buttonStyle(.primary)
-            if problem != .storage {
+            if identityAtFault {
                 Button("Restore from my 24 words") { restoring = true }
                     .buttonStyle(.secondary)
+            }
+            if identityAtFault || problem == .databaseKeyLost {
                 Button("Restore a backup") { restoringBackup = true }
                     .buttonStyle(.secondary)
+            }
+            if problem == .databaseKeyLost {
+                Button("Start with an empty history", role: .destructive) { confirmEmpty = true }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 4)
             }
             if problem == .corrupt {
                 Button("Start a new identity", role: .destructive) { confirmNew = true }
@@ -256,6 +277,13 @@ struct IdentityProblemView: View {
         } message: {
             Text("Your contacts will see a new identity and will have to verify you again. Restore your 24 words instead if you have them.")
         }
+        .confirmationDialog(
+            "Start with an empty history?", isPresented: $confirmEmpty, titleVisibility: .visible
+        ) {
+            Button("Start with an empty history", role: .destructive) { error = model.discardUnreadableHistory() }
+        } message: {
+            Text("Your messages, contacts and groups on this phone are removed for good. Your identity stays: your contacts still know you. Restore a backup instead if you have one.")
+        }
     }
 
     private var explanation: String {
@@ -268,6 +296,10 @@ struct IdentityProblemView: View {
             String(localized: "Your new identity could not be saved on this phone. Try again.")
         case .storage:
             String(localized: "The message database on this phone could not be opened, often because the phone is full. Nothing was sent or deleted: free some space, then try again.")
+        case .databaseKeyUnavailable:
+            String(localized: "Your messages are encrypted on this phone, and the key that opens them can’t be read at the moment, often before the first unlock. Nothing was changed: unlock the phone, then try again.")
+        case .databaseKeyLost:
+            String(localized: "Your messages are encrypted on this phone, and the key that opened them is gone: the phone’s secure storage was reset. Without it they can’t be read. Restore a backup, or start again with an empty history.")
         }
     }
 }

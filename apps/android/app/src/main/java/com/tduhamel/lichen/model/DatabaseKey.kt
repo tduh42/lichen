@@ -5,36 +5,62 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import java.io.File
 import java.security.KeyStore
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/** What reading the database key found (ADR-0036). */
+sealed interface DatabaseKeyRead {
+    class Found(val key: ByteArray) : DatabaseKeyRead
+
+    /** None stored yet. */
+    data object Absent : DatabaseKeyRead
+
+    /** The Keystore cannot be used now: nothing is changed, try again. */
+    data object Unavailable : DatabaseKeyRead
+
+    /** Stored, but it no longer opens: its Keystore key is gone, or the file is damaged. */
+    data object Lost : DatabaseKeyRead
+}
+
 /**
  * The key of the message databases (SQLCipher, ADR-0036): 32 random bytes drawn once, kept in
- * the app's files sealed under an AES key of the Android Keystore that never leaves it. Like the
- * identity, device only: no backup, no transfer (res/xml/data_extraction_rules.xml).
+ * the app's no-backup files sealed with AES-GCM under a key of the Android Keystore that never
+ * leaves it. Like the identity, device only: no backup, no transfer
+ * (res/xml/data_extraction_rules.xml).
  *
- * Used only when the core can encrypt (`databaseEncryption()`). [read] gives an empty key when
- * the Keystore cannot be used now: the core then opens no database rather than a clear one. A
- * sealed key that no longer opens (the Keystore was reset) is never replaced: the databases it
- * locks would be lost; the history comes back from a backup (ADR-0037).
+ * [create] is only called when [read] found no usable key and no database waits for an older
+ * one: a database already encrypted is never given a new key (the app says the key is lost).
  */
 class DatabaseKey(context: Context) {
     private val file = File(context.noBackupFilesDir, "database.key")
 
-    fun read(): ByteArray = runCatching {
-        if (!file.exists()) return@runCatching create()
-        val sealed = file.readBytes()
-        if (sealed.size <= IV_LEN) return@runCatching ByteArray(0)
-        val key = existingKey() ?: return@runCatching ByteArray(0)
-        val cipher = Cipher.getInstance(TRANSFORM)
-        cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, sealed, 0, IV_LEN))
-        cipher.doFinal(sealed, IV_LEN, sealed.size - IV_LEN).takeIf { it.size == 32 } ?: ByteArray(0)
-    }.getOrDefault(ByteArray(0))
+    fun read(): DatabaseKeyRead {
+        if (!file.exists()) return DatabaseKeyRead.Absent
+        val sealed = runCatching { file.readBytes() }.getOrElse { return DatabaseKeyRead.Unavailable }
+        if (sealed.size <= IV_LEN) return DatabaseKeyRead.Lost
+        val keystoreKey = try {
+            existingKey() ?: return DatabaseKeyRead.Lost
+        } catch (_: Exception) {
+            return DatabaseKeyRead.Unavailable
+        }
+        val key = try {
+            val cipher = Cipher.getInstance(TRANSFORM)
+            cipher.init(Cipher.DECRYPT_MODE, keystoreKey, GCMParameterSpec(128, sealed, 0, IV_LEN))
+            cipher.doFinal(sealed, IV_LEN, sealed.size - IV_LEN)
+        } catch (_: AEADBadTagException) {
+            return DatabaseKeyRead.Lost
+        } catch (_: Exception) {
+            return DatabaseKeyRead.Unavailable
+        }
+        return if (key.size == 32) DatabaseKeyRead.Found(key) else DatabaseKeyRead.Lost
+    }
 
-    /** A first key: sealed, written whole (a temporary file renamed into place), read back. */
-    private fun create(): ByteArray {
+    /** Draws a key, seals it, writes it whole (a temporary file renamed into place, replacing a
+     * lost one) and reads it back. Null when the Keystore or the files cannot be used now. */
+    fun create(): ByteArray? = runCatching {
         val key = IdentityStore.randomBytes(32)
         val cipher = Cipher.getInstance(TRANSFORM)
         cipher.init(Cipher.ENCRYPT_MODE, existingKey() ?: newKey())
@@ -44,9 +70,11 @@ class DatabaseKey(context: Context) {
             it.write(sealed)
             it.fd.sync()
         }
-        if (!tmp.renameTo(file)) return ByteArray(0)
-        return if (read().contentEquals(key)) key else ByteArray(0)
-    }
+        check(tmp.renameTo(file)) { "not renamed" }
+        val back = read()
+        check(back is DatabaseKeyRead.Found && back.key.contentEquals(key)) { "read back differs" }
+        key
+    }.getOrNull()
 
     private fun existingKey(): SecretKey? {
         val ks = KeyStore.getInstance(KEYSTORE).apply { load(null) }

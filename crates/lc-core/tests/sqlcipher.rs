@@ -167,4 +167,86 @@ mod with_sqlcipher {
         assert!(!cipher::is_plain(&restored).unwrap());
         let _ = std::fs::remove_dir_all(d);
     }
+
+    /// The first start after the update on a large history (ADR-0036's figure):
+    /// `cargo test -p lc-core --features sqlcipher --release --test sqlcipher -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn migration_time() {
+        use std::time::Instant;
+        let d = tmp("timing");
+        let db = d.join("store.sqlite");
+        drop(Store::open(&db).unwrap());
+        {
+            let mut c = rusqlite::Connection::open(&db).unwrap();
+            let tx = c.transaction().unwrap();
+            {
+                let mut msg = tx
+                    .prepare(
+                        "INSERT INTO messages (chat_kind, chat, outgoing, author, content, at_ms,
+                         status, status_a, status_b, fragments, airtime_ms, snr4, read, ref)
+                         VALUES (0, ?1, ?2, NULL, ?3, ?4, 2, 0, 0, 1, 420, 20, 1, ?5)",
+                    )
+                    .unwrap();
+                for i in 0..100_000u32 {
+                    let chat = [(i % 40) as u8; 32];
+                    let content = Content::Text {
+                        sent_at: 1_793_000_000 + i,
+                        text: format!(
+                            "Message {i}: on se retrouve au refuge avant la nuit, par le col nord ?"
+                        ),
+                    }
+                    .encode();
+                    let r = i.to_le_bytes().repeat(2);
+                    msg.execute(rusqlite::params![
+                        chat.as_slice(),
+                        i % 2 == 0,
+                        content,
+                        1_793_000_000_000i64 + i64::from(i) * 1000,
+                        r
+                    ])
+                    .unwrap();
+                }
+                let mut media = tx
+                    .prepare(
+                        "INSERT INTO media (id, chat_kind, chat, datagram) VALUES (?1, 0, ?2, ?3)",
+                    )
+                    .unwrap();
+                for i in 0..300u64 {
+                    let datagram: Vec<u8> =
+                        (0..9_000u32).map(|b| (b * 7 + i as u32) as u8).collect();
+                    media
+                        .execute(rusqlite::params![
+                            i.to_le_bytes().as_slice(),
+                            [1u8; 32].as_slice(),
+                            datagram
+                        ])
+                        .unwrap();
+                }
+            }
+            tx.commit().unwrap();
+        }
+        let plain = std::fs::metadata(&db).unwrap().len();
+        let t = Instant::now();
+        let s = Store::open_encrypted(&db, &KEY).unwrap();
+        let migrated = t.elapsed();
+        assert_eq!(s.message_count().unwrap(), 100_000);
+        drop(s);
+        let t = Instant::now();
+        let s = Store::open_encrypted(&db, &KEY).unwrap();
+        let reopened = t.elapsed();
+        let t = Instant::now();
+        let page = s.history(&Chat::Contact([7; 32]), None, 100).unwrap();
+        let read = t.elapsed();
+        assert_eq!(page.len(), 100);
+        println!(
+            "100,000 messages and 300 media, {:.1} MB in clear: encrypted in place in {:.2} s; \
+             opened again in {:.0} ms; a page of 100 messages read in {:.1} ms",
+            plain as f64 / 1e6,
+            migrated.as_secs_f64(),
+            reopened.as_secs_f64() * 1e3,
+            read.as_secs_f64() * 1e3
+        );
+        let _ = std::fs::remove_dir_all(d);
+    }
 }

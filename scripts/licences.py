@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "licences" / "licences.json"
 TARGETS = ["aarch64-apple-ios", "aarch64-linux-android"]
 ROOT_CRATE = "lc-ffi"
+# As scripts/build-ios-core.sh and scripts/build-android-core.sh build it.
+FEATURES = "lc-ffi/sqlcipher"
 # Files a crate ships its licence and notices in.
 LICENCE_FILE = re.compile(r"^(LICEN[CS]E|COPYING|COPYRIGHT|NOTICE|UNLICENSE)([-._].*)?$", re.I)
 
@@ -53,17 +55,23 @@ def android_version(key):
     return m.group(1)
 
 
-def crates(texts, text_ids):
-    """The crates lc-ffi links (normal dependencies, either app target), with their licences."""
+def crates(texts, text_ids, folders):
+    """The crates lc-ffi links (normal dependencies, either app target, with the features the
+    apps' core builds use), with their licences. `folders` gets each crate's folder by name."""
     offline = ["--offline"] if os.environ.get("CHECK_OFFLINE") == "1" else []
     packages = {}
     reached = set()
     for target in TARGETS:
         meta = json.loads(
-            sh("cargo", "metadata", "--format-version", "1", "--locked", *offline, "--filter-platform", target)
+            sh("cargo", "metadata", "--format-version", "1", "--locked", *offline, "--filter-platform", target,
+               "--features", FEATURES)
         )
         by_id = {p["id"]: p for p in meta["packages"]}
         packages.update(by_id)
+        # Build tools that compile C into the core (openssl-src) are not normal dependencies:
+        # their folders are kept for the components below.
+        for p in meta["packages"]:
+            folders.setdefault(p["name"], Path(p["manifest_path"]).parent)
         nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
         root = next(p["id"] for p in meta["packages"] if p["name"] == ROOT_CRATE and p["source"] is None)
         todo = [root]
@@ -144,7 +152,24 @@ def build():
         {"name": "Kotlin coroutines", "version": android_version("coroutines"), "licence": "Apache-2.0",
          "url": "https://github.com/Kotlin/kotlinx.coroutines", "platforms": android, "texts": []},
     ]
-    rust = crates(texts, text_ids)
+    folders = {}
+    rust = crates(texts, text_ids, folders)
+    # C libraries the crates build in (ADR-0036): SQLCipher inside libsqlite3-sys, on SQLite
+    # (public domain); on Android, OpenSSL's libcrypto, built from source by openssl-src.
+    sqlite_sys = folders["libsqlite3-sys"]
+    cipher_version = re.search(r"#define CIPHER_VERSION_NUMBER (\S+)",
+                               (sqlite_sys / "sqlcipher/sqlite3.c").read_text(encoding="utf-8", errors="replace"))
+    components.append({
+        "name": "SQLCipher", "version": cipher_version.group(1) if cipher_version else "",
+        "licence": "BSD-3-Clause", "url": "https://www.zetetic.net/sqlcipher/", "platforms": both,
+        "texts": text_of(sqlite_sys / "sqlcipher/LICENSE")})
+    openssl = folders.get("openssl-src")
+    if openssl is None or not any(c["name"] == "openssl-sys" for c in rust):
+        sys.exit("OpenSSL is not in the Android core: it is built with the sqlcipher feature (ADR-0036)")
+    components.append({
+        "name": "OpenSSL (libcrypto)", "version": openssl.name.rsplit("+", 1)[-1],
+        "licence": "Apache-2.0", "url": "https://www.openssl.org/", "platforms": android,
+        "texts": text_of(openssl / "openssl/LICENSE.txt")})
     data = {
         "generated_by": "scripts/licences.py (scripts/check.sh checks it is current)",
         "components": components,
