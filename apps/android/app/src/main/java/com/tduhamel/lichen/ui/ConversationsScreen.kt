@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import com.tduhamel.lichen.model.radioBatteryLow
 import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.unhex
 import com.tduhamel.lichen.core.GroupInvitation
@@ -482,6 +483,11 @@ fun StatusBanners(model: AppModel, pair: () -> Unit) {
                 stringResource(R.string.searching_for_you, names),
                 if (power != null) stringResource(R.string.power_lowered, power.toInt()) else stringResource(R.string.searched_note),
             )
+        }
+        // The radio's battery (ADR-0042).
+        val battery = model.radioSettings?.batteryPercent
+        if (model.radioBatteryLow && battery != null) {
+            Banner(BannerKind.WARN, stringResource(R.string.radio_battery_low, battery.toInt()), stringResource(R.string.radio_battery_low_note))
         }
         if (model.isConnected && model.airtimeLeftMs < 10_000uL) {
             Banner(BannerKind.LORA, stringResource(R.string.budget_spent), stringResource(R.string.budget_spent_note))

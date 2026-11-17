@@ -40,6 +40,8 @@ import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.AppModel.Tab
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.activeIncidents
+import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.isHex
 import com.tduhamel.lichen.model.unhex
 
 private val TabRoutes = mapOf(
@@ -135,6 +137,7 @@ fun RootScreen(model: AppModel) {
                 SettingsScreen(
                     model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
+                    nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
                 )
             }
             composable("identity") { IdentityScreen(model, back = { nav.popBackStack() }) }
@@ -149,6 +152,22 @@ fun RootScreen(model: AppModel) {
                 }
             }
             composable("pairing") { PairingScreen(model, back = { nav.popBackStack() }) }
+            // Mesh tools (§16): nodes, a node, a repeater's console, saved radios.
+            composable("nodes") { NodesScreen(model, back = { nav.popBackStack() }) { nav.navigate("node/${it.hex()}") } }
+            composable("node/{key}") { e ->
+                val key = e.arguments?.getString("key")?.takeIf { it.isHex(32) }?.unhex()
+                if (key != null) {
+                    NodeScreen(
+                        model, key, back = { nav.popBackStack() }, console = { nav.navigate("console/${key.hex()}") },
+                        openChat = { model.openChat = it },
+                    )
+                }
+            }
+            composable("console/{key}") { e ->
+                val key = e.arguments?.getString("key")?.takeIf { it.isHex(32) }?.unhex()
+                if (key != null) ConsoleScreen(model, key, back = { nav.popBackStack() })
+            }
+            composable("radios") { RadiosScreen(model, back = { nav.popBackStack() }, pair = { nav.navigate("pairing") }) }
             composable("chat/{id}") { e ->
                 val chat = e.arguments?.getString("id")?.let(ChatId::fromRoute)
                 if (chat != null) {

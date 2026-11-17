@@ -273,7 +273,13 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                     IconButton(onClick = { plainInfo = true }) {
                         Icon(
                             Icons.Outlined.Info,
-                            stringResource(if (chat.channel) R.string.channel_details else R.string.about_meshcore_chats),
+                            stringResource(
+                                when {
+                                    chat.channel -> R.string.channel_details
+                                    chat.kind == ChatId.Kind.ROOM -> R.string.room_details
+                                    else -> R.string.about_meshcore_chats
+                                },
+                            ),
                             tint = t.tx,
                         )
                     }
@@ -350,7 +356,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 }
                 item(key = m.id) {
                     MessageBubble(
-                        model, m, chat.group || chat.channel, highlight == m.id,
+                        model, m, chat.group || chat.channel || chat.kind == ChatId.Kind.ROOM, highlight == m.id,
                         reply = { replyTo = m; editing = null },
                         edit = { editing = m; replyTo = null },
                         // A quote tapped: its original, loading earlier pages if needed.
@@ -426,6 +432,7 @@ private fun subtitle(model: AppModel, chat: ChatId): String {
     val res = LocalResources.current
     if (chat.channel) return model.channel(chat)?.let { channelKindLabel(res, it.kind) } ?: stringResource(R.string.meshcore_channel)
     if (chat.kind == ChatId.Kind.MESH) return stringResource(R.string.meshcore_hops, hopsBadge(res, model.contact(chat.hex.unhex())?.hops))
+    if (chat.kind == ChatId.Kind.ROOM) return roomSubtitle(model, chat)
     if (!chat.group) {
         val key = chat.contactKey ?: return ""
         val c = model.contact(key)
@@ -451,7 +458,13 @@ private fun SessionLine(model: AppModel, chat: ChatId, explain: () -> Unit, veri
         Box(Modifier.fillMaxWidth().clickable(onClick = explain)) {
             TintedLine(
                 Icons.Outlined.NoEncryption, t.warn,
-                stringResource(if (chat.channel) R.string.meshcore_channel_not_lichen else R.string.meshcore_not_lichen),
+                stringResource(
+                    when {
+                        chat.channel -> R.string.meshcore_channel_not_lichen
+                        chat.kind == ChatId.Kind.ROOM -> R.string.meshcore_room_not_lichen
+                        else -> R.string.meshcore_not_lichen
+                    },
+                ),
                 t.warnFg,
             )
         }
@@ -855,6 +868,8 @@ private fun caption(m: StoredMessage, isGroup: Boolean): String? {
                 stringResource(R.string.sending_to_channel)
             } else if (m.chat is ChatRef.Mesh) {
                 stringResource(R.string.waiting_for_radio_ack)
+            } else if (m.chat is ChatRef.Room) {
+                stringResource(R.string.waiting_room_ack)
             } else if (isGroup) {
                 stringResource(R.string.sending_to_group)
             } else if (s.total.toInt() > 1) {
@@ -864,6 +879,8 @@ private fun caption(m: StoredMessage, isGroup: Boolean): String? {
             }
         MessageStatus.Delivered -> if (m.chat is ChatRef.Mesh) {
             stringResource(R.string.delivered_airtime, secondsText(m.airtimeMs))
+        } else if (m.chat is ChatRef.Room) {
+            stringResource(R.string.kept_by_room, secondsText(m.airtimeMs))
         } else {
             pluralStringResource(
                 R.plurals.delivered_fragments, m.fragments.toInt(), m.fragments.toInt(), secondsText(m.airtimeMs),

@@ -44,6 +44,7 @@ import com.tduhamel.lichen.core.ChannelKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.unhex
 
 // MeshCore chats (protocol.md §15, ADR-0026): plain text with people who use a stock MeshCore
 // app, kept apart from lichen's own chats and said to be weaker.
@@ -63,24 +64,37 @@ fun channelKindLabel(res: android.content.res.Resources, kind: ChannelKind): Str
 fun PlainInfoSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit, left: () -> Unit) {
     val t = lichen
     val channel = model.channel(chat)
+    val room = chat.kind == ChatId.Kind.ROOM
     var confirm by remember { mutableStateOf(false) }
+    var sharing by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {
         Column(
             Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text(
-                stringResource(if (channel == null) R.string.meshcore_chat else R.string.channel),
+                stringResource(
+                    when {
+                        room -> R.string.room_details
+                        channel == null -> R.string.meshcore_chat
+                        else -> R.string.channel
+                    },
+                ),
                 fontSize = 22.sp, color = t.tx,
             )
             val text = when {
+                room -> R.string.plain_room_explainer
                 channel == null -> R.string.plain_direct_explainer
                 channel.kind == ChannelKind.PUBLIC_CHANNEL -> R.string.plain_public_explainer
                 else -> R.string.plain_channel_explainer
             }
             Banner(BannerKind.WARN, stringResource(R.string.not_lichen_encrypted), stringResource(text))
+            // A room's login (§15.8).
+            if (room) ServerLoginCard(model, chat.hex.unhex(), room = true)
             if (channel != null) {
                 CardList { CardRow(channel.name, channelKindLabel(LocalResources.current, channel.kind)) }
+                // In the stock app's format (§15.3).
+                SecondaryButton(stringResource(R.string.share_by_qr)) { sharing = true }
                 if (channel.kind == ChannelKind.HASHTAG_CHANNEL) {
                     Text(stringResource(R.string.hashtag_readers, channel.name), fontSize = 13.sp, color = t.tx2)
                 }
@@ -91,6 +105,7 @@ fun PlainInfoSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit, left: () 
             Text(stringResource(R.string.plain_lichen_apart), fontSize = 13.sp, color = t.tx2)
         }
     }
+    if (sharing && channel != null) ChannelQrSheet(model, channel) { sharing = false }
     if (confirm && channel != null) {
         AlertDialog(
             onDismissRequest = { confirm = false },
@@ -118,6 +133,7 @@ fun JoinChannelSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Uni
     var name by remember { mutableStateOf("") }
     var secret by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+    var scanning by remember { mutableStateOf(false) }
     val hasPublic = model.channels.any { it.kind == ChannelKind.PUBLIC_CHANNEL }
     fun join(kind: ChannelKind, label: String) {
         model.joinChannel(kind, label.trim(), secret.trim())
@@ -130,6 +146,9 @@ fun JoinChannelSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Uni
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(stringResource(R.string.join_a_channel), fontSize = 22.sp, color = t.tx)
+            // A channel's QR code from a MeshCore app or lichen (§15.3).
+            SecondaryButton(stringResource(R.string.scan_channel_button)) { scanning = true }
+            Text(stringResource(R.string.scan_channel_note), fontSize = 12.sp, color = t.tx2)
             SecondaryButton(
                 stringResource(if (hasPublic) R.string.public_already_joined else R.string.join_public),
                 enabled = !hasPublic,
@@ -168,6 +187,7 @@ fun JoinChannelSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Uni
             error?.let { Banner(BannerKind.SOS, it) }
         }
     }
+    if (scanning) ScanChannelSheet(model, { scanning = false }) { dismiss(); open(it) }
 }
 
 /** The radio's channels in the new-conversation sheet, and the way to join one. */

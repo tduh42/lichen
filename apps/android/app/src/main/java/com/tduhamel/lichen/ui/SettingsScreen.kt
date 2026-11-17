@@ -84,6 +84,8 @@ fun SettingsScreen(
     radio: () -> Unit = {},
     licences: () -> Unit = {},
     report: () -> Unit = {},
+    nodes: () -> Unit = {},
+    radios: () -> Unit = {},
 ) {
     val t = lichen
     var advertSent by remember { mutableStateOf(false) }
@@ -133,6 +135,21 @@ fun SettingsScreen(
                             } else {
                                 stringResource(R.string.read_from_radio)
                             },
+                        ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
+                    }
+                    CardDivider()
+                    // Radios to switch between (ADR-0042).
+                    Box(Modifier.clickable { radios() }) {
+                        CardRow(stringResource(R.string.radios), stringResource(R.string.radios_saved, model.savedRadios.size)) {
+                            Text("›", color = lichen.tx2, fontSize = 20.sp)
+                        }
+                    }
+                    CardDivider()
+                    // What the radio knows of the mesh (§16).
+                    Box(Modifier.clickable { nodes() }) {
+                        CardRow(
+                            stringResource(R.string.nodes),
+                            if (model.nodes.isEmpty()) stringResource(R.string.nodes_subtitle) else stringResource(R.string.nodes_known, model.nodes.size),
                         ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
                     CardDivider()
