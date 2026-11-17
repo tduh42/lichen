@@ -1188,7 +1188,8 @@ private fun Composer(
             }
         }
     }
-    // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document.
+    // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document;
+    // `screen media`: the photo sheet with a drawn landscape, in a contact's chat.
     LaunchedEffect(Unit) {
         val screen = model.debugScreen
         if (screen == "file" || screen == "fileBig") {
@@ -1196,6 +1197,12 @@ private fun Composer(
             val n = if (screen == "fileBig") 3_700 else 45
             val data = ByteArray(line.size * n) { line[it % line.size] }
             file = FileDraft(if (screen == "fileBig") "Topo Vercors 2026.pdf" else "Refuge notes.txt", data)
+        }
+        if (screen == "media" && chat.kind == ChatId.Kind.CONTACT) {
+            picked = withContext(Dispatchers.Default) {
+                val photo = com.tduhamel.lichen.model.samplePhoto()
+                runCatching { prepareImage(photo.rgba, photo.width.toUInt(), photo.height.toUInt()) to photo.original }.getOrNull()
+            }
         }
     }
     fun preparePhoto(uri: android.net.Uri) {

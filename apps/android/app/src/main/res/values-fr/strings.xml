@@ -303,7 +303,10 @@
     <string name="lora_full_thumbnail">LoRa · miniature complète</string>
     <string name="lora_preview_badge">LoRa · aperçu</string>
     <string name="full_on_request">complète sur demande</string>
-    <string name="full_requested">Image complète demandée…</string>
+    <string name="full_requested">Demandée : %1$s choisit de l’envoyer ou non</string>
+    <string name="full_photo_request">%1$s demande la photo en entier · environ %2$d s de temps d’antenne</string>
+    <string name="asks_for_full_photo">%1$s demande la photo en entier</string>
+    <string name="not_now">Pas maintenant</string>
     <string name="full_image_cost">Image complète : %1$s, ≈ %2$s s</string>
     <string name="load_full_image">Charger l\'image complète</string>
     <string name="hash_verified">empreinte vérifiée</string>

@@ -6,6 +6,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SegmentedButton
 import com.tduhamel.lichen.model.VoicePlayer
 import com.tduhamel.lichen.core.PreparedVoice
+import com.tduhamel.lichen.core.FullImageRequest
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -247,12 +248,13 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
                 TransportBadge(Transport.LORA, stringResource(if (img.full) R.string.lora_full_thumbnail else R.string.lora_preview_badge))
                 if (!img.full && !m.outgoing) Text(stringResource(R.string.full_on_request), fontSize = 11.sp, color = t.tx2)
             }
+            model.fullRequest(m)?.let { r -> FullRequestCard(model, m, chat, r) { error = it } }
             when {
                 announce != null -> BridgeSection(model, announce, standalone = false)
                 !m.outgoing && !img.full && img.fullLen.toInt() > 0 -> if (m.id in model.requestedFull) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Icon(Icons.Outlined.HourglassEmpty, null, tint = t.tx2, modifier = Modifier.size(14.dp))
-                        Text(stringResource(R.string.full_requested), fontSize = 13.sp, color = t.tx2)
+                        Text(stringResource(R.string.full_requested, model.title(chat)), fontSize = 13.sp, color = t.tx2)
                     }
                 } else {
                     val e = model.estimate(chat, 21u + img.fullLen.toUInt())
@@ -265,6 +267,29 @@ private fun ImageCard(model: AppModel, m: StoredMessage, img: Message.Image) {
                 }
             }
             error?.let { Text(it, fontSize = 12.sp, color = t.sosFg) }
+        }
+    }
+}
+
+/** A contact asks for the full variant of our photo (§13.3): it goes only if the user sends it.
+ * Over budget, [onError] gets when it would fit. */
+@Composable
+private fun FullRequestCard(model: AppModel, m: StoredMessage, chat: ChatId, r: FullImageRequest, onError: (String?) -> Unit) {
+    val t = lichen
+    val seconds = maxOf(1L, Math.round(r.airtimeMs.toDouble() / 1000)).toInt()
+    Column(
+        Modifier.fillMaxWidth().border(1.dp, t.line, RoundedCornerShape(12.dp)).padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(stringResource(R.string.full_photo_request, model.title(chat), seconds), fontSize = 13.sp, color = t.tx)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            SecondaryButton(stringResource(R.string.not_now), Modifier.weight(1f)) {
+                onError(model.answerFull(m.id, chat, send = false))
+            }
+            SecondaryButton(
+                stringResource(R.string.send), Modifier.weight(1f),
+                background = t.loraBg, foreground = t.loraFg, enabled = model.isConnected,
+            ) { onError(model.answerFull(m.id, chat, send = true)) }
         }
     }
 }

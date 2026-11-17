@@ -209,6 +209,7 @@ class MainActivity : FragmentActivity() {
             inviteDemo = e.getBoolean("inviteDemo"),
             joinNow = e.getBoolean("joinNow"),
             requestDemo = e.getBoolean("requestDemo"),
+            autoFull = e.getBoolean("autoFull"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")
