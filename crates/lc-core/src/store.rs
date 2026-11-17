@@ -2119,7 +2119,8 @@ mod tests {
         let usage = s.usage().unwrap();
         let ua = usage.iter().find(|u| u.chat == a).unwrap();
         assert_eq!((ua.messages, ua.media), (3, 2));
-        assert!(ua.bytes > 400 + 100 + 16, "{ua:?}");
+        // The kept full image, and the messages as stored (the file compressed).
+        assert!(ua.bytes > 400 + 16, "{ua:?}");
         assert_eq!(usage[0].chat, a, "the largest first");
         assert_eq!(s.media_before(3_000).unwrap(), [old_voice.id, old_file.id]);
     }

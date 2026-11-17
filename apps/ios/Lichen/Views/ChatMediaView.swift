@@ -137,14 +137,14 @@ extension StoredMessage: Identifiable {}
 /// than a month, three months or a year removed as "delete for me" removes them.
 struct StorageView: View {
     @Environment(AppModel.self) private var model
-    @State private var usage: [(chat: ChatID, title: String, messages: Int, media: Int, bytes: Int64)] = []
+    @State private var usage: [Row] = []
     @State private var clearing: Int?
     @State private var cleared: Int?
 
     var body: some View {
         List {
             Section {
-                ForEach(usage, id: \.chat) { u in
+                ForEach(usage) { u in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(u.title).font(.system(.body, weight: .semibold)).lineLimit(1)
@@ -196,10 +196,20 @@ struct StorageView: View {
         }
     }
 
+    struct Row: Identifiable {
+        let id: ChatID
+        let title: String
+        let messages: Int
+        let media: Int
+        let bytes: Int64
+    }
+
     private func refresh() {
-        usage = model.storageUsage().map { (chat: $0.usage.chat, title: model.title(of: $0.usage.chat),
-                                            messages: Int($0.usage.messages), media: Int($0.usage.media), bytes: $0.bytes) }
-            .sorted { $0.bytes > $1.bytes }
+        usage = model.storageUsage().map {
+            Row(id: $0.usage.chat, title: model.title(of: $0.usage.chat),
+                messages: Int($0.usage.messages), media: Int($0.usage.media), bytes: $0.bytes)
+        }
+        .sorted { $0.bytes > $1.bytes }
     }
 
     static func olderThan(_ days: Int) -> String {
