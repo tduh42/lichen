@@ -22,8 +22,9 @@ class CoreBindingsTest {
     fun demoNetworkFromKotlin() {
         val demo = DemoNetwork()
         val core = LichenCore("test", ByteArray(32) { 7 }, ByteArray(32) { 107 }, null)
-        // The demo's people are friends, as in the app's demo (§10.1).
+        // The demo's people are friends, as in the app's demo (§10.1, ADR-0046).
         core.setGroupConsent(false)
+        core.setRequestConsent(false)
         val wall = 1_793_000_000_000uL
         core.setClock(wall, 0uL)
         core.connect(0uL)

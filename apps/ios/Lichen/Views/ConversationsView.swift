@@ -19,6 +19,7 @@ struct ConversationsView: View {
                     RadioCard()
                     StatusBanners()
                     ForEach(model.invitations, id: \.gid) { InvitationCard(invitation: $0) }
+                    ForEach(model.requests, id: \.identity) { RequestCard(request: $0) }
                     if rows.isEmpty && archivedRows.isEmpty {
                         EmptyConversations { addingContact = true }
                     }
@@ -435,6 +436,77 @@ struct InvitationCard: View {
         }
         let list = ListFormatter.localizedString(byJoining: others)
         return String(localized: "With \(list). You did not verify this person in person: join only if you know them.")
+    }
+}
+
+/// Someone using a contact's radio, with an identity it does not have, wants to write
+/// (protocol.md §4.6, ADR-0046): what they sent, as text lines (nothing decoded or fetched),
+/// and Accept, Block or Delete.
+struct RequestCard: View {
+    let request: IdentityRequest
+    @Environment(AppModel.self) private var model
+
+    /// The last lines shown; the earlier ones are counted.
+    private static let shown = 3
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "person.crop.circle.badge.questionmark")
+                    .font(.system(.footnote, weight: .bold))
+                    .foregroundStyle(Theme.tx2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Someone using \(request.name)'s radio wants to write to you")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Theme.tx)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Anyone in range can write under a radio's name. Accept only if you know who this is; accepting does not verify them.")
+                        .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if request.messages.count > Self.shown {
+                Text("Earlier messages: \(request.messages.count - Self.shown)")
+                    .font(.system(.footnote)).foregroundStyle(Theme.tx2)
+            }
+            ForEach(Array(request.messages.suffix(Self.shown).enumerated()), id: \.offset) { _, line in
+                Text(line.message.display)
+                    .font(.system(.callout))
+                    .foregroundStyle(Theme.tx)
+                    .lineLimit(4)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+            }
+            HStack(spacing: 10) {
+                // Each its own tap only: they share a List row.
+                Button { model.acceptRequest(request.identity) } label: {
+                    Text("Accept").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .font(.system(.subheadline, weight: .semibold))
+                .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.actFg)
+                Button { model.blockRequest(request.identity) } label: {
+                    Text("Block").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .font(.system(.subheadline, weight: .semibold))
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.tx)
+                Button { model.deleteRequest(request.identity) } label: {
+                    Text("Delete").frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .font(.system(.subheadline, weight: .semibold))
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                .foregroundStyle(Theme.tx)
+            }
+        }
+        .padding(12)
+        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
+        .accessibilityElement(children: .contain)
     }
 }
 

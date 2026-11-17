@@ -1401,6 +1401,16 @@
         }
       }
     },
+    "Accept": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accepter"
+          }
+        }
+      }
+    },
     "Actions for %@": {
       "localizations": {
         "fr": {
@@ -1707,6 +1717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Toute distance"
+          }
+        }
+      }
+    },
+    "Anyone in range can write under a radio's name. Accept only if you know who this is; accepting does not verify them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "N'importe qui à portée peut écrire sous le nom d'une radio. Accepte seulement si tu sais qui c'est ; accepter ne vérifie pas cette personne."
           }
         }
       }
@@ -3157,6 +3177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chaque saut coûte du temps d'antenne aux relais ; les messages tiennent jusqu'à 8"
+          }
+        }
+      }
+    },
+    "Earlier messages: %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages plus anciens : %lld"
           }
         }
       }
@@ -5257,6 +5287,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Message supprimé"
+          }
+        }
+      }
+    },
+    "Message request": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande de message"
           }
         }
       }
@@ -8207,6 +8247,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Six chiffres ; vide pour celui de la radio par défaut."
+          }
+        }
+      }
+    },
+    "Someone using %@'s radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quelqu'un qui utilise la radio de %@"
+          }
+        }
+      }
+    },
+    "Someone using %@'s radio wants to write to you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quelqu'un qui utilise la radio de %@ veut t'écrire"
           }
         }
       }

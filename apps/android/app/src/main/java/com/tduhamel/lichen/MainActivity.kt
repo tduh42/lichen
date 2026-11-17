@@ -208,6 +208,7 @@ class MainActivity : FragmentActivity() {
             expiry = e.getInt("expiry"),
             inviteDemo = e.getBoolean("inviteDemo"),
             joinNow = e.getBoolean("joinNow"),
+            requestDemo = e.getBoolean("requestDemo"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")

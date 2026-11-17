@@ -1150,4 +1150,11 @@
     <string name="empty_history">Repartir avec un historique vide</string>
     <string name="empty_history_confirm">Repartir avec un historique vide ?</string>
     <string name="empty_history_warning">Tes messages, contacts et groupes sur ce téléphone sont supprimés pour de bon. Ton identité reste : tes contacts te reconnaissent toujours. Restaure plutôt une sauvegarde si tu en as une.</string>
+    <!-- Introduction requests (ADR-0046) -->
+    <string name="accept">Accepter</string>
+    <string name="message_request">Demande de message</string>
+    <string name="request_title">Quelqu’un qui utilise la radio de %1$s veut t’écrire</string>
+    <string name="request_note">N’importe qui à portée peut écrire sous le nom d’une radio. Accepte seulement si tu sais qui c’est ; accepter ne vérifie pas cette personne.</string>
+    <string name="request_earlier">Messages plus anciens : %1$d</string>
+    <string name="request_blocked_name">Quelqu’un qui utilise la radio de %1$s</string>
 </resources>
