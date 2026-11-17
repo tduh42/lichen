@@ -1408,6 +1408,9 @@ mod backup {
         .unwrap();
         assert!(!locked.storage_ok());
         let _ = std::fs::remove_dir_all(d);
+    }
+}
+
 /// Links and places come with UTF-16 offsets, what the apps' strings count (ADR-0034).
 #[cfg(test)]
 mod text_links {
