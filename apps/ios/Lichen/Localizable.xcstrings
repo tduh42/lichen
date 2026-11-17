@@ -1311,6 +1311,16 @@
         }
       }
     },
+    "A password-protected file: coming later": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier protégé par mot de passe : plus tard"
+          }
+        }
+      }
+    },
     "A radio on other settings no longer hears the radios of its mesh: choose your region's preset, or the values your local community uses.": {
       "localizations": {
         "fr": {
