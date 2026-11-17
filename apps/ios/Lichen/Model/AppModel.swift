@@ -9,7 +9,7 @@ extension ChatRef {
     /// A plain MeshCore chat (protocol.md §15): text only, not lichen-encrypted.
     var isPlain: Bool {
         switch self {
-        case .mesh, .channel: true
+        case .mesh, .channel, .room: true
         case .contact, .group: false
         }
     }
@@ -68,6 +68,12 @@ final class AppModel {
         didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
     }
     var contacts: [ContactInfo] = []
+    /// MeshCore nodes the radio knows or heard (protocol.md §16.1).
+    var nodes: [NodeInfo] = []
+    /// Bumped when a trace or a server's answer changes (§16): views read them again.
+    var meshToolsVersion = 0
+    /// Radios this phone was paired with (ADR-0042).
+    var savedRadios: [SavedRadio] = []
     /// What the radio reported of its settings (protocol §1.1), read again after each change.
     var radioSettings: RadioSettings?
     /// Why the radio did not take a setting, for an alert.
@@ -261,6 +267,7 @@ final class AppModel {
             identitySeed = seed
             core = Self.makeCore(seed: seed)
             if !core.storageOk() { identityProblem = .storage }
+            savedRadios = core.savedRadios()
         case let .failure(problem):
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
@@ -370,6 +377,7 @@ final class AppModel {
         identityProblem = nil
         core = Self.makeCore(seed: seed)
         if !core.storageOk() { identityProblem = .storage }
+        savedRadios = core.savedRadios()
         contacts = core.contacts().filter(\.person)
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
@@ -526,6 +534,7 @@ final class AppModel {
             identitySeed = seed
             core = Self.makeCore(seed: seed)
             if !core.storageOk() { identityProblem = .storage }
+            savedRadios = core.savedRadios()
         case let .failure(problem):
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
@@ -572,6 +581,7 @@ final class AppModel {
         radio = nil
         conflicts = [:]
         contacts = []
+        nodes = []
         groups = []
         chats = [:]
         conversations = []
@@ -648,6 +658,8 @@ final class AppModel {
         let t = now()
         core.setClock(unixMs: UInt64(Date().timeIntervalSince1970 * 1000), nowMs: t)
         core.tick(nowMs: t)
+        // The radio's battery, for the low-battery warning (ADR-0042).
+        core.refreshBatteryIfDue(nowMs: t)
         var toDemo: [Data] = []
         while let f = core.pollCompanion(nowMs: t) {
             if demo != nil {
@@ -686,6 +698,7 @@ final class AppModel {
             self.radio = radio
             radioSettings = core.radioSettings()
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
+            radioConnected()
         case let .identityLearned(node, _, _):
             contacts = core.contacts().filter(\.person)
             #if DEBUG
@@ -706,6 +719,7 @@ final class AppModel {
             if !r.name.isEmpty { nodeName = r.name }
         case .contactsUpdated:
             contacts = core.contacts().filter(\.person)
+            nodes = core.nodes()
             #if DEBUG
             if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
                let c = contacts.first(where: { $0.name == name }) {
@@ -843,7 +857,7 @@ final class AppModel {
             // 2026-11-15, SR-30).
             if !isMuted(chat) {
                 let title: String = switch chat {
-                case .channel: [label, self.title(of: chat)].compactMap { $0 }.joined(separator: " · ")
+                case .channel, .room: [label, self.title(of: chat)].compactMap { $0 }.joined(separator: " · ")
                 default: "\(label ?? self.title(of: chat)) · MeshCore"
                 }
                 notifier.message(chat, title: title, body: text)
@@ -913,6 +927,9 @@ final class AppModel {
         case let .txPower(dbm, previous):
             // lc-ffi keeps the power to restore; we show it while it is lowered.
             loweredPower = previous == nil ? nil : dbm
+        case .nodeUpdated:
+            // A trace or a server's answer (§16).
+            meshToolsVersion += 1
         }
     }
 
@@ -1090,7 +1107,7 @@ final class AppModel {
         switch chat {
         case let .contact(key): return try? core.estimateText(to: key, textLen: UInt32(text.utf8.count))
         case .group: return core.estimateGroupText(textLen: UInt32(text.utf8.count))
-        case .mesh, .channel: return try? core.estimatePlain(chat: chat, len: UInt32(text.utf8.count))
+        case .mesh, .channel, .room: return try? core.estimatePlain(chat: chat, len: UInt32(text.utf8.count))
         }
     }
 
@@ -1104,7 +1121,7 @@ final class AppModel {
                 m = try core.sendText(to: key, text: text, sentAt: sentAt, nowMs: now())
             case let .group(gid):
                 m = try core.sendGroupText(gid: gid, text: text, sentAt: sentAt, nowMs: now())
-            case .mesh, .channel:
+            case .mesh, .channel, .room:
                 m = try core.sendPlain(chat: chat, text: text, sentAt: sentAt, nowMs: now())
             }
             if chats[chat] == nil { load(chat) } else { upsert(m) }
@@ -2069,6 +2086,7 @@ final class AppModel {
         case let .contact(key), let .mesh(key): return name(of: key)
         case let .group(gid): return groups.first { $0.gid == gid }?.name ?? String(localized: "Group")
         case let .channel(id): return channels.first { $0.id == id }?.name ?? String(localized: "Channel")
+        case let .room(key): return node(key)?.name ?? String(localized: "Room server")
         }
     }
 
@@ -2300,6 +2318,7 @@ extension LichenError {
         case .NewerBackup: return String(localized: "This backup was made by a newer version of lichen: update the app first.")
         case .WrongBackupWords: return String(localized: "These 24 words are not the ones of this backup.")
         case .BackupDamaged: return String(localized: "This backup is damaged or incomplete: nothing was restored.")
+        case .NoPath: return String(localized: "No repeater on the way: the radio hears it directly, or does not know a path yet.")
         }
     }
 }

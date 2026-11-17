@@ -360,13 +360,16 @@ enum QRCode {
     }
 }
 
-/// The camera, reporting the first lichen code it reads.
-private struct QRScanner: UIViewControllerRepresentable {
+/// The camera, reporting the first code it reads that starts with one of `prefixes` (lichen
+/// codes by default; a MeshCore channel's for channels, protocol.md §15.3).
+struct QRScanner: UIViewControllerRepresentable {
+    var prefixes = ["lichen:"]
     let found: (String) -> Void
 
     func makeUIViewController(context: Context) -> ScannerController {
         let c = ScannerController()
         c.found = found
+        c.prefixes = prefixes
         return c
     }
 
@@ -374,6 +377,7 @@ private struct QRScanner: UIViewControllerRepresentable {
 
     final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
         var found: ((String) -> Void)?
+        var prefixes = ["lichen:"]
         private let session = AVCaptureSession()
         private var reported = false
 
@@ -414,11 +418,9 @@ private struct QRScanner: UIViewControllerRepresentable {
 
         nonisolated func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject],
                                         from connection: AVCaptureConnection) {
-            guard let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue,
-                  code.hasPrefix("lichen:")
-            else { return }
+            guard let code = (objects.first as? AVMetadataMachineReadableCodeObject)?.stringValue else { return }
             MainActor.assumeIsolated {
-                guard !reported else { return }
+                guard !reported, prefixes.contains(where: { code.lowercased().hasPrefix($0) }) else { return }
                 reported = true
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
                 found?(code)

@@ -201,6 +201,16 @@
         }
       }
     },
+    "%@ receiving": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ en réception"
+          }
+        }
+      }
+    },
     "%@ removed %@": {
       "localizations": {
         "fr": {
@@ -251,6 +261,16 @@
         }
       }
     },
+    "%@ transmitting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ en émission"
+          }
+        }
+      }
+    },
     "%@ turned off disappearing messages": {
       "localizations": {
         "fr": {
@@ -287,6 +307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · arrivé en retard, écrit à %@"
+          }
+        }
+      }
+    },
+    "%@ · last used %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · utilisée le %@"
           }
         }
       }
@@ -531,6 +561,36 @@
         }
       }
     },
+    "%lld hops": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sauts"
+          }
+        }
+      }
+    },
+    "%lld kept · %lld sent to clients": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld gardés · %lld envoyés aux clients"
+          }
+        }
+      }
+    },
+    "%lld known": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld connus"
+          }
+        }
+      }
+    },
     "%lld measures": {
       "localizations": {
         "fr": {
@@ -641,12 +701,42 @@
         }
       }
     },
+    "%lld of %lld, the strongest first.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld sur %lld, les plus forts d’abord."
+          }
+        }
+      }
+    },
+    "%lld received · %lld sent · %lld waiting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld reçus · %lld envoyés · %lld en attente"
+          }
+        }
+      }
+    },
     "%lld resent": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld réémis"
+          }
+        }
+      }
+    },
+    "%lld saved": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld enregistrées"
           }
         }
       }
@@ -787,6 +877,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%u conversations ne peuvent pas recevoir ta position"
+          }
+        }
+      }
+    },
+    "(refused by the radio)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "(refusée par la radio)"
           }
         }
       }
@@ -1151,6 +1251,16 @@
         }
       }
     },
+    "A password-protected file: coming later": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fichier protégé par mot de passe : plus tard"
+          }
+        }
+      }
+    },
     "A radio on other settings no longer hears the radios of its mesh: choose your region's preset, or the values your local community uses.": {
       "localizations": {
         "fr": {
@@ -1167,6 +1277,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Une recherche radio demande un groupe en commun."
+          }
+        }
+      }
+    },
+    "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore's own encryption to the room: the room and everyone logged in read them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un serveur de salon garde les messages de tous ceux qui y sont connectés et les envoie à chacun. Tes messages utilisent le chiffrement de MeshCore jusqu’au salon : le salon et tous ceux qui y sont connectés les lisent."
+          }
+        }
+      }
+    },
+    "A room's posts are MeshCore messages: the room and everyone logged in read them. Up to 15 characters.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les messages d’un salon sont des messages MeshCore : le salon et tous ceux qui y sont connectés les lisent. 15 caractères au plus."
           }
         }
       }
@@ -1217,6 +1347,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À propos des discussions MeshCore"
+          }
+        }
+      }
+    },
+    "Actions for %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actions pour %@"
           }
         }
       }
@@ -1291,6 +1431,36 @@
         }
       }
     },
+    "Admin or guest password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe admin ou invité"
+          }
+        }
+      }
+    },
+    "Administration": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Administration"
+          }
+        }
+      }
+    },
+    "Advertised position": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Position annoncée"
+          }
+        }
+      }
+    },
     "After earlier messages": {
       "localizations": {
         "fr": {
@@ -1307,6 +1477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "À nouveau toutes les 2 minutes. Elle part dès que la radio a du temps d’antenne, et personne ne confirme la réception : surveille les réponses."
+          }
+        }
+      }
+    },
+    "Airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d’antenne"
           }
         }
       }
@@ -1357,6 +1537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Temps d'antenne restant : %@ s. La personne l'ouvre avec l'app de son type."
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous"
           }
         }
       }
@@ -1531,12 +1721,32 @@
         }
       }
     },
+    "Ask for its neighbours": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demander ses voisins"
+          }
+        }
+      }
+    },
     "Asking %@ to add you…": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Demande à %@ de t'ajouter…"
+          }
+        }
+      }
+    },
+    "Asking…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande en cours…"
           }
         }
       }
@@ -1567,6 +1777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "BLE · SF%u / %@"
+          }
+        }
+      }
+    },
+    "Back in %@ s · SNR measured by each hop, out and back": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revenu en %@ s · SNR mesuré par chaque saut, à l’aller et au retour"
           }
         }
       }
@@ -1761,6 +1981,16 @@
         }
       }
     },
+    "Charge it soon: messages wait while it is off.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recharge-la bientôt : les messages attendent pendant qu’elle est éteinte."
+          }
+        }
+      }
+    },
     "Choose the backup file": {
       "localizations": {
         "fr": {
@@ -1881,12 +2111,62 @@
         }
       }
     },
+    "Command": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commande"
+          }
+        }
+      }
+    },
+    "Command line": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ligne de commande"
+          }
+        }
+      }
+    },
+    "Commands for its admin, such as ver, clock or neighbors": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Commandes pour son admin, comme ver, clock ou neighbors"
+          }
+        }
+      }
+    },
+    "Commands go once, unacknowledged; the repeater answers its admin only.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les commandes partent une fois, sans accusé ; le répéteur ne répond qu’à son admin."
+          }
+        }
+      }
+    },
     "Compact": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Compact"
+          }
+        }
+      }
+    },
+    "Companion": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compagnon"
           }
         }
       }
@@ -2001,6 +2281,16 @@
         }
       }
     },
+    "Connect your radio to see the nodes it knows.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte ta radio pour voir les nœuds qu’elle connaît."
+          }
+        }
+      }
+    },
     "Connecting to %@…": {
       "localizations": {
         "fr": {
@@ -2017,6 +2307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connexion à Tor…"
+          }
+        }
+      }
+    },
+    "Console": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Console"
           }
         }
       }
@@ -2467,6 +2767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Diffusion"
+          }
+        }
+      }
+    },
+    "Direct": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direct"
           }
         }
       }
@@ -3051,6 +3361,16 @@
         }
       }
     },
+    "Flood and direct": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Inondation et direct"
+          }
+        }
+      }
+    },
     "Flooded to every member, without acknowledgement": {
       "localizations": {
         "fr": {
@@ -3111,6 +3431,26 @@
         }
       }
     },
+    "Forget": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oublier"
+          }
+        }
+      }
+    },
+    "Forget %@?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Oublier %@ ?"
+          }
+        }
+      }
+    },
     "Forward": {
       "localizations": {
         "fr": {
@@ -3137,6 +3477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Depuis Fichiers, iCloud Drive ou une clé USB"
+          }
+        }
+      }
+    },
+    "From a MeshCore app or from lichen: it holds the channel's name and secret.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Depuis une app MeshCore ou depuis lichen : il contient le nom et le secret du canal."
           }
         }
       }
@@ -3431,6 +3781,16 @@
         }
       }
     },
+    "Heard, not in the radio's contacts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendu, pas dans les contacts de la radio"
+          }
+        }
+      }
+    },
     "Heartbeat when still": {
       "localizations": {
         "fr": {
@@ -3477,6 +3837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Maintenir trois secondes"
+          }
+        }
+      }
+    },
+    "Hop %lld · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saut %lld · %@"
           }
         }
       }
@@ -3651,6 +4021,16 @@
         }
       }
     },
+    "It hears nobody yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il n’entend encore personne"
+          }
+        }
+      }
+    },
     "It is removed on the phones that receive this. Whoever already read it has read it.": {
       "localizations": {
         "fr": {
@@ -3661,12 +4041,32 @@
         }
       }
     },
+    "It leaves this list; iOS may still list it as paired in Bluetooth settings.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elle quitte cette liste ; iOS peut encore la montrer comme appairée dans les réglages Bluetooth."
+          }
+        }
+      }
+    },
     "Its messages are deleted from this phone. The contact stays.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Ses messages sont supprimés de ce téléphone. Le contact reste."
+          }
+        }
+      }
+    },
+    "Its posts, and yours": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ses messages, et les tiens"
           }
         }
       }
@@ -3741,6 +4141,16 @@
         }
       }
     },
+    "Join the channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre le canal"
+          }
+        }
+      }
+    },
     "Join the hashtag": {
       "localizations": {
         "fr": {
@@ -3777,6 +4187,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tient à jour la position de la radio. Il consomme de l’énergie."
+          }
+        }
+      }
+    },
+    "Kept by the room · %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gardé par le salon · %@ s de temps d’antenne"
+          }
+        }
+      }
+    },
+    "Key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé"
           }
         }
       }
@@ -3827,6 +4257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dernière position GPS"
+          }
+        }
+      }
+    },
+    "Last heard %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendu %@"
           }
         }
       }
@@ -4151,6 +4591,96 @@
         }
       }
     },
+    "Log in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se connecter"
+          }
+        }
+      }
+    },
+    "Log out": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se déconnecter"
+          }
+        }
+      }
+    },
+    "Logged in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté"
+          }
+        }
+      }
+    },
+    "Logged in as a guest": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en invité"
+          }
+        }
+      }
+    },
+    "Logged in as admin": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté en admin"
+          }
+        }
+      }
+    },
+    "Logged in: reading only": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecté : lecture seule"
+          }
+        }
+      }
+    },
+    "Logging in…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion…"
+          }
+        }
+      }
+    },
+    "Login": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion"
+          }
+        }
+      }
+    },
+    "Logs in at each connection, so that new posts come.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à chaque mise en route, pour recevoir les nouveaux messages."
+          }
+        }
+      }
+    },
     "Looking for a path": {
       "localizations": {
         "fr": {
@@ -4371,12 +4901,42 @@
         }
       }
     },
+    "MeshCore nodes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nœuds MeshCore"
+          }
+        }
+      }
+    },
     "MeshCore radio": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Radio MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore room server · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur de salon MeshCore · %@"
+          }
+        }
+      }
+    },
+    "MeshCore room · not lichen-encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salon MeshCore · non chiffré par lichen"
           }
         }
       }
@@ -4551,6 +5111,16 @@
         }
       }
     },
+    "Neighbours": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voisins"
+          }
+        }
+      }
+    },
     "Network": {
       "localizations": {
         "fr": {
@@ -4701,6 +5271,36 @@
         }
       }
     },
+    "No answer: a hop did not hear it, or the radio was disconnected.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de réponse : un saut ne l’a pas entendu, ou la radio s’est déconnectée."
+          }
+        }
+      }
+    },
+    "No answer: a wrong password, or out of reach": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de réponse : mauvais mot de passe, ou hors de portée"
+          }
+        }
+      }
+    },
+    "No answer: log in first, or the repeater is out of reach.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de réponse : connecte-toi d’abord, ou le répéteur est hors de portée."
+          }
+        }
+      }
+    },
     "No backup was made": {
       "localizations": {
         "fr": {
@@ -4801,6 +5401,16 @@
         }
       }
     },
+    "No path known": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun chemin connu"
+          }
+        }
+      }
+    },
     "No path to %@": {
       "localizations": {
         "fr": {
@@ -4827,6 +5437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aucun répéteur n'a répondu à la découverte de chemin. Réessaie plus près, ou quand un relais est actif."
+          }
+        }
+      }
+    },
+    "No repeater on the way: the radio hears it directly, or does not know a path yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun répéteur sur le trajet : la radio l’entend directement, ou ne connaît pas encore de chemin."
           }
         }
       }
@@ -4901,12 +5521,52 @@
         }
       }
     },
+    "Node": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nœud"
+          }
+        }
+      }
+    },
+    "Nodes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nœuds"
+          }
+        }
+      }
+    },
+    "Noise floor %lld dBm · last RSSI %lld dBm · SNR %@ dB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bruit de fond %lld dBm · dernier RSSI %lld dBm · SNR %@ dB"
+          }
+        }
+      }
+    },
     "None yet": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Aucune pour l’instant"
+          }
+        }
+      }
+    },
+    "Not a MeshCore channel code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce n’est pas un code de canal MeshCore."
           }
         }
       }
@@ -4977,6 +5637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas chiffré par lichen."
+          }
+        }
+      }
+    },
+    "Not logged in": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non connecté"
           }
         }
       }
@@ -5121,6 +5791,16 @@
         }
       }
     },
+    "On its way through the repeaters and back.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En route à travers les répéteurs, aller et retour."
+          }
+        }
+      }
+    },
     "On my way, radio off for now": {
       "localizations": {
         "fr": {
@@ -5227,6 +5907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir le groupe"
+          }
+        }
+      }
+    },
+    "Open the room": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir le salon"
           }
         }
       }
@@ -5341,6 +6031,16 @@
         }
       }
     },
+    "Packets": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paquets"
+          }
+        }
+      }
+    },
     "Pair": {
       "localizations": {
         "fr": {
@@ -5361,6 +6061,16 @@
         }
       }
     },
+    "Pair another radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appairer une autre radio"
+          }
+        }
+      }
+    },
     "Part of it already went out: it can no longer be cancelled.": {
       "localizations": {
         "fr": {
@@ -5371,12 +6081,32 @@
         }
       }
     },
+    "Password kept on this phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe gardé sur ce téléphone"
+          }
+        }
+      }
+    },
     "Pasted, not scanned: %@ is added without being verified. Compare safety numbers with them to verify. Members can read what was sent under the group's current keys.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Les membres peuvent lire ce qui a été envoyé sous les clés actuelles du groupe."
+          }
+        }
+      }
+    },
+    "Path": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chemin"
           }
         }
       }
@@ -5397,6 +6127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "En pause : radio déconnectée"
+          }
+        }
+      }
+    },
+    "People": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personnes"
           }
         }
       }
@@ -5511,6 +6251,16 @@
         }
       }
     },
+    "Point the camera at a channel's code from a MeshCore app or from lichen.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vise le code d’un canal affiché par une app MeshCore ou par lichen."
+          }
+        }
+      }
+    },
     "Point the camera at your contact's code.": {
       "localizations": {
         "fr": {
@@ -5577,6 +6327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Possible à nouveau dans %llu s."
+          }
+        }
+      }
+    },
+    "Posts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Messages"
           }
         }
       }
@@ -5681,6 +6441,16 @@
         }
       }
     },
+    "QR code of %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR code de %@"
+          }
+        }
+      }
+    },
     "Queued %@ for %u conversations": {
       "localizations": {
         "fr": {
@@ -5697,6 +6467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Radio"
+          }
+        }
+      }
+    },
+    "Radio battery low: %lld %%": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batterie de la radio faible : %lld %%"
           }
         }
       }
@@ -5741,6 +6521,26 @@
         }
       }
     },
+    "Radios": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radios"
+          }
+        }
+      }
+    },
+    "Radios you pair appear here, to switch between them.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les radios que tu appaires apparaissent ici, pour passer de l’une à l’autre."
+          }
+        }
+      }
+    },
     "Radios your node has heard. With someone who has lichen, the chat is end-to-end encrypted; with someone who only has a MeshCore app, it is a MeshCore chat, readable by the radios.": {
       "localizations": {
         "fr": {
@@ -5767,6 +6567,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lu sur la radio une fois connectée"
+          }
+        }
+      }
+    },
+    "Read the status": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lire l’état"
+          }
+        }
+      }
+    },
+    "Receive errors": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erreurs de réception"
           }
         }
       }
@@ -5841,6 +6661,16 @@
         }
       }
     },
+    "Remember on this phone": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retenir sur ce téléphone"
+          }
+        }
+      }
+    },
     "Remove %@": {
       "localizations": {
         "fr": {
@@ -5901,12 +6731,42 @@
         }
       }
     },
+    "Repeater": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répéteur"
+          }
+        }
+      }
+    },
     "Repeaters": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Répéteurs"
+          }
+        }
+      }
+    },
+    "Repeaters, room servers and people's radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes' own adverts.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répéteurs, serveurs de salon et radios des gens, tels que ta radio les connaît. Ceux qu’elle a entendus sans les ajouter sont signalés ; les positions viennent des annonces des nœuds eux-mêmes."
+          }
+        }
+      }
+    },
+    "Repeaters, rooms and radios around": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répéteurs, salons et radios autour"
           }
         }
       }
@@ -6071,12 +6931,62 @@
         }
       }
     },
+    "Room": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salon"
+          }
+        }
+      }
+    },
+    "Room details": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Détails du salon"
+          }
+        }
+      }
+    },
+    "Room password": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot de passe du salon"
+          }
+        }
+      }
+    },
+    "Room server": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serveur de salon"
+          }
+        }
+      }
+    },
     "Room servers": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Serveurs de salon"
+          }
+        }
+      }
+    },
+    "Rooms": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salons"
           }
         }
       }
@@ -6247,6 +7157,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Scanner"
+          }
+        }
+      }
+    },
+    "Scan a channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanner un canal"
+          }
+        }
+      }
+    },
+    "Scan a channel's QR code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scanner le QR code d’un canal"
           }
         }
       }
@@ -6531,12 +7461,32 @@
         }
       }
     },
+    "Sensor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capteur"
+          }
+        }
+      }
+    },
     "Sensors": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Capteurs"
+          }
+        }
+      }
+    },
+    "Sent %lld / %lld · received %lld / %lld · duplicates %lld / %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyés %lld / %lld · reçus %lld / %lld · doublons %lld / %lld"
           }
         }
       }
@@ -6631,6 +7581,16 @@
         }
       }
     },
+    "Share by QR code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager par QR code"
+          }
+        }
+      }
+    },
     "Share my location": {
       "localizations": {
         "fr": {
@@ -6647,6 +7607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Partager ma position…"
+          }
+        }
+      }
+    },
+    "Share the channel": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager le canal"
           }
         }
       }
@@ -6701,6 +7671,16 @@
         }
       }
     },
+    "Show": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher"
+          }
+        }
+      }
+    },
     "Show earlier messages": {
       "localizations": {
         "fr": {
@@ -6737,6 +7717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Voir sur la carte"
+          }
+        }
+      }
+    },
+    "Show the code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afficher le code"
           }
         }
       }
@@ -6881,6 +7871,16 @@
         }
       }
     },
+    "Status": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "État"
+          }
+        }
+      }
+    },
     "Sticker": {
       "localizations": {
         "fr": {
@@ -7011,6 +8011,16 @@
         }
       }
     },
+    "TCP": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TCP"
+          }
+        }
+      }
+    },
     "TCP · MeshCore companion · not encrypted": {
       "localizations": {
         "fr": {
@@ -7077,6 +8087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le SOS reste actif jusqu'à ce que tu l'arrêtes. Il ne remplace pas le 112."
+          }
+        }
+      }
+    },
+    "The admin password is never kept on this phone. Guests can read the status only.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le mot de passe admin n’est jamais gardé sur ce téléphone. Les invités peuvent seulement lire l’état."
           }
         }
       }
@@ -7331,12 +8351,32 @@
         }
       }
     },
+    "The radio has not reported any node yet.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio n’a encore signalé aucun nœud."
+          }
+        }
+      }
+    },
     "The radio keeps receiving while lichen is locked.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "La radio continue de recevoir pendant que lichen est verrouillé."
+          }
+        }
+      }
+    },
+    "The radio refused the trace.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio a refusé le traçage."
           }
         }
       }
@@ -7611,6 +8651,16 @@
         }
       }
     },
+    "This code holds the channel's secret: anyone who scans it, with lichen or a MeshCore app, reads %@ and can post in it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce code contient le secret du canal : quiconque le scanne, avec lichen ou une app MeshCore, lit %@ et peut y écrire."
+          }
+        }
+      }
+    },
     "This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.": {
       "localizations": {
         "fr": {
@@ -7821,6 +8871,26 @@
         }
       }
     },
+    "Trace the path": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracer le chemin"
+          }
+        }
+      }
+    },
+    "Tracing…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traçage…"
+          }
+        }
+      }
+    },
     "Transmit power": {
       "localizations": {
         "fr": {
@@ -7951,6 +9021,16 @@
         }
       }
     },
+    "USB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "USB"
+          }
+        }
+      }
+    },
     "Unavailable: turn on iroh or Tor in Settings to fetch the file.": {
       "localizations": {
         "fr": {
@@ -8047,6 +9127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Jusqu'à ce que je les réactive"
+          }
+        }
+      }
+    },
+    "Up for": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En marche depuis"
           }
         }
       }
@@ -8301,6 +9391,16 @@
         }
       }
     },
+    "Waiting for the room's acknowledgement": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de l’accusé du salon"
+          }
+        }
+      }
+    },
     "Waiting for their radio's acknowledgement": {
       "localizations": {
         "fr": {
@@ -8397,6 +9497,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Qui peut les demander à ta radio. Les contacts se choisissent dans l’app MeshCore. Les positions de lichen voyagent toujours chiffrées, seulement vers les personnes que tu choisis."
+          }
+        }
+      }
+    },
+    "Whoever scans it joins": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qui le scanne le rejoint"
           }
         }
       }
@@ -8641,6 +9751,16 @@
         }
       }
     },
+    "Your conversations, contacts and groups stay on this phone whichever radio you use. Each radio keeps its own MeshCore contacts, channels and settings, and the people you write to see a different node when you switch.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tes conversations, contacts et groupes restent sur ce téléphone, quelle que soit la radio. Chaque radio garde ses propres contacts MeshCore, canaux et réglages, et les personnes à qui tu écris voient un autre nœud quand tu changes de radio."
+          }
+        }
+      }
+    },
     "Your cost: %@ · ≈ %@ s of airtime · relays add theirs, no acknowledgement": {
       "localizations": {
         "fr": {
@@ -8801,6 +9921,36 @@
         }
       }
     },
+    "Your radio already follows this channel.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio suit déjà ce canal."
+          }
+        }
+      }
+    },
+    "Your radio floods to reach it until it learns a path.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio l’atteint par inondation tant qu’elle n’a pas appris de chemin."
+          }
+        }
+      }
+    },
+    "Your radio hears it without a repeater.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio l’entend sans répéteur."
+          }
+        }
+      }
+    },
     "Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.": {
       "localizations": {
         "fr": {
@@ -8817,6 +9967,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ta radio émet à %d dBm pour la recherche, puis revient à la normale."
+          }
+        }
+      }
+    },
+    "Your radio will follow it, muted. Everyone who has this code reads it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio le suivra, en sourdine. Tous ceux qui ont ce code le lisent."
           }
         }
       }
@@ -8877,6 +10037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "connecté"
+          }
+        }
+      }
+    },
+    "direct": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "direct"
           }
         }
       }
@@ -8951,6 +10121,16 @@
         }
       }
     },
+    "flood": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "inondation"
+          }
+        }
+      }
+    },
     "full one on request": {
       "localizations": {
         "fr": {
@@ -8967,6 +10147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "empreinte vérifiée"
+          }
+        }
+      }
+    },
+    "heard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "entendu"
           }
         }
       }
@@ -9057,6 +10247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "lichen est un logiciel libre sous licence publique générale GNU, version 3 ou ultérieure : tu peux l’utiliser, l’étudier, le partager et le modifier. Son code source est sur GitHub."
+          }
+        }
+      }
+    },
+    "never heard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "jamais entendu"
           }
         }
       }
