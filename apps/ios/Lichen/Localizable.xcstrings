@@ -5421,6 +5421,16 @@
         }
       }
     },
+    "MeshCore room": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salon MeshCore"
+          }
+        }
+      }
+    },
     "MeshCore room server · %@": {
       "localizations": {
         "fr": {
@@ -9887,6 +9897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Groupe inconnu."
+          }
+        }
+      }
+    },
+    "Unknown radio · %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radio inconnue · %@"
           }
         }
       }

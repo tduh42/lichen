@@ -72,14 +72,8 @@ impl LichenCore {
 
     /// The radio's channels (§15.3); the ones saved last while it is away.
     pub fn channels(&self) -> Vec<MeshChannel> {
-        let i = self.lock();
-        if i.core.channels_known() {
-            return i.core.channels().iter().map(MeshChannel::from).collect();
-        }
-        i.store
-            .as_ref()
-            .and_then(|s| s.channels().ok())
-            .unwrap_or_default()
+        self.lock()
+            .channel_list()
             .iter()
             .map(MeshChannel::from)
             .collect()
@@ -128,5 +122,18 @@ impl LichenCore {
         i.core.set_node_name(&name, now_ms)?;
         i.persist();
         Ok(())
+    }
+}
+
+impl Inner {
+    /// The radio's channels; the ones saved last while it is away.
+    pub(crate) fn channel_list(&self) -> Vec<lc_core::Channel> {
+        if self.core.channels_known() {
+            return self.core.channels().to_vec();
+        }
+        self.store
+            .as_ref()
+            .and_then(|s| s.channels().ok())
+            .unwrap_or_default()
     }
 }

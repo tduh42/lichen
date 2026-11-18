@@ -46,7 +46,8 @@ import java.util.Date
 @Composable
 fun RenameDialog(model: AppModel, node: ByteArray, dismiss: () -> Unit) {
     val t = lichen
-    val c = model.contact(node) ?: return
+    // Any contact the core keeps, a person or not (a node its radio files as a repeater).
+    val c = model.coreContacts.firstOrNull { it.key.contentEquals(node) } ?: return
     val renamed = c.name != c.nodeName
     var name by remember { mutableStateOf(if (renamed) c.name else "") }
     AlertDialog(

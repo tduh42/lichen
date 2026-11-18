@@ -2103,3 +2103,78 @@ mod full_images {
         assert_eq!(kept, rows[8..].to_vec());
     }
 }
+
+/// Messages lists every conversation, whatever the radio's contact list says (§15.8): each
+/// one carries the name it shows under.
+#[cfg(test)]
+mod conversation_names {
+    use super::*;
+
+    fn incoming(core: &LichenCore, chat: Chat) {
+        core.lock()
+            .record(store::Message {
+                id: 0,
+                chat,
+                outgoing: false,
+                author: None,
+                content: Content::Text {
+                    sent_at: 5,
+                    text: "still here".into(),
+                },
+                at_ms: unix_ms(),
+                status: Status::Received,
+                fragments: 0,
+                airtime_ms: 0,
+                snr4: None,
+                read: false,
+                msg_ref: None,
+            })
+            .unwrap();
+    }
+
+    /// The radio's record gives a person's node another type (a repeater): the apps leave it
+    /// out of their people, its conversation stays, named.
+    #[test]
+    fn a_contact_the_radio_calls_a_repeater() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![173; 32], None).unwrap();
+        core.lock().core.restore_contact(lc_core::Contact {
+            key: [9; 32],
+            name: "Bob".into(),
+            out_path: None,
+            identity: Some([7; 32]),
+            verified: false,
+            kind: lc_core::contact_kind::REPEATER,
+        });
+        incoming(&core, Chat::Contact([9; 32]));
+        assert!(!core.contacts()[0].person);
+        let list = core.conversations();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].chat, ChatRef::Contact { key: vec![9; 32] });
+        assert_eq!(list[0].name, "Bob");
+        assert_eq!(list[0].unread, 1);
+        // Its nickname first, as everywhere.
+        core.rename_contact(vec![9; 32], Some("Bobby".into()))
+            .unwrap();
+        assert_eq!(core.conversations()[0].name, "Bobby");
+    }
+
+    /// No contact and no node for it at all: still listed, with no name (the apps show its
+    /// key).
+    #[test]
+    fn a_chat_without_a_contact() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![174; 32], None).unwrap();
+        incoming(&core, Chat::Contact([8; 32]));
+        incoming(&core, Chat::Mesh([8; 32]));
+        let list = core.conversations();
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().all(|c| c.name.is_empty()));
+        let chats: Vec<&ChatRef> = list.iter().map(|c| &c.chat).collect();
+        assert!(chats.contains(&&ChatRef::Contact { key: vec![8; 32] }));
+        assert!(chats.contains(&&ChatRef::Mesh { key: vec![8; 32] }));
+        assert_eq!(
+            core.rename_contact(vec![8; 32], Some("X".into())),
+            Err(LichenError::UnknownContact),
+            "nothing to rename: the apps offer no Rename"
+        );
+    }
+}

@@ -771,6 +771,8 @@
     <!-- MeshCore chats (protocol.md §15) -->
     <string name="meshcore">MeshCore</string>
     <string name="meshcore_channel">Canal MeshCore</string>
+    <string name="meshcore_room">Salon MeshCore</string>
+    <string name="unknown_radio">Radio inconnue · %1$s</string>
     <string name="meshcore_channels">Canaux MeshCore</string>
     <string name="meshcore_chat">Discussion MeshCore</string>
     <string name="channel">Canal</string>
@@ -972,7 +974,6 @@
     <string name="node_kind_repeater">Répéteur</string>
     <string name="node_kind_room">Serveur de salon</string>
     <string name="node_kind_sensor">Capteur</string>
-    <string name="room_server">Serveur de salon</string>
     <string name="heard_badge">entendu</string>
     <string name="heard_not_added">Entendu, pas dans les contacts de la radio</string>
     <string name="last_heard">Entendu %1$s</string>

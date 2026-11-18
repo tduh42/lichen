@@ -564,7 +564,8 @@ private struct RenameAlert: ViewModifier {
     @State private var name = ""
 
     func body(content: Content) -> some View {
-        let c = node.flatMap { model.contact($0) }
+        // Any contact the core keeps, a person or not (a node its radio files as a repeater).
+        let c = node.flatMap { k in model.coreContacts.first { $0.key == k } }
         content
             .alert("Rename", isPresented: $isPresented) {
                 TextField(c?.nodeName ?? "", text: $name)

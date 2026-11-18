@@ -852,6 +852,7 @@ A room server is a MeshCore node (type 3) that keeps the last 32 posts of a room
 - **Posting**: a direct message to the room (§15.2, `txt_type` 0); the room acknowledges what it keeps (`SEND_CONFIRMED`), a reader without the right to post gets no acknowledgement and the post fails after its three attempts.
 - **Remembering**: the user may keep a room's password on the phone; lichen then logs in to it at each connection, once the radio's contacts are read, so that the posts since the last time come. A repeater's password is never kept (§16.5).
 - One login, status or binary request is out at a time: the companion forgets the one it waits for when it gets another (`clearPendingReqs`, `MyMesh.cpp` L1588). lichen queues them.
+- **In Messages**: the apps list every conversation that has a message, rooms included, whatever the radio's contact list says (a node it no longer reports, or reports under another type, keeps its row), named after the contact (its nickname first), then the node the radio reported, else "Unknown radio" and the first 3 bytes of its key in hex.
 
 ## 16. Mesh tools (ADR-0041)
 

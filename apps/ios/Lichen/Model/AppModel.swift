@@ -14,6 +14,15 @@ extension ChatRef {
         case .contact, .group: false
         }
     }
+
+    /// Its id: a node key, a group id or a channel id.
+    var bytes: Data {
+        switch self {
+        case let .contact(key), let .mesh(key), let .room(key): key
+        case let .group(gid): gid
+        case let .channel(id): id
+        }
+    }
 }
 
 /// The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
@@ -68,6 +77,12 @@ final class AppModel {
     var myName = UserDefaults.standard.string(forKey: "lichen.myName") ?? "" {
         didSet { UserDefaults.standard.set(myName, forKey: "lichen.myName") }
     }
+    /// Every contact the core keeps, people or not (a node its radio files as a repeater):
+    /// the people go to `contacts`; a conversation with any of them can be renamed.
+    var coreContacts: [ContactInfo] = [] {
+        didSet { contacts = coreContacts.filter(\.person) }
+    }
+    /// People: the contacts lichen can write to.
     var contacts: [ContactInfo] = []
     /// MeshCore nodes the radio knows or heard (protocol.md §16.1).
     var nodes: [NodeInfo] = []
@@ -141,7 +156,7 @@ final class AppModel {
     /// into the conversation, which opens.
     func acceptRequest(_ identity: Data) {
         if let node = try? core.acceptRequest(identity: identity) {
-            contacts = core.contacts().filter(\.person)
+            coreContacts = core.contacts()
             conversations = core.conversations()
             openRequest = .contact(key: node)
         }
@@ -184,6 +199,8 @@ final class AppModel {
     @ObservationIgnored var debugOpenedMesh: Data?
     /// `-open <name>` was resolved: once per launch.
     @ObservationIgnored var debugOpened = false
+    /// `-roomLogin <password>` was tried: once per launch.
+    @ObservationIgnored var debugRoomLogin = false
     #endif
     /// Invitations we accepted, by admin node: the group's name, until it arrives (§10.5).
     var joining: [Data: String] = [:]
@@ -310,7 +327,7 @@ final class AppModel {
             identityProblem = problem
             core = Self.makeCore(seed: Keychain.randomSeed(), persistent: false)
         }
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
@@ -440,7 +457,7 @@ final class AppModel {
         core = made
         identityProblem = problem
         savedRadios = core.savedRadios()
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         groups = core.groups()
         // Invitations not answered yet are stored: back after a restart (§10.1).
         invitations = core.groupInvitations()
@@ -571,6 +588,8 @@ final class AppModel {
         let args = UserDefaults.standard
         if args.bool(forKey: "sosdemo") || args.bool(forKey: "sosdemo2") { net.julienSos() }
         if args.bool(forKey: "sosdemo2") { net.camilleSos(afterS: 240, forS: 300) }
+        // -marcRepeater YES: the radio files Marc as a repeater; his chat stays in Messages.
+        if args.bool(forKey: "marcRepeater") { net.marcAsRepeater() }
         #endif
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
@@ -698,7 +717,7 @@ final class AppModel {
         radio = nil
         conflicts = [:]
         requests = []
-        contacts = []
+        coreContacts = []
         nodes = []
         groups = []
         chats = [:]
@@ -818,7 +837,7 @@ final class AppModel {
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
             radioConnected()
         case let .identityLearned(node, _, _):
-            contacts = core.contacts().filter(\.person)
+            coreContacts = core.contacts()
             #if DEBUG
             // -open <name>: opened before their identity arrived, as a MeshCore chat; now that
             // they turn out to have lichen, their conversation. Only for the launch argument.
@@ -836,7 +855,7 @@ final class AppModel {
             radio = core.radio()
             if !r.name.isEmpty { nodeName = r.name }
         case .contactsUpdated:
-            contacts = core.contacts().filter(\.person)
+            coreContacts = core.contacts()
             nodes = core.nodes()
             #if DEBUG
             if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
@@ -845,6 +864,18 @@ final class AppModel {
                 openRequest = c.identity == nil ? .mesh(key: c.key) : .contact(key: c.key)
                 debugOpened = true
                 if c.identity == nil { debugOpenedMesh = c.key }
+            } else if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
+                      let room = nodes.first(where: { $0.kind == .roomServer && $0.name == name }) {
+                // A room server's posts (§15.8), as its row in Messages opens them.
+                openRequest = .room(key: room.key)
+                debugOpened = true
+            }
+            // -roomLogin <password>: log in to the radio's room servers once, remembered (§15.8).
+            if !debugRoomLogin, let password = UserDefaults.standard.string(forKey: "roomLogin") {
+                debugRoomLogin = true
+                for room in nodes where room.kind == .roomServer {
+                    _ = serverLogin(room.key, password: password, remember: true)
+                }
             }
             // -fill N: N older messages with Camille (paging checks), once.
             if isDemo, !debugFilled, UserDefaults.standard.integer(forKey: "fill") > 0,
@@ -1791,7 +1822,7 @@ final class AppModel {
     private func groupsChanged() {
         groups = core.groups()
         invitations = core.groupInvitations()
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         #if DEBUG
         if !debugOpened, let name = UserDefaults.standard.string(forKey: "open"),
            let g = groups.first(where: { $0.name == name }) {
@@ -1844,7 +1875,7 @@ final class AppModel {
         do {
             _ = try core.acceptInvite(text: text, scanned: scanned, nowMs: now())
             joining[info.admin] = info.groupName
-            contacts = core.contacts().filter(\.person)
+            coreContacts = core.contacts()
             pump()
             return nil
         } catch let e as LichenError {
@@ -2282,7 +2313,7 @@ final class AppModel {
     func addCard(_ text: String, scanned: Bool) -> Result<ContactInfo, LichenError> {
         do {
             let c = try core.addContactCard(card: text, scanned: scanned)
-            contacts = core.contacts().filter(\.person)
+            coreContacts = core.contacts()
             pump()
             return .success(c)
         } catch let e as LichenError {
@@ -2298,7 +2329,7 @@ final class AppModel {
     func renameContact(_ node: Data, to name: String?) {
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         try? core.renameContact(node: node, name: (trimmed?.isEmpty ?? true) ? nil : trimmed)
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         groups = core.groups()
         pump()
     }
@@ -2313,7 +2344,7 @@ final class AppModel {
     @discardableResult
     func setVerified(_ node: Data, identity: Data, _ verified: Bool) -> Bool {
         let done = (try? core.setVerified(node: node, identity: identity, verified: verified)) ?? false
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         return done
     }
 
@@ -2322,7 +2353,7 @@ final class AppModel {
     func acceptIdentity(_ node: Data, expected: Data) -> Bool {
         let done = (try? core.acceptIdentity(node: node, expected: expected, verify: true)) ?? false
         if done { conflicts[node] = nil } else { conflicts[node] = (try? core.pendingIdentity(node: node)) ?? nil }
-        contacts = core.contacts().filter(\.person)
+        coreContacts = core.contacts()
         pump()
         return done
     }
@@ -2455,10 +2486,29 @@ final class AppModel {
 
     func title(of chat: ChatID) -> String {
         switch chat {
-        case let .contact(key), let .mesh(key): return name(of: key)
-        case let .group(gid): return groups.first { $0.gid == gid }?.name ?? String(localized: "Group")
-        case let .channel(id): return channels.first { $0.id == id }?.name ?? String(localized: "Channel")
-        case let .room(key): return node(key)?.name ?? String(localized: "Room server")
+        case let .contact(key), let .mesh(key):
+            if key == nodeKey || contacts.contains(where: { $0.key == key }) { return name(of: key) }
+            return conversationTitle(chat, named: storedName(chat))
+        case let .group(gid): return groups.first { $0.gid == gid }?.name ?? conversationTitle(chat, named: storedName(chat))
+        case let .channel(id): return channels.first { $0.id == id }?.name ?? conversationTitle(chat, named: storedName(chat))
+        case let .room(key): return node(key)?.name ?? conversationTitle(chat, named: storedName(chat))
+        }
+    }
+
+    /// The name the core gives a conversation that has messages (§15.8); empty when unknown.
+    private func storedName(_ chat: ChatID) -> String {
+        conversations.first { $0.chat == chat }?.name ?? ""
+    }
+
+    /// A conversation's title from the name the core gives it: a node nothing names is "Unknown
+    /// radio" and the start of its key.
+    func conversationTitle(_ chat: ChatID, named name: String) -> String {
+        if !name.isEmpty { return name }
+        switch chat {
+        case let .contact(key), let .mesh(key), let .room(key):
+            return String(localized: "Unknown radio · \(key.prefix(3).hex.uppercased())")
+        case .group: return String(localized: "Group")
+        case .channel: return String(localized: "Channel")
         }
     }
 

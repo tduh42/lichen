@@ -210,6 +210,7 @@ class MainActivity : FragmentActivity() {
             joinNow = e.getBoolean("joinNow"),
             requestDemo = e.getBoolean("requestDemo"),
             autoFull = e.getBoolean("autoFull"),
+            marcRepeater = e.getBoolean("marcRepeater"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")

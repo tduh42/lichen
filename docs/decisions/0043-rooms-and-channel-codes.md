@@ -19,4 +19,5 @@ ADR-0026 brought plain MeshCore chats to lichen and left out room servers and sh
 - A lichen user can follow and post on a room as stock users do; what they post is as private as MeshCore makes it, and the room and everyone logged in read it.
 - A room's password kept on the phone sits in the database, in clear, like the rest of it (ADR-0010).
 - Codes made by lichen are read by the stock app and the other way round (vectors from both directions in `testdata/meshcore/mesh.toml`).
+- Messages lists every conversation that has a message, rooms included, whatever the radio's contact list says; it is named after the contact, then the radio's node, else "Unknown radio" and its key (protocol §15.8).
 - Rejected: showing room posts in the room node's direct chat (its posts have authors, and the room is not a person); keeping a repeater's admin password (ADR-0044).

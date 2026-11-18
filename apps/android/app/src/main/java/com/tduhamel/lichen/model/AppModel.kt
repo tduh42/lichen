@@ -144,6 +144,8 @@ class AppModel(val app: Application) {
         /** A request for the full variant of our photo is answered at once, as before the
          * user was asked (§13.3): screenshots and tests. */
         val autoFull: Boolean = false,
+        /** The demo radio files Marc as a repeater: his MeshCore chat stays in Messages (§15.8). */
+        val marcRepeater: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -187,7 +189,12 @@ class AppModel(val app: Application) {
 
     /** New identities presented by verified contacts, waiting for the user (node hex → identity). */
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
+    /** People: the contacts lichen can write to. */
     var contacts by mutableStateOf(listOf<ContactInfo>())
+
+    /** Every contact the core keeps, people or not (a node its radio files as a repeater): a
+     * conversation with any of them can be renamed. */
+    var coreContacts by mutableStateOf(listOf<ContactInfo>())
 
     /** MeshCore nodes the radio knows or heard (protocol.md §16.1). */
     var nodes by mutableStateOf(listOf<NodeInfo>())
@@ -243,7 +250,7 @@ class AppModel(val app: Application) {
         runCatching { core.acceptGroup(gid, now()) }
         groups = core.groups()
         invitations = core.groupInvitations()
-        contacts = people()
+        refreshContacts()
         pump()
     }
 
@@ -257,7 +264,7 @@ class AppModel(val app: Application) {
      * into the conversation, which opens. */
     fun acceptRequest(identity: ByteArray) {
         runCatching { core.acceptRequest(identity) }.onSuccess { node ->
-            contacts = people()
+            refreshContacts()
             conversations = core.conversations()
             openChat = ChatId.contact(node)
         }
@@ -680,7 +687,7 @@ class AppModel(val app: Application) {
     }
 
     private fun refreshAll() {
-        contacts = people()
+        refreshContacts()
         nodes = core.nodes()
         savedRadios = core.savedRadios()
         groups = core.groups()
@@ -692,7 +699,11 @@ class AppModel(val app: Application) {
         refreshChatPrefs()
     }
 
-    private fun people() = core.contacts().filter { it.person }
+    /** The core's contacts again, and the people among them. */
+    private fun refreshContacts() {
+        coreContacts = core.contacts()
+        contacts = coreContacts.filter { it.person }
+    }
 
     fun chooseAppearance(a: Appearance) {
         appearance = a
@@ -742,6 +753,7 @@ class AppModel(val app: Application) {
             // search); `sosdemo2`: Camille too, for five minutes.
             if (debug.sosDemo || debug.sosDemo2) net.julienSos()
             if (debug.sosDemo2) net.camilleSos(240uL, 300uL)
+            if (debug.marcRepeater) net.marcAsRepeater()
         }
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")
@@ -860,6 +872,7 @@ class AppModel(val app: Application) {
         conflicts = emptyMap()
         requests = emptyList()
         contacts = emptyList()
+        coreContacts = emptyList()
         nodes = emptyList()
         groups = emptyList()
         chats.clear()
@@ -1035,7 +1048,7 @@ class AppModel(val app: Application) {
                 if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
             is LichenEvent.IdentityLearned -> {
-                contacts = people()
+                refreshContacts()
                 // Debug extra `open`: opened before their identity arrived, as a MeshCore chat;
                 // now that they turn out to have lichen, their conversation.
                 if (debugMesh == e.node.hex()) {
@@ -1054,7 +1067,7 @@ class AppModel(val app: Application) {
                 if (r.name.isNotEmpty()) nodeName = r.name
             }
             LichenEvent.ContactsUpdated -> {
-                contacts = people()
+                refreshContacts()
                 nodes = core.nodes()
                 debugInvites()
                 debugFill()
@@ -1109,12 +1122,12 @@ class AppModel(val app: Application) {
                     joinedByInvite = joinedByInvite + (e.admin.hex() to e.gid)
                 }
                 groups = core.groups()
-                contacts = people()
+                refreshContacts()
                 debugOpen()
             }
             is LichenEvent.MemberJoined -> {
                 groups = core.groups()
-                contacts = people()
+                refreshContacts()
                 val chat = ChatId.group(e.gid)
                 if (!isMuted(chat)) notify(chat, title(chat), res.getString(R.string.joined_with_invite, name(e.node)))
             }
@@ -2182,10 +2195,24 @@ class AppModel(val app: Application) {
     }
 
     fun title(chat: ChatId): String = when (chat.kind) {
-        ChatId.Kind.GROUP -> groups.firstOrNull { it.gid.hex() == chat.hex }?.name ?: res.getString(R.string.group)
-        ChatId.Kind.CHANNEL -> channel(chat)?.name ?: res.getString(R.string.channel)
-        ChatId.Kind.CONTACT, ChatId.Kind.MESH -> name(chat.hex.unhex())
-        ChatId.Kind.ROOM -> node(chat.hex.unhex())?.name ?: res.getString(R.string.room_server)
+        ChatId.Kind.GROUP -> groups.firstOrNull { it.gid.hex() == chat.hex }?.name ?: conversationTitle(chat, storedName(chat))
+        ChatId.Kind.CHANNEL -> channel(chat)?.name ?: conversationTitle(chat, storedName(chat))
+        ChatId.Kind.CONTACT, ChatId.Kind.MESH -> chat.hex.unhex().let { key ->
+            if (nodeKey?.contentEquals(key) == true || contact(key) != null) name(key) else conversationTitle(chat, storedName(chat))
+        }
+        ChatId.Kind.ROOM -> node(chat.hex.unhex())?.name ?: conversationTitle(chat, storedName(chat))
+    }
+
+    /** The name the core gives a conversation that has messages (§15.8); empty when unknown. */
+    private fun storedName(chat: ChatId): String = conversation(chat)?.name.orEmpty()
+
+    /** A conversation's title from the name the core gives it: a node nothing names is
+     * "Unknown radio" and the start of its key. */
+    fun conversationTitle(chat: ChatId, name: String): String = when {
+        name.isNotEmpty() -> name
+        chat.kind == ChatId.Kind.GROUP -> res.getString(R.string.group)
+        chat.kind == ChatId.Kind.CHANNEL -> res.getString(R.string.channel)
+        else -> res.getString(R.string.unknown_radio, chat.hex.take(6).uppercase())
     }
 
     fun channel(chat: ChatId): MeshChannel? =
@@ -2239,7 +2266,7 @@ class AppModel(val app: Application) {
     /** Names a contact on this phone only; null or blank: its node's name again. */
     fun renameContact(node: ByteArray, name: String?) {
         runCatching { core.renameContact(node, name?.trim()?.ifEmpty { null }) }
-        contacts = people()
+        refreshContacts()
         groups = core.groups()
         pump()
     }
@@ -2267,7 +2294,7 @@ class AppModel(val app: Application) {
      * an error to show. */
     fun addCard(text: String, scanned: Boolean): Pair<ContactInfo?, String?> = try {
         val c = core.addContactCard(text.trim(), scanned)
-        contacts = people()
+        refreshContacts()
         pump()
         c to null
     } catch (e: LichenException) {
@@ -2281,7 +2308,7 @@ class AppModel(val app: Application) {
      * identity changed meanwhile (nothing verified, review PR-07). */
     fun setVerified(node: ByteArray, identity: ByteArray, verified: Boolean): Boolean {
         val done = runCatching { core.setVerified(node, identity, verified) }.getOrDefault(false)
-        contacts = people()
+        refreshContacts()
         return done
     }
 
@@ -2290,7 +2317,7 @@ class AppModel(val app: Application) {
     fun acceptIdentity(node: ByteArray, expected: ByteArray): Boolean {
         val done = runCatching { core.acceptIdentity(node, expected, true) }.getOrDefault(false)
         updateConflict(node)
-        contacts = people()
+        refreshContacts()
         pump()
         return done
     }
@@ -2471,7 +2498,7 @@ class AppModel(val app: Application) {
     fun acceptInvite(text: String, info: InviteInfo, scanned: Boolean): String? = try {
         core.acceptInvite(text.trim(), scanned, now())
         joining = joining + (info.admin.hex() to info.groupName)
-        contacts = people()
+        refreshContacts()
         pump()
         null
     } catch (e: LichenException) {
