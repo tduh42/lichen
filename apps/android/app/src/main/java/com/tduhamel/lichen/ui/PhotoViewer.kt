@@ -154,7 +154,7 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
                         a == null && m.message is Message.Image && !(m.message as Message.Image).full &&
                             !m.outgoing && (m.message as Message.Image).fullLen.toInt() > 0 -> {
                             if (m.id in model.requestedFull) {
-                                Text(stringResource(R.string.full_requested), fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f))
+                                Text(stringResource(R.string.full_requested, model.title(ChatId.of(m.chat))), fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f))
                             } else {
                                 SecondaryButton(
                                     stringResource(R.string.load_full_image),

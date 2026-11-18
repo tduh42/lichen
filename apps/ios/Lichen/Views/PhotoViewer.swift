@@ -75,7 +75,7 @@ struct PhotoViewer: View {
         } else if case let .image(_, _, full, _, _, fullLen, _) = message.message, !full, !message.outgoing, fullLen > 0,
                   announce == nil {
             if model.requestedFull.contains(message.id) {
-                Label("Full image requested…", systemImage: "hourglass")
+                Label("Asked: \(model.title(of: message.chat)) decides whether to send it", systemImage: "hourglass")
                     .font(.system(.footnote)).foregroundStyle(.white.opacity(0.85))
             } else {
                 Button("Load the full image") { error = model.requestFull(message) }

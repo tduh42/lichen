@@ -80,6 +80,30 @@ fn media_request_is_an_event() {
     assert!(!events.iter().any(|e| matches!(e, Event::Received { .. })));
 }
 
+/// The same request again within the hour is a new request, not a resend (§13.3): the sender's
+/// user, who may have said not now, is asked again.
+#[test]
+fn a_media_request_again_is_not_a_resend() {
+    let (mut net, a, b) = pair(2);
+    let alice = net.key(a);
+    let req = Content::MediaRequest {
+        media_id: [9; 8],
+        full: true,
+    };
+    for _ in 0..2 {
+        net.with_core(b, |c, now| c.send_datagram(&alice, req.encode(), now))
+            .unwrap()
+            .unwrap();
+        net.run_until(net.now + 60 * S, |_| false);
+    }
+    let asked = net
+        .take_events(a)
+        .iter()
+        .filter(|e| matches!(e, Event::MediaRequested { full: true, .. }))
+        .count();
+    assert_eq!(asked, 2);
+}
+
 /// Media beyond the hour's airtime are refused at once, with the time they would fit; text is
 /// not refused.
 #[test]

@@ -3,6 +3,68 @@
 use super::*;
 
 impl Inner {
+    /// Contact `from` asks for the full variant of our image `media_id` (§13.3): a request for
+    /// the user, with its airtime, when we still hold that variant for this contact and the
+    /// image is still in the conversation; otherwise nothing, as for a variant no longer held.
+    /// The same request again while one waits is not shown twice; while that image is on its
+    /// way to them, the transfer answers it.
+    pub(crate) fn on_full_request(&mut self, from: &PubKey, media_id: &lc_core::content::MediaId) {
+        let now = self.last_now;
+        let core = &self.core;
+        self.full_sending
+            .retain(|(id, ..)| core.outgoing(*id, now).is_some());
+        if self
+            .full_sending
+            .iter()
+            .any(|(_, to, m)| to == from && m == media_id)
+        {
+            return;
+        }
+        let chat = Chat::Contact(*from);
+        let Some(st) = &self.store else {
+            return;
+        };
+        let Some((to, datagram)) = st.media(media_id).ok().flatten() else {
+            return;
+        };
+        if to != chat {
+            return;
+        }
+        // Ours, in this conversation: another's image with the same id is not.
+        let Some(message_id) = st
+            .find_image(&chat, media_id)
+            .ok()
+            .flatten()
+            .filter(|&row| st.get(row).ok().flatten().is_some_and(|m| m.outgoing))
+        else {
+            return;
+        };
+        let (_, airtime_ms) = self.core.estimate_send(from, datagram.len());
+        // Already shown: its cost on today's path, nothing more.
+        if let Some(r) = self
+            .full_requests
+            .iter_mut()
+            .find(|r| r.node == *from && r.media_id == *media_id)
+        {
+            r.airtime_ms = airtime_ms;
+            return;
+        }
+        if self.full_requests.len() >= FULL_REQUESTS_MAX {
+            self.full_requests.remove(0);
+        }
+        self.full_requests.push(FullRequest {
+            node: *from,
+            media_id: *media_id,
+            message_id,
+            airtime_ms,
+        });
+        self.extra.push_back(LichenEvent::FullImageRequested {
+            chat: ChatRef::Contact { key: from.to_vec() },
+            message_id,
+            airtime_ms,
+        });
+    }
+
     /// Request `identity` became contact `node`'s identity (ADR-0046): what it sent goes into
     /// the conversation as if it had just arrived there (references, reactions, edits and
     /// timers as for any message), each at the time it came; then the request is gone. Again
@@ -151,22 +213,12 @@ impl Inner {
                 self.on_amendment_content(Chat::Group(*gid), from, c);
                 return false;
             }
+            // The sender's user decides (§13.3): nothing goes before they accept.
             Event::MediaRequested {
                 from,
                 media_id,
                 full: true,
-            } => {
-                let chat = Chat::Contact(*from);
-                if let Some((to, datagram)) = self
-                    .store
-                    .as_ref()
-                    .and_then(|s| s.media(media_id).ok().flatten())
-                    && to == chat
-                {
-                    let now = self.last_now;
-                    let _ = self.core.send_media(from, datagram, now);
-                }
-            }
+            } => self.on_full_request(from, media_id),
             Event::Received {
                 from,
                 content,

@@ -148,8 +148,8 @@ pub enum LichenEvent {
     },
     /// One of our shares ended on its own.
     SharesChanged,
-    /// `from` asked for the full variant of one of our images; it is on its way (when we still
-    /// have it and the budget allows).
+    /// `from` asked for a variant of one of our images. A request for the full variant that
+    /// we can answer waits for the user and comes next as `FullImageRequested` (§13.3).
     MediaRequested {
         from: Vec<u8>,
     },
@@ -200,6 +200,15 @@ pub enum LichenEvent {
     },
     /// A request's messages changed, or a request was settled: read `requests()` again.
     RequestsChanged,
+    /// Contact `chat` asks for the full variant of our image `message_id` (§13.3), which
+    /// would cost `airtime_ms` of our airtime: show it on that image, and notify outside the
+    /// conversation. It goes only with `answer_full_image_request`; see also
+    /// `full_image_requests`.
+    FullImageRequested {
+        chat: ChatRef,
+        message_id: i64,
+        airtime_ms: u64,
+    },
 }
 
 pub(crate) fn snr(snr4: i8) -> f32 {

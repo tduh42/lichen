@@ -182,7 +182,8 @@ impl Bot {
         }
     }
 
-    /// The echo bot's answer, if any; asks for the full variant of an image preview.
+    /// The echo bot's answer, if any; asks for the full variant of an image preview, always (a
+    /// test bot: the sender's app asks its user, §13.3).
     fn reply(
         &self,
         core: &mut Core,
@@ -230,7 +231,7 @@ impl Bot {
                     "got your photo preview, {width}×{height} in {} bytes; {} · {radio}",
                     data.len(),
                     if *full_len > 0 {
-                        format!("asking for the full one ({full_len} bytes)")
+                        format!("asking for the full one ({full_len} bytes), yours to send or not")
                     } else {
                         "no full one to ask for".into()
                     }
