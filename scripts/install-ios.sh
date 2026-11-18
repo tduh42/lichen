@@ -65,9 +65,11 @@ scripts/build-ios-core.sh
 echo "== the app (Release, signed by your team)"
 dd=local/dd-device
 mkdir -p local
+# The same number as the GitHub release of this commit (scripts/version.sh).
 xcodebuild -quiet -project apps/ios/Lichen.xcodeproj -scheme Lichen -configuration Release \
   -destination "platform=iOS,id=$udid" -derivedDataPath "$dd" \
   -allowProvisioningUpdates -allowProvisioningDeviceRegistration \
+  MARKETING_VERSION="$(scripts/version.sh --version)" CURRENT_PROJECT_VERSION="$(scripts/version.sh --build)" \
   build
 app="$dd/Build/Products/Release-iphoneos/Lichen.app"
 [ -d "$app" ] || die "No $app: see xcodebuild's messages above."
