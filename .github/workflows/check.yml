@@ -82,7 +82,8 @@ jobs:
           else
             echo "::warning::No release key (secret LICHEN_KEYSTORE_B64): the APK will not be published."
           fi
-          echo "LICHEN_VERSION_CODE=$(git rev-list --count HEAD)" >> "$GITHUB_ENV"
+          echo "LICHEN_VERSION_CODE=$(scripts/version.sh --build)" >> "$GITHUB_ENV"
+          echo "LICHEN_VERSION_NAME=$(scripts/version.sh --version)" >> "$GITHUB_ENV"
       - run: ./gradlew lintDebug testDebugUnitTest assembleRelease
         working-directory: apps/android
         env:
@@ -95,6 +96,7 @@ jobs:
           tools="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
           "$tools/apksigner" verify --print-certs dist/lichen.apk | tee dist/certificate.txt
           echo "$LICHEN_VERSION_CODE" > dist/build-number.txt
+          echo "$LICHEN_VERSION_NAME" > dist/version.txt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: lichen-apk
@@ -102,7 +104,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    name: Publish the APK (release "latest")
+    name: Publish the APK (a numbered release)
     needs: [rust, android]
     # A push to main, or a manual run on main (gh workflow run check --ref main).
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
@@ -112,6 +114,8 @@ jobs:
       contents: write # the tag and the release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the tags: the previous release, for the notes
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: lichen-apk
@@ -128,33 +132,47 @@ jobs:
             echo "::warning::The APK is not signed with the release key: not published."
             echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Release "latest"
+      # Every merge to main is a release of its own, numbered MAJOR.MINOR.N (scripts/version.sh,
+      # CONTRIBUTING.md "Versions"): GitHub tells those who watch the releases, and
+      # releases/latest/download/lichen.apk always gives the newest.
+      - name: Release
         if: steps.key.outputs.ok == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          version=$(cat dist/version.txt)
+          build=$(cat dist/build-number.txt)
+          tag="v${version}"
           sha256=$(cut -d' ' -f1 dist/lichen.apk.sha256)
           cert=$(sed -n 's/.*certificate SHA-256 digest: //p' dist/certificate.txt | head -1)
-          build=$(cat dist/build-number.txt)
-          version=$(cat VERSION)
-          cat > notes.md <<NOTES
-          lichen ${version}, build ${build}: built by CI from \`main\` at ${GITHUB_SHA::7} on $(date -u '+%Y-%m-%d %H:%M') UTC. Each push to \`main\` that passes the checks replaces it.
-
-          **Experimental:** no third party has audited lichen. Read [SECURITY.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/SECURITY.md) before relying on it.
-
-          - Android 12 or later, on a 64-bit ARM phone (arm64-v8a).
-          - Install: download \`lichen.apk\` on the phone and open it; Android asks you to allow installs from your browser or file manager. A newer build installs over it and keeps your identity and chats.
-          - APK SHA-256: \`${sha256}\`
-          - Signing certificate SHA-256: \`${cert}\`. Every build carries this key; check with \`apksigner verify --print-certs lichen.apk\`.
-
-          The iPhone app is built from source with Xcode: see the [README](https://github.com/${GITHUB_REPOSITORY}#ios-app).
-          NOTES
-          git tag -f latest "$GITHUB_SHA"
-          git push -f origin refs/tags/latest
-          if gh release view latest > /dev/null 2>&1; then
-            gh release edit latest --title "lichen ${version} (build ${build})" --notes-file notes.md --latest
-          else
-            gh release create latest --title "lichen ${version} (build ${build})" --notes-file notes.md --latest --verify-tag
+          # A run again on the same commit: its release is there, only the files go again.
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" dist/lichen.apk dist/lichen.apk.sha256 --clobber
+            exit 0
           fi
-          gh release upload latest dist/lichen.apk dist/lichen.apk.sha256 --clobber
+          previous=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -n "$previous" ]; then
+            changes=$(gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+              -f tag_name="$tag" -f target_commitish="$GITHUB_SHA" -f previous_tag_name="$previous" --jq .body)
+          else
+            changes="The first numbered release: everything merged since lichen went public, in the [merged pull requests](https://github.com/${GITHUB_REPOSITORY}/pulls?q=is%3Apr+is%3Amerged). From now on each release lists its own."
+          fi
+          {
+            echo "lichen ${version} (build ${build}), built by CI from \`main\` at ${GITHUB_SHA::7}."
+            echo
+            echo "$changes"
+            echo
+            echo "## Install"
+            echo
+            echo "**Experimental:** no third party has audited lichen. Read [SECURITY.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/SECURITY.md) before relying on it."
+            echo
+            echo "- Android 12 or later, on a 64-bit ARM phone (arm64-v8a)."
+            echo "- Download \`lichen.apk\` on the phone and open it; Android asks you to allow installs from your browser or file manager. A newer release installs over it and keeps your identity and chats."
+            echo "- APK SHA-256: \`${sha256}\`"
+            echo "- Signing certificate SHA-256: \`${cert}\`. Every release carries this key; check with \`apksigner verify --print-certs lichen.apk\`."
+            echo
+            echo "The iPhone app is built from source with Xcode: see the [README](https://github.com/${GITHUB_REPOSITORY}#ios-app)."
+          } > notes.md
+          gh release create "$tag" dist/lichen.apk dist/lichen.apk.sha256 \
+            --target "$GITHUB_SHA" --title "lichen ${version}" --notes-file notes.md --latest

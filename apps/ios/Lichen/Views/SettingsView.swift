@@ -247,7 +247,8 @@ struct SettingsView: View {
                         SectionLabel("About").padding(.top, 10)
                         CardList {
                             CardRow(title: String(localized: "Version")) {
-                                Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                                // "0.10.3 (212)": the release and its build (scripts/version.sh).
+                                Text(verbatim: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")
                                     .foregroundStyle(Theme.tx2)
                             }
                             CardDivider()

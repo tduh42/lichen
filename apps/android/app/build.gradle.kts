@@ -6,8 +6,11 @@ plugins {
 // The host build of the core (scripts/build-android-core.sh), loaded by the JVM unit tests.
 val hostCore: String = rootDir.resolve("../../target/release").canonicalPath
 
-// One version for the core and both apps: the repository's VERSION file.
-val lichenVersion: String = rootDir.resolve("../../VERSION").readText().trim()
+// One version for the core and both apps: the repository's VERSION file, the series. CI passes
+// the release itself, MAJOR.MINOR.N (scripts/version.sh), so the APK says which GitHub release
+// it is.
+val lichenVersion: String = providers.environmentVariable("LICHEN_VERSION_NAME").orNull
+    ?: rootDir.resolve("../../VERSION").readText().trim()
 
 // CI numbers each build (the commit count) so a newer APK installs as an update.
 val lichenVersionCode: Int = providers.environmentVariable("LICHEN_VERSION_CODE").orNull?.toIntOrNull() ?: 1

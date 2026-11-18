@@ -337,7 +337,7 @@ fun SettingsScreen(
             item { SectionLabel(stringResource(R.string.about), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    CardRow(stringResource(R.string.version)) { Text(BuildConfig.VERSION_NAME, color = t.tx2) }
+                    CardRow(stringResource(R.string.version)) { Text("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = t.tx2) }
                     CardDivider()
                     CardRow(stringResource(R.string.stickers), stringResource(R.string.stickers_credit))
                     CardDivider()
