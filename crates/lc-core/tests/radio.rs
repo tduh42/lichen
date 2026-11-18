@@ -116,3 +116,32 @@ fn what_the_radio_would_refuse_is_not_sent() {
         None
     );
 }
+
+/// The radio's clock is set from the phone's at connection (§1): a radio switched off may have
+/// lost it (the ThinkNode M5 has no backup cell). One whose clock is already later refuses,
+/// as stock MeshCore does, and keeps its own; the connection goes on all the same.
+#[test]
+fn connecting_sets_the_radios_clock() {
+    let (mut net, a) = connected(None);
+    net.run_until(net.now + 5_000, |_| false);
+    let ours = net
+        .with_core_ref(a, |c| c.unix_s(net.now))
+        .flatten()
+        .unwrap();
+    let set = u64::from(net.nodes[a].radio_time.expect("the radio's clock was set"));
+    assert!(ours.abs_diff(set) <= 10, "radio {set}, phone {ours}");
+
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 2);
+    let b = net.add_companion(1, "bob");
+    net.nodes[b].radio_time = Some(u32::MAX - 1);
+    net.connect(b);
+    assert!(net.run_until(net.now + 20_000, |n| {
+        n.nodes[b].core.as_ref().is_some_and(|c| c.ready())
+    }));
+    net.run_until(net.now + 5_000, |_| false);
+    assert_eq!(
+        net.nodes[b].radio_time,
+        Some(u32::MAX - 1),
+        "a later clock is kept"
+    );
+}

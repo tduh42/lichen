@@ -277,6 +277,8 @@ impl Core {
     pub fn set_clock(&mut self, unix_ms: u64, now: Millis) {
         let unix = i64::try_from(unix_ms).unwrap_or(i64::MAX);
         self.loc.offset_ms = Some(unix.saturating_sub(i64::try_from(now).unwrap_or(i64::MAX)));
+        // The radio's clock waits for ours at connection (§1).
+        self.set_radio_time(now);
     }
 
     /// Unix seconds at `now`.

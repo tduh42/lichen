@@ -14,6 +14,7 @@ Integers are **little-endian**. `‖` = concatenation. MeshCore facts come from 
 | Flood scope | `GET_DEFAULT_FLOOD_SCOPE` (64): region name and key, used for the transport codes of our floods | — |
 | Identity | `EXPORT_PRIVATE_KEY` (23) → 64 "expanded" orlp bytes; public key in `SELF_INFO` | — |
 | Radio | `SELF_INFO`: frequency kHz, BW Hz, SF, CR (5..8); the radio's settings, §1.1 | — |
+| Time | `SET_DEVICE_TIME` (6, `u32` Unix seconds), once per connection after `SELF_INFO`, as soon as the phone knows the time: a radio switched off may have lost its clock (the ThinkNode M5 has no backup cell). A radio whose clock is already later answers ERR 6 and keeps it (the clock never goes back) | — |
 | Mesh tools (§16) | `GET_CONTACTS`; trace, logins, requests and CLI text to room servers and repeaters | `NEW_ADVERT` (0x8A); pushes 0x85–0x87, 0x89, 0x8C; queued `CONTACT_MSG` of types 1 and 2 |
 
 Facts that constrain the protocol:
