@@ -82,7 +82,7 @@ Everything is **IO-free**: time (ms) and randomness are injected, state machines
 
 ## 5. Roadmap
 
-Every change lands through a pull request (remote: `github.com/tduh42/lichen`, public): one branch per topic, CI (`scripts/check.sh` and the Android build, `.github/workflows/check.yml`) must pass before `main` takes it, and it is squash-merged, the PR description being the commit message. A merge to `main` publishes the signed APK as the release `latest` (key in `~/.config/lichen/`, password in the Keychain, both in the repo's Actions secrets). See `CONTRIBUTING.md`.
+Every change lands through a pull request (remote: `github.com/tduh42/lichen`, public): one branch per topic, CI (`scripts/check.sh` and the Android build, `.github/workflows/check.yml`) must pass before `main` takes it, and it is squash-merged, the PR description being the commit message. A merge to `main` is a release of its own: CI tags it `vMAJOR.MINOR.N` (`scripts/version.sh`: `VERSION` is the series, N the commits since it changed) and publishes the signed APK with the merged PRs as notes (key in `~/.config/lichen/`, password in the Keychain, both in the repo's Actions secrets). See `CONTRIBUTING.md`, "Versions".
 
 - **L0** repository, normative spec, ADRs; **L1** `lc-meshcore` + `lc-proto`; **L2** `lc-core` (direct messages), fake network, `lc-cli`;
 - **L3** groups; **L4** `lc-ffi` + iOS app; **L5** location and map; **L6** media over LoRa;
@@ -137,7 +137,8 @@ swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appi
 scripts/build-android-core.sh                                             # Android core (arm64) + Kotlin bindings
 (cd apps/android && ./gradlew lintDebug testDebugUnitTest assembleDebug)  # lint, JVM tests on the host core, APK
 (cd apps/android && ./gradlew assembleRelease)   # R8 build; signed with the release key when LICHEN_KEYSTORE and
-                                  # LICHEN_KEYSTORE_PASSWORD are set (CI), else the debug key; LICHEN_VERSION_CODE numbers it
+                                  # LICHEN_KEYSTORE_PASSWORD are set (CI), else the debug key; LICHEN_VERSION_NAME / _CODE number it
+scripts/version.sh --version|--build              # the release (MAJOR.MINOR.N) and the build number
 scripts/android-release-key.sh                    # once: the release key (~/.config/lichen), its password in the
                                   # Keychain (security find-generic-password -s lichen-android-release -w), the CI secrets
 $ANDROID_HOME/emulator/emulator -avd lichen-pixel -allow-host-audio &   # with a window, the Mac's audio and mic

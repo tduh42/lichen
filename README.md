@@ -34,7 +34,7 @@ Experimental: version 0.9.0, protocol version 2 (older builds cannot talk to it)
 
 ## Install
 
-- **Android:** [`lichen.apk`](https://github.com/tduh42/lichen/releases/latest/download/lichen.apk), from the [latest release](https://github.com/tduh42/lichen/releases/latest). CI builds it from `main` after every push that passes the checks, signs it with lichen's release key (each build updates the previous one) and lists the APK's SHA-256 and the certificate's fingerprint in the release notes. Android 12 or later, 64-bit ARM.
+- **Android:** [`lichen.apk`](https://github.com/tduh42/lichen/releases/latest/download/lichen.apk), from the [latest release](https://github.com/tduh42/lichen/releases/latest). Every change merged into `main` that passes the checks is a [release](https://github.com/tduh42/lichen/releases) of its own, numbered (0.10.1, 0.10.2…) and listing what changed; watch the repository's releases to hear of new ones. Each is signed with lichen's release key (it installs over the one before) and lists the APK's SHA-256 and the certificate's fingerprint. The app shows its version in Settings › About. Android 12 or later, 64-bit ARM.
 - **iPhone:** there is no App Store build. A free Apple ID is enough to install it from a Mac: [On your own iPhone](#on-your-own-iphone).
 - **Without a radio:** Settings › Demo network (iOS: Try the demo network) runs the app's real core against a simulated network, in real time: two other lichen users and a group, two people on the stock MeshCore app, two repeaters and a room server.
 
