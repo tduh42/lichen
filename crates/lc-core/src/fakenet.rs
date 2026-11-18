@@ -116,6 +116,8 @@ pub struct Node {
     pub pos: Option<(f64, f64)>,
     pub tx_dbm: i8,
     pub noise_dbm: i16,
+    /// The radio's clock (Unix seconds) as SET_DEVICE_TIME left it: `None` until set.
+    pub radio_time: Option<u32>,
     pub rssi_zero: bool,
     /// Last reception (for `GET_STATS`).
     last_rx: (i8, i8),
@@ -313,6 +315,7 @@ impl Net {
             pos: None,
             tx_dbm: 22,
             noise_dbm: -118,
+            radio_time: None,
             rssi_zero: false,
             last_rx: (0, 0),
             channels: vec![None; CHANNEL_SLOTS],
@@ -1712,6 +1715,23 @@ impl Net {
                 let air = plain_packet(PayloadType::GrpTxt, None, &payload);
                 self.enqueue_tx(i, air, 0.0);
                 vec![vec![resp::OK]]
+            }
+            // The clock never goes back: an earlier time is refused (MyMesh.cpp, ERR 6).
+            cmd::SET_DEVICE_TIME => {
+                let Some(t) = frame
+                    .get(1..5)
+                    .and_then(|b| b.try_into().ok())
+                    .map(u32::from_le_bytes)
+                else {
+                    return vec![vec![resp::ERR, 2]];
+                };
+                match self.nodes.get_mut(i) {
+                    Some(n) if n.radio_time.is_none_or(|was| t >= was) => {
+                        n.radio_time = Some(t);
+                        vec![vec![resp::OK]]
+                    }
+                    _ => vec![vec![resp::ERR, 6]],
+                }
             }
             _ => vec![vec![resp::ERR, 1]],
         }

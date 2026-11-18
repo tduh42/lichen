@@ -508,6 +508,8 @@ pub(crate) enum Expect {
     Server,
     /// A command to this server's command line (§16.5).
     Cli(PubKey),
+    /// SET_DEVICE_TIME: OK, or ERR when the radio's clock is already later (it never goes back).
+    DeviceTime,
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -537,6 +539,7 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
         (Expect::CustomVars, R::CustomVars(_)) => true,
         (Expect::Autoadd, R::AutoaddConfig { .. }) => true,
         (Expect::Battery, R::BattAndStorage { .. }) => true,
+        (Expect::DeviceTime, R::Ok) => true,
         _ => false,
     }
 }
@@ -801,6 +804,8 @@ pub struct Core {
     commands: VecDeque<(Vec<u8>, Expect)>,
     /// Contact lists asked for again after one stopped short since the last complete one.
     contact_resyncs: u8,
+    /// The radio's clock is still to be set for this connection, once ours is known (§1).
+    radio_time_owed: bool,
     awaiting: Option<(Expect, Millis)>,
     /// Plain MeshCore text (§15).
     pub(crate) plain: crate::plain::Plain,
@@ -929,6 +934,7 @@ impl Core {
             peers: HashMap::new(),
             commands: VecDeque::new(),
             contact_resyncs: 0,
+            radio_time_owed: false,
             awaiting: None,
             plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
@@ -1348,6 +1354,7 @@ impl Core {
     /// progress resumes where it stopped (§6.1). Commands not answered yet are dropped.
     pub fn disconnect(&mut self, _now: Millis) {
         self.online = false;
+        self.radio_time_owed = false;
         self.commands.clear();
         self.awaiting = None;
         self.plain_disconnected();
@@ -1869,6 +1876,19 @@ impl Core {
         Some(frame)
     }
 
+    /// Sets the radio's clock to ours (`SET_DEVICE_TIME`, §1) once per connection, when ours is
+    /// known. A radio whose clock is already later answers ERR and keeps it: nothing to do.
+    pub(crate) fn set_radio_time(&mut self, now: Millis) {
+        if !self.radio_time_owed || !self.online {
+            return;
+        }
+        let Some(t) = self.unix_s(now).and_then(|t| u32::try_from(t).ok()) else {
+            return;
+        };
+        self.radio_time_owed = false;
+        self.command(&Command::SetDeviceTime { time: t }, Expect::DeviceTime);
+    }
+
     /// The contacts are read: the app shows them, and what waited for them goes on (held plain
     /// messages, rooms to log in to).
     fn contacts_read(&mut self, now: Millis) {
@@ -2086,6 +2106,12 @@ impl Core {
                 self.settings.lat_e6 = si.lat_e6;
                 self.settings.lon_e6 = si.lon_e6;
                 self.settings.other = si.other;
+                if !again {
+                    // A radio switched off may have lost its clock (the ThinkNode M5 has no
+                    // backup cell): ours sets it, now or as soon as we know the time.
+                    self.radio_time_owed = true;
+                    self.set_radio_time(now);
+                }
                 self.events.push_back(if again {
                     Event::RadioSettings
                 } else {
