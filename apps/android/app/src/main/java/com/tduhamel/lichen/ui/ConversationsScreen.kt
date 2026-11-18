@@ -101,10 +101,10 @@ private data class Row(
     val muted: Boolean = false,
     /** Out of the list, under "Archived" (ADR-0034). */
     val archived: Boolean = false,
-) {
-    /** A node, lichen or MeshCore (can be renamed): not a group or a channel. */
-    val contact: Boolean get() = id.nodeKey != null
-}
+    /** The core keeps its node as a contact, a person or not: it can be renamed. A group, a
+     * channel or a room cannot. */
+    val renamable: Boolean = false,
+)
 
 /** "Messages": radio, airtime left, then every conversation (mockup `conversations`). */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,29 +136,6 @@ fun ConversationsScreen(
                 ),
             )
         }
-        // A contact appears once there is something to show: radios the node heard but nobody
-        // wrote to stay in "New message".
-        for (c in model.contacts) {
-            val chat = ChatId.contact(c.key)
-            val last = model.last(chat) ?: continue
-            add(
-                Row(
-                    chat, c.name, c.key, preview(model, last, res), last.atMs, hopsBadge(res, c.hops), model.unread(chat),
-                    last.isWaiting, model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
-                ),
-            )
-        }
-        // MeshCore chats (§15): a node someone wrote to in plain, and the radio's channels.
-        for (c in model.contacts) {
-            val chat = ChatId.mesh(c.key)
-            val last = model.last(chat) ?: continue
-            add(
-                Row(
-                    chat, c.name, c.key, preview(model, last, res), last.atMs, res.getString(R.string.meshcore), model.unread(chat),
-                    last.isWaiting, model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
-                ),
-            )
-        }
         for (ch in model.channels) {
             val chat = ChatId.channel(ch.id)
             val last = model.last(chat)
@@ -170,8 +147,30 @@ fun ConversationsScreen(
                 ),
             )
         }
+        // Every other conversation once it has a message, whatever the radio's contact list
+        // says (§15.8): lichen and MeshCore chats, room servers, and a group or a channel the
+        // radio no longer has. Radios the node heard but nobody wrote to stay in "New message".
+        val listed = map { it.id }.toSet()
+        for (conv in model.conversations) {
+            val chat = ChatId.of(conv.chat)
+            if (chat in listed) continue
+            val last = conv.last
+            add(
+                Row(
+                    chat, model.conversationTitle(chat, conv.name), chat.hex.unhex(), preview(model, last, res), last.atMs,
+                    badge(model, chat, res), conv.unread.toInt(), last.isWaiting,
+                    model.chatPrefs[chat]?.pinnedAtMs, model.isMuted(chat),
+                ),
+            )
+        }
+    }.map { row ->
+        val node = row.id.nodeKey
+        row.copy(
+            archived = model.isArchived(row.id),
+            renamable = node != null && model.coreContacts.any { it.key.contentEquals(node) },
+        )
+    }
         // Pinned first (the latest pinned on top), then the most recent.
-    }.map { it.copy(archived = model.isArchived(it.id)) }
         .sortedWith(compareByDescending<Row> { it.pinnedAt ?: Long.MIN_VALUE }.thenByDescending { it.atMs ?: 0L }.thenBy { it.title })
     val rows = all.filter { !it.archived }
     val archived = all.filter { it.archived }
@@ -281,6 +280,15 @@ fun ConversationsScreen(
     }
 }
 
+/** How a conversation goes: over LoRa (with the contact's hops when known), MeshCore. */
+private fun badge(model: AppModel, chat: ChatId, res: android.content.res.Resources): String = when (chat.kind) {
+    ChatId.Kind.CONTACT -> hopsBadge(res, model.contact(chat.hex.unhex())?.hops)
+    ChatId.Kind.GROUP -> res.getString(R.string.group_flood)
+    ChatId.Kind.MESH -> res.getString(R.string.meshcore)
+    ChatId.Kind.CHANNEL -> res.getString(R.string.meshcore_channel)
+    ChatId.Kind.ROOM -> res.getString(R.string.meshcore_room)
+}
+
 /** One line for the conversation list ("Camille: …" in groups and channels). */
 private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, res: android.content.res.Resources): String {
     val text = m.message.display(res, model.nodeKey)
@@ -334,7 +342,7 @@ private fun ChatRow(
                 archive()
             },
         )
-        if (row.contact) {
+        if (row.renamable) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.rename)) },
                 leadingIcon = { Icon(Icons.Outlined.Edit, null) },

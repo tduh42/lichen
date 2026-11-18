@@ -306,4 +306,8 @@ pub struct Conversation {
     pub chat: ChatRef,
     pub last: StoredMessage,
     pub unread: u32,
+    /// What lichen calls it: the group's or the channel's name; for a node (a contact, a
+    /// MeshCore chat, a room), its nickname, else its contact's name, else the name the radio
+    /// reported for it. Empty when nothing is known: the apps show the key (§15.8).
+    pub name: String,
 }

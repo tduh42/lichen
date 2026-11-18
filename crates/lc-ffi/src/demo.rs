@@ -973,6 +973,21 @@ impl DemoNetwork {
         })
     }
 
+    /// A person the radio files under another type (debug `marcRepeater`): the app's radio
+    /// reports Marc's record as a repeater's, as a radio sometimes does. He is no longer one of
+    /// the people, and his MeshCore chat stays in Messages all the same (§15.8). Call right
+    /// after `new`.
+    pub fn marc_as_repeater(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (app, marc) = (d.app, d.marc);
+        let key = d.net.key(marc);
+        d.net
+            .know_other(app, key, "Marc", lc_core::contact_kind::REPEATER);
+    }
+
     /// The SOS scenario (debug `sosdemo`): once the group is set up, Julien, hurt halfway down
     /// without GPS, turns SOS on; the app and Camille hear him directly (radio geometry from the
     /// real distances) and Camille searches for him too. Call right after `new`.
@@ -2405,6 +2420,33 @@ mod meshcore {
             Message::Text { text, .. } => text,
             _ => "",
         }
+    }
+
+    /// The radio files Marc as a repeater: he is not among the people, his chat is still a
+    /// conversation, under his name (§15.8).
+    #[test]
+    fn marc_filed_as_a_repeater() {
+        let demo = DemoNetwork::new();
+        demo.marc_as_repeater();
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![175; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        run(&demo, &core, 0, 60_000);
+        let marc = core
+            .contacts()
+            .into_iter()
+            .find(|c| c.name == "Marc")
+            .unwrap();
+        assert!(!marc.person);
+        let mesh = ChatRef::Mesh { key: marc.key };
+        let conv = core
+            .conversations()
+            .into_iter()
+            .find(|c| c.chat == mesh)
+            .unwrap();
+        assert_eq!(conv.name, "Marc");
+        assert!(text(&conv.last).starts_with("Hi! Marc from the refuge."));
     }
 
     #[test]

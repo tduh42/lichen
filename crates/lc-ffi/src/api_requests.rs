@@ -46,15 +46,28 @@ fn shown(c: &Content) -> bool {
 }
 
 impl Inner {
-    /// Contact `node`'s name as shown: its nickname, else its radio's.
+    /// Node `node`'s name as shown: its nickname, else its contact's (any kind), else the name
+    /// the radio reported for it (a node heard, a repeater, a room); empty when unknown.
     pub(crate) fn shown_name(&self, node: &PubKey) -> String {
-        self.nicknames.get(node).cloned().unwrap_or_else(|| {
-            self.core
-                .contacts()
-                .find(|c| c.key == *node)
-                .map(|c| c.name.clone())
-                .unwrap_or_default()
-        })
+        self.shown_name_in(node, &self.core.nodes())
+    }
+
+    /// [`Self::shown_name`] with the radio's nodes already read.
+    pub(crate) fn shown_name_in(&self, node: &PubKey, nodes: &[lc_core::Node]) -> String {
+        if let Some(n) = self.nicknames.get(node) {
+            return n.clone();
+        }
+        self.core
+            .contacts()
+            .find(|c| c.key == *node)
+            .map(|c| c.name.clone())
+            .or_else(|| {
+                nodes
+                    .iter()
+                    .find(|n| n.key == *node)
+                    .map(|n| n.name.clone())
+            })
+            .unwrap_or_default()
     }
 }
 

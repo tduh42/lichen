@@ -129,7 +129,7 @@ struct ConversationsView: View {
     }
 
     /// A conversation in the list: open it; swipe right to pin, left to archive, delete or
-    /// rename; long press for the rest.
+    /// rename a contact; long press for the rest.
     private func chatRow(_ row: Row) -> some View {
         Button { path.append(row.id) } label: { ChatRow(row: row) }
             .buttonStyle(.plain)
@@ -151,7 +151,7 @@ struct ConversationsView: View {
                           systemImage: row.archived ? "tray.and.arrow.up" : "archivebox")
                 }
                 .tint(Theme.tx2)
-                if case let .contact(key) = row.id {
+                if let key = renamable(row) {
                     Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
                         .tint(Theme.tx2)
                 }
@@ -176,13 +176,20 @@ struct ConversationsView: View {
                     Label(row.archived ? "Unarchive" : "Archive",
                           systemImage: row.archived ? "tray.and.arrow.up" : "archivebox")
                 }
-                if case let .contact(key) = row.id {
+                if let key = renamable(row) {
                     Button { renaming = key } label: { Label("Rename", systemImage: "pencil") }
                 }
                 Button(role: .destructive) { deleting = row } label: {
                     Label("Delete conversation", systemImage: "trash")
                 }
             }
+    }
+
+    /// The node a row's conversation is with, when the core keeps it as a contact (people or
+    /// not): only that can be renamed. A room is not renamed here.
+    private func renamable(_ row: Row) -> Data? {
+        guard let key = model.node(of: row.id), model.coreContacts.contains(where: { $0.key == key }) else { return nil }
+        return key
     }
 
     private var header: some View {
@@ -235,29 +242,6 @@ struct ConversationsView: View {
                 pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
-        // A contact appears once there is something to show: radios the node heard but nobody
-        // wrote to stay in "New message".
-        for c in model.contacts {
-            let chat = ChatID.contact(key: c.key)
-            guard let last = model.last(chat) else { continue }
-            out.append(Row(
-                id: chat, title: c.name, key: c.key, preview: last.preview(model),
-                date: last.date, badge: hopsBadge(c.hops), unread: model.unread(chat),
-                waiting: last.isWaiting,
-                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
-            ))
-        }
-        // MeshCore chats (§15): a node someone wrote to in plain, and the radio's channels.
-        for c in model.contacts {
-            let chat = ChatID.mesh(key: c.key)
-            guard let last = model.last(chat) else { continue }
-            out.append(Row(
-                id: chat, title: c.name, key: c.key, preview: last.preview(model),
-                date: last.date, badge: String(localized: "MeshCore"), unread: model.unread(chat),
-                waiting: last.isWaiting,
-                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
-            ))
-        }
         for ch in model.channels {
             let chat = ChatID.channel(id: ch.id)
             let last = model.last(chat)
@@ -269,11 +253,35 @@ struct ConversationsView: View {
                 pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
             ))
         }
+        // Every other conversation once it has a message, whatever the radio's contact list
+        // says (§15.8): lichen and MeshCore chats, room servers, and a group or a channel the
+        // radio no longer has. Radios the node heard but nobody wrote to stay in "New message".
+        let listed = Set(out.map(\.id))
+        for conv in model.conversations where !listed.contains(conv.chat) {
+            let chat = conv.chat
+            out.append(Row(
+                id: chat, title: model.conversationTitle(chat, named: conv.name), key: chat.bytes,
+                preview: conv.last.preview(model), date: conv.last.date, badge: badge(chat),
+                unread: Int(conv.unread), waiting: conv.last.isWaiting,
+                pinnedAt: model.prefs[chat]?.pinnedAtMs, muted: model.isMuted(chat)
+            ))
+        }
         for i in out.indices { out[i].archived = model.isArchived(out[i].id) }
         // Pinned first (the latest pinned on top), then the most recent.
         return out.sorted {
             if $0.pinnedAt != $1.pinnedAt { return ($0.pinnedAt ?? .min) > ($1.pinnedAt ?? .min) }
             return ($0.date ?? .distantPast, $1.title) > ($1.date ?? .distantPast, $0.title)
+        }
+    }
+
+    /// How a conversation goes: over LoRa (with the contact's hops when known), MeshCore.
+    private func badge(_ chat: ChatID) -> String {
+        switch chat {
+        case let .contact(key): hopsBadge(model.contacts.first { $0.key == key }?.hops)
+        case .group: String(localized: "Group · flood")
+        case .mesh: String(localized: "MeshCore")
+        case .channel: String(localized: "MeshCore channel")
+        case .room: String(localized: "MeshCore room")
         }
     }
 }

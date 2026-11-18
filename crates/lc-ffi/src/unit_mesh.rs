@@ -5,6 +5,8 @@
 use crate::{
     ChatRef, DemoNetwork, LichenCore, LichenEvent, LinkKind, NodeKind, ServerLogin, TraceState,
 };
+use lc_core::content::Content;
+use lc_core::store::{self, Chat, Status};
 
 fn run(demo: &DemoNetwork, core: &LichenCore, from: u64, to: u64) -> Vec<LichenEvent> {
     let mut events = Vec::new();
@@ -202,6 +204,25 @@ fn the_refuge_board() {
     let history = core.history(chat.clone(), None, 50).unwrap();
     assert_eq!(history.len(), 2);
     assert_eq!(history[0].author_name.as_deref(), Some("Marc"));
+    // Its posts make a conversation in Messages, named after the room (§15.8).
+    let conv = core
+        .conversations()
+        .into_iter()
+        .find(|c| c.chat == chat)
+        .unwrap();
+    assert_eq!(conv.name, "Refuge board");
+    // Pinned, muted and archived like any conversation.
+    core.set_pinned(chat.clone(), true).unwrap();
+    core.set_muted(chat.clone(), Some(i64::MAX)).unwrap();
+    core.set_archived(chat.clone(), true).unwrap();
+    let prefs = core
+        .chat_prefs()
+        .into_iter()
+        .find(|p| p.chat == chat)
+        .unwrap();
+    assert!(prefs.pinned_at_ms.is_some() && prefs.muted_until_ms.is_some() && prefs.archived);
+    core.set_archived(chat.clone(), false).unwrap();
+    core.set_muted(chat.clone(), None).unwrap();
     // Our post, acknowledged by the room.
     let m = core
         .send_plain(
@@ -231,6 +252,44 @@ fn the_refuge_board() {
     // Logged out: forgotten.
     core.server_logout(board.clone()).unwrap();
     assert!(!core.server(board).unwrap().remembered);
+    // Its conversation deleted: gone from the list until the next post.
+    core.delete_conversation(chat.clone()).unwrap();
+    assert!(!core.conversations().iter().any(|c| c.chat == chat));
+}
+
+/// A node the radio heard without adding it (Lucie, at 3 s) writes in plain: no contact
+/// names her conversation, the node the radio reported does (§15.8).
+#[test]
+fn a_chat_with_a_node_heard_only() {
+    let (_demo, core) = connected();
+    let lucie = node(&core, "Lucie");
+    assert!(!core.contacts().iter().any(|c| c.key == lucie));
+    let key: [u8; 32] = lucie.clone().try_into().unwrap();
+    core.lock()
+        .record(store::Message {
+            id: 0,
+            chat: Chat::Mesh(key),
+            outgoing: false,
+            author: None,
+            content: Content::Text {
+                sent_at: 5,
+                text: "Anyone at the refuge?".into(),
+            },
+            at_ms: 5_000,
+            status: Status::Received,
+            fragments: 0,
+            airtime_ms: 0,
+            snr4: None,
+            read: false,
+            msg_ref: None,
+        })
+        .unwrap();
+    let conv = core
+        .conversations()
+        .into_iter()
+        .find(|c| c.chat == ChatRef::Mesh { key: lucie.clone() })
+        .unwrap();
+    assert_eq!(conv.name, "Lucie");
 }
 
 #[test]

@@ -296,18 +296,38 @@ impl LichenCore {
         Ok(gone)
     }
 
-    /// Conversations that have messages, most recent first.
+    /// Conversations that have messages, most recent first: every one, whatever the radio's
+    /// contact list holds (§15.8), each with its name.
     pub fn conversations(&self) -> Vec<Conversation> {
         let i = self.lock();
+        let nodes = i.core.nodes();
+        let channels = i.channel_list();
         i.store
             .as_ref()
             .and_then(|s| s.conversations().ok())
             .unwrap_or_default()
             .into_iter()
-            .map(|(m, unread)| Conversation {
-                chat: ChatRef::from_store(&m.chat),
-                last: i.present(m),
-                unread,
+            .map(|(m, unread)| {
+                let name = match &m.chat {
+                    Chat::Contact(k) | Chat::Mesh(k) | Chat::Room(k) => i.shown_name_in(k, &nodes),
+                    Chat::Group(g) => i
+                        .core
+                        .groups()
+                        .find(|x| x.gid == *g)
+                        .map(|x| x.name.clone())
+                        .unwrap_or_default(),
+                    Chat::Channel(id) => channels
+                        .iter()
+                        .find(|c| c.id() == *id)
+                        .map(|c| c.name.clone())
+                        .unwrap_or_default(),
+                };
+                Conversation {
+                    chat: ChatRef::from_store(&m.chat),
+                    last: i.present(m),
+                    unread,
+                    name,
+                }
             })
             .collect()
     }

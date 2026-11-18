@@ -57,6 +57,8 @@ class CoreBindingsTest {
         assertTrue("our answer was delivered", delivered)
         assertTrue("joined the demo group", joined)
         assertTrue(core.conversations().isNotEmpty())
+        // Each conversation carries the name Messages shows (§15.8).
+        assertTrue("Camille's chat is named", core.conversations().any { ChatId.of(it.chat).kind == ChatId.Kind.CONTACT && it.name == "Camille" })
         core.close()
         demo.close()
     }
