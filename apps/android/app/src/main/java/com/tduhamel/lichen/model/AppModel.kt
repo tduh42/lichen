@@ -26,6 +26,7 @@ import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.core.Conversation
 import com.tduhamel.lichen.core.DemoNetwork
 import com.tduhamel.lichen.core.Estimate
+import com.tduhamel.lichen.core.FullImageRequest
 import com.tduhamel.lichen.core.LoraFile
 import com.tduhamel.lichen.core.GifLink
 import com.tduhamel.lichen.ui.clearOldShares
@@ -140,6 +141,9 @@ class AppModel(val app: Application) {
         val timer: Int = 0,
         /** The demo keeps introduction requests on: Camille's first message is one (ADR-0046). */
         val requestDemo: Boolean = false,
+        /** A request for the full variant of our photo is answered at once, as before the
+         * user was asked (§13.3): screenshots and tests. */
+        val autoFull: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -422,6 +426,10 @@ class AppModel(val app: Application) {
 
     /** Image previews whose full variant we asked for (message ids). */
     var requestedFull by mutableStateOf(setOf<Long>())
+
+    /** Contacts' requests for the full variant of our photos, waiting for the user (§13.3), by
+     * conversation; in memory, like the core's. */
+    val fullRequests = mutableStateMapOf<ChatId, List<FullImageRequest>>()
 
     // Internet bridge (ADR-0015).
     /** iroh reachable (a relay answered). */
@@ -1147,6 +1155,17 @@ class AppModel(val app: Application) {
                 updateLocator()
             }
             is LichenEvent.MediaRequested -> Unit
+            // It waits on our photo for the user's answer (§13.3): nothing goes before.
+            is LichenEvent.FullImageRequested -> {
+                val chat = ChatId.of(e.chat)
+                fullRequests[chat] = core.fullImageRequests(chat.ref)
+                if (debug.autoFull) {
+                    val pending = fullRequests[chat].orEmpty()
+                    scope.launch { for (r in pending) answerFull(r.messageId, chat, send = true) }
+                } else if (!isMuted(chat)) {
+                    notify(chat, title(chat), res.getString(R.string.asks_for_full_photo, title(chat)), actions = false)
+                }
+            }
             is LichenEvent.Searched -> {
                 // A member asks where we are and we answer (SOS or this group's consent, §11).
                 val chat = ChatId.group(e.gid)
@@ -1339,6 +1358,7 @@ class AppModel(val app: Application) {
             chats[chat] = page
             olderAvailable[chat] = page.size == HISTORY_PAGE.toInt()
             historyError.remove(chat)
+            fullRequests[chat] = core.fullImageRequests(chat.ref)
         } catch (_: LichenException) {
             if (chats[chat] == null) chats[chat] = emptyList()
             historyError[chat] = res.getString(R.string.history_unreadable)
@@ -1885,6 +1905,23 @@ class AppModel(val app: Application) {
         null
     } catch (e: LichenException) {
         e.display(res)
+    }
+
+    /** A contact's request for the full variant of our photo [m], if one waits (§13.3). */
+    fun fullRequest(m: StoredMessage): FullImageRequest? =
+        if (!m.outgoing) null else fullRequests[ChatId.of(m.chat)]?.firstOrNull { it.messageId == m.id }
+
+    /** Answers a contact's request for the full variant of our photo (§13.3): [send] sends it,
+     * refused when it does not fit in the hour's airtime (the request then still waits); not
+     * now forgets it, and the contact gets no answer. */
+    fun answerFull(messageId: Long, chat: ChatId, send: Boolean): String? = try {
+        core.answerFullImageRequest(messageId, send, now())
+        pump()
+        null
+    } catch (e: LichenException) {
+        e.display(res)
+    } finally {
+        fullRequests[chat] = core.fullImageRequests(chat.ref)
     }
 
     /** The announcement that completes the LoRa preview `mediaId` in `chat`, if any. */

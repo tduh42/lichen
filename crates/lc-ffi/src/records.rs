@@ -231,3 +231,13 @@ pub(crate) fn small_file(name: String, data: Vec<u8>, sent_at: u32) -> Option<(C
     // What a receiver accepts is exactly what fits.
     matches!(Content::decode(&datagram), Some(Content::File { .. })).then_some((content, datagram))
 }
+
+/// A contact's request for the full variant of one of our images, waiting for the user
+/// (§13.3).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct FullImageRequest {
+    /// Our image (its row in the conversation).
+    pub message_id: i64,
+    /// What sending it would cost us, on the path known when it was asked for.
+    pub airtime_ms: u64,
+}

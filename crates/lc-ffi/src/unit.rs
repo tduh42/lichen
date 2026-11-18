@@ -1965,3 +1965,141 @@ mod sweep {
         let _ = std::fs::remove_dir_all(&root);
     }
 }
+
+/// A request for the full variant of one of our images waits for the user (§13.3).
+#[cfg(test)]
+mod full_images {
+    use super::*;
+
+    const BOB: [u8; 32] = [9; 32];
+    const EVE: [u8; 32] = [66; 32];
+
+    fn contact(i: &mut Inner, key: [u8; 32], name: &str) {
+        i.core.restore_contact(lc_core::Contact {
+            key,
+            name: name.into(),
+            out_path: None,
+            identity: None,
+            verified: false,
+            kind: lc_core::contact_kind::CHAT,
+        });
+    }
+
+    /// Our image `media_id` sent to `to`, kept in full as `send_image` keeps it: its row.
+    fn sent_image(i: &mut Inner, to: [u8; 32], media_id: [u8; 8]) -> i64 {
+        let full = Content::Image {
+            sent_at: 1,
+            media_id,
+            full: true,
+            width: 160,
+            height: 120,
+            full_len: 2_000,
+            data: vec![0xA5; 2_000],
+        };
+        if let Some(st) = &i.store {
+            st.put_media(&media_id, &Chat::Contact(to), &full.encode())
+                .unwrap();
+        }
+        i.record(store::Message {
+            id: 0,
+            chat: Chat::Contact(to),
+            outgoing: true,
+            author: None,
+            content: full,
+            at_ms: unix_ms(),
+            status: Status::Delivered,
+            fragments: 3,
+            airtime_ms: 1_000,
+            snr4: None,
+            read: true,
+            msg_ref: None,
+        })
+        .unwrap()
+        .id
+    }
+
+    fn asks(core: &LichenCore, from: [u8; 32], media_id: [u8; 8]) -> Vec<LichenEvent> {
+        core.lock().on_event(&Event::MediaRequested {
+            from,
+            media_id,
+            full: true,
+        });
+        std::iter::from_fn(|| core.poll_event())
+            .filter(|e| matches!(e, LichenEvent::FullImageRequested { .. }))
+            .collect()
+    }
+
+    #[test]
+    fn a_full_request_waits_for_the_user() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![171; 32], None).unwrap();
+        let bob = ChatRef::Contact { key: BOB.to_vec() };
+        let row = {
+            let mut i = core.lock();
+            contact(&mut i, BOB, "Bob");
+            contact(&mut i, EVE, "Eve");
+            sent_image(&mut i, BOB, [7; 8])
+        };
+        while core.poll_event().is_some() {}
+        // Shown, with what it costs; nothing goes.
+        let got = asks(&core, BOB, [7; 8]);
+        let [
+            LichenEvent::FullImageRequested {
+                chat,
+                message_id,
+                airtime_ms,
+            },
+        ] = got.as_slice()
+        else {
+            panic!("{got:?}");
+        };
+        assert_eq!((chat, *message_id), (&bob, row));
+        assert!(*airtime_ms > 1_000, "{airtime_ms} ms for 2 KB");
+        let listed = core.full_image_requests(bob.clone());
+        assert_eq!(
+            listed,
+            vec![FullImageRequest {
+                message_id: row,
+                airtime_ms: *airtime_ms
+            }]
+        );
+        // Asked again while it waits: still one, not shown twice.
+        assert!(asks(&core, BOB, [7; 8]).is_empty());
+        assert_eq!(core.full_image_requests(bob.clone()).len(), 1);
+        // Not Eve's to ask for, nor an image we do not hold: no request.
+        assert!(asks(&core, EVE, [7; 8]).is_empty());
+        assert!(asks(&core, BOB, [8; 8]).is_empty());
+        assert!(
+            core.full_image_requests(ChatRef::Contact { key: EVE.to_vec() })
+                .is_empty()
+        );
+        // Declined: forgotten, no answer.
+        core.answer_full_image_request(row, false, 0).unwrap();
+        assert!(core.full_image_requests(bob.clone()).is_empty());
+        assert_eq!(core.answer_full_image_request(row, true, 0), Ok(()));
+        // Asking again shows it again.
+        assert_eq!(asks(&core, BOB, [7; 8]).len(), 1);
+        assert_eq!(core.full_image_requests(bob.clone()).len(), 1);
+        // Gone with the image.
+        core.delete_for_me(row).unwrap();
+        assert!(core.full_image_requests(bob).is_empty());
+    }
+
+    #[test]
+    fn requests_kept_are_bounded() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![172; 32], None).unwrap();
+        let rows: Vec<i64> = {
+            let mut i = core.lock();
+            contact(&mut i, BOB, "Bob");
+            (0..40u8).map(|n| sent_image(&mut i, BOB, [n; 8])).collect()
+        };
+        for n in 0..40u8 {
+            assert_eq!(asks(&core, BOB, [n; 8]).len(), 1);
+        }
+        let kept: Vec<i64> = core
+            .full_image_requests(ChatRef::Contact { key: BOB.to_vec() })
+            .into_iter()
+            .map(|r| r.message_id)
+            .collect();
+        assert_eq!(kept, rows[8..].to_vec());
+    }
+}

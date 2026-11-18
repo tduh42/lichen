@@ -35,7 +35,29 @@ pub(crate) struct Inner {
     pub(crate) timer_inflight: HashMap<u64, (Chat, u32)>,
     /// The recent log of problem reports (ADR-0045).
     pub(crate) diag: report::Diag,
+    /// Requests for the full variant of our images that wait for the user (§13.3), oldest
+    /// first, at most [`FULL_REQUESTS_MAX`]. In memory only: lost when the app stops, and the
+    /// contact can ask again.
+    pub(crate) full_requests: Vec<FullRequest>,
+    /// Full images the user agreed to send, while on their way: core id, contact, image. The
+    /// same request again meanwhile is answered by that transfer.
+    pub(crate) full_sending: Vec<(u64, PubKey, lc_core::content::MediaId)>,
 }
+
+/// A contact asks for the full variant of one of our images (§13.3): it goes only if the user
+/// accepts.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FullRequest {
+    pub(crate) node: PubKey,
+    pub(crate) media_id: lc_core::content::MediaId,
+    /// Our image's row.
+    pub(crate) message_id: i64,
+    /// Its airtime when it was asked for, on the path known then.
+    pub(crate) airtime_ms: u64,
+}
+
+/// Requests for full images kept at once: a contact asking for more cannot grow the list.
+pub(crate) const FULL_REQUESTS_MAX: usize = 32;
 
 /// The database of `identity` in `dir`: one per identity (ADR-0010).
 pub(crate) fn database_file(dir: &std::path::Path, identity: &PubKey) -> PathBuf {
@@ -178,6 +200,9 @@ impl Inner {
         let Ok(store) = store else {
             return;
         };
+        // Their rows were another database's.
+        self.full_requests.clear();
+        self.full_sending.clear();
         self.nicknames = store.nicknames().unwrap_or_default();
         for c in store.contacts().unwrap_or_default() {
             self.core.restore_contact(c);

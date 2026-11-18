@@ -282,7 +282,7 @@ A datagram's plaintext is `content_type (1) ‖ body`.
 
 An unknown type is handed to the app as "unsupported", with no error on the network. A received datagram or group message whose type is in the local range 0xE0–0xEF is dropped: nobody can make another phone record a notice.
 
-Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006), or after a restart (§6.1). The receiver drops a datagram byte-identical to one received from the same peer within the last hour. TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
+Delivery is at least once: a datagram that was delivered but whose ACKs were all lost may be sent again after a new handshake (§7.1, ADR-0006), or after a restart (§6.1). The receiver drops a datagram byte-identical to one received from the same peer within the last hour, except a MEDIA_REQUEST (§13.3). TEXT carries the sender's timestamp, so two genuine identical messages are told apart unless they are sent within the same second.
 
 ### 6.1 Outbox and restart (ADR-0018)
 
@@ -699,7 +699,7 @@ Small media only, direct sessions only (never flooded: in a group they wait for 
 - `media_id`: random, chosen by the sender; the same for both variants.
 - `variant` 0: the **preview**, at most 426 bytes of AVIF (with the header above, exactly 3 fragments on one hop); `variant` 1: the **full** thumbnail, at most 4,096 bytes. Both fit in 160 × 120 pixels.
 - `full_len`: size of the full variant, so the receiver can show its cost before asking; 0 when there is none.
-- The sender sends the preview only. The full variant goes out when the receiver asks for it (§13.3), and the receiver replaces the preview with it.
+- The sender sends the preview only. The full variant goes out when the receiver asks for it and the sender's user accepts (§13.3), and the receiver replaces the preview with it.
 
 **A small file** (`kind` 2, ADR-0022): any type, up to 8 KB, in one datagram, to a contact only (never flooded).
 
@@ -724,6 +724,8 @@ Vectors: `testdata/lichen/content.toml` (`[[file]]`, `[[bad_file]]`).
 ### 13.3 MEDIA_REQUEST (0x06)
 
 `media_id [8] ‖ variant u8`: "send me this variant". The sender answers with the FILE of that variant if it still has it, and ignores the request otherwise. Not shown as a message.
+
+A request for the **full** variant is shown to the sender's user, with its airtime; it goes only if they accept (ADR-0012). A request declined, or not answered before the app stops, gets no answer, like one for a variant no longer held. Asking again shows it again: a MEDIA_REQUEST carries no timestamp, so the receiver does not drop it as a resend (§6), and a request already waiting is not shown twice. Asking while that variant is on its way to the same contact shows nothing: the transfer answers it.
 
 ### 13.4 Airtime
 

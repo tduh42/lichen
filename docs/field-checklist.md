@@ -45,7 +45,7 @@ A and B exchange their contact codes in person first (Add a contact › My code 
 | 2.7 | A sends a sticker. | B plays the animation, with no Internet on either phone. |
 | 2.8 | A pastes a GIPHY link and sends the GIF. | B shows a GIF card; with Internet it loads (tap, or automatically if B chose it). |
 | 2.9 | A records and sends 10 s of voice (Standard). | B plays it, intelligible; both show the same duration; the airtime meter of A grows by the expected amount. |
-| 2.10 | A sends a photo. | B shows the preview first; "Load the full image" brings the full one; with both phones on the Internet the original comes over the bridge. |
+| 2.10 | A sends a photo; B taps "Load the full image". A taps Not now; B restarts lichen and asks again; A taps Send. | B shows the preview first, then "Asked: A decides whether to send it"; A sees the request on its photo with its airtime (a notification outside the chat). Not now sends nothing; Send brings B the full one. With both phones on the Internet the original comes over the bridge. |
 | 2.11 | A sends a small file (a few KB) and one too big for the hour's airtime. | The small one arrives and opens on B; the big one is refused on A with the time at which it would fit, not queued. |
 | 2.12 | A sets disappearing messages to 5 minutes in the chat. | B shows the timer notice; a message sent then is gone from both phones 5 minutes later. |
 | 2.13 | B, out of range or radio off: A sends a text; B comes back 10 minutes later. | A shows it waiting, then delivered once B is back (within 24 h). |

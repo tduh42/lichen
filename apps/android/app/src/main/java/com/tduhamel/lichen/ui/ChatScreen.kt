@@ -265,6 +265,12 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         model.markRead(chat)
     }
     LaunchedEffect(atBottom) { if (atBottom) unseen = 0 }
+    // A request for the full variant of our photo grows its bubble (§13.3): followed like a new
+    // message when we were at the bottom, so its buttons are on screen.
+    val fullAsked = model.fullRequests[chat]?.size ?: 0
+    LaunchedEffect(fullAsked) {
+        if (opened && fullAsked > 0 && atBottom) list.animateScrollToItem(rows - 1)
+    }
     // A message from a search: once the earlier pages holding it are in the list.
     LaunchedEffect(highlight, messages.size) {
         val h = highlight ?: return@LaunchedEffect
@@ -1188,7 +1194,8 @@ private fun Composer(
             }
         }
     }
-    // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document.
+    // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document;
+    // `screen media`: the photo sheet with a drawn landscape, in a contact's chat.
     LaunchedEffect(Unit) {
         val screen = model.debugScreen
         if (screen == "file" || screen == "fileBig") {
@@ -1196,6 +1203,12 @@ private fun Composer(
             val n = if (screen == "fileBig") 3_700 else 45
             val data = ByteArray(line.size * n) { line[it % line.size] }
             file = FileDraft(if (screen == "fileBig") "Topo Vercors 2026.pdf" else "Refuge notes.txt", data)
+        }
+        if (screen == "media" && chat.kind == ChatId.Kind.CONTACT) {
+            picked = withContext(Dispatchers.Default) {
+                val photo = com.tduhamel.lichen.model.samplePhoto()
+                runCatching { prepareImage(photo.rgba, photo.width.toUInt(), photo.height.toUInt()) to photo.original }.getOrNull()
+            }
         }
     }
     fun preparePhoto(uri: android.net.Uri) {

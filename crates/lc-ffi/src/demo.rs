@@ -133,6 +133,8 @@ enum Action {
     CamilleVoice,
     /// Camille asks for the full variant of the user's image.
     CamilleWantsFull(MediaId),
+    /// Camille asks once more when it has not come (the user may have said not now, §13.3).
+    CamilleAsksAgain(MediaId),
     GroupPost {
         from: usize,
         text: String,
@@ -190,6 +192,8 @@ struct Demo {
     wall0: u64,
     /// The full variant of Camille's photo, kept for when it is asked for.
     camille_full: Option<(MediaId, Vec<u8>)>,
+    /// The user's images Camille received in full.
+    camille_has_full: Vec<MediaId>,
     /// Camille announced her full-resolution photo (§14.1).
     announced: bool,
     bots_met: bool,
@@ -370,7 +374,9 @@ impl Demo {
                     });
                 }
             }
-            Action::CamilleWantsFull(media_id) => {
+            Action::CamilleWantsFull(media_id) | Action::CamilleAsksAgain(media_id)
+                if !self.camille_has_full.contains(&media_id) =>
+            {
                 let request = Content::MediaRequest {
                     media_id,
                     full: true,
@@ -379,7 +385,12 @@ impl Demo {
                 let _ = self.net.with_core(self.camille, |c, now| {
                     c.send_datagram(&app_key, request, now)
                 });
+                if matches!(a, Action::CamilleWantsFull(_)) {
+                    let at = self.net.now + 3 * 60 * SEC;
+                    self.pending.push((at, Action::CamilleAsksAgain(media_id)));
+                }
             }
+            Action::CamilleWantsFull(_) | Action::CamilleAsksAgain(_) => {}
             Action::React {
                 from,
                 target,
@@ -624,6 +635,9 @@ impl Demo {
                         content: Content::Image { full, media_id, .. },
                         ..
                     } if from == app_key && bot == self.camille => {
+                        if full && !self.camille_has_full.contains(&media_id) {
+                            self.camille_has_full.push(media_id);
+                        }
                         let next = if full {
                             Action::Dm {
                                 from: bot,
@@ -945,6 +959,7 @@ impl DemoNetwork {
                 next_fix: 0,
                 wall0: wall,
                 camille_full: None,
+                camille_has_full: Vec::new(),
                 announced: false,
                 bots_met: false,
                 julien_sos: false,
@@ -1437,7 +1452,7 @@ mod media {
     use crate::{LichenCore, LichenEvent, Message, StoredMessage};
 
     /// Voice both ways, Camille's photo loaded in full on request, ours sent in full when
-    /// Camille asks.
+    /// Camille asks and the user accepts (§13.3).
     #[test]
     fn voice_and_images_with_camille() {
         let demo = DemoNetwork::new();
@@ -1457,8 +1472,13 @@ mod media {
                 demo.write(f, now);
             }
             while let Some(e) = core.poll_event() {
-                if let LichenEvent::MessageChanged { message } = e {
-                    changed.push(message);
+                match e {
+                    LichenEvent::MessageChanged { message } => changed.push(message),
+                    LichenEvent::FullImageRequested { message_id, .. } => {
+                        core.answer_full_image_request(message_id, true, now)
+                            .unwrap();
+                    }
+                    _ => {}
                 }
             }
             let camille = core.contacts().into_iter().find(|c| c.name == "Camille");
@@ -1532,6 +1552,103 @@ mod media {
             &m.message,
             Message::Text { text, .. } if text == "Got the full picture, thanks!"
         )));
+    }
+
+    /// Airtime the app's radio has spent so far.
+    fn app_airtime(demo: &DemoNetwork) -> u64 {
+        let d = demo.inner.lock().unwrap();
+        d.net.nodes[d.app].tx_airtime_ms
+    }
+
+    /// Camille asks for the full variant of the user's photo (§13.3): nothing goes before the
+    /// user answers. Declined, nothing goes and the request is gone; asked again (she does
+    /// when it has not come), it shows again; accepted, the full image reaches her and she
+    /// says so.
+    #[test]
+    fn a_full_image_goes_only_when_the_user_accepts() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![6; 32], vec![106; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        let thanked = |changed: &[StoredMessage]| {
+            changed.iter().any(|m| {
+                matches!(&m.message, Message::Text { text, .. }
+                    if text == "Got the full picture, thanks!")
+            })
+        };
+        let mut changed: Vec<StoredMessage> = Vec::new();
+        // When each request came, for which message, at what cost; the app's airtime then.
+        let mut requests: Vec<(u64, i64, u64, u64)> = Vec::new();
+        let mut image: Option<(crate::ChatRef, i64)> = None;
+        let (mut declined, mut accepted) = (false, false);
+        let mut now = 0;
+        while now < 20 * 60_000 && !(accepted && thanked(&changed)) {
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                match e {
+                    LichenEvent::MessageChanged { message } => changed.push(message),
+                    LichenEvent::FullImageRequested {
+                        chat,
+                        message_id,
+                        airtime_ms,
+                    } => {
+                        let (ours, id) = image.as_ref().expect("our photo");
+                        assert_eq!((&chat, message_id), (ours, *id));
+                        requests.push((now, message_id, airtime_ms, app_airtime(&demo)));
+                    }
+                    _ => {}
+                }
+            }
+            // Once the busy first minutes are over (Camille's photo crosses the hub).
+            if image.is_none()
+                && now > 6 * 60_000
+                && let Some(c) = core.contacts().into_iter().find(|c| c.name == "Camille")
+            {
+                let (w, h) = (320, 240);
+                let img =
+                    crate::prepare_image(lc_media::image::sample_landscape(w, h), w, h).unwrap();
+                let m = core.send_image(c.key.clone(), img, 2, now).unwrap();
+                image = Some((crate::ChatRef::Contact { key: c.key }, m.id));
+            }
+            if let (Some((chat, id)), [(at, _, cost, spent)]) = (&image, requests.as_slice())
+                && !declined
+                && now >= at + 90_000
+            {
+                // A minute and a half later, nothing of it went.
+                assert!(!thanked(&changed));
+                let since = app_airtime(&demo) - spent;
+                assert!(since < cost / 2, "{since} ms sent, the image is {cost} ms");
+                assert_eq!(core.full_image_requests(chat.clone()).len(), 1);
+                core.answer_full_image_request(*id, false, now).unwrap();
+                assert!(core.full_image_requests(chat.clone()).is_empty());
+                declined = true;
+            }
+            if let (Some((chat, id)), [_, (at, ..)]) = (&image, requests.as_slice())
+                && !accepted
+                && now >= at + 5_000
+            {
+                // Declined, nothing went either.
+                assert!(!thanked(&changed));
+                assert_eq!(core.full_image_requests(chat.clone()).len(), 1);
+                core.answer_full_image_request(*id, true, now).unwrap();
+                assert!(core.full_image_requests(chat.clone()).is_empty());
+                accepted = true;
+            }
+            now += 100;
+        }
+        assert_eq!(requests.len(), 2, "{requests:?}");
+        assert!(
+            accepted && thanked(&changed),
+            "no thanks by {} s",
+            now / 1000
+        );
     }
 }
 

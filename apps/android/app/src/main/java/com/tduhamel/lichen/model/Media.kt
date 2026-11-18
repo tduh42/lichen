@@ -247,6 +247,30 @@ fun pickPhoto(resolver: ContentResolver, uri: Uri, maxSide: Int = 640): PickedPh
     PickedPhoto(original, buf.array(), bitmap.width, bitmap.height)
 }.getOrNull()
 
+/** A mountain landscape drawn at 320 × 240, as a picked photo: the debug extra `screen media`
+ * (the iOS `-screen media`). */
+fun samplePhoto(): PickedPhoto {
+    val (w, h) = 320 to 240
+    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+    val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    canvas.drawColor(android.graphics.Color.rgb(64, 77, 140))
+    paint.color = android.graphics.Color.rgb(89, 89, 89)
+    canvas.drawPath(
+        android.graphics.Path().apply {
+            moveTo(0f, 200f); lineTo(120f, 70f); lineTo(200f, 140f); lineTo(260f, 90f)
+            lineTo(320f, 160f); lineTo(320f, 240f); lineTo(0f, 240f); close()
+        },
+        paint,
+    )
+    paint.color = android.graphics.Color.rgb(38, 77, 46)
+    canvas.drawRect(0f, 190f, 320f, 240f, paint)
+    val png = java.io.ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+    val buf = ByteBuffer.allocate(bitmap.byteCount)
+    bitmap.copyPixelsToBuffer(buf)
+    return PickedPhoto(png, buf.array(), w, h)
+}
+
 /** What the decoder does once it has read an image's header, before any pixel: refuses one
  * that declares more than 16,384 pixels on a side or 64 million in all, and asks for at most
  * `maxSide` on the longer side, which the decoder reaches by sampling as it decodes (JPEG,

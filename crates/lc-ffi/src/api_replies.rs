@@ -318,4 +318,82 @@ impl LichenCore {
         i.core.send_datagram(&from, request.encode(), now_ms)?;
         Ok(())
     }
+
+    /// The requests for the full variant of our images in `chat` that wait for the user
+    /// (§13.3), oldest first: shown on those images when the conversation opens. Kept in
+    /// memory only: the contact asks again after the app stops.
+    pub fn full_image_requests(&self, chat: ChatRef) -> Vec<FullImageRequest> {
+        let Ok(Chat::Contact(node)) = chat.to_store() else {
+            return Vec::new();
+        };
+        let i = self.lock();
+        i.full_requests
+            .iter()
+            .filter(|r| r.node == node)
+            // An image gone since (deleted, or its time was up, §6.5) is not asked for.
+            .filter(|r| {
+                i.store
+                    .as_ref()
+                    .is_some_and(|s| s.get(r.message_id).ok().flatten().is_some())
+            })
+            .map(|r| FullImageRequest {
+                message_id: r.message_id,
+                airtime_ms: r.airtime_ms,
+            })
+            .collect()
+    }
+
+    /// Answers the request for the full variant of our image `message_id` (§13.3). `send`:
+    /// it goes, refused with `OverBudget` when its first round does not fit in the hour
+    /// (§13.4), the request then waiting still. Not `send`: the request is forgotten, and the
+    /// contact gets no answer. Nothing to answer: nothing happens.
+    pub fn answer_full_image_request(
+        &self,
+        message_id: i64,
+        send: bool,
+        now_ms: u64,
+    ) -> Result<(), LichenError> {
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        let Some(at) = i
+            .full_requests
+            .iter()
+            .position(|r| r.message_id == message_id)
+        else {
+            return Ok(());
+        };
+        if !send {
+            i.full_requests.remove(at);
+            return Ok(());
+        }
+        let Some(r) = i.full_requests.get(at).cloned() else {
+            return Ok(());
+        };
+        // Held still for this contact (a deleted message's may be gone).
+        let held = i
+            .store
+            .as_ref()
+            .and_then(|s| s.media(&r.media_id).ok().flatten())
+            .filter(|(to, _)| *to == Chat::Contact(r.node));
+        let Some((_, datagram)) = held else {
+            i.full_requests.remove(at);
+            return Err(LichenError::NotAPreview);
+        };
+        match i.core.send_media(&r.node, datagram, now_ms) {
+            Err(e @ lc_core::Error::OverBudget { .. }) => Err(e.into()),
+            Err(e) => {
+                i.full_requests.remove(at);
+                Err(e.into())
+            }
+            Ok(id) => {
+                i.full_requests.remove(at);
+                let Inner {
+                    core, full_sending, ..
+                } = &mut *i;
+                full_sending.retain(|(id, ..)| core.outgoing(*id, now_ms).is_some());
+                full_sending.push((id, r.node, r.media_id));
+                Ok(())
+            }
+        }
+    }
 }

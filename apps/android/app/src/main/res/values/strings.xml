@@ -300,7 +300,10 @@
     <string name="lora_full_thumbnail">LoRa · full thumbnail</string>
     <string name="lora_preview_badge">LoRa · preview</string>
     <string name="full_on_request">full one on request</string>
-    <string name="full_requested">Full image requested…</string>
+    <string name="full_requested">Asked: %1$s decides whether to send it</string>
+    <string name="full_photo_request">%1$s asks for the full photo · about %2$d s of airtime</string>
+    <string name="asks_for_full_photo">%1$s asks for the full photo</string>
+    <string name="not_now">Not now</string>
     <string name="full_image_cost">Full image: %1$s, ≈ %2$s s</string>
     <string name="load_full_image">Load the full image</string>
     <string name="hash_verified">hash verified</string>
