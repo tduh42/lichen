@@ -263,6 +263,10 @@ impl LichenCore {
             let e = i.core.poll_event()?;
             let now = i.last_now;
             i.diag.event(now, &e);
+            if matches!(e, lc_core::Event::ContactsUpdated) {
+                let read = i.core.contact_read();
+                i.diag.contact_read(now, read);
+            }
             let keep = i.on_event(&e);
             i.persist();
             if keep {

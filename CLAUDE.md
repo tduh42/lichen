@@ -41,8 +41,8 @@ crates/
   lc-bridge/    std     Internet bridge (ADR-0015): async (tokio), iroh endpoint and Arti (Tor) onion
                         service, `lichen/blob/1` offers and fetches checked against BLAKE3; the only
                         crate with network IO
-  lc-cli/       std     `lichen` binary: USB client for real-world tests (info, send, listen with the
-                        echo bot in bot.rs, advert, card, search recorder, bridge to TCP, sim)
+  lc-cli/       std     `lichen` binary: USB client for real-world tests (info, contacts, send, listen with
+                        the echo bot in bot.rs, advert, card, search recorder, bridge to TCP, sim)
   lc-ffi/       std     UniFFI for Swift and Kotlin: core + store behind one lock, demo network (demo.rs).
                         One module per area: records and events the apps read, `inner.rs` (the state
                         behind the lock), `on_event.rs`, `outbox.rs`, `amendments.rs`, `link.rs` (TCP
@@ -97,6 +97,8 @@ scripts/fuzz.sh N [target…]       # fuzz, N seconds per target
 cargo test --workspace
 cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10 --bytes 10000   # fake network
 cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101                # a real companion
+cargo run --release -p lc-cli -- contacts /dev/cu.wchusbserial2120           # its contact table, record by record
+                                  # (type, path byte, readable or not, count announced): read only
 cargo run --release -p lc-cli -- send /dev/cu.usbmodem2141101 --to bob --text "hello"
 cargo run --release -p lc-cli -- listen /dev/cu.wchusbserial2120
 cargo run --release -p lc-cli -- listen /dev/cu.usbmodem14301 --advert --echo --save local/received \

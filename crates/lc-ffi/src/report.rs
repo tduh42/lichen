@@ -26,6 +26,8 @@ pub(crate) struct Diag {
     frames_in: u64,
     frames_out: u64,
     companion_errors: u64,
+    /// The last contact-list read noted (its number).
+    contact_reads: u32,
 }
 
 impl Diag {
@@ -55,6 +57,28 @@ impl Diag {
 
     pub(crate) fn frame_out(&mut self) {
         self.frames_out += 1;
+    }
+
+    /// A read of the radio's contact list, noted once: whole, or cut short with what the radio
+    /// announced (§16).
+    pub(crate) fn contact_read(&mut self, at_ms: u64, r: lc_core::ContactRead) {
+        if r.reads == self.contact_reads {
+            return;
+        }
+        self.contact_reads = r.reads;
+        let received = Some((i64::from(r.received), "contacts"));
+        if r.whole {
+            self.note(at_ms, "contact list read whole", received);
+        } else {
+            self.note(at_ms, "contact list cut short", received);
+            if let Some(a) = r.announced {
+                self.note(
+                    at_ms,
+                    "contacts the radio announced",
+                    Some((i64::from(a), "contacts")),
+                );
+            }
+        }
     }
 
     /// An event of the core, by its kind; a reception with its SNR. Progress is left out (one
@@ -238,6 +262,16 @@ impl LichenCore {
                 "open"
             } else {
                 "not open"
+            }
+        ));
+        let read = i.core.contact_read();
+        line(format!(
+            "Contacts:  last list read {}",
+            match (read.reads, read.whole, read.announced) {
+                (0, ..) => "not yet".to_owned(),
+                (_, true, _) => format!("whole, {} records", read.received),
+                (_, false, Some(a)) => format!("cut short, {} of {a} records", read.received),
+                (_, false, None) => format!("cut short, {} records", read.received),
             }
         ));
         line(format!(
@@ -475,6 +509,39 @@ mod tests {
         assert_eq!(d.lines.front().map(|l| l.at_ms), Some(10));
     }
 
+    /// A contact-list read is noted once, however many `ContactsUpdated` follow it; one cut
+    /// short says what the radio announced (§16).
+    #[test]
+    fn a_contact_read_is_noted_once() {
+        let mut d = Diag::default();
+        let cut = lc_core::ContactRead {
+            reads: 1,
+            announced: Some(130),
+            received: 112,
+            whole: false,
+        };
+        d.contact_read(10, cut);
+        d.contact_read(20, cut);
+        d.contact_read(
+            30,
+            lc_core::ContactRead {
+                reads: 2,
+                announced: Some(130),
+                received: 130,
+                whole: true,
+            },
+        );
+        let lines: Vec<_> = d.lines.iter().map(|l| (l.what, l.value)).collect();
+        assert_eq!(
+            lines,
+            vec![
+                ("contact list cut short", Some((112, "contacts"))),
+                ("contacts the radio announced", Some((130, "contacts"))),
+                ("contact list read whole", Some((130, "contacts"))),
+            ]
+        );
+    }
+
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{x:02x}")).collect()
     }
@@ -581,6 +648,11 @@ mod tests {
         assert!(report.contains("Setting:   Tor: off"));
         assert!(report.contains("Bluetooth: connected to [name]'s radio"));
         assert!(report.contains("2026-10-26 07:37:20 UTC"));
+        assert!(
+            report.contains("Contacts:  last list read whole"),
+            "{report}"
+        );
+        assert!(report.contains("contact list read whole"));
 
         let lower = report.to_lowercase();
         let mut forbidden: Vec<String> = secrets;
