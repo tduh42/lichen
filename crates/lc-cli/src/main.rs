@@ -2,6 +2,7 @@
 
 mod bot;
 mod bridge;
+mod contacts;
 mod device;
 mod record;
 
@@ -31,6 +32,15 @@ enum Cmd {
     /// Connect to a companion and show its identity, radio, budget and contacts.
     Info {
         /// Serial port of the companion (e.g. /dev/cu.usbmodem2141101).
+        port: String,
+        /// Print every companion frame.
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// The companion's contact table, record by record: what lichen reads and what it drops.
+    /// Read only (no message sync, no clock).
+    Contacts {
+        /// Serial port of the companion.
         port: String,
         /// Print every companion frame.
         #[arg(short, long)]
@@ -543,6 +553,14 @@ fn info(port: &str, verbose: bool) -> Result<(), String> {
         used / 1000,
         limit / 1000
     );
+    let read = dev.core.contact_read();
+    println!(
+        "contact list: {} records of {}{}",
+        read.received,
+        read.announced
+            .map_or_else(|| "?".to_owned(), |a| a.to_string()),
+        if read.whole { "" } else { ", cut short" }
+    );
     for c in dev.core.contacts() {
         let path = c
             .out_path
@@ -775,6 +793,7 @@ fn main() {
     let cli = Cli::parse();
     let r = match cli.command {
         Cmd::Info { port, verbose } => info(&port, verbose),
+        Cmd::Contacts { port, verbose } => contacts::run(&port, verbose),
         Cmd::Send {
             port,
             to,

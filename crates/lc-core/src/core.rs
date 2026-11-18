@@ -125,6 +125,20 @@ impl OwnedPath {
     }
 }
 
+/// How the radio's contact list was last read (`GET_CONTACTS`, §16): for problem reports and
+/// the CLI.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ContactRead {
+    /// Reads since the core started: tells one read from the next.
+    pub reads: u32,
+    /// What `CONTACTS_START` announced, when it came.
+    pub announced: Option<u32>,
+    /// Records received.
+    pub received: u32,
+    /// `END_OF_CONTACTS` came after every record announced.
+    pub whole: bool,
+}
+
 /// A contact: a MeshCore node (where to send) and, once known, the identity behind it (who,
 /// ADR-0013).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -804,6 +818,10 @@ pub struct Core {
     commands: VecDeque<(Vec<u8>, Expect)>,
     /// Contact lists asked for again after one stopped short since the last complete one.
     contact_resyncs: u8,
+    /// The contact list being read: what `CONTACTS_START` announced, records received.
+    contacts_reading: (Option<u32>, u32),
+    /// The last contact list read, whole or not.
+    contact_read: ContactRead,
     /// The radio's clock is still to be set for this connection, once ours is known (§1).
     radio_time_owed: bool,
     awaiting: Option<(Expect, Millis)>,
@@ -934,6 +952,8 @@ impl Core {
             peers: HashMap::new(),
             commands: VecDeque::new(),
             contact_resyncs: 0,
+            contacts_reading: (None, 0),
+            contact_read: ContactRead::default(),
             radio_time_owed: false,
             awaiting: None,
             plain: crate::plain::Plain::default(),
@@ -1901,11 +1921,28 @@ impl Core {
     /// full Bluetooth queue drops them silently) still counts for what arrived, instead of
     /// leaving the list empty; it is asked for again, a few times (§1).
     fn contacts_cut_short(&mut self, now: Millis) {
+        self.note_contact_read(false);
         self.contacts_read(now);
         if self.contact_resyncs < CONTACT_RESYNCS {
             self.contact_resyncs += 1;
             self.command(&Command::GetContacts { since: None }, Expect::Contacts);
         }
+    }
+
+    /// Records the contact list just read (`whole`: all it announced came, then its end).
+    fn note_contact_read(&mut self, whole: bool) {
+        let (announced, received) = std::mem::take(&mut self.contacts_reading);
+        self.contact_read = ContactRead {
+            reads: self.contact_read.reads.wrapping_add(1),
+            announced,
+            received,
+            whole,
+        };
+    }
+
+    /// How the radio's contact list was last read.
+    pub fn contact_read(&self) -> ContactRead {
+        self.contact_read
     }
 
     /// A frame from the companion.
@@ -2123,7 +2160,8 @@ impl Core {
                     }
                 });
             }
-            Response::ContactsStart { .. } => {
+            Response::ContactsStart { count } => {
+                self.contacts_reading = (Some(count), 0);
                 done = false;
                 if let Some((_, d)) = self.awaiting.as_mut() {
                     *d = now + COMMAND_TIMEOUT_MS;
@@ -2155,6 +2193,7 @@ impl Core {
                     self.mesh_contact(&record);
                 }
                 if expect == Some(Expect::Contacts) {
+                    self.contacts_reading.1 = self.contacts_reading.1.saturating_add(1);
                     done = false;
                     if let Some((_, d)) = self.awaiting.as_mut() {
                         *d = now + COMMAND_TIMEOUT_MS;
@@ -2164,8 +2203,16 @@ impl Core {
                 }
             }
             Response::EndOfContacts { .. } => {
-                self.contact_resyncs = 0;
-                self.contacts_read(now);
+                // Records lost on the way while the end still came (a companion whose
+                // Bluetooth queue drops frames): read as a list cut short (§16).
+                let (announced, received) = self.contacts_reading;
+                if announced.is_some_and(|a| received < a) {
+                    self.contacts_cut_short(now);
+                } else {
+                    self.contact_resyncs = 0;
+                    self.note_contact_read(true);
+                    self.contacts_read(now);
+                }
             }
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             Response::Ok => match expect {
@@ -3889,6 +3936,46 @@ mod tests {
         assert!(core.poll_companion(now).is_some());
         now += COMMAND_TIMEOUT_MS;
         assert!(core.poll_companion(now).is_none(), "twice at most");
+    }
+
+    /// A contact list whose end comes although records were lost on the way (a companion whose
+    /// Bluetooth queue drops frames, §16): what arrived counts, and it is asked for again; a
+    /// whole list then ends the asking.
+    #[test]
+    fn records_lost_before_the_end_are_asked_for_again() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        let updated = |c: &mut Core| {
+            std::iter::from_fn(|| c.poll_event()).any(|e| matches!(e, Event::ContactsUpdated))
+        };
+        core.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        assert!(core.poll_companion(0).is_some());
+        core.on_companion_frame(&[2, 5, 0, 0, 0], 10);
+        for k in [1u8, 2, 4, 5] {
+            core.on_companion_frame(&contact_frame(k, "node"), 20);
+        }
+        core.on_companion_frame(&[4, 0, 0, 0, 0], 30);
+        assert!(updated(&mut core), "what arrived is shown");
+        assert_eq!(core.contacts().count(), 4);
+        let read = core.contact_read();
+        assert_eq!(
+            (read.announced, read.received, read.whole),
+            (Some(5), 4, false)
+        );
+        let again = core.poll_companion(40).expect("asked again");
+        assert_eq!(again.first(), Some(&lc_meshcore::codes::cmd::GET_CONTACTS));
+        // The whole list this time: the missing record comes, and no more asking.
+        core.on_companion_frame(&[2, 5, 0, 0, 0], 50);
+        for k in 1..=5u8 {
+            core.on_companion_frame(&contact_frame(k, "node"), 60);
+        }
+        core.on_companion_frame(&[4, 0, 0, 0, 0], 70);
+        assert_eq!(core.contacts().count(), 5);
+        let read = core.contact_read();
+        assert_eq!(
+            (read.reads, read.announced, read.received, read.whole),
+            (2, Some(5), 5, true)
+        );
+        assert!(core.poll_companion(80).is_none(), "nothing more to ask");
     }
 
     fn channel_info(index: u8, name: &str, secret: [u8; 16]) -> Vec<u8> {
