@@ -732,6 +732,10 @@ struct Peer {
     /// The path to the requester, for its sessions' acknowledgements: never the contact's
     /// path, which the requester does not prove (§4.6, SR-02).
     request_path: Option<OwnedPath>,
+    /// The user blocked the peer while a message of ours was on the air, which may have
+    /// arrived: the session lives on for that message's ACK or ABORT only, and ends with it
+    /// (ADR-0034).
+    closing: bool,
 }
 
 impl Peer {
@@ -1275,7 +1279,28 @@ impl Core {
             self.blocked_ids.insert(i);
         }
         if let Some(mut peer) = self.peers.remove(node) {
-            self.fail_queue(&mut peer, FailReason::Refused, now);
+            let on_air = peer.session.is_some()
+                && peer
+                    .in_flight
+                    .as_ref()
+                    .is_some_and(|f| f.msg.started && !f.msg.internal);
+            if on_air {
+                // What waits fails; the message on the air may have arrived, and takes its
+                // acknowledgement: nothing they send is read meanwhile (ADR-0034).
+                let waiting: Vec<Outgoing> = peer.queue.drain(..).collect();
+                for m in waiting {
+                    self.fail_message(&mut peer, m, FailReason::Refused, now);
+                }
+                peer.queue.clear();
+                peer.closing = true;
+                peer.initiating = None;
+                peer.introducing = None;
+                peer.probing = None;
+                peer.pending = None;
+                self.peers.insert(*node, peer);
+            } else {
+                self.fail_queue(&mut peer, FailReason::Refused, now);
+            }
         }
         identity
     }
@@ -1295,6 +1320,9 @@ impl Core {
     /// known under now.
     pub fn unblock(&mut self, node: &PubKey, identity: Option<&PubKey>) {
         self.blocked_nodes.remove(node);
+        if let Some(p) = self.peers.get_mut(node) {
+            p.closing = false;
+        }
         for i in [identity.copied(), self.identity_of(node)]
             .into_iter()
             .flatten()
@@ -2535,6 +2563,10 @@ impl Core {
             return;
         };
         self.drive_peer(&k, &mut peer, now);
+        // A blocked peer's last message of ours ended: its session ends (ADR-0034).
+        if peer.closing && peer.in_flight.is_none() {
+            return;
+        }
         self.peers.insert(k, peer);
     }
 
@@ -2787,7 +2819,7 @@ impl Core {
                     // The new handshake will tell: sent again under the new session. When no
                     // handshake runs any more without having settled it, one may start again
                     // (second read, N2).
-                    Some(FailReason::Timeout) if peer.suspect => {
+                    Some(FailReason::Timeout) if peer.suspect && !peer.closing => {
                         let mut msg = f.msg;
                         if peer.initiating.is_none() && peer.introducing.is_none() {
                             msg.retried = false;
@@ -2808,6 +2840,7 @@ impl Core {
             .filter(|&(_, _, acked)| !acked)
             .map(|(_, rounds, _)| rounds);
         if silent.is_some_and(|r| r >= SILENT_ROUNDS_BEFORE_REHANDSHAKE)
+            && !peer.closing
             && peer.initiating.is_none()
             && peer.introducing.is_none()
             && let Some(f) = peer.in_flight.as_mut()
@@ -3792,7 +3825,20 @@ impl Core {
     }
 
     fn on_session_frame(&mut self, h: &Header, payload: &[u8], snr4: i8, rssi: i8, now: Millis) {
-        for c in self.candidates(h.src) {
+        let mut candidates = self.candidates(h.src);
+        // A blocked peer's acknowledgement of our message on the air, and nothing else of it
+        // (ADR-0034).
+        if matches!(h.kind, Kind::Ack | Kind::Abort) {
+            let mut closing: Vec<PubKey> = self
+                .peers
+                .iter()
+                .filter(|(k, p)| p.closing && k[0] == h.src)
+                .map(|(k, _)| *k)
+                .collect();
+            closing.sort_unstable();
+            candidates.extend(closing);
+        }
+        for c in candidates {
             let Some(mut peer) = self.peers.remove(&c) else {
                 continue;
             };

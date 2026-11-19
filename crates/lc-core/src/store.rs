@@ -47,7 +47,8 @@ pub use rusqlite::Error;
 /// (added to older databases).
 /// 15: introduction requests (ADR-0046): `requests`, `request_messages` (tables added).
 /// 16: blocks lifted (ADR-0034): `block_periods` (table added, nothing migrated).
-const VERSION: i32 = 16;
+/// 17: a contact's MeshCore type (`contacts.kind`, added to older databases as a person's).
+const VERSION: i32 = 17;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -225,7 +226,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     path_len INTEGER,
     path BLOB,
     identity BLOB,
-    verified INTEGER NOT NULL DEFAULT 0
+    verified INTEGER NOT NULL DEFAULT 0,
+    kind INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS nicknames (
     key BLOB PRIMARY KEY,
@@ -598,6 +600,14 @@ impl Store {
             conn.execute_batch(
                 "ALTER TABLE chat_prefs ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
             )?;
+        }
+        // Version 17: a contact's type, so that a repeater or a room is not taken for a person
+        // before the radio lists it again.
+        let has_kind = conn
+            .prepare("SELECT 1 FROM pragma_table_info('contacts') WHERE name = 'kind'")?
+            .exists([])?;
+        if !has_kind {
+            conn.execute_batch("ALTER TABLE contacts ADD COLUMN kind INTEGER NOT NULL DEFAULT 1")?;
         }
         // Version 12: disappearing messages (§6.5).
         let has_vanish = conn
@@ -972,17 +982,18 @@ impl Store {
             None => (None, None),
         };
         self.conn.execute(
-            "INSERT INTO contacts (key, name, path_len, path, identity, verified)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            "INSERT INTO contacts (key, name, path_len, path, identity, verified, kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT (key) DO UPDATE SET name = ?2, path_len = ?3, path = ?4, identity = ?5,
-             verified = ?6",
+             verified = ?6, kind = ?7",
             params![
                 c.key.as_slice(),
                 c.name,
                 len,
                 path,
                 c.identity.as_ref().map(|i| i.as_slice()),
-                c.verified
+                c.verified,
+                c.kind
             ],
         )?;
         Ok(())
@@ -991,7 +1002,7 @@ impl Store {
     pub fn contacts(&self) -> Result<Vec<Contact>, Error> {
         let mut st = self
             .conn
-            .prepare("SELECT key, name, path_len, path, identity, verified FROM contacts")?;
+            .prepare("SELECT key, name, path_len, path, identity, verified, kind FROM contacts")?;
         let rows = st.query_map([], |r| {
             let key: Vec<u8> = r.get(0)?;
             let len: Option<i64> = r.get(2)?;
@@ -1009,8 +1020,9 @@ impl Store {
                 },
                 identity: identity.and_then(|i| i.as_slice().try_into().ok()),
                 verified,
-                // Stored contacts are people we talked with; the companion's list corrects it.
-                kind: crate::contact_kind::CHAT,
+                // As the radio filed it: a repeater or a room is no person, even before the
+                // radio lists it again (a database from before version 17: a person).
+                kind: r.get(6).unwrap_or(crate::contact_kind::CHAT),
             }))
         })?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -2908,12 +2920,24 @@ mod tests {
                 kind: 1,
             })
             .unwrap();
+            s.put_contact(&Contact {
+                key: [4; 32],
+                name: "hub".into(),
+                out_path: None,
+                identity: None,
+                verified: false,
+                kind: crate::contact_kind::REPEATER,
+            })
+            .unwrap();
             s.put_group(&[7; 16], b"snapshot").unwrap();
             s.put_group(&[8; 16], b"gone").unwrap();
             s.delete_group(&[8; 16]).unwrap();
         }
         let s = Store::open(&path).unwrap();
         let mut c = s.contacts().unwrap();
+        // The repeater is still one, not a person (B-core-13).
+        let hub = c.iter().position(|k| k.name == "hub").unwrap();
+        assert_eq!(c.remove(hub).kind, crate::contact_kind::REPEATER);
         c.sort_by(|a, b| a.name.cmp(&b.name));
         assert_eq!(c.len(), 2);
         assert_eq!(c[0].out_path.as_ref().unwrap().bytes, vec![0xAB]);
