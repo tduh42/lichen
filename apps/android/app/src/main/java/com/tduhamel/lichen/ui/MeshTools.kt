@@ -149,7 +149,7 @@ private val ServerLogin.isIn: Boolean
 private fun hopsText(res: android.content.res.Resources, hops: UByte?): String = when (hops) {
     null -> res.getString(R.string.hops_flood)
     0.toUByte() -> res.getString(R.string.hops_direct)
-    else -> res.getString(R.string.hops_n, hops.toInt())
+    else -> res.getQuantityString(R.plurals.hops_n, hops.toInt(), hops.toInt())
 }
 
 /** A room chat's subtitle: what it is, and the login (§15.8). */

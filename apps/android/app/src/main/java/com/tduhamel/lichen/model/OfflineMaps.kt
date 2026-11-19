@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.model
 
+import com.tduhamel.lichen.LichenApplication
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +61,7 @@ class OfflineMaps(private val context: Context) {
     }
 
     fun download(bounds: LatLngBounds, zoom: Double, styleUrl: String, styleName: String) {
+        if (!LichenApplication.mapsReady) return
         if (progress != null) return
         val z = floor(zoom)
         val from = max(0.0, z - 2)
@@ -147,6 +149,7 @@ class OfflineMaps(private val context: Context) {
     }
 
     private fun refresh() {
+        if (!LichenApplication.mapsReady) return
         manager.listOfflineRegions(object : OfflineManager.ListOfflineRegionsCallback {
             override fun onList(offlineRegions: Array<OfflineRegion>?) {
                 for (r in offlineRegions.orEmpty()) {

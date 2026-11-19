@@ -65,6 +65,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -114,6 +116,11 @@ import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -739,6 +746,7 @@ private fun MessageBubble(
                 }
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.reply)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Reply, null) },
                     onClick = {
                         menu = false
                         reply()
@@ -748,6 +756,7 @@ private fun MessageBubble(
             if (text != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.copy)) },
+                    leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                     onClick = {
                         menu = false
                         scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("lichen", text))) }
@@ -755,6 +764,7 @@ private fun MessageBubble(
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.select_text)) },
+                    leadingIcon = { Icon(Icons.Outlined.SelectAll, null) },
                     onClick = {
                         menu = false
                         selecting = true
@@ -888,6 +898,7 @@ private fun MessageBubble(
                 color = color,
                 modifier = Modifier
                     .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
+                    .longPressOverLinks { menu = true }
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
         }
@@ -943,6 +954,28 @@ private fun linked(model: AppModel, text: String, color: Color): AnnotatedString
                 is TextTarget.Place ->
                     addLink(LinkAnnotation.Clickable("place", style) { model.showOnMap(target.lat, target.lon) }, start, end)
             }
+        }
+    }
+}
+
+/**
+ * A long press on the text opens the message's menu, on a link too: seen before the links (the
+ * initial pass), with its release taken, so that a long press never opens a link (a tap does).
+ * A press that moves away (a scroll) is left alone.
+ */
+private fun Modifier.longPressOverLinks(onLongPress: () -> Unit): Modifier = pointerInput(Unit) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var cancelled = false
+        val ended = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+            if (waitForUpOrCancellation(PointerEventPass.Initial) == null) cancelled = true
+        }
+        if (ended == null && !cancelled) {
+            onLongPress()
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                event.changes.forEach { it.consume() }
+            } while (event.changes.any { it.pressed })
         }
     }
 }

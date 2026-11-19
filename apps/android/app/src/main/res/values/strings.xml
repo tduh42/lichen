@@ -907,7 +907,10 @@
     <string name="from_how_far">From how far</string>
     <string name="any_distance">Any distance</string>
     <string name="direct_only">Direct only</string>
-    <string name="up_to_hops">Up to %1$d hops</string>
+    <plurals name="up_to_hops">
+        <item quantity="one">Up to %1$d hop</item>
+        <item quantity="other">Up to %1$d hops</item>
+    </plurals>
     <string name="extra_acks">Extra acknowledgements: %1$d</string>
     <string name="extra_acks_note">Sends each acknowledgement again: more reliable, more airtime.</string>
     <string name="pin_note">Six digits; empty for the radio\'s default.</string>
@@ -950,10 +953,14 @@
     <string name="err_not_a_backup">This file is not a lichen backup.</string>
     <string name="err_newer_backup">This backup was made by a newer version of lichen: update the app first.</string>
     <string name="err_wrong_backup_words">These 24 words are not the ones of this backup.</string>
+    <string name="err_not_a_phrase">These words are not a recovery phrase. Check each word, and their order.</string>
     <string name="err_backup_damaged">This backup is damaged or incomplete: nothing was restored.</string>
     <!-- Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044) -->
     <string name="nodes">Nodes</string>
-    <string name="nodes_known">%1$d known</string>
+    <plurals name="nodes_known">
+        <item quantity="one">%1$d known</item>
+        <item quantity="other">%1$d known</item>
+    </plurals>
     <string name="nodes_subtitle">Repeaters, rooms and radios around</string>
     <string name="nodes_need_radio">Connect your radio to see the nodes it knows.</string>
     <string name="nodes_none_yet">The radio has not reported any node yet.</string>
@@ -982,7 +989,10 @@
     <string name="no_path_flood_note">Your radio floods to reach it until it learns a path.</string>
     <string name="hops_flood">flood</string>
     <string name="hops_direct">direct</string>
-    <string name="hops_n">%1$d hops</string>
+    <plurals name="hops_n">
+        <item quantity="one">%1$d hop</item>
+        <item quantity="other">%1$d hops</item>
+    </plurals>
     <string name="hops_direct_title">Direct</string>
     <string name="direct_note">Your radio hears it without a repeater.</string>
     <string name="hop_n">Hop %1$d · %2$s</string>
@@ -1045,7 +1055,10 @@
     <string name="duration_hours">%1$d h %2$d min</string>
     <string name="duration_minutes">%1$d min</string>
     <string name="radios">Radios</string>
-    <string name="radios_saved">%1$d saved</string>
+    <plurals name="radios_saved">
+        <item quantity="one">%1$d saved</item>
+        <item quantity="other">%1$d saved</item>
+    </plurals>
     <string name="radios_none">Radios you pair appear here, to switch between them.</string>
     <string name="pair_another_radio">Pair another radio</string>
     <string name="radios_history_note">Your conversations, contacts and groups stay on this phone whichever radio you use. Each radio keeps its own MeshCore contacts, channels and settings, and the people you write to see a different node when you switch.</string>

@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.foundation.layout.Box
+import com.tduhamel.lichen.LichenApplication
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -117,6 +119,11 @@ fun LichenMap(
     focus: com.tduhamel.lichen.model.MapPin? = null,
     onCamera: (LatLngBounds, Double) -> Unit,
 ) {
+    // No MapLibre (the JVM UI tests): an empty map, everything around it as on a phone.
+    if (!LichenApplication.mapsReady) {
+        Box(modifier.background(lichen.s1))
+        return
+    }
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
