@@ -61,7 +61,7 @@ impl Inner {
         let Some(st) = &self.store else {
             return;
         };
-        let now = unix_ms();
+        let now = self.wall_ms();
         for p in st.pending_amendments().unwrap_or_default() {
             if p.expires_ms.is_some_and(|e| e <= now) {
                 if let Some(st) = &self.store {
@@ -106,14 +106,15 @@ impl Inner {
             .as_ref()
             .and_then(|s| s.message_by_ref(&chat, &target).ok().flatten())
             .is_some_and(|m| {
-                unix_ms() > m.at_ms + (i64::from(lc_core::content::EDIT_WINDOW_S) + 3_600) * 1_000
+                self.wall_ms()
+                    > m.at_ms + (i64::from(lc_core::content::EDIT_WINDOW_S) + 3_600) * 1_000
             });
         if late {
             return;
         }
         let changed = self.store.as_ref().is_some_and(|s| {
             // Kept two days if its target is not here (SR-15).
-            let keep = Some(unix_ms() + store::ORPHAN_KEEP_MS);
+            let keep = Some(self.wall_ms() + store::ORPHAN_KEEP_MS);
             s.amend(&chat, &target, Some(by), text, ts, false, keep)
                 .unwrap_or(false)
         });
@@ -162,7 +163,7 @@ impl Inner {
         let (Some(st), Some(me)) = (&self.store, self.core.key().copied()) else {
             return;
         };
-        let now = unix_ms();
+        let now = self.wall_ms();
         for p in st.pending_reactions(&me).unwrap_or_default() {
             if p.expires_ms.is_some_and(|e| e <= now) {
                 if let Some(st) = &self.store {
@@ -192,7 +193,7 @@ impl Inner {
                 emoji,
                 ts,
                 false,
-                Some(unix_ms() + store::ORPHAN_KEEP_MS),
+                Some(self.wall_ms() + store::ORPHAN_KEEP_MS),
             )
             .unwrap_or(false)
         });

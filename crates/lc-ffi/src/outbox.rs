@@ -9,7 +9,7 @@ impl Inner {
         if self.outbox.is_empty() {
             return;
         }
-        let now_unix = unix_ms();
+        let now_unix = self.wall_ms();
         let rows: Vec<i64> = self.outbox.keys().copied().collect();
         for row in rows {
             let Some(p) = self.outbox.get(&row).cloned() else {
@@ -151,7 +151,7 @@ impl Inner {
             outgoing: true,
             author: None,
             content,
-            at_ms: unix_ms(),
+            at_ms: self.wall_ms(),
             status,
             fragments,
             airtime_ms,
@@ -213,10 +213,10 @@ impl Inner {
         let st = self.store.as_ref().ok_or(LichenError::Storage)?;
         // Each change goes after the previous one, even within the same second.
         let previous = st.amendment_for(&m).ok().flatten().map_or(0, |a| a.ts);
-        let ts = u32::try_from(unix_ms() / 1000)
+        let ts = u32::try_from(self.wall_ms() / 1000)
             .unwrap_or(u32::MAX)
             .max(previous.saturating_add(1));
-        let expires = unix_ms() + self.outbox_expiry_ms;
+        let expires = self.wall_ms() + self.outbox_expiry_ms;
         st.amend(
             &m.chat,
             &target,
@@ -280,7 +280,9 @@ impl Inner {
         // it is muted (ADR-0034).
         if !m.outgoing
             && !matches!(m.content, Content::Notice(_))
-            && st.unarchive_on_message(&m.chat, unix_ms()).unwrap_or(false)
+            && st
+                .unarchive_on_message(&m.chat, self.wall_ms())
+                .unwrap_or(false)
         {
             self.extra.push_back(LichenEvent::ChatPrefsChanged);
         }

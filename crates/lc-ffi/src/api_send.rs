@@ -229,7 +229,7 @@ impl LichenCore {
                     outgoing: true,
                     author: None,
                     content,
-                    at_ms: unix_ms(),
+                    at_ms: i.wall_ms(),
                     status: Status::Flooded,
                     fragments: 1,
                     airtime_ms: 0,
