@@ -432,7 +432,7 @@ impl Core {
             &Command::SetAdvertName {
                 name: name.as_bytes(),
             },
-            Expect::Ok,
+            Expect::Setting(crate::radio::RadioSetting::Name),
         );
         self.name = name.to_owned();
         self.send_advert(true, now);

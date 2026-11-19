@@ -320,6 +320,27 @@ impl Inner {
         self.outbox.insert(row, p);
     }
 
+    /// Where a late group post goes (§10.6): where it arrives, unless a late post of the same
+    /// author written after it came back first; then just before the first such one, so that
+    /// late posts of one author read in the order they were written (B-and-19).
+    pub(crate) fn late_place(&self, chat: &Chat, author: &PubKey, sent_at: Option<u32>) -> i64 {
+        let now = self.wall_ms();
+        let (Some(sent), Some(st)) = (sent_at, self.store.as_ref()) else {
+            return now;
+        };
+        st.history(chat, None, 50)
+            .unwrap_or_default()
+            .iter()
+            .filter(|m| {
+                m.status == Status::Late
+                    && m.author.as_ref() == Some(author)
+                    && m.content.sent_at().is_some_and(|s| s > sent)
+            })
+            .map(|m| m.at_ms - 1)
+            .min()
+            .map_or(now, |before| before.min(now))
+    }
+
     /// Our node's advert now, or at the next connection with the radio away (one owed
     /// advert, flooded if any asked for a flood).
     pub(crate) fn advertise(&mut self, flood: bool) {
