@@ -108,6 +108,9 @@ impl LichenCore {
         now_ms: u64,
     ) -> Result<StoredMessage, LichenError> {
         let g = self::gid(&gid)?;
+        if voice.frames == 0 || voice.data.is_empty() {
+            return Err(LichenError::Empty);
+        }
         let content = Content::Voice {
             sent_at,
             mode: voice.mode,

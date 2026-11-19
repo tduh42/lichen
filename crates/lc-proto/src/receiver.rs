@@ -157,6 +157,17 @@ impl Reassembly {
         }
     }
 
+    /// The datagram, complete, is declined once read (a message sent while its author was
+    /// blocked, ADR-0034): no ACK goes for it, now or when its fragments come again (§7.2).
+    pub fn decline(&mut self) {
+        if self.state == RxState::Done {
+            self.state = RxState::Failed;
+            self.ack_due = false;
+            self.repeat_at = None;
+            self.len = 0;
+        }
+    }
+
     /// The sender gave the datagram up.
     pub fn on_sender_abort(&mut self) {
         if self.state == RxState::Collecting {

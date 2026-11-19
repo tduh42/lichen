@@ -60,6 +60,20 @@ const LOOKUPS_MAX: usize = 32;
 const PROBE_WAIT_MS: Millis = 20_000;
 /// How long a received datagram is remembered to drop identical resends (§6).
 const DUPLICATE_MEMORY_MS: Millis = 3_600_000;
+
+/// Blocks lifted that the core remembers (ADR-0034).
+pub const BLOCK_PERIODS_MAX: usize = 256;
+
+/// A period when a node, and the identity it was known under, was blocked (ADR-0034), Unix
+/// seconds: what it sent then, by its own timestamp, stays dropped after the unblock. A
+/// request's block names its identity as the node too (ADR-0046).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlockPeriod {
+    pub node: PubKey,
+    pub identity: Option<PubKey>,
+    pub from_s: u32,
+    pub to_s: u32,
+}
 /// A HELLO we cannot open triggers our own introduction at most this often (§4.6).
 const INTRO_POKE_MS: Millis = 600_000;
 /// INTROs a self-introduction answering a HELLO we cannot open sends at most (N10).
@@ -898,6 +912,8 @@ pub struct Core {
     pub(crate) servers: crate::server::Servers,
     /// Nodes and identities the user blocked (ADR-0034).
     blocked_nodes: HashSet<PubKey>,
+    /// Blocks lifted (ADR-0034): what was sent during them stays dropped.
+    block_periods: Vec<BlockPeriod>,
     blocked_ids: HashSet<PubKey>,
     /// Requests waiting for the user (§4.6, ADR-0046): identity → the node it came under.
     requests: BTreeMap<PubKey, PubKey>,
@@ -992,6 +1008,7 @@ impl Core {
             mesh: crate::mesh::Mesh::default(),
             servers: crate::server::Servers::default(),
             blocked_nodes: HashSet::new(),
+            block_periods: Vec::new(),
             blocked_ids: HashSet::new(),
             requests: BTreeMap::new(),
             request_consent: true,
@@ -1292,6 +1309,44 @@ impl Core {
             || self
                 .identity_of(node)
                 .is_some_and(|i| self.blocked_ids.contains(&i))
+    }
+
+    /// A block lifted (ADR-0034): what `node`, or the identity it was blocked under, sent
+    /// from `from_s` to `to_s` (Unix seconds, by the sender's own timestamp) stays dropped
+    /// after the unblock, unanswered. The app keeps the periods and gives them back at start;
+    /// the latest [`BLOCK_PERIODS_MAX`] are kept.
+    pub fn add_block_period(&mut self, p: BlockPeriod) {
+        if self.block_periods.contains(&p) {
+            return;
+        }
+        self.block_periods.push(p);
+        if self.block_periods.len() > BLOCK_PERIODS_MAX
+            && let Some(oldest) = self
+                .block_periods
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, p)| p.to_s)
+                .map(|(i, _)| i)
+        {
+            self.block_periods.remove(oldest);
+        }
+    }
+
+    /// Whether a message its author dated `sent_at`, from node `node` or identity `identity`,
+    /// was sent while they were blocked (ADR-0034).
+    pub(crate) fn sent_while_blocked(
+        &self,
+        node: &PubKey,
+        identity: Option<&PubKey>,
+        sent_at: Option<u32>,
+    ) -> bool {
+        let Some(t) = sent_at else {
+            return false;
+        };
+        self.block_periods.iter().any(|p| {
+            (p.node == *node || p.identity.is_some_and(|i| Some(&i) == identity))
+                && (p.from_s..=p.to_s).contains(&t)
+        })
     }
 
     /// Whether a group member, node `node` with identity `identity`, is blocked.
@@ -3807,6 +3862,23 @@ impl Core {
                     // Nothing of a request's is used (§4.6, ADR-0046).
                     if let (Ok(Some(datagram)), None) = (&result, request) {
                         self.on_group_control(&c, datagram, now);
+                    }
+                } else if let Ok(Some(datagram)) = &result
+                    && self.sent_while_blocked(
+                        &c,
+                        request.or_else(|| self.identity_of(&c)).as_ref(),
+                        Content::decode(datagram).and_then(|m| m.sent_at()),
+                    )
+                {
+                    // Sent while its author was blocked (ADR-0034): dropped unanswered, even
+                    // after the unblock. No ACK (§7.2): the sender's retries fail at their
+                    // expiry.
+                    if let Some(s) = self
+                        .peers
+                        .get_mut(&c)
+                        .and_then(|p| p.session.as_deref_mut())
+                    {
+                        s.decline();
                     }
                 } else if let Ok(Some(datagram)) = result
                     // Local notices never come from the air (§6).

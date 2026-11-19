@@ -142,10 +142,15 @@ fn ct_3_nodes() {
     assert_eq!(lucie.kind, NodeKind::Companion);
     assert!(!lucie.on_radio, "heard, not added");
     assert!(lucie.last_heard_s.is_some());
+    // Heard just now, by the clock the app set on the radio (B-and-5: not 24 days ago).
     for n in sim.core.nodes() {
-        if n.on_radio {
-            assert!(n.last_heard_s.is_some(), "{n:?}");
-        }
+        let heard = n.last_heard_s.unwrap_or_else(|| panic!("{n:?}"));
+        assert!(
+            heard.abs_diff(u64::from(sim.unix_s())) < 60,
+            "{} heard at {heard}, now {}",
+            n.name,
+            sim.unix_s()
+        );
     }
     // Camille becomes a lichen user once her identity is known; Marc stays MeshCore.
     sim.camille();
@@ -409,7 +414,8 @@ fn ct_9_request_block_and_delete() {
 }
 
 /// CT-10: Camille blocked: her messages stop, writing to her is refused, Settings › Blocked
-/// lists her; unblocked, what she sends comes again.
+/// lists her; unblocked, what she sends comes again, and what she sent while blocked does not
+/// (B-core-4).
 #[test]
 fn ct_10_block_and_unblock_a_contact() {
     let mut sim = Sim::new(90);
@@ -437,15 +443,23 @@ fn ct_10_block_and_unblock_a_contact() {
     sim.core.unblock(camille.key.clone()).unwrap();
     assert!(!sim.core.is_blocked(camille.key.clone()));
     assert!(sim.core.blocked().is_empty());
-    // Her photo's caption at 150 s comes.
-    sim.until("her next message", 240, |c| {
+    // Her photo's caption at 150 s comes, once her phone gave up the hello it was still
+    // trying to deliver (a few minutes: it is declined, §7.2).
+    sim.until("her next message", 900, |c| {
         texts(&c.history(chat.clone(), None, 50).unwrap())
             .iter()
             .any(|t| t.starts_with("The view from the refuge"))
     });
-    // Her hello, sent while she was blocked, may come now: her phone was still trying to
-    // deliver it (a text waits 24 h, §6.1). ADR-0034 calls it lost: a question for the
-    // spec (QA bug B-core-4), so neither is checked here.
+    // Her hello, dated inside the block, stays out even though her phone sends it again
+    // (ADR-0034): give her retries time.
+    sim.run_for(240_000);
+    assert!(
+        !texts(&sim.history(&chat))
+            .iter()
+            .any(|t| t.starts_with("Hi! I'm at the refuge")),
+        "{:?}",
+        texts(&sim.history(&chat))
+    );
     let m = sim
         .core
         .send_text(camille.key.clone(), "Back".into(), sim.unix_s(), sim.now)

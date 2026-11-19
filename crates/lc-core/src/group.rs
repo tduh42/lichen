@@ -1638,6 +1638,11 @@ impl Core {
             self.key.ok_or(Error::NoIdentity)?,
             self.node.ok_or(Error::NoIdentity)?,
         );
+        // As a rename and as the state carries it to the members (§10.1): trimmed, 32 bytes.
+        let name = cut_name(name.trim());
+        if name.is_empty() {
+            return Err(Error::Empty);
+        }
         let mut list = vec![Member {
             key: me,
             node,
@@ -1665,7 +1670,7 @@ impl Core {
             gid,
             epoch: 1,
             admin: me,
-            name: name.to_owned(),
+            name,
             members: list,
             cause: None,
         };
@@ -4114,6 +4119,9 @@ impl Core {
             // A member the user blocked: its posts are kept for the others (§10.6) but not
             // shown (ADR-0034). Its positions and SOS still are.
             Some(_) if self.member_blocked(&member_node, &member) => {}
+            // Posted while the member was blocked: not shown after the unblock either, even
+            // handed back late (§10.6, ADR-0034).
+            Some(c) if self.sent_while_blocked(&member_node, Some(&member), c.sent_at()) => {}
             Some(content) => self.events.push_back(Event::GroupMessage {
                 gid,
                 from: member_node,

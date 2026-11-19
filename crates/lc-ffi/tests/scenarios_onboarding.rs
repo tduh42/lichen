@@ -144,7 +144,10 @@ fn on_4_my_card_and_its_qr() {
     assert_eq!(me.identity, sim.core.key());
     assert!(me.verified);
     assert_eq!(me.name, "Morgan");
-    // Our own card is not a contact of ours.
+    // Our own card is not a contact of ours, and the app can say why (B-and-10).
+    assert!(sim.core.own_code(card.clone()));
+    assert!(!other.own_code(card.clone()));
+    assert!(!sim.core.own_code("lichen:1:nope".into()));
     assert_eq!(
         sim.core.add_contact_card(card, true),
         Err(LichenError::BadCode)

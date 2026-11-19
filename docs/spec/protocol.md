@@ -402,6 +402,7 @@ Vectors: `testdata/lichen/content.toml` (`[[timer]]`, `[[malformed]]`).
    - otherwise, when the reassembly timer fires (§7.4): ACK with the bitmap.
 4. After an incomplete ACK, if nothing new arrives before the timer, resend the ACK (next sequence), at most 4 times. Then give up: ABORT `index 1`, reason `TIMEOUT`.
 5. On delivery, every fragment but the last must have the same length, and the last must not be longer. Otherwise: give up, reason `MALFORMED`.
+6. A datagram the receiver **declines** once read (a message sent while its author was blocked, ADR-0034) gets no `COMPLETE` ACK: its `tag` stays completed, and its fragments sent again are not answered either (step 1 sends no ACK for it). The sender gives it up as with a receiver out of reach (§7.1).
 
 ABORT, 1-byte plaintext: 1 `TIMEOUT`, 2 `TOO_LARGE`, 3 `MALFORMED`, 4 `CANCELLED`, others reserved.
 

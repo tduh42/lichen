@@ -42,6 +42,19 @@ impl LichenCore {
         .encode())
     }
 
+    /// Whether `text` is one of our own codes, pasted or scanned back: our contact card, or an
+    /// invitation to a group of ours. `add_contact_card` and `parse_invite` refuse them as
+    /// `BadCode`, like text that is no code at all; the app asks this first to say "This is
+    /// your own code" instead (QA bug B-and-10).
+    pub fn own_code(&self, text: String) -> bool {
+        let i = self.lock();
+        let Some(me) = i.core.key() else {
+            return false;
+        };
+        lc_core::identity::Card::decode(&text).is_some_and(|c| c.identity == *me)
+            || lc_core::identity::Invite::decode(&text).is_some_and(|v| v.admin == *me)
+    }
+
     /// Adds (or updates) the contact of a contact card (§4.7). Scanned in person (`scanned`),
     /// the card verifies the contact, and replaces an identity it no longer has. Pasted or
     /// received some other way, it proves nothing: a new contact is added unverified, and an

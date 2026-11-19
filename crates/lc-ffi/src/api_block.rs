@@ -15,6 +15,21 @@ pub struct BlockedContact {
     pub request: bool,
 }
 
+/// How long a lifted block's period is kept: a text is retried for 24 hours at most (§6.1), a
+/// group post kept an hour (§10.6); a day more for clocks that differ.
+pub(crate) const BLOCK_PERIOD_KEEP_MS: i64 = 48 * 3_600_000;
+
+/// A stored block period as the core takes it (Unix seconds, the ends included).
+pub(crate) fn block_period(p: &store::BlockPeriodRow) -> lc_core::BlockPeriod {
+    let s = |ms: i64| u32::try_from(ms.max(0) / 1000).unwrap_or(u32::MAX);
+    lc_core::BlockPeriod {
+        node: p.node,
+        identity: p.identity,
+        from_s: s(p.from_ms),
+        to_s: s(p.to_ms + 999),
+    }
+}
+
 #[uniffi::export]
 impl LichenCore {
     /// Blocks contact `node` and the identity it is known under: their introductions,
@@ -42,19 +57,31 @@ impl LichenCore {
     }
 
     /// Unblocks `node`: what they send reaches this phone again, and their group posts
-    /// kept here show again. What they sent meanwhile is gone.
+    /// kept here show again. What they sent meanwhile is gone, even when their phone sends it
+    /// again now: the block's period is kept, and a message dated within it is dropped
+    /// unanswered (ADR-0034).
     pub fn unblock(&self, node: Vec<u8>) -> Result<(), LichenError> {
         let k = key(&node)?;
         let mut i = self.lock();
-        let identity = i
+        let now = i.wall_ms();
+        let lifted = i
             .store
             .as_ref()
-            .and_then(|s| s.blocked().ok())
-            .and_then(|v| v.into_iter().find(|b| b.node == k))
-            .and_then(|b| b.identity);
-        i.core.unblock(&k, identity.as_ref());
-        let st = i.store.as_ref().ok_or(LichenError::Storage)?;
-        st.unblock(&k).map_err(|_| LichenError::Storage)
+            .ok_or(LichenError::Storage)?
+            .unblock(&k, now)
+            .map_err(|_| LichenError::Storage)?;
+        i.core
+            .unblock(&k, lifted.as_ref().and_then(|b| b.identity.as_ref()));
+        if let Some(b) = lifted {
+            i.core
+                .add_block_period(block_period(&store::BlockPeriodRow {
+                    node: b.node,
+                    identity: b.identity,
+                    from_ms: b.at,
+                    to_ms: now.max(b.at),
+                }));
+        }
+        Ok(())
     }
 
     /// Everyone blocked, the latest first.

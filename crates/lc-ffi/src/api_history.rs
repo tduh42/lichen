@@ -170,7 +170,7 @@ impl LichenCore {
         let c = chat.to_store()?;
         let i = self.lock();
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;
-        st.set_pinned(&c, pinned.then(unix_ms))
+        st.set_pinned(&c, pinned.then(|| i.wall_ms()))
             .map_err(|_| LichenError::Storage)
     }
 
