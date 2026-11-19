@@ -538,6 +538,8 @@ pub(crate) enum Expect {
     Cli(PubKey),
     /// SET_DEVICE_TIME: OK, or ERR when the radio's clock is already later (it never goes back).
     DeviceTime,
+    /// A radio setting the user changed (§1.1): OK, or ERR when the radio refuses it.
+    Setting(crate::radio::RadioSetting),
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -553,7 +555,11 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
         }
         (Expect::Contact, R::Contact(_)) => true,
         (
-            Expect::Ok | Expect::TxPower(_) | Expect::ChannelSet(_) | Expect::ChannelPost(_),
+            Expect::Ok
+            | Expect::TxPower(_)
+            | Expect::ChannelSet(_)
+            | Expect::ChannelPost(_)
+            | Expect::Setting(_),
             R::Ok,
         ) => true,
         (Expect::Scope, R::DefaultFloodScope { .. }) => true,
@@ -842,6 +848,8 @@ pub struct Core {
     contact_read: ContactRead,
     /// The radio's clock is still to be set for this connection, once ours is known (§1).
     radio_time_owed: bool,
+    /// Settings the radio refused since the app last asked (§1.1).
+    pub(crate) radio_refusals: Vec<crate::radio::RadioSetting>,
     awaiting: Option<(Expect, Millis)>,
     /// Plain MeshCore text (§15).
     pub(crate) plain: crate::plain::Plain,
@@ -975,6 +983,7 @@ impl Core {
             contacts_reading: (None, 0),
             contact_read: ContactRead::default(),
             radio_time_owed: false,
+            radio_refusals: Vec::new(),
             awaiting: None,
             plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
@@ -2318,6 +2327,7 @@ impl Core {
                 Some(Expect::Trace(tag)) => self.on_trace_refused(tag),
                 Some(Expect::Server) => self.on_server_refused(),
                 Some(Expect::Cli(node)) => self.on_cli_refused(&node),
+                Some(Expect::Setting(s)) => self.radio_refused(s),
                 _ => {}
             },
             Response::Sent {

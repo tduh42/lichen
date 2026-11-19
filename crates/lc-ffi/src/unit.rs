@@ -2178,3 +2178,54 @@ mod conversation_names {
         );
     }
 }
+
+/// B-and-19 (§10.6): two late posts of one author handed back separately, the later-written
+/// first (a member that lacked the other hands it on once it has it): the list shows them in
+/// the order they were written, where the first of them came.
+#[cfg(test)]
+mod late_order {
+    use super::*;
+
+    #[test]
+    fn late_posts_of_one_author_keep_their_order() {
+        let core = LichenCore::new("t".into(), vec![1; 32], vec![151; 32], None).unwrap();
+        let gid = [4; 16];
+        let (julien, camille) = (([9; 32], [109; 32]), ([8; 32], [108; 32]));
+        let text = |sent_at: u32, t: &str| Content::Text {
+            sent_at,
+            text: t.into(),
+        };
+        let mut i = core.lock();
+        // The app's clock, a second per message.
+        i.clock_offset = Some(2_000_000_000_000);
+        let steps = [
+            (1_000, julien, text(300, "At the hut"), false),
+            (2_000, julien, text(200, "Mist on the ridge"), true),
+            (3_000, camille, text(310, "Seen"), false),
+            (4_000, julien, text(100, "Leaving the col now"), true),
+        ];
+        for (now, (node, identity), content, late) in steps {
+            i.last_now = now;
+            assert!(i.on_event(&group_message(gid, node, identity, content, late)));
+        }
+        drop(i);
+        let shown: Vec<String> = core
+            .history(ChatRef::Group { gid: gid.to_vec() }, None, 10)
+            .unwrap()
+            .into_iter()
+            .filter_map(|m| match m.message {
+                Message::Text { text, .. } => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                "At the hut",
+                "Leaving the col now",
+                "Mist on the ridge",
+                "Seen"
+            ]
+        );
+    }
+}

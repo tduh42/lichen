@@ -74,7 +74,42 @@ pub(crate) fn parse_vars(text: &[u8]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// A radio setting the app changes (§1.1), to say which one the radio refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RadioSetting {
+    /// Frequency, bandwidth, spreading factor, coding rate.
+    Params,
+    TxPower,
+    AdvertPosition,
+    /// Manual add, telemetry, position in adverts, extra ACKs.
+    Preferences,
+    Gps,
+    GpsInterval,
+    Autoadd,
+    Pin,
+    /// The node's name (§15.4).
+    Name,
+    /// Another board setting.
+    Other,
+}
+
+/// Refusals kept until the app reads them.
+const REFUSALS_MAX: usize = 16;
+
 impl Core {
+    /// The settings the radio refused since the last call, oldest first (§1.1): each one's
+    /// value stays the radio's (`RadioSettings` follows), the app says it was not changed.
+    pub fn take_radio_refusals(&mut self) -> Vec<RadioSetting> {
+        std::mem::take(&mut self.radio_refusals)
+    }
+
+    pub(crate) fn radio_refused(&mut self, setting: RadioSetting) {
+        if self.radio_refusals.len() < REFUSALS_MAX {
+            self.radio_refusals.push(setting);
+        }
+        self.events.push_back(Event::RadioSettings);
+    }
+
     /// What the radio reported of its settings.
     pub fn radio_settings(&self) -> &RadioSettings {
         &self.settings
@@ -133,13 +168,16 @@ impl Core {
         {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetRadioParams {
-            freq_khz,
-            bw_hz,
-            sf,
-            cr,
-            repeat: self.settings.repeat,
-        })
+        self.radio_set(
+            &Command::SetRadioParams {
+                freq_khz,
+                bw_hz,
+                sf,
+                cr,
+                repeat: self.settings.repeat,
+            },
+            RadioSetting::Params,
+        )
     }
 
     /// Transmit power, within the radio's range.
@@ -147,7 +185,7 @@ impl Core {
         if dbm < -9 || dbm > self.settings.max_tx_dbm {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetRadioTxPower { dbm })
+        self.radio_set(&Command::SetRadioTxPower { dbm }, RadioSetting::TxPower)
     }
 
     /// The position adverts carry when the policy allows it.
@@ -157,7 +195,10 @@ impl Core {
         {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetAdvertLatLon { lat_e6, lon_e6 })
+        self.radio_set(
+            &Command::SetAdvertLatLon { lat_e6, lon_e6 },
+            RadioSetting::AdvertPosition,
+        )
     }
 
     /// Manual add, telemetry, position in adverts, extra ACKs. The apps ask the user before
@@ -168,7 +209,7 @@ impl Core {
         if other.advert_loc_policy > 1 || other.telemetry > 0x3F || !modes_ok {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetOtherParams(other))
+        self.radio_set(&Command::SetOtherParams(other), RadioSetting::Preferences)
     }
 
     /// A board setting the radio listed (`gps`: `"1"` / `"0"`, `gps_interval`: seconds).
@@ -176,12 +217,20 @@ impl Core {
         if name != "gps_interval" && self.settings.var(name).is_none() {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetCustomVar { name, value })
+        let setting = match name {
+            "gps" => RadioSetting::Gps,
+            "gps_interval" => RadioSetting::GpsInterval,
+            _ => RadioSetting::Other,
+        };
+        self.radio_set(&Command::SetCustomVar { name, value }, setting)
     }
 
     /// Which advert types become contacts by themselves (with manual add), and from how far.
     pub fn set_autoadd(&mut self, mask: u8, max_hops: u8) -> Result<(), Error> {
-        self.radio_set(&Command::SetAutoaddConfig { mask, max_hops })
+        self.radio_set(
+            &Command::SetAutoaddConfig { mask, max_hops },
+            RadioSetting::Autoadd,
+        )
     }
 
     /// The Bluetooth PIN, used from the next boot: 0 for the default, else six digits.
@@ -189,7 +238,10 @@ impl Core {
         if pin != 0 && !(100_000..=999_999).contains(&pin) {
             return Err(Error::Invalid);
         }
-        self.command(&Command::SetDevicePin { pin }, Expect::Ok);
+        self.command(
+            &Command::SetDevicePin { pin },
+            Expect::Setting(RadioSetting::Pin),
+        );
         Ok(())
     }
 
@@ -199,11 +251,11 @@ impl Core {
     }
 
     /// Sends a setting, then reads everything again: the settings shown are the radio's.
-    fn radio_set(&mut self, cmd: &Command<'_>) -> Result<(), Error> {
+    fn radio_set(&mut self, cmd: &Command<'_>, setting: RadioSetting) -> Result<(), Error> {
         if !self.online {
             return Err(Error::NoIdentity);
         }
-        self.command(cmd, Expect::Ok);
+        self.command(cmd, Expect::Setting(setting));
         let name = self.app_name.clone();
         self.command(
             &Command::AppStart {

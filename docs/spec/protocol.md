@@ -49,6 +49,8 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 | `SET_AUTOADD_CONFIG` (58, L2023) | `mask ‖ max_hops` (≤ 64) | `OK`; mask 0x01 overwrite the oldest when full, 0x02 chat, 0x04 repeater, 0x08 room, 0x10 sensor (used when manual add is on) |
 | `GET_AUTOADD_CONFIG` (59, L2030) | — | `AUTOADD_CONFIG` (25): `mask ‖ max_hops` |
 
+A setting lichen checks and sends may still be refused by the radio (`ERR`: a board without a GPS, a firmware that does not take it): the app is told which one, and the value it shows stays the radio's, read again after every setting (QA of 2026-11-19, B-ios-10).
+
 `SELF_INFO` carries the four preferences of `SET_OTHER_PARAMS` at offsets 44–47 (`multi_acks`, `advert_loc_policy`, `telemetry`, `manual_add`), between the position and the radio parameters. A position in adverts or in location telemetry is only ever set by an explicit choice of the user (ADR-0032).
 
 ## 2. Identity and static secret (ADR-0013)
@@ -559,7 +561,7 @@ GROUP_RESEND  (0x16) = gid (16) ‖ n (1, 1..16) ‖ n × (len (1, 1..156) ‖ e
 
 **Answering.** A member accepts GROUP_MISSING only from a listed member of that group (the session's identity, §4.6), for a group it belongs to, and answers with GROUP_RESEND holding the kept payloads of those counters (both fragments of a two-fragment message), 16 at most, and only those sent at a step no earlier than the state that added the asker (as far as it saw, §10.9): nobody gets back what was sent before it was a member, which its keys would not open anyway. Counters it is missing too (they are among its own gaps: a busy repeater drops a message for every member behind it, the admin included) it owes the asker for 2 minutes: once it recovers one, it hands it on to the asker as well, in its own GROUP_RESEND. Otherwise it sends nothing for counters it does not hold; they are not available from it. A kept message goes **once** to each member that asks: a request is a tiny frame and its answer up to 16 payloads, so a repeated request costs the answerer nothing more (review of 2026-11-15, SR-14).
 
-**Receiving.** GROUP_RESEND is accepted only from a listed member of a group the receiver belongs to. Each payload goes through §10.3's receiver unchanged (key, replay window, reassembly, signature), so a relayed payload can be neither forged nor replayed; only, it was not heard on the air, so it is not a search measurement (§11). A message recovered this way is reported as **late**: the phones show it where it arrives, with "arrived late" and its sending time.
+**Receiving.** GROUP_RESEND is accepted only from a listed member of a group the receiver belongs to. Each payload goes through §10.3's receiver unchanged (key, replay window, reassembly, signature), so a relayed payload can be neither forged nor replayed; only, it was not heard on the air, so it is not a search measurement (§11). A message recovered this way is reported as **late**: the phones show it where it arrives, with "arrived late" and its sending time. Late messages of one author keep the order they were written in: one handed on after another of theirs written later (a member that lacked it too hands it on once it has it) shows just before that one, not after it (QA of 2026-11-19, B-and-19).
 
 **Airtime.** A request is one fragment; an answer for a one-fragment message (any text up to 62 bytes) is two fragments on the requester's path, for a two-fragment one three. Nothing is flooded again.
 
