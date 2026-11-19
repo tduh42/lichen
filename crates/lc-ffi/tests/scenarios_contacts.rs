@@ -467,6 +467,67 @@ fn ct_10_block_and_unblock_a_contact() {
     sim.until_status(&chat, m.id, 120, |s| *s == MessageStatus::Delivered);
 }
 
+/// CT-10 (B-ios-8): our text on the air when we block Camille still says delivered once she
+/// has it; her answer, written while blocked, never shows, and what she says after the
+/// unblock does.
+#[test]
+fn ct_10_our_text_on_the_air_at_the_block() {
+    let mut sim = Sim::new(92);
+    let camille = sim.camille();
+    let chat = contact_chat(&camille);
+    // Once the hub is quiet.
+    sim.run_to(330_000);
+    let m = sim
+        .core
+        .send_text(
+            camille.key.clone(),
+            "Are you still at the refuge?".into(),
+            sim.unix_s(),
+            sim.now,
+        )
+        .unwrap();
+    sim.until("its first frame", 60, |c| {
+        matches!(
+            c.history(chat.clone(), None, 100)
+                .unwrap()
+                .into_iter()
+                .find(|x| x.id == m.id)
+                .map(|x| x.status),
+            Some(MessageStatus::Sending { .. } | MessageStatus::Delivered)
+        )
+    });
+    sim.core.block(camille.key.clone(), sim.now).unwrap();
+    let ours = sim.until_status(&chat, m.id, 120, |s| {
+        matches!(s, MessageStatus::Delivered | MessageStatus::Failed { .. })
+    });
+    assert_eq!(ours.status, MessageStatus::Delivered, "it reached her");
+    sim.run_for(25_000);
+    sim.core.unblock(camille.key.clone()).unwrap();
+    let back = sim
+        .core
+        .send_text(
+            camille.key.clone(),
+            "Back again".into(),
+            sim.unix_s(),
+            sim.now,
+        )
+        .unwrap();
+    sim.until_status(&chat, back.id, 600, |s| *s == MessageStatus::Delivered);
+    sim.until("her answer to the second", 600, |c| {
+        texts(&c.history(chat.clone(), None, 100).unwrap())
+            .iter()
+            .any(|t| t.starts_with("Copy: \"Back again\""))
+    });
+    sim.run_for(120_000);
+    assert!(
+        !texts(&sim.history(&chat))
+            .iter()
+            .any(|t| t.starts_with("Copy: \"Are you still")),
+        "her answer written while blocked came: {:?}",
+        texts(&sim.history(&chat))
+    );
+}
+
 /// CT-11: Marc, whom the radio files as a repeater (`-marcRepeater YES`): not among the people,
 /// yet his MeshCore chat stays in Messages under his name, and he can be answered.
 #[test]

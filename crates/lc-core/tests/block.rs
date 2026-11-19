@@ -335,3 +335,49 @@ fn what_was_sent_during_a_block_stays_out_after_it() {
     net.run_until(net.now + MIN, |_| false);
     assert_eq!(texts(&net.take_events(a)), ["plain after"]);
 }
+
+/// A message of ours already on the air when the user blocks its recipient may have arrived:
+/// it takes its acknowledgement and is delivered, not refused; the one still waiting behind it
+/// fails, and nothing they send comes through (B-ios-8, ADR-0034).
+#[test]
+fn a_message_on_the_air_at_the_block_is_still_delivered() {
+    let (mut net, [a, b, ..]) = net(6);
+    net.introduce(a, b);
+    let bob = net.key(b);
+    let long = "Water at the spring, keys under the stone by the door. ".repeat(20);
+    let on_air = net
+        .with_core(a, |c, now| c.send_text(&bob, &long, 1, now))
+        .unwrap()
+        .unwrap();
+    let waiting = net
+        .with_core(a, |c, now| c.send_text(&bob, "and another", 2, now))
+        .unwrap()
+        .unwrap();
+    // Blocked once its first fragment has gone.
+    let mut alice = Vec::new();
+    assert!(net.run_until(net.now + 2 * MIN, |n| {
+        alice.extend(n.take_events(a));
+        alice
+            .iter()
+            .any(|e| matches!(e, Event::Progress { id, .. } if *id == on_air))
+    }));
+    net.with_core(a, |c, now| c.block(&bob, now));
+    let alice_key = net.key(a);
+    net.with_core(b, |c, now| c.send_text(&alice_key, "from bob", 3, now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 10 * MIN, |n| {
+        alice.extend(n.take_events(a));
+        false
+    });
+    assert!(
+        alice.contains(&Event::Delivered { id: on_air }),
+        "{alice:?}"
+    );
+    assert!(alice.contains(&Event::Failed {
+        id: waiting,
+        reason: FailReason::Refused
+    }));
+    assert!(texts(&alice).is_empty(), "{alice:?}");
+    assert!(texts(&net.take_events(b)).contains(&long));
+}
