@@ -65,6 +65,8 @@ import com.tduhamel.lichen.core.encryptedDatabase
 import com.tduhamel.lichen.core.fitFileName
 import java.io.File
 import org.json.JSONObject
+import androidx.annotation.VisibleForTesting
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -846,8 +848,9 @@ class AppModel(val app: Application) {
     }
 
     /** The simulated network runs on a thread of its own, reads and writes in order: catching
-     * up after a pause can take seconds, and must not freeze the screen. */
-    private val demoContext = Dispatchers.Default.limitedParallelism(1)
+     * up after a pause can take seconds, and must not freeze the screen. UI tests run it on
+     * the main thread instead ([demoDispatcher]). */
+    private val demoContext = demoDispatcher ?: Dispatchers.Default.limitedParallelism(1)
     private var demoReading = false
 
     private fun demoStep() {
@@ -2584,6 +2587,11 @@ class AppModel(val app: Application) {
 
         /** What the timer menu offers: off, 5 minutes, 1 hour, 8 hours, 1 day, 1 week. */
         val TIMER_CHOICES = listOf(0u, 300u, 3_600u, 28_800u, 86_400u, 604_800u)
+
+        /** Where the demo network runs; UI tests (Robolectric) set the main thread's, so the
+         * simulated network moves only when the test advances the clock, in order. */
+        @VisibleForTesting
+        var demoDispatcher: CoroutineDispatcher? = null
     }
 
     // Last in the class, on purpose: Kotlin runs property initialisers and init blocks in the
