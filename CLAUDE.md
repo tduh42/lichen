@@ -138,6 +138,9 @@ python3 -I apps/ios/sync-strings.py                                       # Stri
 swift scripts/render-app-icon.swift apps/ios/Lichen/Assets.xcassets/AppIcon.appiconset   # app icons
 scripts/build-android-core.sh                                             # Android core (arm64) + Kotlin bindings
 (cd apps/android && ./gradlew lintDebug testDebugUnitTest assembleDebug)  # lint, JVM tests on the host core, APK
+(cd apps/android && ./gradlew testDebugUnitTest --tests 'com.tduhamel.lichen.ui.*')   # Compose UI tests on the JVM
+                                  # (Robolectric, docs/testing.md ids): the app on the demo network in simulated time,
+                                  # no emulator; `@Config(qualifiers = "fr")` / `"night"` for French and dark mode
 (cd apps/android && ./gradlew assembleRelease)   # R8 build; signed with the release key when LICHEN_KEYSTORE and
                                   # LICHEN_KEYSTORE_PASSWORD are set (CI), else the debug key; LICHEN_VERSION_NAME / _CODE number it
 scripts/version.sh --version|--build              # the release (MAJOR.MINOR.N) and the build number

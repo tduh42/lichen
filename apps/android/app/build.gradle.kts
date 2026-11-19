@@ -77,7 +77,13 @@ android {
     }
 
     testOptions {
-        unitTests.all { it.systemProperty("jna.library.path", hostCore) }
+        // Robolectric reads the app's resources (strings in English and French, themes).
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.systemProperty("jna.library.path", hostCore)
+            // Robolectric's SDK 37 sets file descriptors through the JDK's internals.
+            it.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+        }
     }
 }
 
@@ -105,4 +111,11 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.jna)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Compose UI tests on the JVM: Robolectric runs MainActivity on the demo network.
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.test.espresso.core)
 }
