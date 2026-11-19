@@ -34,6 +34,11 @@ pub struct Sim {
     pub radio_off: bool,
     /// Introductions stay requests (`-requestDemo YES`).
     requests: bool,
+    /// Groups wait for the user (outside the demo).
+    ask_groups: bool,
+    /// The phone's GPS: the demo's position (where the user stands) every 10 s, as the apps
+    /// feed it in the demo.
+    pub gps: bool,
     restarts: u8,
 }
 
@@ -101,6 +106,15 @@ impl Sim {
         Self::build(seed, None, demo, requests)
     }
 
+    /// The history kept in folder `name`, introductions kept as requests (`requests`) and
+    /// groups waiting for the user (`ask_groups`) as outside the demo; kept across restarts.
+    pub fn persistent_asking(seed: u8, name: &str, requests: bool, ask_groups: bool) -> Self {
+        let mut s = Self::build(seed, Some(TempDir::new(name)), DemoNetwork::new(), requests);
+        s.ask_groups = ask_groups;
+        s.core.set_group_consent(ask_groups);
+        s
+    }
+
     fn build(seed: u8, dir: Option<TempDir>, demo: Arc<DemoNetwork>, requests: bool) -> Self {
         let core = new_core(seed, seed.wrapping_add(100), dir.as_ref());
         core.set_group_consent(false);
@@ -120,6 +134,8 @@ impl Sim {
             dir,
             radio_off: false,
             requests,
+            ask_groups: false,
+            gps: false,
             restarts: 0,
         }
     }
@@ -144,6 +160,11 @@ impl Sim {
             }
         }
         self.core.set_clock(self.wall0 + now, now);
+        if self.gps && now.is_multiple_of(10_000) {
+            let mut me = self.demo.my_position();
+            me.unix_s = (self.wall0 + now) / 1000;
+            self.core.update_location(me, now);
+        }
         self.core.tick(now);
         self.core.refresh_battery_if_due(now);
         while let Some(f) = self.core.poll_companion(now) {
@@ -284,7 +305,7 @@ impl Sim {
         self.restarts += 1;
         let core = new_core(self.seed, self.seed.wrapping_add(self.restarts), Some(dir));
         self.core = core;
-        self.core.set_group_consent(false);
+        self.core.set_group_consent(self.ask_groups);
         if !self.requests {
             self.core.set_request_consent(false);
         }
