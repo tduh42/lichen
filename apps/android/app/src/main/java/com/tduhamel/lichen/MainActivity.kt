@@ -209,6 +209,7 @@ class MainActivity : FragmentActivity() {
             inviteDemo = e.getBoolean("inviteDemo"),
             joinNow = e.getBoolean("joinNow"),
             requestDemo = e.getBoolean("requestDemo"),
+            groupInvitationDemo = e.getBoolean("groupInvitationDemo"),
             autoFull = e.getBoolean("autoFull"),
             marcRepeater = e.getBoolean("marcRepeater"),
             // Screenshots and tests skip the welcome screens unless asked for them.

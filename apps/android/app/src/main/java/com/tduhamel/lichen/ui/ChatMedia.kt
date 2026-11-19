@@ -568,7 +568,7 @@ fun SendPhotoSheet(model: AppModel, chat: ChatId, image: PreparedImage, original
             Box(Modifier.fillMaxWidth().height(230.dp).clip(CardShape).background(t.s2), contentAlignment = Alignment.BottomStart) {
                 if (preview != null) Image(preview, stringResource(R.string.photo), Modifier.fillMaxWidth().height(230.dp), contentScale = ContentScale.Crop)
                 Text(
-                    "${image.width}×${image.height} AVIF · preview ${image.preview.size} B · full ${image.full.size} B",
+                    stringResource(R.string.photo_sizes, image.width.toInt(), image.height.toInt(), image.preview.size, image.full.size),
                     fontSize = 12.sp, color = t.tx,
                     modifier = Modifier.padding(12.dp).background(t.bg, RoundedCornerShape(6.dp)).padding(horizontal = 8.dp, vertical = 4.dp),
                 )

@@ -113,6 +113,22 @@ class RadioLinkTest : UiTest() {
         assertFalse(has(R.string.radio_disconnected))
     }
 
+    /** RL-2 (D-1): a radio that was connected and drops says so ("Radio disconnected"), and the
+     * banner goes when the link is back. */
+    @Test
+    fun RL_2_pairedRadioDropsSaysDisconnected() = FakeTcpRadio().use { radio ->
+        launch("onboarding" to false, "tcp" to radio.address)
+        waitReal("connected over TCP") { model.isConnected }
+        waitReal("the radio saved") { model.savedRadios.isNotEmpty() }
+        radio.drop()
+        waitReal("the link dropped") { !model.isConnected }
+        text(R.string.radio_disconnected).assertIsDisplayed()
+        text(R.string.messages_wait_for_radio).assertIsDisplayed()
+        assertFalse(has(R.string.no_radio_yet))
+        waitReal("the link back") { model.isConnected }
+        assertFalse(has(R.string.radio_disconnected))
+    }
+
     /** RL-3: a text that waits longer than its expiry is marked so, and can be sent again. */
     @Test
     fun RL_3_textExpiresWhileOffline() = expires()

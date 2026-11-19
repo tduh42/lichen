@@ -342,13 +342,25 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             ),
         )
         // A new key waiting for the user stays in sight, above the messages.
-        if (chat.contactKey != null && model.conflicts.containsKey(chat.hex)) {
+        val contactNode = chat.contactKey
+        if (contactNode != null && model.conflicts.containsKey(chat.hex)) {
             Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
                 Banner(
                     BannerKind.SOS,
                     stringResource(R.string.key_changed_title, model.title(chat)),
                     stringResource(R.string.key_changed_note),
                     stringResource(R.string.compare) to { model.conflicts[chat.hex]?.let { verifying = it } },
+                )
+            }
+        } else if (contactNode != null && model.asksToCompare(contactNode)) {
+            // Their key, known and not verified: compare, on this phone too (B-user-1).
+            Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
+                Banner(
+                    BannerKind.WARN,
+                    stringResource(R.string.compare_safety_numbers_with, model.title(chat)),
+                    stringResource(R.string.compare_safety_numbers_note),
+                    stringResource(R.string.compare) to { verifying = ByteArray(0) },
+                    stringResource(R.string.later) to { model.compareLaterWith(contactNode) },
                 )
             }
         }
@@ -1228,10 +1240,11 @@ private fun Composer(
         }
     }
     // Debug extra `screen file` / `fileBig`: the file sheet with a 3 KB note, or a 244 KB document;
-    // `screen media`: the photo sheet with a drawn landscape, in a contact's chat.
+    // `screen media`: the photo sheet with a drawn landscape, in a contact's lichen chat (not
+    // their MeshCore chat, open until their identity arrives: text only there).
     LaunchedEffect(Unit) {
         val screen = model.debugScreen
-        if (screen == "file" || screen == "fileBig") {
+        if ((screen == "file" || screen == "fileBig") && chat.kind == ChatId.Kind.CONTACT) {
             val line = "Refuge de la Pra: code 4521, wood in the shed, water 200 m north.\n".toByteArray()
             val n = if (screen == "fileBig") 3_700 else 45
             val data = ByteArray(line.size * n) { line[it % line.size] }

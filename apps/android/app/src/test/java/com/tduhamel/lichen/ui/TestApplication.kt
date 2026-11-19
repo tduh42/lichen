@@ -1,6 +1,8 @@
 package com.tduhamel.lichen.ui
 
+import android.bluetooth.BluetoothManager
 import android.os.SystemClock
+import org.robolectric.Shadows.shadowOf
 import com.tduhamel.lichen.LichenApplication
 import com.tduhamel.lichen.model.AppModel
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +15,8 @@ import kotlinx.coroutines.Dispatchers
 class TestApplication : LichenApplication() {
     override fun onCreate() {
         FakeAndroidKeyStore.install()
+        // Bluetooth on, as on most phones (Robolectric starts with it off).
+        getSystemService(BluetoothManager::class.java)?.adapter?.let { shadowOf(it).setEnabled(true) }
         AppModel.demoDispatcher = Dispatchers.Main.immediate
         // The wall clock moves with the simulated one (SystemClock, which the test advances).
         val wall0 = System.currentTimeMillis() - SystemClock.elapsedRealtime()

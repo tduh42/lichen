@@ -91,8 +91,20 @@ abstract class UiTest {
         scenario?.close()
         scenario = null
         compose.waitForIdle()
+        // The old process's demo network stops with it.
+        app.model.stopDemo()
         app.model = AppModel(app)
         launch(*extras)
+    }
+
+    /** Answers the activity the app just started for a result (the system's file picker…). */
+    fun answerNextActivity(data: Intent?, result: Int = android.app.Activity.RESULT_OK) {
+        scenario!!.onActivity { a ->
+            val shadow = shadowOf(a)
+            val started = shadow.nextStartedActivityForResult ?: error("no activity started for a result")
+            shadow.receiveResult(started.intent, result, data)
+        }
+        compose.waitForIdle()
     }
 
     /** Lets [seconds] of simulated time pass, in the demo's own 200 ms steps. */

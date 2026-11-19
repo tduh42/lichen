@@ -7,6 +7,8 @@ import android.content.Intent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
@@ -356,6 +358,20 @@ class DirectChatTest : UiTest() {
         advanceUntil("forwarded to Julien", 300, { model.last(julien)?.let { "${it.status} ${(it.message as? Message.Text)?.text}" } }) {
             model.last(julien)?.let { it.outgoing && (it.message as? Message.Text)?.text == first && it.status == MessageStatus.Delivered } == true
         }
+    }
+
+    /** DM-13 (D-2): a blocked contact is not offered as a forward's target. */
+    @Test
+    fun DM_13_forwardLeavesBlockedContactsOut() {
+        openCamille()
+        val julien = contact("Julien")
+        val marc = contact("Marc")
+        model.block(julien.key)
+        longPress(first)
+        tapInDialog(R.string.forward)
+        val sheet = hasScrollAction() and hasAnyDescendant(hasText(marc.name))
+        assertTrue(compose.onAllNodes(hasText("Marc") and hasAnyAncestor(sheet), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+        assertTrue(compose.onAllNodes(hasText("Julien") and hasAnyAncestor(sheet), useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
     }
 
     /** DM-14: a long press on a link shows the message's menu (it opens nothing); a place

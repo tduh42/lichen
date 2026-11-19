@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -62,8 +63,12 @@ import com.tduhamel.lichen.model.hex
 @Composable
 fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null) {
     val t = lichen
+    val res = LocalResources.current
     var scanning by remember { mutableStateOf(false) }
     var added by remember { mutableStateOf<ContactInfo?>(null) }
+    // Added from a code scanned in person: then they scan ours (B-user-1).
+    var addedInPerson by remember { mutableStateOf(false) }
+    var showingMyCode by remember { mutableStateOf(false) }
     // The invitation, and whether it was scanned (only then does it verify the admin).
     var invite by remember { mutableStateOf<Triple<String, InviteInfo, Boolean>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -71,6 +76,11 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
     // invitation asks to join (§10.5).
     fun scanned(text: String, inPerson: Boolean) {
         error = null
+        // Our own card or invitation, scanned or pasted back (D-3).
+        if (model.isOwnCode(text)) {
+            error = res.getString(R.string.own_code)
+            return
+        }
         if (text.trim().startsWith("lichen:1:g:")) {
             val (info, e) = model.parseInvite(text)
             invite = info?.let { Triple(text, it, inPerson) }
@@ -79,6 +89,7 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         }
         val (contact, e) = model.addCard(text, inPerson)
         added = contact
+        addedInPerson = inPerson
         error = e
     }
     // Debug extra `screen join`: the demo's invitation, scanned.
@@ -107,12 +118,23 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
             val inv = invite
             if (inv != null) {
                 JoinPanel(model, inv.first, inv.second, inv.third, done = next ?: back)
-            } else if (c != null) {
-                VerifyPanel(model, c.key, null) {
-                    // Their conversation opens, ready for the first message (the list shows
-                    // contacts once there is a message).
+            } else if (c != null && showingMyCode) {
+                ShowYourCode(model, c.name) {
                     model.openChat = ChatId.contact(c.key)
                     (next ?: back)()
+                }
+            } else if (c != null) {
+                VerifyPanel(model, c.key, null) {
+                    // Scanned in person and the numbers match: now they scan ours, so that both
+                    // phones verify each other in the same sitting (B-user-1).
+                    if (addedInPerson && model.contact(c.key)?.verified == true && model.myCard() != null) {
+                        showingMyCode = true
+                    } else {
+                        // Their conversation opens, ready for the first message (the list shows
+                        // contacts once there is a message).
+                        model.openChat = ChatId.contact(c.key)
+                        (next ?: back)()
+                    }
                 }
             } else {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -220,6 +242,19 @@ private fun MyCode(model: AppModel) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         QrImage(card, stringResource(R.string.your_contact_code), Modifier.widthIn(max = 260.dp).fillMaxWidth())
         Text(stringResource(R.string.have_contact_scan), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
+    }
+}
+
+/** After we scanned their code in person: ours, for them to scan, so their phone verifies us too
+ * (B-user-1). */
+@Composable
+private fun ShowYourCode(model: AppModel, name: String, done: () -> Unit) {
+    val t = lichen
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(stringResource(R.string.now_let_scan_your_code, name), fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = t.tx, textAlign = TextAlign.Center)
+        Text(stringResource(R.string.now_let_scan_note), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
+        model.myCard()?.let { QrImage(it, stringResource(R.string.your_contact_code), Modifier.widthIn(max = 260.dp).fillMaxWidth()) }
+        PrimaryButton(stringResource(R.string.done), Modifier.padding(top = 4.dp), onClick = done)
     }
 }
 
