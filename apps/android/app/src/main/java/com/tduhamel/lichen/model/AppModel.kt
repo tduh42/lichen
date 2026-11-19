@@ -607,7 +607,7 @@ class AppModel(val app: Application) {
         }
         val made = if (key == null) makeCore(seed, persistent = true) else LichenCore.withDatabaseKey(
             "lichen-android",
-            IdentityStore.randomBytes(32),
+            randomSeed(),
             seed,
             dir?.path,
             key,
@@ -674,10 +674,14 @@ class AppModel(val app: Application) {
     /** A core with a database in clear ([persistent]) or in memory; [persistentCore] encrypts it. */
     private fun makeCore(seed: ByteArray, persistent: Boolean): LichenCore = LichenCore(
         "lichen-android",
-        IdentityStore.randomBytes(32),
+        randomSeed(),
         seed,
         if (persistent) dataDirectory()?.path else null,
     )
+
+    /** The seed of the core's randomness: fresh on a phone; a UI test's own ([coreSeed]), so
+     * that a run on the demo network goes the same way every time. */
+    private fun randomSeed(): ByteArray = coreSeed?.copyOf() ?: IdentityStore.randomBytes(32)
 
     /** Per-node databases live in the app's private files. */
     private fun dataDirectory(): File? = File(app.filesDir, "lichen").takeIf { it.isDirectory || it.mkdirs() }
@@ -1001,7 +1005,7 @@ class AppModel(val app: Application) {
     /** Writes due frames, reads events, and sets the timer for the next wake-up. */
     fun pump() {
         val t = now()
-        core.setClock(System.currentTimeMillis().toULong(), t)
+        core.setClock(wallNow().toULong(), t)
         core.tick(t)
         // The radio's battery, for the low-battery warning (ADR-0042).
         core.refreshBatteryIfDue(t)
@@ -1515,7 +1519,7 @@ class AppModel(val app: Application) {
     /** Removes photos, files and voice messages older than `days` days from this phone, as
      * "delete for me" does (their downloads go with them, SR-28). Returns how many. */
     fun clearMedia(days: Int): Int {
-        val before = System.currentTimeMillis() - days * 86_400_000L
+        val before = wallNow() - days * 86_400_000L
         val n = runCatching { core.clearMediaOlderThan(before) }.getOrDefault(0u)
         chats.keys.toList().forEach { load(it) }
         conversations = core.conversations()
@@ -1534,7 +1538,7 @@ class AppModel(val app: Application) {
     fun isPinned(chat: ChatId): Boolean = chatPrefs[chat]?.pinnedAtMs != null
 
     /** Muted now: its messages post no notification (SOS alerts still do). */
-    fun isMuted(chat: ChatId): Boolean = (chatPrefs[chat]?.mutedUntilMs ?: Long.MIN_VALUE) > System.currentTimeMillis()
+    fun isMuted(chat: ChatId): Boolean = (chatPrefs[chat]?.mutedUntilMs ?: Long.MIN_VALUE) > wallNow()
 
     fun setPinned(chat: ChatId, pinned: Boolean) {
         runCatching { core.setPinned(chat.ref, pinned) }
@@ -1543,7 +1547,7 @@ class AppModel(val app: Application) {
 
     /** Mutes `chat` for `hours`, or until the user turns it back on (null). */
     fun mute(chat: ChatId, hours: Int?) {
-        val until = hours?.let { System.currentTimeMillis() + it * 3_600_000L } ?: Long.MAX_VALUE
+        val until = hours?.let { wallNow() + it * 3_600_000L } ?: Long.MAX_VALUE
         runCatching { core.setMuted(chat.ref, until) }
         refreshChatPrefs()
     }
@@ -1589,7 +1593,7 @@ class AppModel(val app: Application) {
 
     /** Sends `text`; returns an error message to show, or null. */
     fun send(text: String, chat: ChatId): String? {
-        val sentAt = (System.currentTimeMillis() / 1000).toUInt()
+        val sentAt = (wallNow() / 1000).toUInt()
         return try {
             val m = when (chat.kind) {
                 ChatId.Kind.GROUP -> core.sendGroupText(chat.hex.unhex(), text, sentAt, now())
@@ -1618,7 +1622,7 @@ class AppModel(val app: Application) {
         }
 
     private fun sendMessage(chat: ChatId, send: (UInt, ULong) -> StoredMessage): String? = try {
-        val m = send((System.currentTimeMillis() / 1000).toUInt(), now())
+        val m = send((wallNow() / 1000).toUInt(), now())
         if (chats[chat] == null) load(chat) else upsert(m)
         conversations = core.conversations()
         pump()
@@ -1671,7 +1675,7 @@ class AppModel(val app: Application) {
 
     /** Answers `target` with `text` (a text that waits for the radio like any other). */
     fun reply(text: String, target: StoredMessage): String? = try {
-        val sentAt = (System.currentTimeMillis() / 1000).toUInt()
+        val sentAt = (wallNow() / 1000).toUInt()
         upsert(core.sendReply(target.chat, target.id, text, sentAt, now()))
         conversations = core.conversations()
         pump()
@@ -1704,7 +1708,7 @@ class AppModel(val app: Application) {
 
     /** Forwards `m` to `chat` as a new message of ours (ADR-0027). */
     fun forward(m: StoredMessage, chat: ChatId): String? = try {
-        val sent = core.forward(m.id, chat.ref, (System.currentTimeMillis() / 1000).toUInt(), now())
+        val sent = core.forward(m.id, chat.ref, (wallNow() / 1000).toUInt(), now())
         if (chats[chat] == null) load(chat) else upsert(sent)
         conversations = core.conversations()
         pump()
@@ -1813,7 +1817,7 @@ class AppModel(val app: Application) {
     fun setShare(chat: ChatId, precision: SharePrecision?, hours: Double): String? {
         try {
             if (precision != null) {
-                val until = (System.currentTimeMillis() / 1000 + (hours * 3600).toLong()).toULong()
+                val until = (wallNow() / 1000 + (hours * 3600).toLong()).toULong()
                 core.startShare(chat.ref, precision, until, now())
             } else {
                 core.stopShare(chat.ref, now())
@@ -1905,7 +1909,7 @@ class AppModel(val app: Application) {
     }
 
     private fun sendMedia(chat: ChatId, send: (UInt, ULong) -> StoredMessage): String? = try {
-        val m = send((System.currentTimeMillis() / 1000).toUInt(), now())
+        val m = send((wallNow() / 1000).toUInt(), now())
         if (chats[chat] == null) load(chat) else upsert(m)
         conversations = core.conversations()
         pump()
@@ -2105,7 +2109,7 @@ class AppModel(val app: Application) {
             keep(original, offered.hash, fitted)
             val m = core.sendAnnounce(
                 chat.ref, ByteArray(0), kind, offered.hash, offered.size, providers, fitted,
-                (System.currentTimeMillis() / 1000).toUInt(), now(),
+                (wallNow() / 1000).toUInt(), now(),
             )
             if (chats[chat] == null) load(chat) else upsert(m)
             conversations = core.conversations()
@@ -2271,6 +2275,8 @@ class AppModel(val app: Application) {
         runCatching { core.renameContact(node, name?.trim()?.ifEmpty { null }) }
         refreshContacts()
         groups = core.groups()
+        // Messages titles each conversation with the name the core gives it.
+        conversations = core.conversations()
         pump()
     }
 
@@ -2343,6 +2349,9 @@ class AppModel(val app: Application) {
         markBackedUp()
         useIdentity(seed)
         null
+    } catch (_: LichenException.BadCode) {
+        // The words are no phrase (a word not in the list, or the wrong order): not a "code".
+        res.getString(R.string.err_not_a_phrase)
     } catch (e: LichenException) {
         e.display(res)
     } catch (_: IdentityWriteException) {
@@ -2592,6 +2601,15 @@ class AppModel(val app: Application) {
          * simulated network moves only when the test advances the clock, in order. */
         @VisibleForTesting
         var demoDispatcher: CoroutineDispatcher? = null
+
+        /** The wall clock (Unix ms) the app gives the core and dates with; UI tests set one
+         * that follows their simulated time, as the phone's follows real time. */
+        @VisibleForTesting
+        var wallClock: (() -> Long)? = null
+
+        /** The core's random seed in UI tests (always fresh on a phone). */
+        @VisibleForTesting
+        var coreSeed: ByteArray? = null
     }
 
     // Last in the class, on purpose: Kotlin runs property initialisers and init blocks in the
@@ -2620,3 +2638,6 @@ class AppModel(val app: Application) {
         }
     }
 }
+
+/** Now on the wall clock (Unix ms): the phone's, or a UI test's simulated one. */
+fun wallNow(): Long = AppModel.wallClock?.invoke() ?: System.currentTimeMillis()

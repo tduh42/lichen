@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -385,7 +386,7 @@ private fun ContactsSection(model: AppModel, r: RadioSettings) {
 private fun hopLabel(h: Int): String = when (h) {
     0 -> stringResource(R.string.any_distance)
     1 -> stringResource(R.string.direct_only)
-    else -> stringResource(R.string.up_to_hops, h - 1)
+    else -> pluralStringResource(R.plurals.up_to_hops, h - 1, h - 1)
 }
 
 @Composable

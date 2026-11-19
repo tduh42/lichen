@@ -36,8 +36,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.ContactInfo
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.nameOrder
 import com.tduhamel.lichen.model.hopsBadge
 
 /** Who to write to: groups, then people (lichen users first), searchable. */
@@ -54,7 +56,8 @@ fun NewChatSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Unit) {
     val q = query.trim()
     val people = model.contacts
         .filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
-        .sortedWith(compareBy({ it.identity == null }, { it.name.lowercase() }))
+        // lichen people first, then by name as people read it (accents and case aside).
+        .sortedWith(compareBy<ContactInfo> { it.identity == null }.thenBy(nameOrder()) { it.name })
     val groups = model.groups.filter { q.isEmpty() || it.name.contains(q, ignoreCase = true) }
 
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {

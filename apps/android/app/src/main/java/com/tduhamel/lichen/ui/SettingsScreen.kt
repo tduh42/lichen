@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -142,7 +143,7 @@ fun SettingsScreen(
                     CardDivider()
                     // Radios to switch between (ADR-0042).
                     Box(Modifier.clickable { radios() }) {
-                        CardRow(stringResource(R.string.radios), stringResource(R.string.radios_saved, model.savedRadios.size)) {
+                        CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size)) {
                             Text("›", color = lichen.tx2, fontSize = 20.sp)
                         }
                     }
@@ -151,7 +152,7 @@ fun SettingsScreen(
                     Box(Modifier.clickable { nodes() }) {
                         CardRow(
                             stringResource(R.string.nodes),
-                            if (model.nodes.isEmpty()) stringResource(R.string.nodes_subtitle) else stringResource(R.string.nodes_known, model.nodes.size),
+                            if (model.nodes.isEmpty()) stringResource(R.string.nodes_subtitle) else pluralStringResource(R.plurals.nodes_known, model.nodes.size, model.nodes.size),
                         ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
                     CardDivider()

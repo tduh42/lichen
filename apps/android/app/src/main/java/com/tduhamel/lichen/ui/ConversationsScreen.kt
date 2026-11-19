@@ -579,8 +579,9 @@ fun RequestCard(model: AppModel, request: IdentityRequest) {
                 modifier = Modifier.fillMaxWidth().background(t.s2, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
             )
         }
+        // Accept on a line of its own: three buttons side by side cut their words in French.
+        PrimaryButton(stringResource(R.string.accept)) { model.acceptRequest(request.identity) }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            PrimaryButton(stringResource(R.string.accept), Modifier.weight(1f)) { model.acceptRequest(request.identity) }
             SecondaryButton(stringResource(R.string.block), Modifier.weight(1f)) { model.blockRequest(request.identity) }
             SecondaryButton(stringResource(R.string.delete), Modifier.weight(1f)) { model.deleteRequest(request.identity) }
         }
@@ -590,14 +591,16 @@ fun RequestCard(model: AppModel, request: IdentityRequest) {
 @Composable
 fun StatusBanners(model: AppModel, pair: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (!model.isConnected && !model.isDemo) {
+        // The demo's simulated radio switched off (Settings › Demo, debug `offline`) is shown as
+        // a radio that dropped; "Connect" switches it back on.
+        if (!model.isConnected) {
             Banner(
                 BannerKind.WARN,
                 stringResource(R.string.radio_disconnected),
                 stringResource(
                     if (model.radioState == RadioState.Off) R.string.turn_bluetooth_on else R.string.messages_wait_for_radio,
                 ),
-                stringResource(R.string.connect) to pair,
+                stringResource(R.string.connect) to { if (model.isDemo) model.setDemoRadio(true) else pair() },
             )
         }
         // A contact speaks a newer protocol version (ADR-0029).

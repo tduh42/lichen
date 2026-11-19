@@ -37,7 +37,7 @@ data class SosIncident(
     enum class State { ACTIVE, STALE, ENDED }
 
     /** Stale after five minutes without anything (beacons come every two). */
-    fun state(now: Long = System.currentTimeMillis()): State = when {
+    fun state(now: Long = wallNow()): State = when {
         ended -> State.ENDED
         now - lastHeard > 5 * 60_000 -> State.STALE
         else -> State.ACTIVE
@@ -50,7 +50,7 @@ data class SosIncident(
  * one, kept up to date. */
 fun AppModel.heardSos(from: ByteArray, group: ByteArray?, position: PeerPosition?, battery: UByte?) {
     val key = from.hex()
-    val now = System.currentTimeMillis()
+    val now = wallNow()
     val current = incidents[key]
     if (current != null && !current.ended) {
         incidents = incidents + (key to current.copy(
@@ -171,7 +171,7 @@ fun AppModel.setSearchConsent(gid: ByteArray, on: Boolean) {
 
 /** The phone's battery, for our beacons (at most once a minute). */
 fun AppModel.reportBattery() {
-    val t = System.currentTimeMillis()
+    val t = wallNow()
     if (t - lastBatteryReport < 60_000) return
     lastBatteryReport = t
     val bm = app.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager

@@ -211,3 +211,10 @@ val StoredMessage.writtenEarlierMs: Long?
         }.toLong() * 1000
         return if (sent > 0 && atMs - sent > 600_000) sent else null
     }
+
+/** Names in the order people read them, in the app's language: accents and case aside
+ * ("Émile" before "Zoé"), as the core sorts its contacts. */
+fun nameOrder(): Comparator<String> {
+    val collator = java.text.Collator.getInstance().apply { strength = java.text.Collator.PRIMARY }
+    return Comparator { a, b -> collator.compare(a, b) }
+}

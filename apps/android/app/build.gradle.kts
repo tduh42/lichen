@@ -83,6 +83,8 @@ android {
             it.systemProperty("jna.library.path", hostCore)
             // Robolectric's SDK 37 sets file descriptors through the JDK's internals.
             it.jvmArgs("--add-opens=java.base/jdk.internal.access=ALL-UNNAMED")
+            // Real drawing in the UI tests: a captured QR code is decoded, screens can be saved.
+            it.systemProperty("robolectric.graphicsMode", "NATIVE")
         }
     }
 }
