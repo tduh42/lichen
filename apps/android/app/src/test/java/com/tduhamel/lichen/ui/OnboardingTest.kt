@@ -80,10 +80,13 @@ class OnboardingTest : UiTest() {
         text(R.string.connect_radio_first).assertIsDisplayed()
         tap(R.string.later)
 
-        // Messages, empty, with the radio prompt.
+        // Messages, empty, with the radio prompt: no radio yet, not one that dropped (D-1).
         assertTrue(model.onboarded)
         text(R.string.no_conversations).assertIsDisplayed()
-        text(R.string.radio_disconnected).assertIsDisplayed()
+        // (In French the title is the radio line's own words, so it shows twice.)
+        compose.onAllNodesWithText(str(R.string.no_radio_yet)).onFirst().assertIsDisplayed()
+        text(R.string.connect_radio_to_use).assertIsDisplayed()
+        assertFalse(has(R.string.radio_disconnected))
         text(R.string.connect).assertIsDisplayed()
         assertEquals(fingerprint, model.fingerprint)
     }
@@ -231,6 +234,14 @@ class OnboardingTest : UiTest() {
     @Config(qualifiers = "+night")
     fun ON_6_verifyAContact_dark() = verify()
 
+    @Test
+    @Config(qualifiers = "+fr")
+    fun ON_6_verifyAContact_fr() {
+        // "tu", never "vous" (B-and-13).
+        assertEquals("Compare ces chiffres avec Camille", str(R.string.compare_numbers_with, "Camille"))
+        verify()
+    }
+
     private fun verify() {
         launch("demo" to true, "open" to "Camille", "screen" to "verify")
         advanceUntil("Camille's identity") { model.contacts.any { it.name == "Camille" && it.identity != null } }
@@ -269,14 +280,18 @@ class OnboardingTest : UiTest() {
         text(R.string.err_bad_code).assertIsDisplayed()
         field.performTextReplacement(model.myCard()!!)
         tap(R.string.add)
+        text(R.string.own_code).assertIsDisplayed()
         assertEquals(before, model.contacts.size)
+        // An invitation to a group of ours: our own code too.
+        model.createGroup("Hike", emptyList())
+        val invite = model.createInvite(model.groups.first { it.name == "Hike" }.gid).first!!.text
+        field.performTextReplacement(invite)
+        tap(R.string.add)
+        text(R.string.own_code).assertIsDisplayed()
+        assertFalse(has(R.string.join))
 
         // Noé's card: an identity of their own, a radio ours does not know yet.
-        val noe = LichenCore("test", ByteArray(32) { 5 }, ByteArray(32) { 55 }, null)
-        val identity = noe.key()!!
-        noe.close()
-        val node = ByteArray(32) { (it * 7 + 3).toByte() }
-        val card = "lichen:1:" + Base64.getUrlEncoder().withoutPadding().encodeToString(identity + node + "Noé".toByteArray())
+        val (card, identity, node) = noeCard()
         field.performTextReplacement(card)
         tap(R.string.add)
         text(R.string.compare_numbers_with, "Noé").assertIsDisplayed()
@@ -291,6 +306,97 @@ class OnboardingTest : UiTest() {
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("Hello Noé")
         tapDesc(R.string.send)
         assertTrue(model.chats[ChatId.contact(node)].orEmpty().any { it.outgoing })
+    }
+
+    /** B-user-1: the phone that did not scan is asked to compare too. Camille's key, learned
+     * from her first message and not verified: her chat says to compare; Compare shows the same
+     * numbers the scanning phone shows, and once they match the banner goes for good. */
+    @Test
+    fun ON_6_otherPhoneIsAskedToCompare() = askedToCompare()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun ON_6_otherPhoneIsAskedToCompare_fr() = askedToCompare()
+
+    private fun askedToCompare() {
+        launch("demo" to true)
+        camilleWrote()
+        assertFalse(contact("Camille").verified)
+        tap("Camille")
+        text(R.string.compare_safety_numbers_with, "Camille").assertIsDisplayed()
+        tap(R.string.compare)
+        text(R.string.compare_numbers_with, "Camille").assertIsDisplayed()
+        tap(R.string.numbers_match)
+        assertTrue(contact("Camille").verified)
+        assertFalse(has(str(R.string.compare_safety_numbers_with, "Camille")))
+    }
+
+    /** B-user-1: Later puts the banner away, after a restart too; doing neither, it comes back. */
+    @Test
+    fun ON_6_compareLaterAndAfterARestart() {
+        launch("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        text(R.string.compare_safety_numbers_with, "Camille").assertIsDisplayed()
+        tapDesc(R.string.back)
+        // Neither compared nor put off: back after a restart.
+        restart("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        text(R.string.compare_safety_numbers_with, "Camille").assertIsDisplayed()
+        tap(R.string.later)
+        assertFalse(has(str(R.string.compare_safety_numbers_with, "Camille")))
+        tapDesc(R.string.back)
+        // Put off: not after a restart either.
+        restart("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        assertFalse(has(str(R.string.compare_safety_numbers_with, "Camille")))
+        assertFalse(contact("Camille").verified)
+    }
+
+    /** B-user-1: after scanning someone's code in person and seeing the same numbers, our code
+     * for them to scan, so that their phone verifies us in the same sitting; their chat then
+     * asks nothing (verified). */
+    @Test
+    fun ON_7_scannedInPersonThenShowYourCode() = scannedThenShowYourCode()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun ON_7_scannedInPersonThenShowYourCode_fr() = scannedThenShowYourCode()
+
+    private fun scannedThenShowYourCode() {
+        launch("demo" to true)
+        advanceUntil("the radio's key") { model.nodeKey != null }
+        val (card, _, node) = noeCard()
+        // As the camera reads it, in person (Add a contact opens on it).
+        model.debugInvite = card
+        compose.waitForIdle()
+        text(R.string.added_verified, "Noé").assertIsDisplayed()
+        text(R.string.compare_numbers_with, "Noé").assertIsDisplayed()
+        tap(R.string.done)
+        text(R.string.now_let_scan_your_code, "Noé").assertIsDisplayed()
+        val image = desc(R.string.your_contact_code).captureToImage().asAndroidBitmap()
+        assertEquals(model.myCard(), decodeQr(image))
+        tap(R.string.done)
+        text(R.string.message_placeholder).assertIsDisplayed()
+        assertTrue(model.contacts.first { it.key.contentEquals(node) }.verified)
+        assertFalse(has(str(R.string.compare_safety_numbers_with, "Noé")))
+    }
+
+    /** Camille's first message in: her key known (not verified). */
+    private fun camilleWrote() {
+        advanceUntil("Camille's first message", 60) { model.last(ChatId.contact(contact("Camille").key))?.outgoing == false }
+    }
+
+    /** Noé's card: an identity of their own, a radio ours does not know yet. */
+    private fun noeCard(): Triple<String, ByteArray, ByteArray> {
+        val noe = LichenCore("test", ByteArray(32) { 5 }, ByteArray(32) { 55 }, null)
+        val identity = noe.key()!!
+        noe.close()
+        val node = ByteArray(32) { (it * 7 + 3).toByte() }
+        val card = "lichen:1:" + Base64.getUrlEncoder().withoutPadding().encodeToString(identity + node + "Noé".toByteArray())
+        return Triple(card, identity, node)
     }
 
     private fun decodeQr(image: Bitmap): String {

@@ -181,6 +181,12 @@ class VoicePlayer {
             .setBufferSizeInBytes(pcm.size * 2)
             .build()
         t.write(pcm, 0, pcm.size)
+        // A track the system could not set up (no memory for a long note, audio unavailable):
+        // nothing plays, and nothing crashes (B-and-15).
+        if (t.state != AudioTrack.STATE_INITIALIZED) {
+            t.release()
+            return
+        }
         t.notificationMarkerPosition = pcm.size
         t.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
             override fun onMarkerReached(track: AudioTrack) {

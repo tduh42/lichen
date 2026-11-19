@@ -594,11 +594,17 @@ fun StatusBanners(model: AppModel, pair: () -> Unit) {
         // The demo's simulated radio switched off (Settings › Demo, debug `offline`) is shown as
         // a radio that dropped; "Connect" switches it back on.
         if (!model.isConnected) {
+            // Never paired yet (D-1): what to do first; a radio that was connected: it dropped.
+            val never = !model.isDemo && model.savedRadios.isEmpty()
             Banner(
                 BannerKind.WARN,
-                stringResource(R.string.radio_disconnected),
+                stringResource(if (never) R.string.no_radio_yet else R.string.radio_disconnected),
                 stringResource(
-                    if (model.radioState == RadioState.Off) R.string.turn_bluetooth_on else R.string.messages_wait_for_radio,
+                    when {
+                        model.radioState == RadioState.Off -> R.string.turn_bluetooth_on
+                        never -> R.string.connect_radio_to_use
+                        else -> R.string.messages_wait_for_radio
+                    },
                 ),
                 stringResource(R.string.connect) to { if (model.isDemo) model.setDemoRadio(true) else pair() },
             )

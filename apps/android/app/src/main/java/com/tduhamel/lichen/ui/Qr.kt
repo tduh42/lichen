@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.annotation.VisibleForTesting
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -40,6 +41,13 @@ import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
 import com.tduhamel.lichen.core.qrCode
 import java.util.concurrent.Executors
+
+/** UI tests: the code the next scanner on screen reads, as the camera would (Robolectric has
+ * none). A phone never sets it. */
+@VisibleForTesting
+var scanForTests: String? = null
+
+private fun String.startsWith(prefixes: List<String>) = prefixes.any { startsWith(it) }
 
 /** A QR code drawn from the core's modules (level M, as on iOS), black on white. */
 @Composable
@@ -78,6 +86,8 @@ fun QrScanner(found: (String) -> Unit, modifier: Modifier = Modifier, prefixes: 
     var allowed by remember { mutableStateOf(granted()) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { allowed = it }
     LaunchedEffect(Unit) { if (!allowed) ask.launch(Manifest.permission.CAMERA) }
+    // UI tests (no camera on the JVM): the code the test put up, as if read.
+    LaunchedEffect(Unit) { scanForTests?.let { if (it.startsWith(prefixes)) { scanForTests = null; found(it) } } }
     if (!allowed) return
 
     val executor = remember { Executors.newSingleThreadExecutor() }

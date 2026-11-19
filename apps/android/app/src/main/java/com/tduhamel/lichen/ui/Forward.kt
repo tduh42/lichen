@@ -46,10 +46,11 @@ fun ForwardSheet(model: AppModel, m: StoredMessage, dismiss: () -> Unit) {
     val any = text || m.message is Message.Sticker || m.message is Message.Gif
     val targets = buildList {
         if (any) model.groups.forEach { add(Triple(it.name, it.gid, ChatId.group(it.gid))) }
-        model.contacts.filter { it.identity != null }.forEach { add(Triple(it.name, it.key, ChatId.contact(it.key))) }
+        // Blocked contacts are left out, as for a share (D-2).
+        model.contacts.filter { it.identity != null && !model.isBlocked(it.key) }.forEach { add(Triple(it.name, it.key, ChatId.contact(it.key))) }
         if (text) {
             model.channels.forEach { add(Triple(it.name, it.id, ChatId.channel(it.id))) }
-            model.contacts.filter { it.identity == null }.forEach { add(Triple(it.name, it.key, ChatId.mesh(it.key))) }
+            model.contacts.filter { it.identity == null && !model.isBlocked(it.key) }.forEach { add(Triple(it.name, it.key, ChatId.mesh(it.key))) }
         }
     }
     ModalBottomSheet(onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg) {

@@ -40,6 +40,8 @@
     <string name="unavailable">unavailable</string>
     <string name="no_internet_bridge">No Internet bridge</string>
     <string name="radio_disconnected">Radio disconnected</string>
+    <string name="no_radio_yet">No radio connected yet</string>
+    <string name="connect_radio_to_use">Connect your radio to send and receive.</string>
     <string name="turn_bluetooth_on">Turn Bluetooth on to reach your radio.</string>
     <string name="messages_wait_for_radio">Messages wait until the radio is back.</string>
     <string name="budget_spent">Airtime budget spent</string>
@@ -140,7 +142,7 @@
     <string name="sos_while_locked">SOS received: unlock to see it</string>
     <string name="demo">Demo</string>
     <string name="demo_network">Demo network</string>
-    <string name="demo_network_note">A simulated MeshCore network with two other users and a group, in real time: the app\'s real core, without a radio.</string>
+    <string name="demo_network_note">A simulated MeshCore network with two other users and a group, in real time: the app’s real core, without a radio.</string>
 
     <!-- Errors of the core -->
     <string name="err_unknown_contact">Unknown contact.</string>
@@ -150,6 +152,7 @@
     <string name="err_no_identity">Connect your radio first.</string>
     <string name="err_identity_unknown">Their identity is not known yet: exchange a message or scan their code first.</string>
     <string name="err_bad_code">This is not a lichen code.</string>
+    <string name="own_code">This is your own code.</string>
     <string name="err_not_allowed">Only the group admin can do this.</string>
     <string name="err_invalid_key">Invalid key.</string>
     <string name="err_over_budget">Not enough airtime left this hour: it fits in %1$d min.</string>
@@ -176,7 +179,7 @@
     <string name="dbm_companion">%1$d dBm · MeshCore companion</string>
     <string name="pair">Pair</string>
     <string name="code_on_radio">Code shown on the radio</string>
-    <string name="code_on_radio_note">When you pair, Android asks for the 6 digits shown on the radio\'s screen: type them in its dialog. The radio then stays paired with this phone.</string>
+    <string name="code_on_radio_note">When you pair, Android asks for the 6 digits shown on the radio’s screen: type them in its dialog. The radio then stays paired with this phone.</string>
     <string name="usb" translatable="false">USB</string>
     <string name="usb_note">Or plug a radio with the USB companion firmware into the phone (USB-C, OTG).</string>
     <string name="no_usb">No USB radio plugged in.</string>
@@ -190,7 +193,7 @@
     <!-- Identity, contacts, groups (L9c) -->
     <string name="your_identity">Your identity</string>
     <string name="your_name">Your name</string>
-    <string name="key_fingerprint">Your key\'s fingerprint</string>
+    <string name="key_fingerprint">Your key’s fingerprint</string>
     <string name="key_fingerprint_note">An X25519 / Ed25519 key made on this phone. It never leaves it: your radio only carries the messages.</string>
     <string name="not_backed_up">Not backed up</string>
     <string name="not_backed_up_note">Without a backup, losing this phone means losing your identity and your verified contacts.</string>
@@ -223,10 +226,10 @@
     <string name="my_code">My code</string>
     <string name="scan">Scan</string>
     <string name="connect_radio_first">Connect your radio first</string>
-    <string name="code_carries_address">Your code carries your radio\'s address, so people can reach you.</string>
+    <string name="code_carries_address">Your code carries your radio’s address, so people can reach you.</string>
     <string name="your_contact_code">Your contact code</string>
     <string name="have_contact_scan">Have your contact scan this code, in person.</string>
-    <string name="point_camera">Point the camera at your contact\'s code.</string>
+    <string name="point_camera">Point the camera at your contact’s code.</string>
     <string name="paste_code">Or paste a code: lichen:1:…</string>
     <string name="add">Add</string>
     <string name="key_changed_again">Their key changed again</string>
@@ -234,6 +237,10 @@
     <string name="added_verified">%1$s added, verified</string>
     <string name="scanned_in_person">You scanned their code in person.</string>
     <string name="compare_numbers_with">Compare these numbers with %1$s</string>
+    <string name="now_let_scan_your_code">Now let %1$s scan your code</string>
+    <string name="now_let_scan_note">Their phone verifies you the same way, and both of you see the same numbers.</string>
+    <string name="compare_safety_numbers_with">Compare safety numbers with %1$s</string>
+    <string name="compare_safety_numbers_note">Their key is not verified yet. Compare the numbers with them, in person or on a call.</string>
     <string name="key_not_known">Their key is not known yet: exchange a message first, or scan their code.</string>
     <string name="same_on_both_phones">The same on both phones: nobody in between. Compare them aloud, or over another channel.</string>
     <string name="numbers_match">The numbers match</string>
@@ -242,7 +249,7 @@
     <string name="new_key">New key</string>
     <string name="compare">Compare</string>
     <string name="members">Members</string>
-    <string name="remove_hint">Touch and hold a member to remove them: the others\' keys are renewed.</string>
+    <string name="remove_hint">Touch and hold a member to remove them: the others’ keys are renewed.</string>
     <string name="diffusion">Diffusion</string>
     <string name="hop_limit">Hop limit</string>
     <string name="hop_limit_note">Each hop costs the relays airtime; messages fit up to 8</string>
@@ -251,7 +258,7 @@
     <string name="remove_from_group">Remove from the group</string>
     <string name="not_changed">Not changed</string>
     <string name="sender_keys_up_to_date">Sender keys up to date</string>
-    <string name="sender_keys_received">%1$d / %2$d members\' keys received; a departure rotates them.</string>
+    <string name="sender_keys_received">%1$d / %2$d members’ keys received; a departure rotates them.</string>
     <string name="waiting_for_sender_keys">Waiting for sender keys</string>
     <string name="sender_keys_waiting">%1$d / %2$d received. Messages from the others show once their key arrives.</string>
     <string name="admin">Admin</string>
@@ -260,7 +267,7 @@
     <string name="to_verify">to verify</string>
     <string name="new_group">New group</string>
     <string name="group_name">Group name</string>
-    <string name="new_group_note">Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group\'s QR code. Every member gets the others\' sender keys over encrypted sessions. Group messages are flooded and signed.</string>
+    <string name="new_group_note">Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group’s QR code. Every member gets the others’ sender keys over encrypted sessions. Group messages are flooded and signed.</string>
     <string name="create_group">Create group</string>
     <string name="group_details">Group details</string>
     <string name="network">Network</string>
@@ -320,6 +327,7 @@
     <string name="how_to_send">How to send it to %1$s</string>
     <string name="lora_preview">LoRa preview</string>
     <string name="contacts_only_never_flooded">Contacts only: never flooded to a group</string>
+    <string name="photo_sizes">%1$d×%2$d AVIF · preview %3$d B · full %4$d B</string>
     <string name="lora_preview_detail">160×120 AVIF · %1$s · direct only; the full thumbnail if they ask</string>
     <string name="full_via_iroh">Full resolution via iroh</string>
     <string name="full_via_tor">Full resolution via Tor</string>
@@ -359,7 +367,7 @@
     <string name="location_off_note">Allow it to share your position.</string>
     <string name="share_my_position">Share my position…</string>
     <string name="precision_per_contact">Precision per contact</string>
-    <string name="share_note">Sent only when you stray more than 50 m from your track. Encryption doesn\'t hide your radio position.</string>
+    <string name="share_note">Sent only when you stray more than 50 m from your track. Encryption doesn’t hide your radio position.</string>
     <string name="sos_status">SOS on: your exact position goes out every 2 minutes</string>
     <string name="active_ends_in">Active · ends in %1$s</string>
     <string name="contact_path_unknown">Contact · path not known yet</string>
@@ -384,7 +392,7 @@
     <string name="what_is_sent_detail">Your exact GPS position, again every 2 minutes. Without GPS, a beacon your groups can locate by radio.</string>
     <string name="to_whom">To whom</string>
     <string name="how">How</string>
-    <string name="how_detail">Over LoRa to each contact you share with, flooded to each group, on the mesh\'s usual radio settings.</string>
+    <string name="how_detail">Over LoRa to each contact you share with, flooded to each group, on the mesh’s usual radio settings.</string>
     <string name="sos_note">The SOS stays on until you stop it. It does not replace 112.</string>
     <string name="nobody_yet">Nobody yet: share your position with a contact or join a group.</string>
     <string name="send_sos">Send an SOS: hold for three seconds</string>
@@ -528,14 +536,14 @@
     <string name="waiting_gps">Waiting for GPS</string>
     <string name="history_unreadable">The history could not be read.</string>
     <string name="earlier_messages">Show earlier messages</string>
-    <string name="err_storage">The phone\'s storage could not be read or written.</string>
+    <string name="err_storage">The phone’s storage could not be read or written.</string>
     <plurals name="new_messages">
         <item quantity="one">%1$d new message</item>
         <item quantity="other">%1$d new messages</item>
     </plurals>
     <string name="group_cost">Your cost: %1$s · ≈ %2$s s of airtime · relays add theirs, no acknowledgement</string>
     <string name="location_services_off">Location services are off</string>
-    <string name="location_services_off_note">Turn them on in the phone\'s settings: without them, no position at all.</string>
+    <string name="location_services_off_note">Turn them on in the phone’s settings: without them, no position at all.</string>
     <string name="open_settings">Settings</string>
     <string name="location_approximate">Approximate location only</string>
     <string name="location_approximate_note">Your phone gives lichen a position within about 2 km: an exact share sends it as it is, with its real uncertainty. Allow the precise location for exact shares and SOS.</string>
@@ -637,15 +645,26 @@
     <string name="listen_before_sending">Listen to what will be sent</string>
     <string name="voice_quality_cost">Voice quality vs time on air: %1$s · ≈ %2$s s</string>
     <!-- Group invitations by QR code (§10.5) -->
-    <string name="err_no_clock">The phone\'s clock is not set yet.</string>
+    <string name="err_no_clock">The phone’s clock is not set yet.</string>
     <string name="err_invite_expired">This invitation has expired: ask for a new one.</string>
     <string name="err_invalid_setting">The radio does not take this setting.</string>
     <string name="history">History</string>
     <string name="import_meshcore">Import from the MeshCore app</string>
     <string name="import_meshcore_note">The database it exports: your direct messages and channel posts join your MeshCore chats.</string>
     <string name="import_title">Import</string>
-    <string name="import_done">%1$d direct messages and %2$d channel posts imported.</string>
-    <string name="import_already_here">%1$d were already here.</string>
+    <string name="import_done">%1$s and %2$s imported.</string>
+    <plurals name="import_direct">
+        <item quantity="one">%1$d direct message</item>
+        <item quantity="other">%1$d direct messages</item>
+    </plurals>
+    <plurals name="import_channel">
+        <item quantity="one">%1$d channel post</item>
+        <item quantity="other">%1$d channel posts</item>
+    </plurals>
+    <plurals name="import_already_here">
+        <item quantity="one">%1$d was already here.</item>
+        <item quantity="other">%1$d were already here.</item>
+    </plurals>
     <string name="err_not_an_export">This file is not a database exported by the MeshCore app.</string>
     <string name="err_identity_pending">This code names another identity than the one this contact has. Compare safety numbers with them before accepting the change.</string>
     <string name="joined_with_invite">%1$s joined with your invitation</string>
@@ -675,7 +694,7 @@
     <string name="invite_expired_title">This invitation has expired</string>
     <string name="ask_new_code">Ask %1$s to show a new code.</string>
     <string name="joined_group">You joined %1$s</string>
-    <string name="joined_group_note">%1$s added you. The other members\' keys arrive over the next minutes.</string>
+    <string name="joined_group_note">%1$s added you. The other members’ keys arrive over the next minutes.</string>
     <string name="open_group">Open the group</string>
     <!-- Membership notices and renaming (ADR-0021) -->
     <string name="names_and">%1$s and %2$s</string>
@@ -703,7 +722,7 @@
     <string name="timer_note_plain">On this phone only: MeshCore apps keep their copy. Screenshots can keep messages too.</string>
     <string name="notice_you_timer">You set messages to disappear after %s</string>
     <string name="notice_timer">%1$s set messages to disappear after %2$s</string>
-    <string name="notice_node_renamed">%1$s\'s radio is now called “%2$s”</string>
+    <string name="notice_node_renamed">%1$s’s radio is now called “%2$s”</string>
     <string name="notice_you_made_admin">You made %1$s admin</string>
     <string name="notice_made_you_admin">%1$s made you admin</string>
     <string name="notice_made_admin">%1$s made %2$s admin</string>
@@ -780,9 +799,9 @@
     <string name="channel_kind_hashtag">MeshCore channel · hashtag</string>
     <string name="channel_kind_private">MeshCore channel · private</string>
     <string name="not_lichen_encrypted">Not lichen-encrypted</string>
-    <string name="plain_direct_explainer">These messages use MeshCore\'s own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.</string>
+    <string name="plain_direct_explainer">These messages use MeshCore’s own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.</string>
     <string name="plain_public_explainer">Everyone in range with a MeshCore radio reads this channel. Posts are flooded once and never acknowledged.</string>
-    <string name="plain_channel_explainer">Everyone who has this channel\'s secret reads it. Posts are flooded once and never acknowledged.</string>
+    <string name="plain_channel_explainer">Everyone who has this channel’s secret reads it. Posts are flooded once and never acknowledged.</string>
     <string name="plain_lichen_apart">lichen chats with the same people stay end-to-end encrypted; nothing from them ever goes into a MeshCore chat.</string>
     <string name="hashtag_readers">Anyone who joins %1$s in a MeshCore app reads it and can write in it.</string>
     <string name="leave">Leave</string>
@@ -792,7 +811,7 @@
     <string name="join_a_channel">Join a channel</string>
     <string name="join_public">Join Public</string>
     <string name="public_already_joined">Public: already joined</string>
-    <string name="public_channel_note">MeshCore\'s public channel: everyone in range reads it. It starts muted.</string>
+    <string name="public_channel_note">MeshCore’s public channel: everyone in range reads it. It starts muted.</string>
     <string name="hashtag_channel">Hashtag channel</string>
     <string name="hashtag_placeholder">#hiking</string>
     <string name="join_hashtag">Join the hashtag</string>
@@ -810,7 +829,7 @@
     <string name="mesh_name_rules">A name is 1 to 31 bytes.</string>
     <string name="sending_to_channel">Sending to the channel</string>
     <string name="sent_to_channel">Sent to the channel</string>
-    <string name="waiting_for_radio_ack">Waiting for their radio\'s acknowledgement</string>
+    <string name="waiting_for_radio_ack">Waiting for their radio’s acknowledgement</string>
     <string name="delivered_airtime">Delivered · %1$s s of airtime</string>
     <string name="plain_too_long">%1$d bytes too long: MeshCore takes %2$d</string>
     <string name="channel_flooded_no_ack">Flooded to everyone on the channel, without acknowledgement</string>
@@ -874,23 +893,23 @@
     <string name="radio_firmware">Firmware %1$s · %2$s</string>
     <string name="radio_battery">%1$s V · about %2$d %%</string>
     <string name="radio_storage">%1$d of %2$d KB used</string>
-    <string name="lora_note">A radio on other settings no longer hears the radios of its mesh: choose your region\'s preset, or the values your local community uses.</string>
+    <string name="lora_note">A radio on other settings no longer hears the radios of its mesh: choose your region’s preset, or the values your local community uses.</string>
     <string name="lora_confirm_title">Change the LoRa settings?</string>
     <string name="lora_confirm">The radio will only hear radios on %1$s. Now: %2$s.</string>
     <string name="transmit_power_note">Up to %1$d dBm on this radio. Less reaches less far and saves its battery.</string>
-    <string name="radio_gps">The radio\'s GPS</string>
-    <string name="radio_gps_note">Keeps the radio\'s position current. It draws power.</string>
+    <string name="radio_gps">The radio’s GPS</string>
+    <string name="radio_gps_note">Keeps the radio’s position current. It draws power.</string>
     <string name="gps_every">A fix every</string>
     <string name="position_and_telemetry">Position and telemetry</string>
     <string name="position_in_adverts">Position in adverts</string>
-    <string name="position_in_adverts_on">Every advert shows the radio\'s position to the whole mesh, unencrypted.</string>
+    <string name="position_in_adverts_on">Every advert shows the radio’s position to the whole mesh, unencrypted.</string>
     <string name="position_in_adverts_off">Off: adverts carry no position.</string>
     <string name="position_advertised">Position advertised</string>
-    <string name="use_phone_position">Use this phone\'s position</string>
+    <string name="use_phone_position">Use this phone’s position</string>
     <string name="telemetry_base">Telemetry: battery and status</string>
     <string name="telemetry_location">Telemetry: position</string>
     <string name="telemetry_environment">Telemetry: sensors</string>
-    <string name="telemetry_note">Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen\'s own positions always travel encrypted, only to the people you choose.</string>
+    <string name="telemetry_note">Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen’s own positions always travel encrypted, only to the people you choose.</string>
     <string name="position_confirm_title">Show your position to the whole mesh?</string>
     <string name="position_confirm">Every advert of your radio will carry its position, unencrypted: anyone with a MeshCore app nearby sees where it is.</string>
     <string name="show_it">Show it</string>
@@ -913,8 +932,8 @@
     </plurals>
     <string name="extra_acks">Extra acknowledgements: %1$d</string>
     <string name="extra_acks_note">Sends each acknowledgement again: more reliable, more airtime.</string>
-    <string name="pin_note">Six digits; empty for the radio\'s default.</string>
-    <string name="pin_saved">Saved: used from the radio\'s next restart. Pair the phone again with it.</string>
+    <string name="pin_note">Six digits; empty for the radio’s default.</string>
+    <string name="pin_saved">Saved: used from the radio’s next restart. Pair the phone again with it.</string>
     <string name="save_pin">Save the PIN</string>
     <string name="restart_radio">Restart the radio</string>
     <string name="restart_radio_confirm_title">Restart the radio?</string>
@@ -1160,10 +1179,10 @@
     <!-- Introduction requests (ADR-0046) -->
     <string name="accept">Accept</string>
     <string name="message_request">Message request</string>
-    <string name="request_title">Someone using %1$s\'s radio wants to write to you</string>
-    <string name="request_note">Anyone in range can write under a radio\'s name. Accept only if you know who this is; accepting does not verify them.</string>
+    <string name="request_title">Someone using %1$s’s radio wants to write to you</string>
+    <string name="request_note">Anyone in range can write under a radio’s name. Accept only if you know who this is; accepting does not verify them.</string>
     <string name="request_earlier">Earlier messages: %1$d</string>
-    <string name="request_blocked_name">Someone using %1$s\'s radio</string>
+    <string name="request_blocked_name">Someone using %1$s’s radio</string>
     <!-- Radio details behind a tap (M5) -->
     <string name="radio_details">Show radio details</string>
     <string name="radio_details_note">Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.</string>
