@@ -155,7 +155,14 @@ enum class BannerKind { SOS, WARN, LORA, IROH, OK }
 
 /** Banners of the degraded states (mockup `etats`). */
 @Composable
-fun Banner(kind: BannerKind, title: String, message: String? = null, action: Pair<String, () -> Unit>? = null) {
+fun Banner(
+    kind: BannerKind,
+    title: String,
+    message: String? = null,
+    action: Pair<String, () -> Unit>? = null,
+    /** A second choice: both then sit under the text ("Compare", "Later"). */
+    second: Pair<String, () -> Unit>? = null,
+) {
     val t = lichen
     val (accent, background) = when (kind) {
         BannerKind.SOS -> t.sosFg to t.sosBg
@@ -182,8 +189,14 @@ fun Banner(kind: BannerKind, title: String, message: String? = null, action: Pai
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = accent)
             if (message != null) Text(message, fontSize = 13.sp, color = t.tx)
+            if (action != null && second != null) {
+                Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = second.second) { Text(second.first, color = t.tx) }
+                    TextButton(onClick = action.second) { Text(action.first, fontWeight = FontWeight.SemiBold, color = t.tx) }
+                }
+            }
         }
-        if (action != null) {
+        if (action != null && second == null) {
             TextButton(onClick = action.second) {
                 Text(action.first, fontWeight = FontWeight.SemiBold, color = t.tx)
             }

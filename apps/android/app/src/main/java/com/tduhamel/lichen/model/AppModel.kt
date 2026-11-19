@@ -148,6 +148,9 @@ class AppModel(val app: Application) {
         val autoFull: Boolean = false,
         /** The demo radio files Marc as a repeater: his MeshCore chat stays in Messages (§15.8). */
         val marcRepeater: Boolean = false,
+        /** The demo keeps group invitations on: Camille's group arrives as an invitation to
+         * accept or decline (§10.1). */
+        val groupInvitationDemo: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -191,6 +194,9 @@ class AppModel(val app: Application) {
 
     /** New identities presented by verified contacts, waiting for the user (node hex → identity). */
     var conflicts by mutableStateOf(mapOf<String, ByteArray>())
+
+    /** Contacts (node hex) whose safety numbers the user said to compare later (B-user-1). */
+    var compareLater by mutableStateOf(prefs.getStringSet(COMPARE_LATER, null)?.toSet() ?: emptySet())
     /** People: the contacts lichen can write to. */
     var contacts by mutableStateOf(listOf<ContactInfo>())
 
@@ -750,7 +756,7 @@ class AppModel(val app: Application) {
         // The demo's people are friends: their groups are joined without asking, and their
         // introductions are not requests (ADR-0046); debug `requestDemo` keeps requests on, to
         // see Camille's first message arrive as one.
-        core.setGroupConsent(false)
+        if (!debug.groupInvitationDemo) core.setGroupConsent(false)
         if (!debug.requestDemo) core.setRequestConsent(false)
         demo = DemoNetwork().also { net ->
             // Camille offers her photo over Tor too when Tor is on (her own onion service).
@@ -821,8 +827,11 @@ class AppModel(val app: Application) {
             app.contentResolver.openInputStream(uri)?.use { input -> copy.outputStream().use { input.copyTo(it) } }
                 ?: return LichenException.NotAnExport().display(res)
             val r = core.importMeshcoreApp(copy.path)
-            val text = res.getString(R.string.import_done, r.direct.toInt(), r.channel.toInt())
-            if (r.alreadyHere > 0u) text + " " + res.getString(R.string.import_already_here, r.alreadyHere.toInt()) else text
+            val direct = res.getQuantityString(R.plurals.import_direct, r.direct.toInt(), r.direct.toInt())
+            val channel = res.getQuantityString(R.plurals.import_channel, r.channel.toInt(), r.channel.toInt())
+            val text = res.getString(R.string.import_done, direct, channel)
+            val here = r.alreadyHere.toInt()
+            if (here > 0) text + " " + res.getQuantityString(R.plurals.import_already_here, here, here) else text
         } catch (e: LichenException) {
             e.display(res)
         } catch (e: java.io.IOException) {
@@ -1062,6 +1071,7 @@ class AppModel(val app: Application) {
                     debugMesh = null
                     val chat = ChatId.contact(e.node)
                     if (debug.timer > 0) setTimer(chat, debug.timer.toUInt())
+                    debugVoiceReview(chat)
                     openChat = chat
                 }
             }
@@ -1284,14 +1294,23 @@ class AppModel(val app: Application) {
         if (!debug.media || debugVoiceSent) return
         val c = contacts.firstOrNull { it.name == "Camille" } ?: return
         debugVoiceSent = true
-        val pcm = List(32_000) { i ->
-            val t = i / 8_000.0
-            (6_000 * sin(2 * PI * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9))).toInt().toShort()
-        }
+        val pcm = debugPcm(4)
         scope.launch {
             delay(20_000)
             sendVoice(prepareVoice(pcm, voiceMode.toUByte()), ChatId.contact(c.key))
         }
+    }
+
+    /** Debug `screen voiceReview`: a 4 s recording under review in the chat `open` opens, as
+     * left there (not in a MeshCore chat: text only). */
+    private fun debugVoiceReview(chat: ChatId) {
+        if (debugScreen == "voiceReview" && !chat.plain) voiceDrafts[chat] = VoiceDraft(debugPcm(4).toShortArray(), recordMode(chat))
+    }
+
+    /** A voice-like sound for debug recordings, 8 kHz. */
+    private fun debugPcm(seconds: Int): List<Short> = List(8_000 * seconds) { i ->
+        val t = i / 8_000.0
+        (6_000 * sin(2 * PI * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9))).toInt().toShort()
     }
 
     /** Debug extra `open`: the conversation with this contact or group, once it exists. */
@@ -1340,6 +1359,7 @@ class AppModel(val app: Application) {
         debug = debug.copy(open = null)
         if (chat.plain && !chat.channel) debugMesh = chat.hex
         if (debug.timer > 0) setTimer(chat, debug.timer.toUInt())
+        debugVoiceReview(chat)
         openChat = chat
     }
 
@@ -2196,6 +2216,21 @@ class AppModel(val app: Application) {
 
     fun contact(node: ByteArray): ContactInfo? = contacts.firstOrNull { it.key.contentEquals(node) }
 
+    /** Whether their chat asks to compare safety numbers (B-user-1): their key is known and not
+     * verified, no new key waits, and the user did not say "Later". On both phones, whoever
+     * scanned whom: the one who did not scan learns the other's key from a message. */
+    fun asksToCompare(node: ByteArray): Boolean {
+        val c = contact(node) ?: return false
+        val hex = node.hex()
+        return c.identity != null && !c.verified && hex !in compareLater && !conflicts.containsKey(hex)
+    }
+
+    /** "Later": their chat stops asking (until the key changes and is accepted again unverified). */
+    fun compareLaterWith(node: ByteArray) {
+        compareLater = compareLater + node.hex()
+        prefs.edit { putStringSet(COMPARE_LATER, compareLater) }
+    }
+
     fun name(key: ByteArray): String {
         if (nodeKey?.contentEquals(key) == true) return res.getString(R.string.you)
         return contact(key)?.name ?: key.copyOf(4).hex()
@@ -2301,6 +2336,9 @@ class AppModel(val app: Application) {
 
     /** Adds the contact of a card: verified when scanned in person, not when pasted (§4.7); or
      * an error to show. */
+    /** One of our own codes (our card, an invitation to a group of ours), scanned or pasted back. */
+    fun isOwnCode(text: String): Boolean = runCatching { core.ownCode(text.trim()) }.getOrDefault(false)
+
     fun addCard(text: String, scanned: Boolean): Pair<ContactInfo?, String?> = try {
         val c = core.addContactCard(text.trim(), scanned)
         refreshContacts()
@@ -2592,6 +2630,7 @@ class AppModel(val app: Application) {
         private val MAP_STYLES = setOf("AUTO", "DARK", "LIBERTY", "POSITRON", "BRIGHT")
         /** Drafts by identity; the older ones (`lichen.draft.<route>`) are left unread. */
         private const val DRAFT = "lichen.draftById."
+        private const val COMPARE_LATER = "lichen.compareLater"
         private const val HISTORY_PAGE = 100u
 
         /** What the timer menu offers: off, 5 minutes, 1 hour, 8 hours, 1 day, 1 week. */
