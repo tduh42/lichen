@@ -268,13 +268,18 @@ impl Inner {
                     return false;
                 }
                 let msg_ref = self.reference(&chat, false, Some(*author), plaintext);
+                let at_ms = if *late {
+                    self.late_place(&chat, from, content.sent_at())
+                } else {
+                    self.wall_ms()
+                };
                 self.record(store::Message {
                     id: 0,
                     chat,
                     outgoing: false,
                     author: Some(*from),
                     content: content.clone(),
-                    at_ms: self.wall_ms(),
+                    at_ms,
                     status: if *late {
                         Status::Late
                     } else {

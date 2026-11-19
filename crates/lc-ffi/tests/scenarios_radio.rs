@@ -415,3 +415,67 @@ fn rl_7_battery_and_radio_details() {
         "{b:?}"
     );
 }
+
+/// Pumps the app's core against companion `app` of a small network, from `from` to `to`
+/// (simulated ms), as `Sim` pumps the demo; the events polled.
+fn pump(
+    net: &mut lc_core::fakenet::Net,
+    app: usize,
+    core: &lc_ffi::LichenCore,
+    wall0: u64,
+    from: u64,
+    to: u64,
+) -> Vec<LichenEvent> {
+    let mut events = Vec::new();
+    let mut now = from;
+    while now < to {
+        if now > net.now {
+            net.run_until(now, |_| false);
+        }
+        for f in net.external_read(app) {
+            core.on_companion_frame(f, now);
+        }
+        core.set_clock(wall0 + now, now);
+        core.tick(now);
+        while let Some(f) = core.poll_companion(now) {
+            net.external_write(app, &f);
+        }
+        while let Some(e) = core.poll_event() {
+            events.push(e);
+        }
+        now += common::STEP_MS;
+    }
+    events
+}
+
+/// RL-6 (B-ios-10): a setting the core lets through but the radio refuses (an interval for a
+/// GPS the board does not have): the app is told which one, once, and the value stays the
+/// radio's; a setting it takes is not reported.
+#[test]
+fn rl_6_a_setting_the_radio_refuses() {
+    let radio = lc_meshcore::airtime::LoRaParams::meshcore(8, 62_500, 5).unwrap();
+    let mut net = lc_core::fakenet::Net::new(radio, 0, 9);
+    let app = net.add_external_companion(1, "Heltec V4");
+    let core = common::new_core(78, 178, None);
+    let wall0 = common::unix_now_ms();
+    core.set_clock(wall0, 0);
+    core.connect(0);
+    pump(&mut net, app, &core, wall0, 0, 5_000);
+    let before = core.radio_settings();
+    assert_eq!(before.gps, None, "no GPS on this board");
+    assert!(core.take_radio_refusals().is_empty());
+    core.set_gps_interval(300).unwrap();
+    let events = pump(&mut net, app, &core, wall0, 5_000, 10_000);
+    assert!(events.contains(&LichenEvent::RadioSettings));
+    assert_eq!(
+        core.take_radio_refusals(),
+        [lc_ffi::RadioSetting::GpsInterval]
+    );
+    assert!(core.take_radio_refusals().is_empty(), "told once");
+    assert_eq!(core.radio_settings().gps_interval_s, None);
+    // Taken: nothing to say.
+    core.set_tx_power(before.max_tx_dbm - 1).unwrap();
+    pump(&mut net, app, &core, wall0, 10_000, 15_000);
+    assert!(core.take_radio_refusals().is_empty());
+    assert_eq!(core.radio_settings().tx_dbm, before.max_tx_dbm - 1);
+}

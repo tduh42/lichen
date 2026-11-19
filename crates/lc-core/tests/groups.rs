@@ -1412,3 +1412,55 @@ fn a_restored_admin_asks_for_the_keys() {
     got.sort();
     assert_eq!(got, vec!["post 0", "post 1", "post 2"]);
 }
+
+/// B-and-19: Carol misses both of Bob's posts; his next one reveals the gap, and both come
+/// back together, late: in the order he wrote them, which is how the phones list them.
+#[test]
+fn two_lost_posts_come_back_in_order() {
+    let (mut net, m) = star(56);
+    let keys: Vec<[u8; 32]> = m.iter().map(|&i| net.key(i)).collect();
+    let (alice, bob, carol) = (m[0], m[1], m[2]);
+    let gid = net
+        .with_core(alice, |c, now| c.create_group("Rando", &keys[1..3], now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| keys_complete(n, &m[..3], &gid)));
+    settle(&mut net);
+    net.take_events(carol);
+    let deaf = std::sync::Arc::new(std::sync::Mutex::new(true));
+    let d = deaf.clone();
+    net.deaf = Some(Box::new(move |r, frame| {
+        r == carol && *d.lock().unwrap() && !envelopes(&[frame.to_vec()]).is_empty()
+    }));
+    for (ts, text) in [
+        (1, "Leaving the col now"),
+        (2, "Mist on the ridge, forest path instead"),
+    ] {
+        net.with_core(bob, |c, now| c.send_group_text(&gid, text, ts, now))
+            .unwrap()
+            .unwrap();
+        net.run_until(net.now + 2 * MIN, |_| false);
+    }
+    *deaf.lock().unwrap() = false;
+    net.with_core(bob, |c, now| c.send_group_text(&gid, "At the hut", 3, now))
+        .unwrap()
+        .unwrap();
+    let mut got = Vec::new();
+    net.run_until(net.now + 15 * MIN, |n| {
+        got.extend(group_texts_late(&n.take_events(carol)));
+        false
+    });
+    let late: Vec<&str> = got
+        .iter()
+        .filter(|(_, late)| *late)
+        .map(|(t, _)| t.as_str())
+        .collect();
+    assert_eq!(
+        late,
+        [
+            "Leaving the col now",
+            "Mist on the ridge, forest path instead"
+        ],
+        "{got:?}"
+    );
+}

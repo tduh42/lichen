@@ -106,8 +106,56 @@ impl From<&lc_core::radio::RadioSettings> for RadioSettings {
     }
 }
 
+/// A radio setting the app changes (§1.1), to say which one the radio refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum RadioSetting {
+    /// Frequency, bandwidth, spreading factor, coding rate.
+    Params,
+    TxPower,
+    AdvertPosition,
+    /// Manual add, telemetry, position in adverts, extra ACKs.
+    Preferences,
+    Gps,
+    GpsInterval,
+    Autoadd,
+    Pin,
+    /// The node's name (§15.4).
+    Name,
+    Other,
+}
+
+impl From<lc_core::radio::RadioSetting> for RadioSetting {
+    fn from(s: lc_core::radio::RadioSetting) -> Self {
+        use lc_core::radio::RadioSetting as S;
+        match s {
+            S::Params => Self::Params,
+            S::TxPower => Self::TxPower,
+            S::AdvertPosition => Self::AdvertPosition,
+            S::Preferences => Self::Preferences,
+            S::Gps => Self::Gps,
+            S::GpsInterval => Self::GpsInterval,
+            S::Autoadd => Self::Autoadd,
+            S::Pin => Self::Pin,
+            S::Name => Self::Name,
+            S::Other => Self::Other,
+        }
+    }
+}
+
 #[uniffi::export]
 impl LichenCore {
+    /// The settings the radio itself refused (it answered ERR) since the last call, oldest
+    /// first: a `RadioSettings` event follows each, the value shown stays the radio's, and the
+    /// app says the setting was not changed (§1.1, QA bug B-ios-10).
+    pub fn take_radio_refusals(&self) -> Vec<RadioSetting> {
+        self.lock()
+            .core
+            .take_radio_refusals()
+            .into_iter()
+            .map(RadioSetting::from)
+            .collect()
+    }
+
     /// What the radio reported of its settings (a `RadioSettings` event follows each change).
     pub fn radio_settings(&self) -> RadioSettings {
         RadioSettings::from(self.lock().core.radio_settings())
