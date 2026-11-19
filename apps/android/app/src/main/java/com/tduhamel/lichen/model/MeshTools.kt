@@ -55,7 +55,7 @@ fun AppModel.requestServerStats(key: ByteArray): String? = meshCall { core.reque
 fun AppModel.requestNeighbours(key: ByteArray): String? = meshCall { core.requestNeighbours(key, now()) }
 
 fun AppModel.sendServerCommand(key: ByteArray, command: String): String? {
-    val sentAt = (System.currentTimeMillis() / 1000).toUInt()
+    val sentAt = (wallNow() / 1000).toUInt()
     return meshCall { core.sendServerCommand(key, command, sentAt, now()) }
 }
 
@@ -114,7 +114,7 @@ fun AppModel.parseChannelQr(text: String): ChannelCode? = runCatching { core.par
 fun AppModel.heard(unixS: ULong?): String {
     val res = app.resources
     if (unixS == null) return res.getString(R.string.never_heard)
-    val ago = System.currentTimeMillis() / 1000 - unixS.toLong()
+    val ago = wallNow() / 1000 - unixS.toLong()
     return when {
         ago < 60 -> res.getString(R.string.just_now)
         ago < 3_600 -> res.getString(R.string.minutes_ago, ago / 60)

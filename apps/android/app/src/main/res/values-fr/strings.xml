@@ -914,7 +914,11 @@
     <string name="from_how_far">Jusqu’où</string>
     <string name="any_distance">Toute distance</string>
     <string name="direct_only">En direct seulement</string>
-    <string name="up_to_hops">Jusqu’à %1$d sauts</string>
+    <plurals name="up_to_hops">
+        <item quantity="one">Jusqu’à %1$d saut</item>
+        <item quantity="many">Jusqu’à %1$d sauts</item>
+        <item quantity="other">Jusqu’à %1$d sauts</item>
+    </plurals>
     <string name="extra_acks">Accusés de réception en plus : %1$d</string>
     <string name="extra_acks_note">Renvoie chaque accusé de réception : plus fiable, plus de temps d’antenne.</string>
     <string name="pin_note">Six chiffres ; vide pour celui de la radio par défaut.</string>
@@ -957,10 +961,15 @@
     <string name="err_not_a_backup">Ce fichier n’est pas une sauvegarde lichen.</string>
     <string name="err_newer_backup">Cette sauvegarde vient d’une version plus récente de lichen : mets d’abord l’app à jour.</string>
     <string name="err_wrong_backup_words">Ces 24 mots ne sont pas ceux de cette sauvegarde.</string>
+    <string name="err_not_a_phrase">Ces mots ne forment pas une phrase de récupération. Vérifie chaque mot, et leur ordre.</string>
     <string name="err_backup_damaged">Cette sauvegarde est abîmée ou incomplète : rien n’a été restauré.</string>
     <!-- Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044) -->
     <string name="nodes">Nœuds</string>
-    <string name="nodes_known">%1$d connus</string>
+    <plurals name="nodes_known">
+        <item quantity="one">%1$d connu</item>
+        <item quantity="many">%1$d connus</item>
+        <item quantity="other">%1$d connus</item>
+    </plurals>
     <string name="nodes_subtitle">Répéteurs, salons et radios autour</string>
     <string name="nodes_need_radio">Connecte ta radio pour voir les nœuds qu’elle connaît.</string>
     <string name="nodes_none_yet">La radio n’a encore signalé aucun nœud.</string>
@@ -989,7 +998,11 @@
     <string name="no_path_flood_note">Ta radio l’atteint par inondation tant qu’elle n’a pas appris de chemin.</string>
     <string name="hops_flood">inondation</string>
     <string name="hops_direct">direct</string>
-    <string name="hops_n">%1$d sauts</string>
+    <plurals name="hops_n">
+        <item quantity="one">%1$d saut</item>
+        <item quantity="many">%1$d sauts</item>
+        <item quantity="other">%1$d sauts</item>
+    </plurals>
     <string name="hops_direct_title">Direct</string>
     <string name="direct_note">Ta radio l’entend sans répéteur.</string>
     <string name="hop_n">Saut %1$d · %2$s</string>
@@ -1052,7 +1065,11 @@
     <string name="duration_hours">%1$d h %2$d min</string>
     <string name="duration_minutes">%1$d min</string>
     <string name="radios">Radios</string>
-    <string name="radios_saved">%1$d enregistrées</string>
+    <plurals name="radios_saved">
+        <item quantity="one">%1$d enregistrée</item>
+        <item quantity="many">%1$d enregistrées</item>
+        <item quantity="other">%1$d enregistrées</item>
+    </plurals>
     <string name="radios_none">Les radios que tu appaires apparaissent ici, pour passer de l’une à l’autre.</string>
     <string name="pair_another_radio">Appairer une autre radio</string>
     <string name="radios_history_note">Tes conversations, contacts et groupes restent sur ce téléphone, quelle que soit la radio. Chaque radio garde ses propres contacts MeshCore, canaux et réglages, et les personnes à qui tu écris voient un autre nœud quand tu changes de radio.</string>
