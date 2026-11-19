@@ -37,7 +37,7 @@ impl LichenCore {
             .ok_or(LichenError::UnknownContact)?;
         let identity = i.core.block(&k, now_ms);
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;
-        st.block(&k, identity.as_ref(), &name, unix_ms())
+        st.block(&k, identity.as_ref(), &name, i.wall_ms())
             .map_err(|_| LichenError::Storage)
     }
 

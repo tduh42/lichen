@@ -65,6 +65,7 @@ impl LichenCore {
             diag: report::Diag::default(),
             full_requests: Vec::new(),
             full_sending: Vec::new(),
+            advert_owed: None,
         };
         inner.diag.note(0, "core started", None);
         // The history is available before the node connects.
@@ -182,7 +183,7 @@ impl LichenCore {
                 total: m.fragments,
             }
         };
-        let expires = text.then(|| unix_ms() + i.outbox_expiry_ms);
+        let expires = text.then(|| i.wall_ms() + i.outbox_expiry_ms);
         if let Some(st) = &i.store {
             st.set_status(m.id, status)
                 .map_err(|_| LichenError::Storage)?;
@@ -239,7 +240,7 @@ impl LichenCore {
         let i = self.lock();
         let core = i.core.next_wakeup();
         // The next text to expire (§6.1); one already overdue waits for its transfer to end.
-        let now_unix = unix_ms();
+        let now_unix = i.wall_ms();
         let offset = i.offset();
         let expiry = i
             .outbox
@@ -275,7 +276,7 @@ impl LichenCore {
         };
         let f = i.core.freq_khz();
         let core = &i.core;
-        Some(LichenEvent::from_core(e, f, |gid, admin| {
+        let mut out = LichenEvent::from_core(e, f, |gid, admin| {
             core.groups()
                 .find(|g| g.gid == *gid)
                 .and_then(|g| g.members.iter().find(|m| m.key == *admin))
@@ -287,7 +288,20 @@ impl LichenCore {
                         .and_then(|i| i.admin_node())
                 })
                 .unwrap_or(*admin)
-        }))
+        });
+        // A MeshCore message is notified under the name the user gave its sender, as its
+        // conversation is titled: the core knows the radio's name only.
+        if let LichenEvent::PlainReceived {
+            chat: ChatRef::Mesh { key: node },
+            label,
+            ..
+        } = &mut out
+            && let Ok(k) = key(node)
+            && let Some(nickname) = i.nicknames.get(&k)
+        {
+            *label = Some(nickname.clone());
+        }
+        Some(out)
     }
 
     /// Announces our node (a MeshCore advert) so that nearby radios add it as a contact;

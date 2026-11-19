@@ -30,7 +30,7 @@ impl Inner {
                 subjects: Vec::new(),
                 text: seconds.to_string(),
             }),
-            at_ms: unix_ms(),
+            at_ms: self.wall_ms(),
             status: Status::Received,
             fragments: 0,
             airtime_ms: 0,
@@ -51,7 +51,7 @@ impl Inner {
         if held == seconds {
             return Ok(());
         }
-        let ts = u32::try_from(unix_ms() / 1000)
+        let ts = u32::try_from(self.wall_ms() / 1000)
             .unwrap_or(u32::MAX)
             .max(held_ts.saturating_add(1));
         let shared = !chat.is_plain();
@@ -115,7 +115,7 @@ impl Inner {
         let gone = self
             .store
             .as_ref()
-            .and_then(|s| s.vanish(unix_ms()).ok())
+            .and_then(|s| s.vanish(self.wall_ms()).ok())
             .unwrap_or_default();
         for m in gone {
             self.media_gone(&m.content);
