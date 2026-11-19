@@ -88,7 +88,7 @@ impl LichenCore {
             return Err(LichenError::NotAllowed);
         }
         let store = i.store.as_ref().ok_or(LichenError::Storage)?;
-        let start = unix_ms() - i64::from(count) * 60_000 - 3_600_000;
+        let start = i.wall_ms() - i64::from(count) * 60_000 - 3_600_000;
         for n in 0..count {
             let at_ms = start + i64::from(n) * 60_000;
             let outgoing = n % 2 == 0;

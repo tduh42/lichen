@@ -75,6 +75,9 @@ impl LichenCore {
             i.pin_name(&c.node);
         }
         i.save_contacts();
+        // Their radio may never have heard ours, and could not answer our path discovery:
+        // our advert, zero-hop when scanned beside them, flooded otherwise (§4.7).
+        i.advertise(!scanned);
         let out = i
             .core
             .contacts()

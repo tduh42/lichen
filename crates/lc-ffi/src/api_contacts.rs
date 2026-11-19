@@ -27,7 +27,9 @@ impl LichenCore {
             .contacts()
             .map(|c| ContactInfo::of(c, &i.nicknames))
             .collect();
-        v.sort_by_key(|c| c.name.to_lowercase());
+        // As people read names: case and accents aside ("Élodie" between Camille and Marc),
+        // not by code point, which sends every accented initial after Z.
+        v.sort_by_cached_key(|c| (store::fold(&c.name), c.name.clone()));
         v
     }
 

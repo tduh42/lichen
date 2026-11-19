@@ -100,7 +100,12 @@ impl Inner {
     /// keep from the app (§6.1).
     pub(crate) fn on_event(&mut self, e: &Event) -> bool {
         match e {
-            Event::Connected { .. } => self.save_contacts(),
+            Event::Connected { .. } => {
+                self.save_contacts();
+                if let Some(flood) = self.advert_owed.take() {
+                    self.core.send_advert(flood, self.last_now);
+                }
+            }
             Event::ContactsUpdated
             | Event::GroupJoined { .. }
             | Event::GroupUpdated { .. }
@@ -269,7 +274,7 @@ impl Inner {
                     outgoing: false,
                     author: Some(*from),
                     content: content.clone(),
-                    at_ms: unix_ms(),
+                    at_ms: self.wall_ms(),
                     status: if *late {
                         Status::Late
                     } else {
@@ -290,7 +295,7 @@ impl Inner {
                     outgoing: false,
                     author: None,
                     content: Content::Notice(notice.clone()),
-                    at_ms: unix_ms(),
+                    at_ms: self.wall_ms(),
                     status: Status::Received,
                     fragments: 0,
                     airtime_ms: 0,
@@ -385,7 +390,7 @@ impl Inner {
                         sent_at: m.sent_at,
                         text,
                     },
-                    at_ms: unix_ms(),
+                    at_ms: self.wall_ms(),
                     status: Status::Received,
                     fragments: 0,
                     airtime_ms: 0,
@@ -403,7 +408,7 @@ impl Inner {
                     .any(|(i, n)| i == identity && n == node) => {}
             Event::Requested { node, identity } => {
                 if let Some(st) = &self.store {
-                    let _ = st.put_request(identity, node, unix_ms());
+                    let _ = st.put_request(identity, node, self.wall_ms());
                 }
             }
             Event::RequestMessage {
@@ -417,7 +422,7 @@ impl Inner {
                         identity,
                         &store::RequestMessage {
                             plaintext: plaintext.clone(),
-                            at_ms: unix_ms(),
+                            at_ms: self.wall_ms(),
                             snr4: *snr4,
                         },
                     );

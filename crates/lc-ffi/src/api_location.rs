@@ -96,7 +96,7 @@ impl LichenCore {
         let now_s = i
             .core
             .unix_s(now_ms)
-            .unwrap_or_else(|| u64::try_from(unix_ms() / 1000).unwrap_or(0));
+            .unwrap_or_else(|| u64::try_from(i.wall_ms() / 1000).unwrap_or(0));
         let all = i
             .store
             .as_ref()

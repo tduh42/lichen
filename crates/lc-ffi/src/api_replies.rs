@@ -134,10 +134,10 @@ impl LichenCore {
             .as_ref()
             .and_then(|s| s.reaction(&chat, &target, &me).ok().flatten())
             .map_or(0, |(_, ts)| ts);
-        let ts = u32::try_from(unix_ms() / 1000)
+        let ts = u32::try_from(i.wall_ms() / 1000)
             .unwrap_or(u32::MAX)
             .max(previous.saturating_add(1));
-        let expires = unix_ms() + i.outbox_expiry_ms;
+        let expires = i.wall_ms() + i.outbox_expiry_ms;
         if let Some(st) = &i.store {
             st.upsert_reaction(&chat, &target, &me, &emoji, ts, true, Some(expires))
                 .map_err(|_| LichenError::Storage)?;

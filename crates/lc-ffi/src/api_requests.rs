@@ -142,7 +142,7 @@ impl LichenCore {
         i.core.block_request(&id);
         let st = i.store.as_ref().ok_or(LichenError::Storage)?;
         // A request's block names its identity as the node (`BlockedContact::request`).
-        st.block(&id, Some(&id), &name, unix_ms())
+        st.block(&id, Some(&id), &name, i.wall_ms())
             .and_then(|()| st.delete_request(&id))
             .map_err(|_| LichenError::Storage)?;
         i.extra.push_back(LichenEvent::RequestsChanged);

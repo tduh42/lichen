@@ -91,7 +91,7 @@ impl LichenCore {
                 radio_name
             },
             node,
-            last_used_ms: unix_ms(),
+            last_used_ms: i.wall_ms(),
         })
         .map_err(|_| LichenError::Storage)
     }

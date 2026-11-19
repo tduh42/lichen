@@ -42,6 +42,8 @@ pub(crate) struct Inner {
     /// Full images the user agreed to send, while on their way: core id, contact, image. The
     /// same request again meanwhile is answered by that transfer.
     pub(crate) full_sending: Vec<(u64, PubKey, lc_core::content::MediaId)>,
+    /// Our advert, owed since a card was added with the radio away (§4.7): flooded or not.
+    pub(crate) advert_owed: Option<bool>,
 }
 
 /// A contact asks for the full variant of one of our images (§13.3): it goes only if the user
@@ -171,7 +173,7 @@ impl Inner {
                         subjects: Vec::new(),
                         text: new.clone(),
                     }),
-                    at_ms: unix_ms(),
+                    at_ms: self.wall_ms(),
                     status: Status::Received,
                     fragments: 0,
                     airtime_ms: 0,
@@ -239,9 +241,9 @@ impl Inner {
         {
             self.core.restore_tx_power(*dbm as i8);
         }
-        let now_s = u64::try_from(unix_ms() / 1000).unwrap_or(0);
+        let now_s = u64::try_from(self.wall_ms() / 1000).unwrap_or(0);
         let _ = store.prune_positions(now_s.saturating_sub(POSITION_KEEP_S));
-        let _ = store.purge_orphans(unix_ms());
+        let _ = store.purge_orphans(self.wall_ms());
         self.store = Some(store);
         // What ran out while the app was stopped goes before anything is shown (§6.5).
         self.vanish();
@@ -312,10 +314,33 @@ impl Inner {
         self.outbox.insert(row, p);
     }
 
+    /// Our node's advert now, or at the next connection with the radio away (one owed
+    /// advert, flooded if any asked for a flood).
+    pub(crate) fn advertise(&mut self, flood: bool) {
+        if self.core.online() {
+            let now = self.last_now;
+            self.core.send_advert(flood, now);
+        } else {
+            self.advert_owed = Some(self.advert_owed.unwrap_or(false) || flood);
+        }
+    }
+
     /// Unix ms minus the app's clock.
     pub(crate) fn offset(&self) -> i64 {
         self.clock_offset
             .unwrap_or_else(|| unix_ms() - i64::try_from(self.last_now).unwrap_or(0))
+    }
+
+    /// Unix ms now, for what the FFI dates, expires and sweeps: the wall clock the app gives
+    /// (`set_clock`) at its last `now_ms`, the clock the core and `next_wakeup` run on. The
+    /// system's when it is later: the app's, as of its last call, can only lag behind it while
+    /// the app sleeps between wake-ups (B-core-3).
+    pub(crate) fn wall_ms(&self) -> i64 {
+        let system = unix_ms();
+        self.clock_offset.map_or(system, |o| {
+            o.saturating_add(i64::try_from(self.last_now).unwrap_or(0))
+                .max(system)
+        })
     }
 
     /// What the app should show for an unfinished text, from the core's view (§6.1).
@@ -360,7 +385,7 @@ impl Inner {
             .map(|r| self.reaction_counts(&m.chat, &r))
             .unwrap_or_default();
         // Ours, with a reference, not taken back, within 24 hours (§6.4).
-        let now_s = u32::try_from(unix_ms() / 1000).unwrap_or(u32::MAX);
+        let now_s = u32::try_from(self.wall_ms() / 1000).unwrap_or(u32::MAX);
         let changeable = m.outgoing
             && m.msg_ref.is_some()
             && !matches!(m.content, Content::Deleted { .. })
