@@ -224,3 +224,58 @@ fn measure_loss_vs_cost() {
         );
     }
 }
+
+/// A datagram the receiver declines once read (a message sent while its author was blocked,
+/// ADR-0034, §7.2) is never acknowledged: not when it completes, not when the sender asks
+/// again. The sender gives it up as with a receiver out of reach; the next one goes through.
+#[test]
+fn a_declined_datagram_is_never_acknowledged() {
+    let (mut a, mut b) = pair();
+    let data = datagram(3 * CHUNK_MAX - 5, 9);
+    a.send(&data, CHUNK_MAX, 0).unwrap();
+    let mut buf = [0u8; 200];
+    let (mut now, mut read, mut from_b, mut failed) = (0u64, 0, 0, false);
+    for _ in 0..10_000 {
+        while let Some(len) = a.poll_transmit(now, &mut buf) {
+            let got = match b.handle(&mut buf[..len], now) {
+                Ok(Received::Datagram { data, .. }) => Some(data.to_vec()),
+                _ => None,
+            };
+            if let Some(got) = got {
+                assert_eq!(got, data);
+                read += 1;
+                b.decline();
+            }
+        }
+        while b.poll_transmit(now, &mut buf).is_some() {
+            from_b += 1;
+        }
+        while let Some(e) = a.take_event() {
+            match e {
+                SessionEvent::Delivered { .. } => panic!("acknowledged"),
+                SessionEvent::Failed { .. } => failed = true,
+                _ => {}
+            }
+        }
+        if failed {
+            break;
+        }
+        let Some(next) = [a.next_wakeup(), b.next_wakeup()]
+            .into_iter()
+            .flatten()
+            .min()
+        else {
+            break;
+        };
+        now = now.max(next);
+    }
+    assert_eq!(read, 1, "read once, its resends dropped");
+    assert_eq!(from_b, 0, "nothing answered");
+    assert!(failed, "the sender gave it up");
+    // The next datagram is acknowledged as usual.
+    let next = datagram(40, 1);
+    a.send(&next, CHUNK_MAX, now).unwrap();
+    let out = run(&mut a, &mut b, 0, 3);
+    assert!(out.delivered && !out.failed);
+    assert_eq!(out.received, vec![next]);
+}

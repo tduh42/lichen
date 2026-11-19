@@ -26,8 +26,8 @@ pub mod solver;
 pub mod store;
 
 pub use crate::core::{
-    Config, Contact, ContactRead, Core, Error, Event, FailReason, MsgId, Outbound, OwnedPath,
-    PubKey, Stage, contact_kind,
+    BlockPeriod, Config, Contact, ContactRead, Core, Error, Event, FailReason, MsgId, Outbound,
+    OwnedPath, PubKey, Stage, contact_kind,
 };
 pub use content::{Announce, Content};
 pub use group::{Group, GroupId, Member};

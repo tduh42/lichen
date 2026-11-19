@@ -231,6 +231,12 @@ impl Inner {
         for b in store.blocked().unwrap_or_default() {
             self.core.restore_block(b.node, b.identity);
         }
+        // Blocks lifted: what was sent during them stays dropped (ADR-0034).
+        let since = self.wall_ms() - crate::api_block::BLOCK_PERIOD_KEEP_MS;
+        for p in store.block_periods(since).unwrap_or_default() {
+            self.core
+                .add_block_period(crate::api_block::block_period(&p));
+        }
         // Requests (ADR-0046): their HELLOs are answered again.
         for q in store.requests().unwrap_or_default() {
             self.core.restore_request(q.node, q.identity);

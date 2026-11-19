@@ -554,7 +554,10 @@ impl Core {
             return false;
         };
         // From a node the user blocked: dropped (ADR-0034).
-        if self.is_blocked(&key) || self.plain_seen(&PlainChat::Direct(key), ts, text, now) {
+        if self.is_blocked(&key)
+            || self.sent_while_blocked(&key, self.identity_of(&key).as_ref(), Some(ts))
+            || self.plain_seen(&PlainChat::Direct(key), ts, text, now)
+        {
             return true;
         }
         self.events.push_back(Event::PlainReceived(PlainMessage {
