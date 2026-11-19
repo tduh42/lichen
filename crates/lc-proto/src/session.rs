@@ -325,6 +325,15 @@ impl Session {
         }
     }
 
+    /// Declines the datagram just completed (§7.2): it is not acknowledged, and its fragments
+    /// sent again are not answered either; the sender gives it up as with a receiver out of
+    /// reach.
+    pub fn decline(&mut self) {
+        if let Some(r) = self.rx.as_mut() {
+            r.decline();
+        }
+    }
+
     /// Writes the next frame due at `now` into `out` (at least [`crate::FRAME_MAX`] bytes) and
     /// returns its length. ACKs and ABORTs go before data.
     pub fn poll_transmit(&mut self, now: Millis, out: &mut [u8]) -> Option<usize> {

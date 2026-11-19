@@ -237,7 +237,7 @@ impl Inner {
                 }
                 // From the bytes as sent: a re-encoding may differ (§6.2, SR-20).
                 let msg_ref = self.reference(&chat, false, None, plaintext);
-                let at_ms = self.arrived_ms.unwrap_or_else(unix_ms);
+                let at_ms = self.arrived_ms.unwrap_or_else(|| self.wall_ms());
                 self.record(store::Message {
                     id: 0,
                     chat,

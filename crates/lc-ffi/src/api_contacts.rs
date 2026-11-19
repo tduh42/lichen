@@ -121,7 +121,8 @@ impl LichenCore {
                     .collect(),
             })
             .collect();
-        v.sort_by(|a, b| a.name.cmp(&b.name));
+        // As people read names, like the contacts (B-core-1): not by code point.
+        v.sort_by_cached_key(|g| (store::fold(&g.name), g.name.clone()));
         v
     }
 }

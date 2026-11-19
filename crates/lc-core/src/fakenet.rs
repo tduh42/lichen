@@ -118,6 +118,8 @@ pub struct Node {
     pub noise_dbm: i16,
     /// The radio's clock (Unix seconds) as SET_DEVICE_TIME left it: `None` until set.
     pub radio_time: Option<u32>,
+    /// When (simulated ms) SET_DEVICE_TIME set it: the clock runs on from there.
+    pub radio_time_at: Millis,
     pub rssi_zero: bool,
     /// Last reception (for `GET_STATS`).
     last_rx: (i8, i8),
@@ -316,6 +318,7 @@ impl Net {
             tx_dbm: 22,
             noise_dbm: -118,
             radio_time: None,
+            radio_time_at: 0,
             rssi_zero: false,
             last_rx: (0, 0),
             channels: vec![None; CHANNEL_SLOTS],
@@ -893,10 +896,24 @@ impl Net {
         self.wake(i, now);
     }
 
-    /// A `CONTACT` (or `NEW_ADVERT`) record: the node's advertised position when it has one,
-    /// heard and advertised now.
+    /// Node `i`'s radio clock now, Unix seconds: from the time the app set (SET_DEVICE_TIME),
+    /// else the simulation's.
+    fn radio_unix_s(&self, i: usize) -> u32 {
+        match self
+            .nodes
+            .get(i)
+            .and_then(|n| n.radio_time.map(|t| (t, n.radio_time_at)))
+        {
+            Some((t, at)) => t.saturating_add(((self.now.saturating_sub(at)) / 1000) as u32),
+            None => ((EPOCH_MS + self.now) / 1000) as u32,
+        }
+    }
+
+    /// A `CONTACT` (or `NEW_ADVERT`) record of companion `on`: the node's advertised position
+    /// when it has one, heard and advertised now by `on`'s clock.
     fn contact_frame(
         &self,
+        on: usize,
         code: u8,
         key: &PubKey,
         name: &str,
@@ -919,7 +936,7 @@ impl Net {
         let b = name.as_bytes();
         n[..b.len().min(31)].copy_from_slice(&b[..b.len().min(31)]);
         v.extend_from_slice(&n);
-        let unix = ((EPOCH_MS + self.now) / 1000) as u32;
+        let unix = self.radio_unix_s(on);
         let (lat, lon) = self
             .nodes
             .iter()
@@ -1319,7 +1336,7 @@ impl Net {
         let (key, name) = (n.key, n.name.clone());
         let kind = self.kind(from);
         let path = self.route(i, from);
-        let frame = self.contact_frame(resp::NEW_ADVERT, &key, &name, path.as_ref(), kind);
+        let frame = self.contact_frame(i, resp::NEW_ADVERT, &key, &name, path.as_ref(), kind);
         self.push_to_app(i, &frame);
     }
 
@@ -1493,7 +1510,7 @@ impl Net {
                     v
                 }];
                 for (k, n, p, t) in &node.contacts {
-                    out.push(self.contact_frame(resp::CONTACT, k, n, p.as_ref(), *t));
+                    out.push(self.contact_frame(i, resp::CONTACT, k, n, p.as_ref(), *t));
                 }
                 out.push(vec![resp::END_OF_CONTACTS, 0, 0, 0, 0]);
                 out
@@ -1502,7 +1519,7 @@ impl Net {
                 let k = frame.get(1..33);
                 match node.contacts.iter().find(|(c, ..)| Some(&c[..]) == k) {
                     Some((c, n, p, t)) => {
-                        vec![self.contact_frame(resp::CONTACT, c, n, p.as_ref(), *t)]
+                        vec![self.contact_frame(i, resp::CONTACT, c, n, p.as_ref(), *t)]
                     }
                     None => vec![vec![resp::ERR, 2]],
                 }
@@ -1725,9 +1742,17 @@ impl Net {
                 else {
                     return vec![vec![resp::ERR, 2]];
                 };
+                // Against the clock as it runs now, not as it was set.
+                let running = self
+                    .nodes
+                    .get(i)
+                    .and_then(|n| n.radio_time)
+                    .map(|_| self.radio_unix_s(i));
+                let now = self.now;
                 match self.nodes.get_mut(i) {
-                    Some(n) if n.radio_time.is_none_or(|was| t >= was) => {
+                    Some(n) if running.is_none_or(|was| t >= was) => {
                         n.radio_time = Some(t);
+                        n.radio_time_at = now;
                         vec![vec![resp::OK]]
                     }
                     _ => vec![vec![resp::ERR, 6]],

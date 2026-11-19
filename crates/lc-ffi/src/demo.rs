@@ -823,6 +823,8 @@ impl DemoNetwork {
         // A board with a GPS, off as the firmware ships it (protocol §1.1).
         net.nodes[app].settings.gps = Some(false);
         net.nodes[app].settings.autoadd = (0x02 | 0x01, 0);
+        // Its clock kept the time: the nodes it lists show their real age (QA bug B-and-5).
+        net.nodes[app].radio_time = Some((unix_now_ms() / 1000) as u32);
         let hub = net.add_repeater(10, "hub");
         let crest = net.add_repeater(11, "crest");
         let camille = net.add_companion(2, "Camille");

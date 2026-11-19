@@ -237,3 +237,101 @@ fn a_blocked_members_group_posts_are_not_shown() {
     let carol = texts(&net.take_events(c));
     assert_eq!(carol, ["from bob"]);
 }
+
+/// After an unblock, what was dated inside the block stays out (ADR-0034, B-core-4): a direct
+/// text is declined unanswered (its sender gives it up, §7.2), a group post and a MeshCore
+/// message are dropped; what is dated after it comes.
+#[test]
+fn what_was_sent_during_a_block_stays_out_after_it() {
+    let (mut net, [a, b, c, m, _]) = net(5);
+    net.introduce(c, a);
+    net.introduce(c, b);
+    net.introduce(a, b);
+    let members = [net.key(a), net.key(b)];
+    let gid: GroupId = net
+        .with_core(c, |core, now| core.create_group("Col", &members, now))
+        .unwrap()
+        .unwrap();
+    assert!(net.run_until(net.now + 60 * MIN, |n| {
+        [a, b, c].iter().all(|&i| {
+            n.nodes[i].core.as_ref().is_some_and(|core| {
+                core.groups()
+                    .find(|g| g.gid == gid)
+                    .is_some_and(|g| g.keys_known() == g.members.len() - 1)
+            })
+        })
+    }));
+    net.run_until(net.now + 5 * MIN, |_| false);
+    for i in [a, b, c] {
+        net.take_events(i);
+    }
+    // Alice had blocked Bob and Marc from 1_793_900_000 to 1_793_900_600 (Unix s).
+    let (bob, marc, bob_id) = (net.key(b), net.key(m), identity(&net, b));
+    let (inside, after) = (1_793_900_300, 1_793_900_700);
+    net.with_core(a, |core, _| {
+        for (node, identity) in [(bob, Some(bob_id)), (marc, None)] {
+            core.add_block_period(lc_core::BlockPeriod {
+                node,
+                identity,
+                from_s: 1_793_900_000,
+                to_s: 1_793_900_600,
+            });
+        }
+    });
+    let alice = net.key(a);
+
+    // A direct text dated inside: never acknowledged, Bob's phone gives it up.
+    let id = net
+        .with_core(b, |core, now| core.send_text(&alice, "inside", inside, now))
+        .unwrap()
+        .unwrap();
+    let mut bob_events = Vec::new();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        bob_events.extend(n.take_events(b));
+        bob_events.iter().any(
+            |e| matches!(e, Event::Failed { id: x, .. } | Event::Delivered { id: x } if *x == id),
+        )
+    }));
+    assert!(
+        bob_events.contains(&Event::Failed {
+            id,
+            reason: FailReason::Timeout
+        }),
+        "{bob_events:?}"
+    );
+    assert!(texts(&net.take_events(a)).is_empty());
+    // Dated after: delivered.
+    let id = net
+        .with_core(b, |core, now| core.send_text(&alice, "after", after, now))
+        .unwrap()
+        .unwrap();
+    let mut got = Vec::new();
+    assert!(net.run_until(net.now + 30 * MIN, |n| {
+        got.extend(texts(&n.take_events(a)));
+        n.take_events(b).contains(&Event::Delivered { id })
+    }));
+    assert_eq!(got, ["after"]);
+
+    // A group post dated inside is not reported; Carol has it.
+    net.with_core(b, |core, now| {
+        core.send_group_text(&gid, "post inside", inside, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 3 * MIN, |_| false);
+    net.with_core(b, |core, now| {
+        core.send_group_text(&gid, "post after", after, now)
+    })
+    .unwrap()
+    .unwrap();
+    net.run_until(net.now + 3 * MIN, |_| false);
+    assert_eq!(texts(&net.take_events(a)), ["post after"]);
+    assert_eq!(texts(&net.take_events(c)), ["post inside", "post after"]);
+
+    // Marc's MeshCore messages: the same, by their timestamp.
+    net.send_plain_text(m, a, "plain inside", inside);
+    net.run_until(net.now + MIN, |_| false);
+    net.send_plain_text(m, a, "plain after", after);
+    net.run_until(net.now + MIN, |_| false);
+    assert_eq!(texts(&net.take_events(a)), ["plain after"]);
+}

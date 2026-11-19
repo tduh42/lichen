@@ -74,6 +74,19 @@ fn dm_1_send_a_text() {
     assert_eq!(copies(&h, "On my way"), 1);
     assert_eq!(copies(&h, &echo("On my way")), 1);
     assert_eq!(h.iter().filter(|x| x.id == m.id).count(), 1);
+    // Her answer is dated after our text, on the app's clock (B-core-3).
+    let answer = h
+        .iter()
+        .find(|x| text(&x.message) == Some(echo("On my way").as_str()))
+        .unwrap();
+    let ours = h.iter().find(|x| x.id == m.id).unwrap();
+    assert!(
+        answer.at_ms > ours.at_ms,
+        "{} <= {}",
+        answer.at_ms,
+        ours.at_ms
+    );
+    assert!(answer.at_ms <= sim.unix_ms());
     // The row in Messages shows the latest.
     let row = sim.conversation(&chat).unwrap();
     assert_eq!(text(&row.last.message), Some(echo("On my way").as_str()));

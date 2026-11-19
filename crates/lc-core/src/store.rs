@@ -46,7 +46,8 @@ pub use rusqlite::Error;
 /// 14: blocking and archiving (ADR-0034): `blocked` (table added), `chat_prefs.archived`
 /// (added to older databases).
 /// 15: introduction requests (ADR-0046): `requests`, `request_messages` (tables added).
-const VERSION: i32 = 15;
+/// 16: blocks lifted (ADR-0034): `block_periods` (table added, nothing migrated).
+const VERSION: i32 = 16;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -309,6 +310,12 @@ CREATE TABLE IF NOT EXISTS blocked (
     name TEXT NOT NULL,
     at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS block_periods (
+    node BLOB NOT NULL,
+    identity BLOB,
+    from_ms INTEGER NOT NULL,
+    to_ms INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS requests (
     identity BLOB PRIMARY KEY,
     node BLOB NOT NULL,
@@ -426,6 +433,16 @@ pub struct Blocked {
     pub name: String,
     /// Unix ms.
     pub at: i64,
+}
+
+/// A block lifted (ADR-0034): the node, the identity blocked with it, when it started and
+/// ended (Unix ms).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlockPeriodRow {
+    pub node: PubKey,
+    pub identity: Option<PubKey>,
+    pub from_ms: i64,
+    pub to_ms: i64,
 }
 
 /// An introduction request waiting for the user (§4.6, ADR-0046): an identity, the node it
@@ -598,6 +615,10 @@ impl Store {
         )?;
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS messages_by_media ON messages (chat_kind, chat, media_id)",
+        )?;
+        // Conversations in time order (ADR-0033).
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS messages_by_time ON messages (chat_kind, chat, at_ms, id)",
         )?;
         conn.pragma_update(None, "user_version", VERSION)?;
         Ok(Self { conn })
@@ -1175,28 +1196,59 @@ impl Store {
             .map(Option::flatten)
     }
 
-    /// The `limit` messages of `chat` before `before` (row id), oldest first.
+    /// Where row `id` of `chat` stands in its conversation: its time, then its id. A
+    /// conversation is in time order (ADR-0033: an imported message, older than what is
+    /// there, goes where its time puts it). A row gone since (deleted, vanished) stands where
+    /// the row before it by id stood; `None`: after everything.
+    fn position(&self, chat: &Chat, id: Option<i64>) -> Result<(i64, i64), Error> {
+        let Some(id) = id else {
+            return Ok((i64::MAX, i64::MAX));
+        };
+        let at: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT at_ms FROM messages WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let at = match at {
+            Some(at) => Some(at),
+            None => self
+                .conn
+                .query_row(
+                    "SELECT at_ms FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
+                     ORDER BY id DESC LIMIT 1",
+                    params![chat.kind(), chat.bytes(), id],
+                    |r| r.get(0),
+                )
+                .optional()?,
+        };
+        Ok((at.unwrap_or(i64::MIN), id))
+    }
+
+    /// The `limit` messages of `chat` before row `before`, oldest first, in time order.
     pub fn history(
         &self,
         chat: &Chat,
         before: Option<i64>,
         limit: u32,
     ) -> Result<Vec<Message>, Error> {
+        let (at, id) = self.position(chat, before)?;
         let mut st = self.conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
-             AND {SHOWN} ORDER BY id DESC LIMIT ?4"
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2
+             AND (at_ms < ?3 OR (at_ms = ?3 AND id < ?4))
+             AND {SHOWN} ORDER BY at_ms DESC, id DESC LIMIT ?5"
         ))?;
-        let rows = st.query_map(
-            params![chat.kind(), chat.bytes(), before.unwrap_or(i64::MAX), limit],
-            row,
-        )?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes(), at, id, limit], row)?;
         let mut v: Vec<Message> = rows.filter_map(|r| r.ok().flatten()).collect();
         v.reverse();
         Ok(v)
     }
 
-    /// The messages of `chat` from `from` (included) up to `before` (excluded), oldest first,
-    /// `limit` at most: what lies between a search result and the oldest message shown.
+    /// The messages of `chat` from row `from` (included) up to row `before` (excluded), oldest
+    /// first, `limit` at most: what lies between a search result and the oldest message shown.
+    /// Empty when `from` is gone.
     pub fn history_from(
         &self,
         chat: &Chat,
@@ -1204,11 +1256,28 @@ impl Store {
         before: i64,
         limit: u32,
     ) -> Result<Vec<Message>, Error> {
+        let from_at: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT at_ms FROM messages WHERE id = ?1 AND chat_kind = ?2 AND chat = ?3",
+                params![from, chat.kind(), chat.bytes()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(from_at) = from_at else {
+            return Ok(Vec::new());
+        };
+        let (at, id) = self.position(chat, Some(before))?;
         let mut st = self.conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id >= ?3
-             AND id < ?4 AND {SHOWN} ORDER BY id LIMIT ?5"
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2
+             AND (at_ms > ?3 OR (at_ms = ?3 AND id >= ?4))
+             AND (at_ms < ?5 OR (at_ms = ?5 AND id < ?6))
+             AND {SHOWN} ORDER BY at_ms, id LIMIT ?7"
         ))?;
-        let rows = st.query_map(params![chat.kind(), chat.bytes(), from, before, limit], row)?;
+        let rows = st.query_map(
+            params![chat.kind(), chat.bytes(), from_at, from, at, id, limit],
+            row,
+        )?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
@@ -1221,8 +1290,10 @@ impl Store {
                     AND u.chat = m.chat AND u.read = 0 AND u.outgoing = 0
                     AND NOT (u.chat_kind = 1 AND u.author IN (SELECT node FROM blocked)))
              FROM messages m
-             WHERE id IN (SELECT MAX(id) FROM messages WHERE {SHOWN} GROUP BY chat_kind, chat)
-             ORDER BY id DESC"
+             WHERE id IN (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (
+                    PARTITION BY chat_kind, chat ORDER BY at_ms DESC, id DESC) AS rank
+                 FROM messages WHERE {SHOWN}) WHERE rank = 1)
+             ORDER BY at_ms DESC, id DESC"
         ))?;
         let rows = st.query_map([], |r| Ok(row(r)?.map(|m| (m, r.get(15).unwrap_or(0)))))?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
@@ -1237,7 +1308,7 @@ impl Store {
         }
         let mut st = self.conn.prepare(&format!(
             "SELECT {COLUMNS} FROM messages WHERE substr(content, 1, 1) IN (x'01', x'08')
-             AND {SHOWN} ORDER BY id DESC"
+             AND {SHOWN} ORDER BY at_ms DESC, id DESC"
         ))?;
         let rows = st.query_map([], row)?;
         let mut out = Vec::new();
@@ -1328,21 +1399,20 @@ impl Store {
     // ----- media and storage (ADR-0034) ------------------------------------------------
 
     /// `chat`'s photos, files and voice messages (announced ones too), newest first, before
-    /// row `before`.
+    /// row `before`, in time order.
     pub fn media_messages(
         &self,
         chat: &Chat,
         before: Option<i64>,
         limit: u32,
     ) -> Result<Vec<Message>, Error> {
+        let (at, id) = self.position(chat, before)?;
         let mut st = self.conn.prepare(&format!(
-            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2 AND id < ?3
-             AND {MEDIA} AND {SHOWN} ORDER BY id DESC LIMIT ?4"
+            "SELECT {COLUMNS} FROM messages WHERE chat_kind = ?1 AND chat = ?2
+             AND (at_ms < ?3 OR (at_ms = ?3 AND id < ?4))
+             AND {MEDIA} AND {SHOWN} ORDER BY at_ms DESC, id DESC LIMIT ?5"
         ))?;
-        let rows = st.query_map(
-            params![chat.kind(), chat.bytes(), before.unwrap_or(i64::MAX), limit],
-            row,
-        )?;
+        let rows = st.query_map(params![chat.kind(), chat.bytes(), at, id, limit], row)?;
         Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
@@ -1419,12 +1489,49 @@ impl Store {
         Ok(())
     }
 
-    pub fn unblock(&self, node: &PubKey) -> Result<(), Error> {
+    /// Lifts the block of `node` at `at_ms`, and keeps its period (ADR-0034): what was sent
+    /// during it stays dropped. Returns the block lifted.
+    pub fn unblock(&self, node: &PubKey, at_ms: i64) -> Result<Option<Blocked>, Error> {
+        let block = self.blocked()?.into_iter().find(|b| b.node == *node);
+        if let Some(b) = &block {
+            self.conn.execute(
+                "INSERT INTO block_periods (node, identity, from_ms, to_ms) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    b.node.as_slice(),
+                    b.identity.as_ref().map(|i| i.as_slice()),
+                    b.at,
+                    at_ms.max(b.at)
+                ],
+            )?;
+        }
         self.conn.execute(
             "DELETE FROM blocked WHERE node = ?1",
             params![node.as_slice()],
         )?;
-        Ok(())
+        Ok(block)
+    }
+
+    /// The blocks lifted that ended after `since_ms`, the others forgotten: a text is retried
+    /// for 24 hours at most (§6.1), a group post kept for an hour (§10.6).
+    pub fn block_periods(&self, since_ms: i64) -> Result<Vec<BlockPeriodRow>, Error> {
+        self.conn.execute(
+            "DELETE FROM block_periods WHERE to_ms < ?1",
+            params![since_ms],
+        )?;
+        let mut st = self
+            .conn
+            .prepare("SELECT node, identity, from_ms, to_ms FROM block_periods")?;
+        let rows = st.query_map([], |r| {
+            let node: Vec<u8> = r.get(0)?;
+            let identity: Option<Vec<u8>> = r.get(1)?;
+            Ok(node.as_slice().try_into().ok().map(|node| BlockPeriodRow {
+                node,
+                identity: identity.and_then(|i| i.as_slice().try_into().ok()),
+                from_ms: r.get(2).unwrap_or(0),
+                to_ms: r.get(3).unwrap_or(0),
+            }))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
     }
 
     // ----- introduction requests (ADR-0046) --------------------------------------------
@@ -2282,8 +2389,18 @@ mod tests {
             (vec!["carol au col".into()], 1)
         );
         assert!(list.iter().any(|(m, _)| m.chat == Chat::Contact(bob)));
-        s.unblock(&bob).unwrap();
+        let lifted = s.unblock(&bob, 9_000).unwrap().unwrap();
         assert!(s.blocked().unwrap().is_empty());
+        // The block's period is kept (ADR-0034), until it is older than asked for.
+        let periods = s.block_periods(0).unwrap();
+        assert_eq!(periods.len(), 1);
+        assert_eq!(
+            (periods[0].node, periods[0].from_ms, periods[0].to_ms),
+            (bob, lifted.at, 9_000.max(lifted.at))
+        );
+        assert_eq!(s.unblock(&bob, 9_500).unwrap(), None, "not blocked");
+        assert!(s.block_periods(i64::MAX).unwrap().is_empty());
+        assert!(s.block_periods(0).unwrap().is_empty(), "forgotten");
         assert_eq!(
             texts(s.history(&g, None, 10).unwrap()),
             ["carol au col", "bob au col"]
