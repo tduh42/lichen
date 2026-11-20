@@ -511,6 +511,11 @@ struct SavedRadiosView: View {
                         }
                     }
                 }
+                // A radio of the list that did not answer when connected (TCP): said here, where
+                // the user asked.
+                if let error = model.tcpError {
+                    Banner(kind: .warn, title: String(localized: "Could not reach the radio: \(error)"))
+                }
                 NavigationLink {
                     PairingView()
                 } label: {

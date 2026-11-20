@@ -341,6 +341,16 @@
         }
       }
     },
+    "%@ · SF%u / %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · SF%u / %@"
+          }
+        }
+      }
+    },
     "%@ · SNR %@ dB": {
       "localizations": {
         "fr": {
@@ -613,10 +623,40 @@
     },
     "%lld hops": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld hop"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld hops"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sauts"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld saut"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sauts"
+                }
+              }
+            }
           }
         }
       }
@@ -1897,16 +1937,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "BLE · MeshCore companion"
-          }
-        }
-      }
-    },
-    "BLE · SF%u / %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "BLE · SF%u / %@"
           }
         }
       }
@@ -8941,6 +8971,26 @@
         }
       }
     },
+    "The demo network uses an identity of its own, thrown away when you leave it. Yours, and its 24 words, are back then.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le réseau de démo utilise une identité à lui, jetée quand tu le quittes. La tienne, et ses 24 mots, reviennent alors."
+          }
+        }
+      }
+    },
+    "The demo's identity": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’identité de la démo"
+          }
+        }
+      }
+    },
     "The download failed.": {
       "localizations": {
         "fr": {
@@ -10003,10 +10053,40 @@
     },
     "Up to %lld hops": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Up to %lld hop"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Up to %lld hops"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jusqu’à %lld sauts"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Jusqu’à %lld saut"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Jusqu’à %lld sauts"
+                }
+              }
+            }
           }
         }
       }

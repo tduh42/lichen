@@ -113,6 +113,9 @@ struct ChatView: View {
                 }
                 .scrollPosition(id: $bottomVisible, anchor: .bottom)
                 .defaultScrollAnchor(.bottom)
+                // An empty conversation laid out once does not lay out the rows of its first
+                // message (only its day separator showed, iOS 27): built again once it has one.
+                .id(messages.isEmpty)
                 .modifier(FollowBottom(pinned: $pinned) { proxy.scrollTo(Self.bottom, anchor: .bottom) })
                 .overlay(alignment: .bottom) {
                     if unseen > 0 {

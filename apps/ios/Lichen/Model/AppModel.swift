@@ -1,6 +1,7 @@
 import CoreLocation
 import Foundation
 import Observation
+import UIKit
 import UniformTypeIdentifiers
 
 /// A conversation: `ChatRef` comes from the core (contact, group, or a plain MeshCore chat).
@@ -403,7 +404,7 @@ final class AppModel {
         case "databaseKeyLost": identityProblem = .databaseKeyLost
         default: break
         }
-
+        debugSavedRadios()
         #endif
     }
 
@@ -559,6 +560,30 @@ final class AppModel {
         return dir.path
     }
 
+    #if DEBUG
+    /// -freshInstall YES: the app starts as if just installed (UI tests): its identity and
+    /// database key leave the Keychain, its data folder and its settings go. Before anything
+    /// reads them.
+    static func debugFreshInstall() {
+        guard UserDefaults.standard.bool(forKey: "freshInstall") else { return }
+        Keychain.debugErase()
+        if let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: base.appendingPathComponent("lichen", isDirectory: true))
+        }
+        if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+    }
+
+    /// -savedRadios YES: two radios this phone used before, in its list (Settings › Radios),
+    /// once; nothing answers at their addresses.
+    private func debugSavedRadios() {
+        guard UserDefaults.standard.bool(forKey: "savedRadios"), !isDemo, savedRadios.isEmpty else { return }
+        try? core.rememberRadio(address: "6A1F0C2E-5B7D-4E39-9C1A-2F8E4D6B3A10", link: .bluetooth, name: "Heltec V4")
+        try? core.rememberRadio(address: "127.0.0.1:5999", link: .tcp, name: "Workshop bridge")
+        savedRadios = core.savedRadios()
+    }
+    #endif
+
+    // MARK: demo network
     // MARK: demo network
 
     /// Runs the app on a simulated MeshCore network (two simulated users, a group), in real time.
@@ -590,6 +615,13 @@ final class AppModel {
         if args.bool(forKey: "sosdemo2") { net.camilleSos(afterS: 240, forS: 300) }
         // -marcRepeater YES: the radio files Marc as a repeater; his chat stays in Messages.
         if args.bool(forKey: "marcRepeater") { net.marcAsRepeater() }
+        // -demoSkip S: the script's timed events come S seconds sooner, in the same order (UI
+        // tests: Camille's first message in about 10 s instead of 30).
+        let skip = args.integer(forKey: "demoSkip")
+        if skip > 0 { net.skipAhead(seconds: UInt64(skip)) }
+        // -quietDemo YES: no group, photo, position share or channel post: Camille answers in
+        // seconds (UI tests of direct chats).
+        if args.bool(forKey: "quietDemo") { net.quiet() }
         #endif
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
@@ -904,6 +936,13 @@ final class AppModel {
                contacts.contains(where: { $0.name == "Camille" }) {
                 debugInviteMade = true
                 debugInvite = demo?.camilleInvite()
+            }
+            // -contactDemo scan|paste: Léa, next to you, shows her contact code: the scanner
+            // reads it in person (the camera's stand-in), or it waits on the pasteboard.
+            if isDemo, !debugInviteMade, let how = UserDefaults.standard.string(forKey: "contactDemo"),
+               let card = demo?.leaCard() {
+                debugInviteMade = true
+                if how == "scan" { debugInvite = card } else { UIPasteboard.general.string = card }
             }
             // -media YES: a 4 s voice message to Camille (she answers with hers).
             if UserDefaults.standard.bool(forKey: "media"), !debugVoiceSent,

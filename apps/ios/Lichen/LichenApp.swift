@@ -2,8 +2,15 @@ import SwiftUI
 
 @main
 struct LichenApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @AppStorage("appearance") private var appearance = Appearance.system
+
+    init() {
+        #if DEBUG
+        AppModel.debugFreshInstall()
+        #endif
+        _model = State(initialValue: AppModel())
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -87,7 +87,8 @@ targets:
         ENABLE_PREVIEWS: YES
         LOCALIZATION_PREFERS_STRING_CATALOGS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
-  # UI tests on the demo network (`-demo YES`): navigation and scrolling as a user does them.
+  # UI tests on the demo network (`-demo YES`), one class per area of docs/testing.md:
+  # scripts/ui-tests-ios.sh runs them.
   LichenUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -96,12 +97,16 @@ targets:
       Release: Signing.xcconfig
     sources:
       - path: LichenUITests
+      # The app's words, to find its buttons in French (LichenUITest.tr).
+      - path: Lichen/Localizable.xcstrings
+        buildPhase: resources
     dependencies:
       - target: Lichen
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: $(LICHEN_BUNDLE_ID).uitests
         GENERATE_INFOPLIST_FILE: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
         TEST_TARGET_NAME: Lichen
         "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
 schemes:
