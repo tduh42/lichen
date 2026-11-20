@@ -48,6 +48,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -181,11 +182,19 @@ private fun RecoveryPhraseSheet(model: AppModel, dismiss: () -> Unit) {
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
     // The sheet is a window of its own: secure it too (screenshots, recent apps).
+    // Written down: three of the words, at random and by position, before it counts (D-7).
+    var asked by remember { mutableStateOf<List<Int>?>(null) }
     ModalBottomSheet(
         onDismissRequest = dismiss, sheetState = rememberModalBottomSheetState(true), containerColor = t.bg,
         properties = ModalBottomSheetProperties(securePolicy = SecureFlagPolicy.SecureOn),
     ) {
-        Column(
+        val positions = asked
+        if (positions != null) {
+            PhraseCheck(words, positions, again = { asked = null }) {
+                model.markBackedUp()
+                dismiss()
+            }
+        } else Column(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -205,9 +214,44 @@ private fun RecoveryPhraseSheet(model: AppModel, dismiss: () -> Unit) {
                 }
             }
             PrimaryButton(stringResource(R.string.wrote_them_down), Modifier.padding(top = 8.dp)) {
-                model.markBackedUp()
-                dismiss()
+                asked = words.indices.shuffled().take(3).sorted()
             }
+        }
+    }
+}
+
+/** Three words of the phrase, typed from the paper ("Word 5"): all three right and it is backed
+ * up; one wrong says so, and the phrase can be looked at again (D-7). */
+@Composable
+private fun PhraseCheck(words: List<String>, asked: List<Int>, again: () -> Unit, right: () -> Unit) {
+    val t = lichen
+    val answers = remember(asked) { mutableStateListOf("", "", "") }
+    var wrong by remember(asked) { mutableStateOf(false) }
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(stringResource(R.string.check_your_phrase), fontSize = 22.sp, color = t.tx)
+        Text(stringResource(R.string.check_phrase_note), fontSize = 15.sp, color = t.tx2)
+        asked.forEachIndexed { k, position ->
+            OutlinedTextField(
+                answers[k], { answers[k] = it },
+                Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.word_n, position + 1)) },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontFamily = FontFamily.Monospace, color = t.tx),
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, autoCorrectEnabled = false),
+                shape = RoundedCornerShape(12.dp),
+                colors = fieldColors(),
+            )
+        }
+        if (wrong) Banner(BannerKind.SOS, stringResource(R.string.phrase_word_wrong), stringResource(R.string.phrase_look_again))
+        PrimaryButton(stringResource(R.string.check), enabled = answers.none { it.isBlank() }) {
+            val ok = asked.withIndex().all { (k, position) -> answers[k].trim().equals(words.getOrNull(position), ignoreCase = true) }
+            if (ok) right() else wrong = true
+        }
+        TextButton(onClick = again, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text(stringResource(R.string.show_phrase_again), color = t.tx, fontWeight = FontWeight.SemiBold)
         }
     }
 }

@@ -23,6 +23,16 @@ class FakeTcpRadio : AutoCloseable {
      * them, as a board without the hardware would: a GPS interval without a GPS. */
     @Volatile var refuses: (ByteArray) -> Boolean = { false }
 
+    /** Until then (System.nanoTime), the radio answers nothing: its replies wait, in order. */
+    @Volatile private var holdUntil = 0L
+    private val held = mutableListOf<ByteArray>()
+
+    /** The radio slow to answer (busy, or the phone short of time): its replies come [ms] from
+     * now, all at once (as `scenarios_radio::rl_5_a_slow_radio_s_settings`). */
+    fun holdReplies(ms: Long) {
+        holdUntil = System.nanoTime() + ms * 1_000_000
+    }
+
     /** "127.0.0.1:port", as typed on the pairing screen. */
     val address: String = "127.0.0.1:${server.localPort}"
 
@@ -67,7 +77,13 @@ class FakeTcpRadio : AutoCloseable {
     }
 
     private fun send(out: OutputStream, frames: List<ByteArray>) = synchronized(out) {
-        for (f in frames) {
+        if (System.nanoTime() < holdUntil) {
+            held += frames
+            return@synchronized
+        }
+        val all = held + frames
+        held.clear()
+        for (f in all) {
             out.write(byteArrayOf('>'.code.toByte(), (f.size and 0xFF).toByte(), (f.size shr 8).toByte()) + f)
         }
         out.flush()
