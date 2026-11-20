@@ -1,5 +1,10 @@
 package com.tduhamel.lichen.ui
 
+import android.graphics.Bitmap
+import android.provider.MediaStore
+import com.tduhamel.lichen.model.hex
+import org.robolectric.Robolectric
+import java.io.File
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
@@ -152,6 +157,46 @@ class MediaTest : UiTest() {
         tapDesc(R.string.close)
         assertFalse(hasDesc(str(R.string.close)))
         text(R.string.message_placeholder).assertIsDisplayed()
+    }
+
+    /** MD-3: Camille's photo, its original fetched, saved to the phone's gallery from the viewer:
+     * in Pictures/lichen, as it came, and said so (D-5). (The JVM decodes the JPEG original,
+     * not the AVIF thumbnails.) */
+    @Test
+    fun MD_3_saveToTheGallery() = save()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MD_3_saveToTheGallery_fr() = save()
+
+    private fun save() {
+        FakeGallery.items.clear()
+        Robolectric.setupContentProvider(FakeGallery::class.java, MediaStore.AUTHORITY)
+        val chat = start("open" to "Camille")
+        advanceUntil("her photo and its announcement", 400) {
+            messages(chat).any { m -> !m.outgoing && (m.message as? Message.Image)?.let { model.announcement(it.mediaId, chat) } != null }
+        }
+        val image = messages(chat).first { !it.outgoing && it.message is Message.Image }.message as Message.Image
+        val announce = model.announcement(image.mediaId, chat)!!.message as Message.Announce
+        // Its original, as if fetched over the bridge.
+        val original = File(context.cacheDir, "original.jpg")
+        original.outputStream().use { out ->
+            Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(0xFF3366AA.toInt()) }
+                .compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        model.downloads[announce.hash.hex()] = original
+        val opens = SemanticsMatcher("opens the photo") { it.config.getOrElseNullable(SemanticsActions.OnClick) { null }?.label == str(R.string.open_photo) }
+        compose.onAllNodes(opens).onFirst().performClick()
+        waitReal("the original shown") { hasDesc(str(R.string.share)) }
+        assertTrue("a Save button", hasDesc(str(R.string.save)))
+        tapDesc(R.string.save)
+        waitReal("saved") { has(R.string.photo_saved) }
+        val saved = FakeGallery.items.single()
+        assertEquals("Pictures/lichen", saved.values.getAsString(MediaStore.Images.Media.RELATIVE_PATH).trimEnd('/'))
+        assertEquals("image/jpeg", saved.values.getAsString(MediaStore.Images.Media.MIME_TYPE))
+        assertEquals(0, saved.values.getAsInteger(MediaStore.Images.Media.IS_PENDING))
+        assertTrue(saved.values.getAsString(MediaStore.Images.Media.DISPLAY_NAME).endsWith(".jpg"))
+        assertTrue("as it came", original.readBytes().contentEquals(saved.file.readBytes()))
     }
 
     /** MD-4: a recording under review: its cost, sent, then played. */

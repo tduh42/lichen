@@ -122,7 +122,7 @@
 
     <!-- Réglages -->
     <string name="radio">Radio</string>
-    <string name="send_advert">Envoyer un advert</string>
+    <string name="send_advert">Envoyer une annonce</string>
     <string name="send_advert_note">Permet aux radios proches d’ajouter la tienne comme contact.</string>
     <string name="appearance">Apparence</string>
     <string name="system">Système</string>
@@ -259,10 +259,11 @@
     <string name="media">Médias</string>
     <string name="media_never_flooded">Jamais en flood : annonce LoRa, contenu via iroh ou Tor</string>
     <string name="remove_from_group">Retirer du groupe</string>
+    <string name="radio_refused">La radio n’a pas pris ce réglage</string>
     <string name="not_changed">Pas modifié</string>
-    <string name="sender_keys_up_to_date">Sender keys à jour</string>
+    <string name="sender_keys_up_to_date">Clés d’envoi à jour</string>
     <string name="sender_keys_received">Clés de %1$d / %2$d membres reçues ; un départ les renouvelle.</string>
-    <string name="waiting_for_sender_keys">Sender keys en attente</string>
+    <string name="waiting_for_sender_keys">Clés d’envoi en attente</string>
     <string name="sender_keys_waiting">%1$d / %2$d reçues. Les messages des autres s’affichent dès que leur clé arrive.</string>
     <string name="admin">Admin</string>
     <string name="member">Membre</string>
@@ -270,7 +271,7 @@
     <string name="to_verify">à vérifier</string>
     <string name="new_group">Nouveau groupe</string>
     <string name="group_name">Nom du groupe</string>
-    <string name="new_group_note">Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les sender keys des autres par des sessions chiffrées. Les messages de groupe sont diffusés en flood et signés.</string>
+    <string name="new_group_note">Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les clés d’envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en flood et signés.</string>
     <string name="create_group">Créer le groupe</string>
     <string name="group_details">Détails du groupe</string>
     <string name="network">Réseau</string>
@@ -385,6 +386,7 @@
     <string name="not_shared">Non partagée</string>
     <string name="share_my_location">Partager ma position</string>
     <string name="precision">Précision</string>
+    <string name="photo_saved">Enregistrée</string>
     <string name="share">Partager</string>
     <string name="update">Mettre à jour</string>
     <string name="stop_sharing">Arrêter le partage</string>
@@ -435,7 +437,7 @@
         <item quantity="other">Groupe · %1$d membres · flood</item>
     </plurals>
     <!-- Réglages et premier lancement (L9f) -->
-    <string name="preset">Preset</string>
+    <string name="preset">Préréglage</string>
     <string name="read_from_radio">Lu sur la radio une fois connectée</string>
     <string name="sub_band">Sous-bande</string>
     <string name="relay_for_others">Relayer pour les autres</string>

@@ -1077,6 +1077,9 @@ class AppModel(val app: Application) {
             }
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
             LichenEvent.RadioSettings -> {
+                // A setting the radio answered with an error (D-4): said on its settings screen;
+                // the value shown stays the radio's.
+                if (core.takeRadioRefusals().isNotEmpty()) radioError = res.getString(R.string.radio_refused)
                 // Read again after a change (ADR-0032): the header follows the radio's parameters.
                 val r = core.radioSettings()
                 radioSettings = r
