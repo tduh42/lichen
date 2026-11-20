@@ -291,6 +291,45 @@ class RadioLinkTest : UiTest() {
         tap(shown)
     }
 
+    /** RL-6 (D-4): a setting the radio refuses on its own, answering an error (as a board
+     * without GPS does for a GPS interval): said so, and the value shown stays the radio's. */
+    @Test
+    fun RL_6_radioRefusesASetting(): Unit = refusedByTheRadio()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_6_radioRefusesASetting_fr(): Unit = refusedByTheRadio()
+
+    private fun refusedByTheRadio() = FakeTcpRadio().use { radio ->
+        radio.refuses = { FakeTcpRadio.gpsInterval(it) }
+        launch("onboarding" to false, "tcp" to radio.address, "screen" to "radio")
+        waitReal("the radio's settings (${model.radioSettings?.gps})", 30_000) { model.radioSettings?.gps != null }
+        see(R.string.radio_gps)
+        // Its GPS on: taken.
+        if (model.radioSettings?.gps != true) {
+            toggle(R.string.radio_gps)
+            waitReal("its GPS on") { model.radioSettings?.gps == true }
+        }
+        assertEquals(null, model.radioError)
+        val before = model.radioSettings!!.gpsIntervalS
+        fun label(s: UInt?) = when {
+            s == null -> str(R.string.not_set)
+            s >= 3_600u -> str(R.string.hours_n, (s / 3_600u).toInt())
+            else -> str(R.string.minutes_n, (s / 60u).toInt())
+        }
+        val asked = if (before == 300u) 900u else 300u
+        // A fix every 5 (or 15) minutes: refused by the radio.
+        tap(label(before))
+        tapInDialog(label(asked))
+        waitReal("the radio's refusal") { has(R.string.radio_refused) }
+        text(R.string.not_changed).assertIsDisplayed()
+        tapInDialog(R.string.ok)
+        // The radio's value, still.
+        assertEquals(before, model.radioSettings?.gpsIntervalS)
+        see(label(before))
+        assertFalse(has(label(asked)))
+    }
+
     /** RL-7: the radio's battery in its settings; Show radio details puts the radio card on
      * Messages. */
     @Test

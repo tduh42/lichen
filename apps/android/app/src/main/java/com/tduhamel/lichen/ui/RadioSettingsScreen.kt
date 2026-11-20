@@ -228,7 +228,6 @@ private fun PowerSection(model: AppModel, r: RadioSettings) {
 
 @Composable
 private fun GpsSection(model: AppModel, r: RadioSettings) {
-    var interval by remember { mutableStateOf(r.gpsIntervalS) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionLabel(stringResource(R.string.gps), Modifier.padding(top = 10.dp))
         CardList {
@@ -238,9 +237,9 @@ private fun GpsSection(model: AppModel, r: RadioSettings) {
             if (r.gps == true) {
                 CardDivider()
                 CardRow(stringResource(R.string.gps_every)) {
-                    val label = interval?.let { minutes(it) } ?: stringResource(R.string.not_set)
+                    // The radio's own value: one it refuses is not shown (D-4).
+                    val label = r.gpsIntervalS?.let { minutes(it) } ?: stringResource(R.string.not_set)
                     Choice(label, INTERVALS.map { minutes(it) to it }) { s ->
-                        interval = s
                         model.radioSet { model.core.setGpsInterval(s) }
                     }
                 }
