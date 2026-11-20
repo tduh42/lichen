@@ -479,3 +479,45 @@ fn rl_6_a_setting_the_radio_refuses() {
     assert!(core.take_radio_refusals().is_empty());
     assert_eq!(core.radio_settings().tx_dbm, before.max_tx_dbm - 1);
 }
+
+/// RL-5 (B-ios-15): a radio slow to answer (its replies held 7 s, past the command timeout):
+/// until it has, the settings say they are not read yet instead of zeros; its late SELF_INFO
+/// does not leave the app half connected: APP_START goes again, and the values come.
+#[test]
+fn rl_5_a_slow_radio_s_settings() {
+    let radio = lc_meshcore::airtime::LoRaParams::meshcore(8, 62_500, 5).unwrap();
+    let mut net = lc_core::fakenet::Net::new(radio, 0, 11);
+    let app = net.add_external_companion(1, "ThinkNode M5");
+    let core = common::new_core(79, 179, None);
+    let wall0 = common::unix_now_ms();
+    core.set_clock(wall0, 0);
+    assert!(!core.radio_settings().read, "nothing read before a radio");
+    core.connect(0);
+    // The radio's answers wait 7 s: the app sends, nothing comes back.
+    let mut now = 0;
+    while now < 7_000 {
+        net.run_until(now, |_| false);
+        core.set_clock(wall0 + now, now);
+        core.tick(now);
+        while let Some(f) = core.poll_companion(now) {
+            net.external_write(app, &f);
+        }
+        while core.poll_event().is_some() {}
+        now += common::STEP_MS;
+    }
+    let s = core.radio_settings();
+    assert!(!s.read, "not read yet: {s:?}");
+    // They come, late, then the radio answers in time.
+    let events = pump(&mut net, app, &core, wall0, now, now + 30_000);
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, LichenEvent::Connected { .. })),
+        "connected: {events:?}"
+    );
+    assert!(core.node_key().is_some());
+    let s = core.radio_settings();
+    assert!(s.read);
+    assert_eq!((s.sf, s.bw_hz, s.cr), (8, 62_500, 5));
+    assert!(s.freq_khz > 0 && s.max_tx_dbm > 0, "{s:?}");
+}

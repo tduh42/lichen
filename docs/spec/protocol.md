@@ -49,6 +49,8 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 | `SET_AUTOADD_CONFIG` (58, L2023) | `mask ‖ max_hops` (≤ 64) | `OK`; mask 0x01 overwrite the oldest when full, 0x02 chat, 0x04 repeater, 0x08 room, 0x10 sensor (used when manual add is on) |
 | `GET_AUTOADD_CONFIG` (59, L2030) | — | `AUTOADD_CONFIG` (25): `mask ‖ max_hops` |
 
+Commands go one at a time, each answered within 5 s or given up. `APP_START` not answered in time is sent again, after the commands waiting, until `SELF_INFO` comes: a late `SELF_INFO` answers nothing any more and is dropped, and without it the node, its settings and the connection itself are unknown. Until then the settings are marked not read, and the apps say they are being read rather than show zeros (QA of 2026-11-20, B-ios-15).
+
 A setting lichen checks and sends may still be refused by the radio (`ERR`: a board without a GPS, a firmware that does not take it): the app is told which one, and the value it shows stays the radio's, read again after every setting (QA of 2026-11-19, B-ios-10).
 
 `SELF_INFO` carries the four preferences of `SET_OTHER_PARAMS` at offsets 44–47 (`multi_acks`, `advert_loc_policy`, `telemetry`, `manual_add`), between the position and the radio parameters. A position in adverts or in location telemetry is only ever set by an explicit choice of the user (ADR-0032).
