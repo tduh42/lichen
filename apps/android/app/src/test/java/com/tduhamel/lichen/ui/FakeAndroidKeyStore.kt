@@ -27,6 +27,9 @@ object FakeAndroidKeyStore {
     private const val NAME = "AndroidKeyStore"
     private val keys = ConcurrentHashMap<String, SecretKey>()
 
+    /** A new phone: no keys. */
+    fun clear() = keys.clear()
+
     fun install() {
         keys.clear()
         // A provider left by an earlier sandbox holds that sandbox's classes: replaced.

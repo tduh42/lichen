@@ -7,6 +7,7 @@ import android.os.Looper
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -97,6 +98,46 @@ abstract class UiTest {
         launch(*extras)
     }
 
+    /** Another phone: this one's data gone (database, files, preferences, keys), the app
+     * installed afresh and started with these extras. */
+    fun newPhone(vararg extras: Pair<String, Any>) {
+        scenario?.close()
+        scenario = null
+        compose.waitForIdle()
+        app.model.stopDemo()
+        java.io.File(context.filesDir, "lichen").deleteRecursively()
+        for (p in listOf("lichen", "lichen.identity")) context.deleteSharedPreferences(p)
+        FakeAndroidKeyStore.clear()
+        app.model = AppModel(app)
+        launch(*extras)
+    }
+
+    /** The app leaves the screen (another app, the home screen); it goes on behind. */
+    fun leave() {
+        scenario!!.moveToState(androidx.lifecycle.Lifecycle.State.CREATED)
+    }
+
+    /** Back on screen. */
+    fun comeBack() {
+        scenario!!.moveToState(androidx.lifecycle.Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+    }
+
+    /** Away for [seconds], then back. */
+    fun awayFor(seconds: Int) {
+        leave()
+        advance(seconds)
+        comeBack()
+    }
+
+    /** The app opened by an intent from outside (a notification's): its screen comes back with
+     * it, the process (the model, the demo) the same. */
+    fun launchWith(intent: Intent) {
+        scenario?.close()
+        scenario = ActivityScenario.launch(intent)
+        compose.waitForIdle()
+    }
+
     /** Answers the activity the app just started for a result (the system's file picker…). */
     fun answerNextActivity(data: Intent?, result: Int = android.app.Activity.RESULT_OK) {
         scenario!!.onActivity { a ->
@@ -106,6 +147,17 @@ abstract class UiTest {
         }
         compose.waitForIdle()
     }
+
+    /** The system's back: closes the sheet or dialog on top, else goes back a screen. */
+    fun back() {
+        androidx.test.espresso.Espresso.pressBack()
+        compose.waitForIdle()
+    }
+
+    /** Every text on screen, in every window. */
+    fun shown(): List<String> =
+        compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true)
+            .fetchSemanticsNodes().flatMap { n -> n.config[SemanticsProperties.Text].map { it.text } }
 
     /** Lets [seconds] of simulated time pass, in the demo's own 200 ms steps. */
     fun advance(seconds: Double) {
@@ -217,7 +269,8 @@ abstract class UiTest {
         val switches = compose.onAllNodes(isToggleable(), useUnmergedTree = true)
         val nodes = switches.fetchSemanticsNodes()
         val i = nodes.indices.minBy { abs(nodes[it].boundsInRoot.center.y - label.center.y) }
-        switches[i].performScrollTo().performClick()
+        // In view first, when a list holds it.
+        switches[i].also { runCatching { it.performScrollTo() } }.performClick()
         compose.waitForIdle()
     }
 

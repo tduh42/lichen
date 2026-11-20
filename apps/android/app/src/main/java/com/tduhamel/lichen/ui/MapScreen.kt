@@ -67,6 +67,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -376,8 +378,9 @@ private fun SharePanel(model: AppModel, edit: () -> Unit) {
             .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val handle = stringResource(if (expanded) R.string.hide_details else R.string.show_details)
         Box(
-            Modifier.fillMaxWidth().height(12.dp).clickable { expanded = !expanded },
+            Modifier.fillMaxWidth().height(12.dp).clickable { expanded = !expanded }.semantics { contentDescription = handle },
             contentAlignment = Alignment.Center,
         ) { Box(Modifier.size(width = 36.dp, height = 5.dp).background(t.line, CircleShape)) }
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -385,7 +388,7 @@ private fun SharePanel(model: AppModel, edit: () -> Unit) {
                 Text(stringResource(R.string.location_sharing), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = t.tx)
                 Text(shareStatus(model), fontSize = 13.sp, color = if (model.sos) t.sosFg else t.tx2)
             }
-            LichenSwitch(model.shares.isNotEmpty(), { on -> if (on) edit() else model.stopAllShares() })
+            LichenSwitch(model.shares.isNotEmpty(), { on -> if (on) edit() else model.stopAllShares() }, label = stringResource(R.string.location_sharing))
         }
         if (expanded) {
             LocationAccessBanner(model) {

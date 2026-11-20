@@ -133,7 +133,7 @@ fun IdentityScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null
 @Composable
 private fun ChevronRow(title: String, subtitle: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { CardRow(title, subtitle) }
+        Column(Modifier.weight(1f)) { CardRow(title, subtitle, merge = false) }
         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = lichen.tx2, modifier = Modifier.padding(end = 12.dp))
     }
 }
