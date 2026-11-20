@@ -40,20 +40,27 @@ struct IdentityView: View {
                 .padding(16)
                 .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
 
-                if !model.phraseBackedUp {
+                if model.isDemo {
+                    // The demo runs on a throwaway identity: its words are not the phone's, and
+                    // writing them down must not mark the phone's identity as backed up.
+                    Banner(kind: .iroh, title: String(localized: "The demo's identity"),
+                           message: String(localized: "The demo network uses an identity of its own, thrown away when you leave it. Yours, and its 24 words, are back then."))
+                } else if !model.phraseBackedUp {
                     Banner(kind: .warn, title: String(localized: "Not backed up"),
                            message: String(localized: "Without a backup, losing this phone means losing your identity and your verified contacts."))
                 }
 
                 CardList {
-                    Button { showingPhrase = true } label: {
-                        CardRow(title: String(localized: "Recovery phrase"),
-                                subtitle: String(localized: "24 words to write on paper")) {
-                            Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                    if !model.isDemo {
+                        Button { showingPhrase = true } label: {
+                            CardRow(title: String(localized: "Recovery phrase"),
+                                    subtitle: String(localized: "24 words to write on paper")) {
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                            }
                         }
+                        .buttonStyle(.plain)
+                        CardDivider()
                     }
-                    .buttonStyle(.plain)
-                    CardDivider()
                     Button { restoring = true } label: {
                         CardRow(title: String(localized: "Restore an identity"),
                                 subtitle: String(localized: "From its 24 words: replaces this one")) {
@@ -121,6 +128,7 @@ struct RecoveryPhraseSheet: View {
                                     .foregroundStyle(Theme.tx2)
                                     .frame(width: 22, alignment: .trailing)
                                 Text(verbatim: w).font(.system(.body, design: .monospaced, weight: .semibold))
+                                    .accessibilityIdentifier("phrase.\(i + 1)")
                             }
                             .padding(.vertical, 6)
                             .padding(.horizontal, 10)

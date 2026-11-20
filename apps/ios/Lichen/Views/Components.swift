@@ -270,6 +270,8 @@ struct MeasurementRow: View {
 /// A key fingerprint: 6 groups of 4 hex digits, 3 per line.
 struct KeyFingerprint: View {
     let groups: [String]
+    /// For UI tests: "fingerprint", or "safetyNumber".
+    var identifier = "fingerprint"
 
     var body: some View {
         Grid(horizontalSpacing: 28, verticalSpacing: 8) {
@@ -282,6 +284,7 @@ struct KeyFingerprint: View {
             }
         }
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(identifier)
     }
 }
 
@@ -290,7 +293,7 @@ struct SafetyNumber: View {
     let groups: [String]
 
     var body: some View {
-        KeyFingerprint(groups: groups)
+        KeyFingerprint(groups: groups, identifier: "safetyNumber")
     }
 }
 

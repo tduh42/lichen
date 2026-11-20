@@ -1,36 +1,20 @@
 import XCTest
 
-/// The chat screen on the demo network (`-demo YES`), driven as a user drives it: leaving a
-/// conversation, and reopening a long one.
-final class ChatNavigationTests: XCTestCase {
-    override func setUp() {
-        continueAfterFailure = false
-    }
-
-    private func launch(_ arguments: [String]) -> XCUIApplication {
-        let app = XCUIApplication()
-        app.launchArguments = ["-demo", "YES", "-onboarded", "YES"] + arguments
-        app.launch()
-        // The notification permission, asked once per install.
-        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow"]
-        if allow.waitForExistence(timeout: 5) { allow.tap() }
-        return app
-    }
-
+/// The chat screen on the demo network, driven as a user drives it: leaving a conversation,
+/// and reopening a long one (regressions found before docs/testing.md).
+final class ChatNavigationTests: LichenUITest {
     private func inChat(_ app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)["composer"]
     }
 
     /// Her lichen conversation, with a session: the key button in the bar (the session line at
     /// the top of the list is not built while a long chat shows its end).
-    private func encrypted(_ app: XCUIApplication) -> XCUIElement {
-        app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@", ["Verify their key", "Key verified"])).firstMatch
-    }
+    private func encrypted(_ app: XCUIApplication) -> XCUIElement { keyButton }
 
     /// A chat opened from elsewhere (as a notification opens it) closes with Back, and the
     /// conversation list stays (it used to open the same chat again).
     func testBackStaysOnTheList() {
-        let app = launch(["-open", "Camille"])
+        launch(["-open", "Camille"])
         XCTAssertTrue(inChat(app).waitForExistence(timeout: 60), "the chat did not open")
         // Her lichen conversation, once her identity is known (before, `-open` shows her
         // MeshCore chat and switches once).
@@ -39,9 +23,9 @@ final class ChatNavigationTests: XCTestCase {
         sleep(5)
         XCTAssertFalse(inChat(app).exists, "Back opened a chat again")
         // Another tab, then Messages again: still the list.
-        app.tabBars.buttons.element(boundBy: 1).tap()
+        tab(.map)
         sleep(2)
-        app.tabBars.buttons.element(boundBy: 0).tap()
+        tab(.messages)
         sleep(3)
         XCTAssertFalse(inChat(app).exists, "coming back to Messages opened a chat again")
         // A while later, messages arriving: still the list.
@@ -52,7 +36,7 @@ final class ChatNavigationTests: XCTestCase {
     /// Tapping a notification opens its chat. It used to abort the app: the delegate's
     /// completion ran off the main thread.
     func testTappingANotificationOpensItsChat() {
-        let app = launch([])
+        launch([])
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         // Camille's first message comes while the list is on screen: a banner.
         let banner = springboard.descendants(matching: .any)
@@ -67,7 +51,7 @@ final class ChatNavigationTests: XCTestCase {
     /// A row tapped twice while a long chat opens (it takes a moment) opens it once: Back
     /// returns to the list, not to the same chat.
     func testATappedTwiceRowOpensOnce() {
-        let app = launch(["-fill", "250"])
+        launch(["-fill", "250"])
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Camille'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 90), "no Camille")
         row.doubleTap()
@@ -81,7 +65,7 @@ final class ChatNavigationTests: XCTestCase {
     /// Every conversation of the list opens the one tapped, and Back returns to the list, with
     /// messages arriving meanwhile.
     func testEveryConversationOpensAndCloses() {
-        let app = launch([])
+        launch([])
         let names = ["Camille", "Rando Vercors", "Marc", "Public"]
         // The demo's group comes last, once its keys are out.
         let group = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Rando Vercors'")).firstMatch
@@ -111,11 +95,11 @@ final class ChatNavigationTests: XCTestCase {
 
     /// A long chat with a photo, opened again once everything is read, shows its last message.
     func testALongChatOpensAtTheEnd() {
-        let app = launch(["-open", "Camille", "-fill", "250"])
+        launch(["-open", "Camille", "-fill", "250"])
         XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
         XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
         // Her photo comes about two minutes in.
-        let photo = app.staticTexts["The view from the refuge tonight:"]
+        let photo = containing("The view from the refuge tonight")
         XCTAssertTrue(photo.waitForExistence(timeout: 240), "no photo")
         sleep(30)
         app.navigationBars.buttons.element(boundBy: 0).tap()
@@ -136,15 +120,15 @@ final class ChatNavigationTests: XCTestCase {
     /// page before keeps the message that was at the top, and the pill of a new message goes
     /// down to it.
     func testALongChatKeepsItsPlaces() {
-        let app = launch(["-open", "Camille", "-fill", "5000"])
+        launch(["-open", "Camille", "-fill", "5000"])
         XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
         XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
-        let divider = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH 'unread messages'")).firstMatch
+        let divider = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", tr("%lld unread messages", 5).replacingOccurrences(of: "5 ", with: ""))).firstMatch
         XCTAssertTrue(divider.waitForExistence(timeout: 10), "no unread divider")
         XCTAssertTrue(divider.isHittable, "the divider is off screen")
         // Up to the first message of the page, then the page before it.
         let list = app.scrollViews.firstMatch
-        let earlier = app.buttons["Show earlier messages"]
+        let earlier = button(tr("Show earlier messages"))
         for _ in 0..<20 where !(earlier.exists && earlier.isHittable) { list.swipeDown(velocity: .fast) }
         XCTAssertTrue(earlier.isHittable, "no earlier page")
         let top = app.staticTexts["Earlier message 4901"]
@@ -154,7 +138,7 @@ final class ChatNavigationTests: XCTestCase {
         XCTAssertTrue(top.isHittable, "the earlier page moved the view")
         XCTAssertTrue(app.staticTexts["Earlier message 4900"].exists, "the page before is not there")
         // Camille's first message comes while we read above: the pill, then the end.
-        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS 'new message'")).firstMatch
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("%lld new messages", 1).replacingOccurrences(of: "1 ", with: ""))).firstMatch
         XCTAssertTrue(pill.waitForExistence(timeout: 180), "no pill")
         pill.tap()
         sleep(2)
