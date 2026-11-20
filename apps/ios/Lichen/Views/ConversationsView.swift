@@ -410,15 +410,20 @@ struct RadioCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
-                Text(radioHeadline(model)).font(.system(.subheadline, weight: .semibold)).lineLimit(1)
-                Spacer()
-                if let r = model.radio, model.isConnected {
-                    Text("BLE · SF\(r.sf) / \(bandwidth(r.bwHz))")
-                        .font(.system(.footnote))
-                        .foregroundStyle(Theme.tx2)
+                // The radio's name whole, its link and parameters under it.
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(radioHeadline(model)).font(.system(.subheadline, weight: .semibold))
+                    if let r = model.radio, model.isConnected {
+                        // How the radio is reached: Bluetooth, TCP, or the demo's simulation.
+                        let link = model.isDemo ? String(localized: "Demo") : model.link == .tcp ? "TCP" : "BLE"
+                        Text("\(link) · SF\(r.sf) / \(bandwidth(r.bwHz))")
+                            .font(.system(.footnote))
+                            .foregroundStyle(Theme.tx2)
+                    }
                 }
+                Spacer()
                 if folds {
                     Image(systemName: "chevron.up")
                         .font(.system(.footnote, weight: .semibold))
@@ -577,14 +582,16 @@ struct StatusBanners: View {
 
     var body: some View {
         Group {
-            if !model.isConnected && !model.isDemo {
+            // The demo's simulated radio switched off (Settings › Demo, `-offline`) too: Retry
+            // switches it back on.
+            if !model.isConnected && (!model.isDemo || model.demoRadioOff) {
                 Banner(
                     kind: .warn,
                     title: String(localized: "Radio disconnected"),
                     message: model.companionState == .off
                         ? String(localized: "Turn Bluetooth on to reach your radio.")
                         : String(localized: "Messages wait until the radio is back."),
-                    action: (String(localized: "Retry"), { model.retryRadio() })
+                    action: (String(localized: "Retry"), { model.isDemo ? model.setDemoRadio(on: true) : model.retryRadio() })
                 )
             }
             // A contact speaks a newer protocol version (ADR-0029).

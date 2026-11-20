@@ -150,6 +150,14 @@ enum Keychain {
         return key
     }
 
+    #if DEBUG
+    /// Removes the identity and the database key (debug `freshInstall`, UI tests).
+    static func debugErase() {
+        SecItemDelete(base as CFDictionary)
+        SecItemDelete(databaseBase as CFDictionary)
+    }
+    #endif
+
     /// Seeds for the core's random generator and for throwaway identities (demo).
     static func randomSeed() -> Data {
         // SecRandomCopyBytes does not fail on a working system; an all-zero seed would be worse

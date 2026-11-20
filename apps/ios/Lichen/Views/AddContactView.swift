@@ -97,6 +97,9 @@ struct AddContactView: View {
                     .background(.white, in: RoundedRectangle(cornerRadius: 16))
                     .frame(maxWidth: 240)
                     .accessibilityLabel("Your contact code")
+                // The name the card carries, as the contact will see it.
+                Text(verbatim: model.myName.isEmpty ? model.nodeName : model.myName)
+                    .font(.system(.headline))
                 Text("Have your contact scan this code, in person.")
                     .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
@@ -105,6 +108,8 @@ struct AddContactView: View {
         } else {
             Banner(kind: .warn, title: String(localized: "Connect your radio first"),
                    message: String(localized: "Your code carries your radio's address, so people can reach you."))
+                // Its own height, not the screen's (a spacer follows).
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -282,6 +287,8 @@ struct VerifyPanel: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
             }
         }
+        // Banners take their own height, not the screen's (Add a contact has a spacer below).
+        .fixedSize(horizontal: false, vertical: true)
         .onAppear { if shown == nil { refresh(stale: false) } }
     }
 

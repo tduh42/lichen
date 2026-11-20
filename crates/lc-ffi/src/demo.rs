@@ -185,6 +185,8 @@ struct Demo {
     group: Option<GroupId>,
     pending: Vec<(u64, Action)>,
     julien_posted: bool,
+    /// Julien's first post, not before (demo time): after Camille's photo transfer.
+    julien_from: u64,
     /// When Julien started walking (simulated ms), once he shares with the group.
     julien_walk: Option<u64>,
     next_fix: u64,
@@ -283,7 +285,34 @@ const SEC: u64 = 1_000;
 /// Julien's first post, not before (demo time): after Camille's photo transfer.
 const JULIEN_POSTS_FROM: u64 = 210 * SEC;
 
+/// When an event the script set at `at` comes once it is brought `skip` sooner (debug
+/// `demoSkip`): `skip` sooner, but no sooner than a quarter of its time after the first
+/// 3 seconds (the radio's start), so the early events keep their order and their spacing.
+fn sooner(at: u64, skip: u64) -> u64 {
+    let start = 3 * SEC;
+    if at <= start {
+        return at;
+    }
+    at.saturating_sub(skip).max(start + (at - start) / 4)
+}
+
 impl Demo {
+    /// Léa, next to the user (debug `inviteDemo`, `contactDemo`): her node, up once asked for.
+    fn guest(&mut self) -> usize {
+        if let Some(g) = self.guest {
+            return g;
+        }
+        let (app, hub) = (self.app, self.hub);
+        let g = self.net.add_companion(4, "Léa");
+        self.net.link(g, app);
+        self.net.link(g, hub);
+        self.net.connect(g);
+        let wall = self.wall0 + self.net.now;
+        let _ = self.net.with_core(g, |c, now| c.set_clock(wall, now));
+        self.guest = Some(g);
+        g
+    }
+
     /// The bots' wall clock, Unix seconds.
     const fn unix_s(&self) -> u64 {
         (self.wall0 + self.net.now) / 1000
@@ -691,7 +720,7 @@ impl Demo {
         // script below counts on it: his first post may still be lost at the hub, the second
         // is lost on purpose, the GIF reveals the gap).
         if !self.julien_posted
-            && now >= JULIEN_POSTS_FROM
+            && now >= self.julien_from
             && let Some(gid) = self.group
             && self
                 .net
@@ -957,6 +986,7 @@ impl DemoNetwork {
                 group: None,
                 pending,
                 julien_posted: false,
+                julien_from: JULIEN_POSTS_FROM,
                 julien_walk: None,
                 next_fix: 0,
                 wall0: wall,
@@ -973,6 +1003,39 @@ impl DemoNetwork {
                 board,
             }),
         })
+    }
+
+    /// The script's timed events come `seconds` sooner (debug `demoSkip`, for UI tests that
+    /// would otherwise wait for them): Camille's first message, her group, her photo, Marc's
+    /// and Lucie's posts, Julien's first post. Their order is kept (`sooner`). Call right
+    /// after `new`.
+    pub fn skip_ahead(&self, seconds: u64) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let skip = seconds * SEC;
+        for (at, _) in &mut d.pending {
+            *at = sooner(*at, skip);
+        }
+        d.julien_from = sooner(d.julien_from, skip);
+    }
+
+    /// A quiet demo (debug `quietDemo`, for UI tests of direct chats): no group, no photo, no
+    /// position share, no channel or room post; Camille's first message, Marc's and Lucie's
+    /// advert stay. Camille then answers in seconds instead of the minute or more the group's
+    /// keys and her photo take on the air. Call right after `new`.
+    pub fn quiet(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.pending.retain(|(_, a)| {
+            matches!(
+                a,
+                Action::Dm { .. } | Action::MarcWrites(_) | Action::HeardAdvert(_)
+            )
+        });
     }
 
     /// A person the radio files under another type (debug `marcRepeater`): the app's radio
@@ -1023,23 +1086,29 @@ impl DemoNetwork {
             .inner
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let guest = match d.guest {
-            Some(g) => g,
-            None => {
-                let (app, hub) = (d.app, d.hub);
-                let g = d.net.add_companion(4, "Léa");
-                d.net.link(g, app);
-                d.net.link(g, hub);
-                d.net.connect(g);
-                let wall = d.wall0 + d.net.now;
-                let _ = d.net.with_core(g, |c, now| c.set_clock(wall, now));
-                d.guest = Some(g);
-                g
-            }
-        };
-        let _ = guest;
+        d.guest();
         let at = d.net.now + 3 * SEC;
         d.pending.push((at, Action::GuestJoins(text)));
+    }
+
+    /// Léa's contact card (debug `contactDemo`, §4.7): her node comes up next to the user, and
+    /// the app scans or pastes her code to add her.
+    pub fn lea_card(&self) -> Option<String> {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let g = d.guest();
+        let node = d.net.key(g);
+        let identity = d.net.with_core_ref(g, |c| c.key().copied()).flatten()?;
+        Some(
+            lc_core::identity::Card {
+                identity,
+                node,
+                name: "Léa".into(),
+            }
+            .encode(),
+        )
     }
 
     /// Camille shows an invitation to a group of hers, "Refuge tonight", created for it (debug
@@ -1315,6 +1384,198 @@ mod tests {
         let leaving = order.iter().position(|o| o.0 == "leaving").unwrap();
         assert!(leaving < gif || order[leaving].1, "{order:?}");
         assert_eq!(order.len(), 3, "{order:?}");
+    }
+}
+
+#[cfg(test)]
+mod skip {
+    use super::*;
+    use crate::{LichenCore, LichenEvent, Message};
+
+    /// Brought sooner, the script's events keep their order and never pass the radio's start.
+    #[test]
+    fn sooner_keeps_the_order() {
+        let times: Vec<u64> = (0..400).map(|s| s * SEC).collect();
+        for skip in [0, 10, 25, 60, 200] {
+            let moved: Vec<u64> = times.iter().map(|&t| sooner(t, skip * SEC)).collect();
+            assert!(moved.windows(2).all(|w| w[0] <= w[1]), "skip {skip}");
+            assert!(
+                moved
+                    .iter()
+                    .zip(&times)
+                    .all(|(m, t)| m <= t && (*m >= 3 * SEC || m == t))
+            );
+        }
+        assert_eq!(sooner(30 * SEC, 0), 30 * SEC);
+        assert_eq!(sooner(150 * SEC, 30 * SEC), 120 * SEC);
+    }
+
+    /// When Camille's first message and Marc's arrive (ms), the script brought `skip` seconds
+    /// sooner.
+    fn first_messages(skip: u64) -> (Option<u64>, Option<u64>) {
+        let demo = DemoNetwork::new();
+        demo.skip_ahead(skip);
+        let core = LichenCore::new("t".into(), vec![9; 32], vec![109; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        let (mut camille, mut marc) = (None, None);
+        for step in 0..(90 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                match e {
+                    LichenEvent::Received {
+                        message: Message::Text { text, .. },
+                        ..
+                    } if text.starts_with("Hi! I'm at the refuge") => {
+                        camille = camille.or(Some(now));
+                    }
+                    LichenEvent::PlainReceived { text, .. } if text.starts_with("Hi! Marc") => {
+                        marc = marc.or(Some(now));
+                    }
+                    _ => {}
+                }
+            }
+            if camille.is_some() && marc.is_some() {
+                break;
+            }
+        }
+        (camille, marc)
+    }
+
+    /// `quietDemo` (with `demoSkip 20`): no group, photo or channel posts on the air, so a
+    /// text to Camille, sent at any time, is answered in seconds.
+    #[test]
+    fn quiet_demo_answers_in_seconds() {
+        for at in [30_000, 60_000] {
+            let demo = DemoNetwork::new();
+            demo.skip_ahead(20);
+            demo.quiet();
+            let core = LichenCore::new("t".into(), vec![13; 32], vec![113; 32], None).unwrap();
+            core.set_group_consent(false);
+            core.set_request_consent(false);
+            core.connect(0);
+            let (mut sent, mut answered, mut posts) = (None, None, 0);
+            for step in 0..(120 * 10) {
+                let now = step * 100;
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while let Some(e) = core.poll_event() {
+                    match e {
+                        LichenEvent::Received {
+                            message: Message::Text { text, .. },
+                            ..
+                        } if text.starts_with("Copy: \"On my way") => {
+                            answered = answered.or(sent.map(|s| now - s));
+                        }
+                        LichenEvent::GroupJoined { .. }
+                        | LichenEvent::PlainReceived {
+                            chat: crate::ChatRef::Channel { .. },
+                            ..
+                        } => posts += 1,
+                        _ => {}
+                    }
+                }
+                if sent.is_none()
+                    && now >= at
+                    && let Some(c) = core
+                        .contacts()
+                        .into_iter()
+                        .find(|c| c.name == "Camille" && c.identity.is_some())
+                {
+                    core.send_text(c.key, "On my way".into(), 1, now).unwrap();
+                    sent = Some(now);
+                }
+            }
+            let answered = answered.expect("no answer");
+            assert!(
+                answered < 15_000,
+                "answered after {answered} ms (sent at {at} ms)"
+            );
+            assert_eq!(posts, 0, "a group or a channel post in a quiet demo");
+        }
+    }
+
+    /// `demoSkip 20` (the UI tests'): Camille's first message comes 20 seconds sooner, then
+    /// Marc's, in the script's order. More is not faster: before about 10 s the bots are still
+    /// meeting each other on the air, and Marc's message is lost.
+    #[test]
+    fn camille_writes_sooner() {
+        let (camille, marc) = first_messages(0);
+        let (camille_soon, marc_soon) = first_messages(20);
+        eprintln!(
+            "Camille at {camille:?} then {camille_soon:?} ms, Marc at {marc:?} then {marc_soon:?} ms"
+        );
+        let (camille, camille_soon) = (camille.unwrap(), camille_soon.unwrap());
+        assert!(
+            camille_soon + 18_000 <= camille,
+            "{camille_soon} vs {camille}"
+        );
+        assert!(marc_soon.is_some_and(|m| m > camille_soon && m < marc.unwrap()));
+    }
+}
+
+#[cfg(test)]
+mod card {
+    use super::*;
+    use crate::{LichenCore, LichenEvent};
+
+    /// `contactDemo`: Léa's card adds her, verified when scanned, and a text to her is
+    /// delivered once her radio heard ours.
+    #[test]
+    fn lea_card_adds_a_contact_to_write_to() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![10; 32], vec![110; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        let mut lea = None;
+        let mut delivered = None;
+        for step in 0..(120 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                match e {
+                    LichenEvent::Delivered { .. } => delivered = delivered.or(Some(now)),
+                    LichenEvent::Failed { .. } => panic!("{e:?} at {now} ms"),
+                    _ => {}
+                }
+            }
+            if lea.is_none() && now >= 5_000 {
+                let card = demo.lea_card().expect("no card");
+                let c = core.add_contact_card(card, true).unwrap();
+                assert_eq!(c.name, "Léa");
+                assert!(c.verified);
+                // Her radio must know ours to answer the path discovery (§4.5): an advert
+                // first (bugs-ios.md B-ios-1: without it, the text fails with NoPath).
+                core.send_advert(true, now);
+                core.send_text(c.key.clone(), "Hello Léa".into(), 1, now)
+                    .unwrap();
+                lea = Some(c.key);
+            }
+            if delivered.is_some() {
+                break;
+            }
+        }
+        assert!(delivered.is_some(), "the text to Léa was not delivered");
     }
 }
 
