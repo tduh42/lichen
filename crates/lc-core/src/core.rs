@@ -1982,6 +1982,18 @@ impl Core {
             if expect == Expect::Contacts {
                 self.contacts_cut_short(now);
             }
+            // A radio slow to answer APP_START (busy, or a phone short of time): its late
+            // SELF_INFO answers nothing any more and is dropped, and without it we are not
+            // connected. It goes again, after what waits (§1.1, B-ios-15).
+            if expect == Expect::SelfInfo && !self.online {
+                let name = self.app_name.clone();
+                self.command(
+                    &Command::AppStart {
+                        name: name.as_bytes(),
+                    },
+                    Expect::SelfInfo,
+                );
+            }
         }
         let (frame, expect) = self.commands.pop_front()?;
         self.awaiting = Some((expect, now + COMMAND_TIMEOUT_MS));
@@ -2225,6 +2237,7 @@ impl Core {
                 {
                     self.budget = b;
                 }
+                self.settings.read = true;
                 self.settings.name = self.name.clone();
                 self.settings.freq_khz = si.freq_khz;
                 self.settings.bw_hz = si.bw_hz;
