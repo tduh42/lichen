@@ -25,6 +25,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 /** Area 2 of docs/testing.md: the radio link and the radio's settings. */
@@ -244,6 +245,43 @@ class RadioLinkTest : UiTest() {
         see(R.string.position_advertised)
         val where = Regex("""^\d+\.\d{5}, \d+\.\d{5}$""")
         assertTrue("its coordinates: ${shown()}", shown().any { where.matches(it) })
+    }
+
+    /** RL-5 (D-9): a radio slow to answer (its replies held for 7 s): its settings screen says
+     * they are being read, neither "Connect a radio" nor zeros as values; then its values. */
+    @Test
+    fun RL_5_settingsBeingRead(): Unit = beingRead()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_5_settingsBeingRead_fr(): Unit = beingRead()
+
+    private fun beingRead() = FakeTcpRadio().use { radio ->
+        radio.holdReplies(7_000)
+        launch("onboarding" to false, "tcp" to radio.address, "screen" to "radio")
+        waitReal("the link") { model.isConnected }
+        // Nothing answered yet (then the values still zeros, RadioSettings.read false): twice.
+        repeat(2) {
+            pause(1_500)
+            assertFalse("read before the radio answered", model.radioSettings?.read == true)
+            see(R.string.reading_radio_settings)
+            assertFalse(has(R.string.radio_settings_none))
+            assertFalse(has(R.string.lora_now))
+        }
+        // Answered: its values (the LoRa section's "Now", at the top).
+        waitReal("its settings read", 30_000) { model.radioSettings?.read == true }
+        waitReal("its values shown") { has(R.string.lora_now) }
+        assertFalse(has(R.string.reading_radio_settings))
+    }
+
+    /** [ms] of real time, the app running (a link with threads of its own). */
+    private fun pause(ms: Long) {
+        val end = System.nanoTime() + ms * 1_000_000
+        while (System.nanoTime() < end) {
+            shadowOf(android.os.Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(50))
+            Thread.sleep(20)
+        }
+        compose.waitForIdle()
     }
 
     /** RL-6: a setting the radio cannot take: said so, the old value stays. */

@@ -205,6 +205,13 @@
     <string name="encrypted_backup_note">Your messages, contacts, groups and media in one file your 24 words open</string>
     <string name="recovery_phrase_intro">Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.</string>
     <string name="wrote_them_down">I wrote them down</string>
+    <string name="check_your_phrase">Check your phrase</string>
+    <string name="check_phrase_note">Type these three words of your phrase, from your paper.</string>
+    <string name="word_n">Word %1$d</string>
+    <string name="phrase_word_wrong">One of these words is not the one in your phrase.</string>
+    <string name="phrase_look_again">Look at the phrase again, and correct your paper if needed.</string>
+    <string name="check">Check</string>
+    <string name="show_phrase_again">Show the phrase again</string>
     <string name="restore_intro">Type the 24 words of the identity to restore, separated by spaces. It replaces the identity on this phone.</string>
     <string name="words_count">%1$d / 24 words</string>
     <string name="identity_problem_title">Your identity can’t be used right now</string>
@@ -887,6 +894,7 @@
     <string name="delivery">Delivery</string>
     <string name="new_contacts">New contacts</string>
     <string name="radio_settings">Radio settings</string>
+    <string name="reading_radio_settings">Reading the radio’s settings…</string>
     <string name="radio_settings_none">Connect a radio to see its settings.</string>
     <string name="hours_n">%1$d h</string>
     <string name="minutes_n">%1$d min</string>

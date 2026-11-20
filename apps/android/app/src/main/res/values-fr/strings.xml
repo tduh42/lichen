@@ -208,6 +208,13 @@
     <string name="encrypted_backup_note">Tes messages, contacts, groupes et médias dans un fichier que tes 24 mots ouvrent</string>
     <string name="recovery_phrase_intro">Écris ces 24 mots sur papier, dans l’ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi.</string>
     <string name="wrote_them_down">Je les ai notés</string>
+    <string name="check_your_phrase">Vérifie ta phrase</string>
+    <string name="check_phrase_note">Tape ces trois mots de ta phrase, depuis ton papier.</string>
+    <string name="word_n">Mot %1$d</string>
+    <string name="phrase_word_wrong">Un de ces mots n’est pas celui de ta phrase.</string>
+    <string name="phrase_look_again">Relis la phrase, et corrige ton papier s’il le faut.</string>
+    <string name="check">Vérifier</string>
+    <string name="show_phrase_again">Revoir la phrase</string>
     <string name="restore_intro">Tape les 24 mots de l’identité à restaurer, séparés par des espaces. Elle remplace l’identité de ce téléphone.</string>
     <string name="words_count">%1$d / 24 mots</string>
     <string name="identity_problem_title">Ton identité est inutilisable pour le moment</string>
@@ -897,6 +904,7 @@
     <string name="delivery">Remise</string>
     <string name="new_contacts">Nouveaux contacts</string>
     <string name="radio_settings">Réglages de la radio</string>
+    <string name="reading_radio_settings">Lecture des réglages de la radio…</string>
     <string name="radio_settings_none">Connecte une radio pour voir ses réglages.</string>
     <string name="hours_n">%1$d h</string>
     <string name="minutes_n">%1$d min</string>

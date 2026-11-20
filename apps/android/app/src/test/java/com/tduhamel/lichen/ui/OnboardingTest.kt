@@ -71,6 +71,9 @@ class OnboardingTest : UiTest() {
         assertEquals(24, words.size)
         for (w in words.toSet()) assertTrue("word $w shown", has(w))
         tap(R.string.wrote_them_down)
+        // Three of them checked (D-7).
+        answer(words, asked().map { it - 1 })
+        tap(R.string.check)
         assertFalse(has(R.string.not_backed_up))
         assertTrue(model.phraseBackedUp)
 
@@ -153,6 +156,74 @@ class OnboardingTest : UiTest() {
         assertNotEquals(mine, theirs)
         for (g in theirs) text(g).assertIsDisplayed()
         assertFalse(has(R.string.not_backed_up))
+    }
+
+    /** The positions the phrase check asks for ("Word 5"), from the screen. */
+    private fun asked(): List<Int> {
+        val (before, after) = str(R.string.word_n, 999).split("999")
+        val label = Regex(Regex.escape(before) + "(\\d+)" + Regex.escape(after))
+        return shown().mapNotNull { label.matchEntire(it)?.groupValues?.get(1)?.toInt() }.distinct()
+    }
+
+    /** The check's three fields (the sheet's; the name field is behind it). */
+    private fun answer(words: List<String>, asked: List<Int>, wrongAt: Int? = null) {
+        val fields = compose.onAllNodes(hasSetTextAction()).fetchSemanticsNodes().size
+        asked.forEachIndexed { k, position ->
+            val word = if (k == wrongAt) words[position] + "x" else words[position].uppercase()
+            compose.onAllNodes(hasSetTextAction())[fields - 3 + k].performTextReplacement(" $word ")
+        }
+    }
+
+    /** ON-3 (D-7): "I wrote them down" asks for three of the 24 words, by position: a wrong one
+     * says so and the phrase can be seen again; only three right words back the identity up. */
+    @Test
+    fun ON_3_writtenDownPhraseIsChecked() = phraseCheck()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun ON_3_writtenDownPhraseIsChecked_fr() = phraseCheck()
+
+    private fun phraseCheck() {
+        launch("onboarding" to false, "screen" to "identity")
+        val words = model.recoveryPhrase()
+        tap(R.string.recovery_phrase)
+        tap(R.string.wrote_them_down)
+        text(R.string.check_your_phrase).assertIsDisplayed()
+        val first = asked()
+        assertEquals(first.toString(), 3, first.size)
+        assertTrue(first.all { it in 1..24 })
+        // One word wrong: said so, nothing backed up; the phrase again.
+        answer(words, first.map { it - 1 }, wrongAt = 1)
+        tap(R.string.check)
+        see(R.string.phrase_word_wrong)
+        assertFalse(model.phraseBackedUp)
+        tap(R.string.show_phrase_again)
+        for (w in words.toSet()) assertTrue("word $w shown", has(w))
+        // Asked again: three right words (case and spaces aside), backed up.
+        tap(R.string.wrote_them_down)
+        val again = asked()
+        assertEquals(3, again.size)
+        answer(words, again.map { it - 1 })
+        tap(R.string.check)
+        assertTrue(model.phraseBackedUp)
+        assertFalse(has(R.string.not_backed_up))
+    }
+
+    /** ON-3 (D-7): in the demo, its throwaway identity's words, checked, back up nothing of the
+     * phone's own identity (as B-ios-2 on iOS). */
+    @Test
+    fun ON_3_theDemoDoesNotBackUpTheRealIdentity() {
+        launch("demo" to true, "screen" to "identity")
+        advanceUntil("the demo radio") { model.isConnected }
+        val words = model.recoveryPhrase()
+        tap(R.string.recovery_phrase)
+        tap(R.string.wrote_them_down)
+        answer(words, asked().map { it - 1 })
+        tap(R.string.check)
+        // The phone's own identity, after the demo: still not backed up.
+        restart("onboarding" to false, "screen" to "identity")
+        assertFalse(model.phraseBackedUp)
+        see(R.string.not_backed_up)
     }
 
     /** ON-4: my code: a QR code that reads back as my card, which names me. */

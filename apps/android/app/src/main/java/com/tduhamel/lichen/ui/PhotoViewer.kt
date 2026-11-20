@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.PhotoLibrary
 import android.webkit.MimeTypeMap
 import android.provider.MediaStore
 import android.os.Environment
@@ -149,14 +149,15 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
                     IconButton(onClick = close, colors = round) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
                     Spacer(Modifier.weight(1f))
                     if (shown != null) {
-                        // To the phone's gallery (D-5).
+                        // To the phone's gallery (D-5): a gallery's icon, not a download arrow, so it is
+                        // not mistaken for "Download full resolution" below.
                         IconButton(onClick = {
                             scope.launch {
                                 val ok = withContext(Dispatchers.IO) { saveToGallery(context, shown) }
                                 if (ok) saved = true else error = notSaved
                             }
                         }, colors = round) {
-                            Icon(Icons.Outlined.Download, stringResource(R.string.save))
+                            Icon(Icons.Outlined.PhotoLibrary, stringResource(R.string.save))
                         }
                         IconButton(onClick = { share(context, shown) }, colors = round) {
                             Icon(Icons.Outlined.Share, stringResource(R.string.share))
