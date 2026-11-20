@@ -134,7 +134,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.licenceRows(entries: 
         Column(Modifier.fillMaxWidth().background(t.s1, shape)) {
             if (i > 0) CardDivider()
             Row(Modifier.fillMaxWidth().clickable { open(e) }, verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.weight(1f)) { CardRow(e.title, e.licence) }
+                Box(Modifier.weight(1f)) { CardRow(e.title, e.licence, merge = false) }
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
             }
         }

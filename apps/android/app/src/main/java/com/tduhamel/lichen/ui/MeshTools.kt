@@ -308,7 +308,7 @@ fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () ->
             item {
                 CardList {
                     Box(Modifier.clickable { openChat(ChatId.room(key)) }) {
-                        CardRow(stringResource(R.string.open_room), stringResource(R.string.open_room_note)) { Chevron() }
+                        CardRow(stringResource(R.string.open_room), stringResource(R.string.open_room_note), merge = false) { Chevron() }
                     }
                 }
             }
@@ -409,7 +409,7 @@ fun ServerLoginCard(model: AppModel, key: ByteArray, room: Boolean) {
                 }
                 CardDivider()
                 Box(Modifier.clickable { model.serverLogout(key) }) {
-                    CardRow(stringResource(R.string.log_out)) {}
+                    CardRow(stringResource(R.string.log_out), merge = false) {}
                 }
             } else {
                 CardDivider()
@@ -497,7 +497,7 @@ private fun LazyListScope.repeaterItems(model: AppModel, key: ByteArray, console
     item {
         CardList {
             Box(Modifier.clickable(onClick = console)) {
-                CardRow(stringResource(R.string.console), stringResource(R.string.console_note)) { Chevron() }
+                CardRow(stringResource(R.string.console), stringResource(R.string.console_note), merge = false) { Chevron() }
             }
         }
     }

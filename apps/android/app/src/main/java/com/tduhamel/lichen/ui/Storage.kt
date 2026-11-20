@@ -221,7 +221,7 @@ fun StorageScreen(model: AppModel, back: () -> Unit) {
                     listOf(30, 90, 365).forEachIndexed { i, days ->
                         if (i > 0) CardDivider()
                         Box(Modifier.clickable { clearing = days }) {
-                            CardRow(olderThan(days)) {}
+                            CardRow(olderThan(days), merge = false) {}
                         }
                     }
                 }

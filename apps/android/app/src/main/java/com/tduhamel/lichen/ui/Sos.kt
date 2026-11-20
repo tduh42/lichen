@@ -264,7 +264,7 @@ fun SosReceivedDialog(model: AppModel, from: String, search: () -> Unit, reply: 
                 if (p != null) {
                     CardRow(
                         stringResource(R.string.last_gps),
-                        "${ago(p.atS)} · ±${p.radiusM.roundToInt()} m · ${"%.4f, %.4f".format(p.lat, p.lon)}",
+                        "${ago(p.atS)} · ±${p.radiusM.roundToInt()} m · ${String.format(java.util.Locale.ROOT, "%.4f, %.4f", p.lat, p.lon)}",
                     )
                     CardDivider()
                     val d = model.distanceTo(p)

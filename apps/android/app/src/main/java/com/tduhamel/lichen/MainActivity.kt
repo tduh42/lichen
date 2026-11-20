@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 import android.graphics.Color
 import android.hardware.usb.UsbDevice
@@ -38,6 +39,12 @@ import com.tduhamel.lichen.ui.LocalLockPrompt
 import com.tduhamel.lichen.ui.LockCover
 import com.tduhamel.lichen.ui.RootScreen
 import com.tduhamel.lichen.ui.isDark
+
+
+/** UI tests: stands in for the system's lock prompt, which Robolectric cannot run; the test
+ * answers it through [AppLock.finished]. A phone never sets it. */
+@VisibleForTesting
+var lockPromptForTests: ((AppLock.Purpose) -> Unit)? = null
 
 /** A `FragmentActivity`: androidx.biometric's prompt (the app lock) needs one. */
 class MainActivity : FragmentActivity() {
@@ -152,6 +159,10 @@ class MainActivity : FragmentActivity() {
             .setAllowedAuthenticators(AUTHENTICATORS)
             .build()
         lock.started(purpose)
+        lockPromptForTests?.let {
+            it(purpose)
+            return
+        }
         runCatching { biometric.authenticate(info) }.onFailure { lock.finished(false) }
     }
 

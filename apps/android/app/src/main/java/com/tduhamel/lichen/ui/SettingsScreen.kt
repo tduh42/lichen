@@ -52,6 +52,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,10 +65,17 @@ import com.tduhamel.lichen.model.Appearance
 import com.tduhamel.lichen.model.bandwidth
 
 @Composable
-fun LichenSwitch(checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
+fun LichenSwitch(
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+    /** What it turns on, for screen readers, when no row around it says so. */
+    label: String? = null,
+) {
     val t = lichen
     Switch(
         checked, onChange, enabled = enabled,
+        modifier = if (label != null) Modifier.semantics { contentDescription = label } else Modifier,
         colors = SwitchDefaults.colors(
             checkedTrackColor = t.ok, checkedThumbColor = t.actFg,
             uncheckedTrackColor = t.s2, uncheckedThumbColor = t.tx2, uncheckedBorderColor = t.line,
@@ -138,12 +147,13 @@ fun SettingsScreen(
                             } else {
                                 stringResource(R.string.read_from_radio)
                             },
+                            merge = false,
                         ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
                     CardDivider()
                     // Radios to switch between (ADR-0042).
                     Box(Modifier.clickable { radios() }) {
-                        CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size)) {
+                        CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size), merge = false) {
                             Text("›", color = lichen.tx2, fontSize = 20.sp)
                         }
                     }
@@ -153,11 +163,13 @@ fun SettingsScreen(
                         CardRow(
                             stringResource(R.string.nodes),
                             if (model.nodes.isEmpty()) stringResource(R.string.nodes_subtitle) else pluralStringResource(R.plurals.nodes_known, model.nodes.size, model.nodes.size),
+                            merge = false,
                         ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
                     CardDivider()
                     val khz = r?.freqKhz?.toInt() ?: 869_618
-                    val band = if (khz in 869_400..869_650) "869.4–869.65 MHz" else "%.3f MHz".format(khz / 1000.0)
+                    // In the phone's language, as the frequency above it ("869,4–869,65 MHz" in French).
+                    val band = if (khz in 869_400..869_650) "%.1f–%.2f MHz".format(869.4, 869.65) else "%.3f MHz".format(khz / 1000.0)
                     CardRow(stringResource(R.string.sub_band), "$band · ${"%.0f".format(model.budget.limitMs.toDouble() / 36_000)} %")
                     CardDivider()
                     CardRow(stringResource(R.string.relay_for_others), stringResource(R.string.relay_for_others_note))
@@ -169,6 +181,7 @@ fun SettingsScreen(
                         CardRow(
                             stringResource(R.string.send_advert),
                             stringResource(if (advertSent) R.string.advert_sent else R.string.send_advert_note),
+                            merge = false,
                         ) {
                             Icon(Icons.Outlined.SettingsInputAntenna, null, tint = if (model.isConnected) t.lora else t.tx2)
                         }
@@ -179,6 +192,7 @@ fun SettingsScreen(
                         CardRow(
                             stringResource(R.string.name_on_mesh),
                             model.nodeName.ifEmpty { stringResource(R.string.name_on_mesh_note) },
+                            merge = false,
                         ) {
                             Icon(Icons.Outlined.Edit, null, tint = t.tx2)
                         }
@@ -291,7 +305,7 @@ fun SettingsScreen(
             item {
                 CardList {
                     Box(Modifier.clickable(onClick = storage)) {
-                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note))
+                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note), merge = false)
                     }
                 }
             }
@@ -303,7 +317,7 @@ fun SettingsScreen(
             item {
                 CardList {
                     Box(Modifier.clickable { importer.launch(arrayOf("*/*")) }) {
-                        CardRow(stringResource(R.string.import_meshcore), stringResource(R.string.import_meshcore_note))
+                        CardRow(stringResource(R.string.import_meshcore), stringResource(R.string.import_meshcore_note), merge = false)
                     }
                 }
             }
@@ -331,7 +345,7 @@ fun SettingsScreen(
                         CardDivider()
                     }
                     Box(Modifier.clickable { model.markOnboarded(false) }) {
-                        CardRow(stringResource(R.string.show_welcome_again))
+                        CardRow(stringResource(R.string.show_welcome_again), merge = false)
                     }
                 }
             }
@@ -348,19 +362,20 @@ fun SettingsScreen(
                             CardRow(
                                 stringResource(R.string.your_identity),
                                 stringResource(if (model.phraseBackedUp) R.string.key_backed_up else R.string.key_not_backed_up, f),
+                                merge = false,
                             )
                         }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
                     CardDivider()
                     Row(Modifier.fillMaxWidth().clickable(onClick = licences), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.licences), stringResource(R.string.licences_row)) }
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.licences), stringResource(R.string.licences_row), merge = false) }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
                     CardDivider()
                     // ADR-0045: no message, key, name or position in it.
                     Row(Modifier.fillMaxWidth().clickable(onClick = report), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.report_problem), stringResource(R.string.report_row)) }
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.report_problem), stringResource(R.string.report_row), merge = false) }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
                 }
@@ -417,7 +432,7 @@ private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
         }
         CardDivider()
         Box(Modifier.alpha(if (lock.enabled) 1f else 0.5f).clickable(enabled = lock.enabled) { choosing = true }) {
-            CardRow(stringResource(R.string.lock_after)) {
+            CardRow(stringResource(R.string.lock_after), merge = false) {
                 Box {
                     Text(lockDelayLabel(lock.delay), fontSize = 15.sp, color = t.tx2)
                     DropdownMenu(choosing, { choosing = false }, containerColor = t.s1) {
@@ -438,7 +453,7 @@ private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
         CardDivider()
         // People the user blocked (ADR-0034), to unblock.
         Box(Modifier.clickable(onClick = blocked)) {
-            CardRow(stringResource(R.string.blocked)) {
+            CardRow(stringResource(R.string.blocked), merge = false) {
                 Text("${model.blocked.size}", fontSize = 15.sp, color = t.tx2)
             }
         }
