@@ -19,6 +19,10 @@ class FakeTcpRadio : AutoCloseable {
     private val start = System.nanoTime()
     @Volatile private var client: Socket? = null
 
+    /** Commands this radio answers with an error (`ERR`, illegal argument) instead of taking
+     * them, as a board without the hardware would: a GPS interval without a GPS. */
+    @Volatile var refuses: (ByteArray) -> Boolean = { false }
+
     /** "127.0.0.1:port", as typed on the pairing screen. */
     val address: String = "127.0.0.1:${server.localPort}"
 
@@ -48,6 +52,10 @@ class FakeTcpRadio : AutoCloseable {
                     val len = input.read() or (input.read() shl 8)
                     val frame = ByteArray(len)
                     input.readFully(frame)
+                    if (refuses(frame)) {
+                        send(out, listOf(byteArrayOf(ERR, ILLEGAL_ARGUMENT)))
+                        continue
+                    }
                     demo.write(frame, now())
                     send(out, demo.read(now()))
                 }
@@ -68,6 +76,15 @@ class FakeTcpRadio : AutoCloseable {
     /** The link drops (the radio switched off, Wi-Fi lost); the next connection is served. */
     fun drop() {
         runCatching { client?.close() }
+    }
+
+    companion object {
+        /** The companion protocol's answers (lc-meshcore `codes.rs`). */
+        private const val ERR: Byte = 1
+        private const val ILLEGAL_ARGUMENT: Byte = 6
+
+        /** `SET_CUSTOM_VAR` with `gps_interval:…`. */
+        fun gpsInterval(frame: ByteArray) = frame.firstOrNull() == 41.toByte() && String(frame, 1, frame.size - 1).startsWith("gps_interval:")
     }
 
     override fun close() {

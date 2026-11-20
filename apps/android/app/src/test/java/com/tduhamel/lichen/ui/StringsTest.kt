@@ -38,4 +38,13 @@ class StringsTest {
     @Test
     @Config(qualifiers = "+fr")
     fun kilobytesInLowerCase_fr() = assertEquals(emptyList<String>(), capitalKo())
+
+    /** English words the French text had kept, translated (D-6): « annonce », « Préréglage »,
+     * « Clés d’envoi ». */
+    @Test
+    @Config(qualifiers = "+fr")
+    fun englishWordsTranslated_fr() = assertEquals(
+        emptyList<String>(),
+        texts().filterValues { Regex("""\b(advert|preset|sender keys?)\b""", RegexOption.IGNORE_CASE).containsMatchIn(it) }.keys.sorted(),
+    )
 }

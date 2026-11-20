@@ -3,6 +3,19 @@ package com.tduhamel.lichen.ui
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import java.util.Locale
+import java.util.Date
+import java.text.SimpleDateFormat
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.outlined.Download
+import android.webkit.MimeTypeMap
+import android.provider.MediaStore
+import android.os.Environment
+import android.content.ContentValues
 import android.text.format.Formatter
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -82,6 +95,9 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
     val original = a?.let { model.downloads[it.hash.hex()] }
     val shown = rememberInBackground(m.id, m.message, original) { best(context, m, a, original) }
     var error by remember { mutableStateOf<String?>(null) }
+    var saved by remember { mutableStateOf(false) }
+    val notSaved = stringResource(R.string.err_storage)
+    val scope = rememberCoroutineScope()
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var drag by remember { mutableFloatStateOf(0f) }
@@ -133,6 +149,15 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
                     IconButton(onClick = close, colors = round) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
                     Spacer(Modifier.weight(1f))
                     if (shown != null) {
+                        // To the phone's gallery (D-5).
+                        IconButton(onClick = {
+                            scope.launch {
+                                val ok = withContext(Dispatchers.IO) { saveToGallery(context, shown) }
+                                if (ok) saved = true else error = notSaved
+                            }
+                        }, colors = round) {
+                            Icon(Icons.Outlined.Download, stringResource(R.string.save))
+                        }
                         IconButton(onClick = { share(context, shown) }, colors = round) {
                             Icon(Icons.Outlined.Share, stringResource(R.string.share))
                         }
@@ -141,6 +166,7 @@ fun PhotoViewer(model: AppModel, m: StoredMessage, close: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     shown?.let { Text(it.caption, fontSize = 13.sp, color = Color.White.copy(alpha = 0.85f), textAlign = TextAlign.Center) }
+                    if (saved) Text(stringResource(R.string.photo_saved), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                     when {
                         a != null && !announce.outgoing && original == null -> {
                             if (model.fetching[a.hash.hex()] != null) {
@@ -183,6 +209,29 @@ private fun best(context: Context, m: StoredMessage, a: Message.Announce?, origi
     val bmp = decodeImage(img.data) ?: return null
     val size = Formatter.formatShortFileSize(context, img.data.size.toLong())
     return Shown(bmp, context.getString(if (img.full) R.string.photo_full_thumbnail else R.string.photo_preview, size), null)
+}
+
+/** Saves the original as it is, else the thumbnail as a JPEG, to the phone's gallery
+ * (Pictures/lichen, D-5): true once written. Its own media need no permission (scoped storage). */
+private fun saveToGallery(context: Context, s: Shown): Boolean {
+    val ext = s.file?.extension?.lowercase()?.takeIf { it.isNotEmpty() && it != "bin" }
+    val name = "lichen-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date()) + "." + (ext ?: "jpg")
+    val mime = ext?.let { MimeTypeMap.getSingleton().getMimeTypeFromExtension(it) } ?: "image/jpeg"
+    val resolver = context.contentResolver
+    val values = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, name)
+        put(MediaStore.Images.Media.MIME_TYPE, mime)
+        put(MediaStore.Images.Media.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/lichen")
+        put(MediaStore.Images.Media.IS_PENDING, 1)
+    }
+    val uri = runCatching { resolver.insert(MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values) }.getOrNull()
+        ?: return false
+    return runCatching {
+        checkNotNull(resolver.openOutputStream(uri)).use { out ->
+            if (ext != null) s.file!!.inputStream().use { it.copyTo(out) } else s.bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+        }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+    }.onFailure { runCatching { resolver.delete(uri, null, null) } }.isSuccess
 }
 
 /** Shares the original as it is, else the thumbnail as a JPEG (most apps do not open AVIF). */
