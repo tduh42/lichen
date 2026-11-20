@@ -851,6 +851,8 @@ class AppModel(val app: Application) {
         demo = null
         isDemo = false
         demoRadioOff = false
+        // The phone's own identity again: its own backup state.
+        phraseBackedUp = prefs.getBoolean(BACKED_UP, false)
         resetState()
         replaceCore(identityCore())
         radioState = RadioState.Idle
@@ -2325,9 +2327,11 @@ class AppModel(val app: Application) {
         prefs.edit { putString(MY_NAME, name) }
     }
 
+    /** The phrase written down and checked (D-7). In the demo, the words were its throwaway
+     * identity's: they back up nothing of the phone's own (B-ios-2 on iOS). */
     fun markBackedUp() {
         phraseBackedUp = true
-        prefs.edit { putBoolean(BACKED_UP, true) }
+        if (!isDemo) prefs.edit { putBoolean(BACKED_UP, true) }
     }
 
     val fingerprint: List<String> get() = core.fingerprint()

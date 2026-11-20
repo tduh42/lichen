@@ -29,6 +29,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -87,8 +89,17 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
             colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx, navigationIconContentColor = t.tx),
         )
         val r = model.radioSettings
-        if (r == null || !model.isConnected) {
+        if (!model.isConnected) {
             Text(stringResource(R.string.radio_settings_none), color = t.tx2, modifier = Modifier.padding(20.dp))
+            return@Column
+        }
+        // Linked, but the radio has not answered yet: nothing of its own to show (its values are
+        // zeros waiting for it), however long it takes (D-9).
+        if (r == null || !r.read) {
+            Row(Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CircularProgressIndicator(Modifier.size(18.dp), color = t.tx2, strokeWidth = 2.dp)
+                Text(stringResource(R.string.reading_radio_settings), color = t.tx2)
+            }
             return@Column
         }
         LazyColumn(
