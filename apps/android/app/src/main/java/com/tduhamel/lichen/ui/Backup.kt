@@ -72,7 +72,7 @@ fun BackupExportRow(model: AppModel, title: String, subtitle: String) {
         Modifier.fillMaxWidth().clickable(enabled = !working) { create.launch(model.backupFileName()) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) { CardRow(title, subtitle) }
+        Column(Modifier.weight(1f)) { CardRow(title, subtitle, merge = false) }
         if (working) {
             CircularProgressIndicator(Modifier.padding(end = 16.dp).size(20.dp), color = t.tx2, strokeWidth = 2.dp)
         } else {
@@ -137,6 +137,7 @@ fun RestoreBackupSheet(model: AppModel, dismiss: () -> Unit, restored: () -> Uni
                         CardRow(
                             file?.lastPathSegment?.substringAfterLast('/') ?: stringResource(R.string.choose_backup_file),
                             if (file == null) stringResource(R.string.choose_backup_file_note) else null,
+                            merge = false,
                         )
                     }
                     Icon(

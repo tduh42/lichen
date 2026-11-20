@@ -115,6 +115,8 @@ fun SearchScreen(model: AppModel) {
         while (true) {
             delay(5_000)
             clock = System.currentTimeMillis()
+            // The search's own clock too: "Ping in 12 s" counts down, and Ping comes back.
+            model.refreshSearches()
         }
     }
     val targets = model.searchTargets

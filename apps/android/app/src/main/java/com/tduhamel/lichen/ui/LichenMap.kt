@@ -1,6 +1,5 @@
 package com.tduhamel.lichen.ui
 
-import androidx.compose.foundation.layout.Box
 import com.tduhamel.lichen.LichenApplication
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -119,9 +118,12 @@ fun LichenMap(
     focus: com.tduhamel.lichen.model.MapPin? = null,
     onCamera: (LatLngBounds, Double) -> Unit,
 ) {
-    // No MapLibre (the JVM UI tests): an empty map, everything around it as on a phone.
+    // No MapLibre (the JVM UI tests): the markers' labels where the map would be, everything
+    // around it as on a phone.
     if (!LichenApplication.mapsReady) {
-        Box(modifier.background(lichen.s1))
+        Column(modifier.background(lichen.s1)) {
+            for (item in items) if (item.label.isNotEmpty()) Text(item.label, color = lichen.tx2)
+        }
         return
     }
     val context = LocalContext.current

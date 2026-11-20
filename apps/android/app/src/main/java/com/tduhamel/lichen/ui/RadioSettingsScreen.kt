@@ -30,6 +30,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -147,11 +148,14 @@ private fun summary(khz: UInt, hz: UInt, sf: UByte, cr: UByte) = "${mhz(khz)} MH
 @Composable
 private fun LoraSection(model: AppModel, r: RadioSettings) {
     val t = lichen
-    var preset by remember(r) { mutableStateOf(RadioPreset.matching(r)) }
-    var freq by remember(r) { mutableStateOf(mhz(r.freqKhz)) }
-    var bw by remember(r) { mutableStateOf(r.bwHz) }
-    var sf by remember(r) { mutableStateOf(r.sf) }
-    var cr by remember(r) { mutableStateOf(r.cr) }
+    // What is being chosen, from the radio's LoRa parameters: kept while anything else of the
+    // radio is read again (its battery), started afresh when these change.
+    val lora = listOf(r.freqKhz, r.bwHz, r.sf, r.cr)
+    var preset by remember(lora) { mutableStateOf(RadioPreset.matching(r)) }
+    var freq by remember(lora) { mutableStateOf(mhz(r.freqKhz)) }
+    var bw by remember(lora) { mutableStateOf(r.bwHz) }
+    var sf by remember(lora) { mutableStateOf(r.sf) }
+    var cr by remember(lora) { mutableStateOf(r.cr) }
     var confirming by remember { mutableStateOf(false) }
     val chosen: RadioPreset.Values? = preset.values ?: freq.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }?.let {
         RadioPreset.Values((it * 1000).roundToInt().toUInt(), bw, sf, cr)
@@ -186,7 +190,7 @@ private fun LoraSection(model: AppModel, r: RadioSettings) {
             CardDivider()
             val enabled = chosen != null && chosen != current
             Box(Modifier.clickable(enabled = enabled) { confirming = true }) {
-                CardRow(stringResource(R.string.apply)) {
+                CardRow(stringResource(R.string.apply), merge = false) {
                     Text(if (enabled) "✓" else "", color = t.tx2)
                 }
             }
@@ -259,6 +263,13 @@ private fun AppModel.setPrefs(
 
 @Composable
 private fun PrivacySection(model: AppModel, r: RadioSettings) {
+    // A radio without GPS advertising its position takes this phone's (below): the phone's
+    // location runs while that choice is on screen, as on the map.
+    val usesPhone = r.positionInAdverts && r.gps != true
+    DisposableEffect(usesPhone) {
+        if (usesPhone) model.needsLocation("radio", true)
+        onDispose { if (usesPhone) model.needsLocation("radio", false) }
+    }
     val t = lichen
     var confirmingPosition by remember { mutableStateOf(false) }
     var confirmingTelemetry by remember { mutableStateOf<UByte?>(null) }
@@ -274,7 +285,8 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
             if (r.positionInAdverts) {
                 CardDivider()
                 val pos = if (r.latE6 == 0 && r.lonE6 == 0) stringResource(R.string.none_yet)
-                else "%.5f, %.5f".format(r.latE6 / 1e6, r.lonE6 / 1e6)
+                // Figures any reader and any map takes, "45.12345, 5.12345", as a place in a message.
+                else String.format(java.util.Locale.ROOT, "%.5f, %.5f", r.latE6 / 1e6, r.lonE6 / 1e6)
                 CardRow(stringResource(R.string.position_advertised), pos)
                 val fix = model.myFix
                 if (r.gps != true && fix != null) {
@@ -282,7 +294,7 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
                     Box(Modifier.clickable {
                         model.radioSet { model.core.setAdvertPosition((fix.lat * 1e6).roundToInt(), (fix.lon * 1e6).roundToInt()) }
                     }) {
-                        CardRow(stringResource(R.string.use_phone_position))
+                        CardRow(stringResource(R.string.use_phone_position), merge = false)
                     }
                 }
             }
@@ -426,11 +438,11 @@ private fun BluetoothSection(model: AppModel) {
                 model.radioSet { model.core.setBlePin(pin.toUIntOrNull() ?: 0u) }
                 saved = model.radioError == null
             }) {
-                CardRow(stringResource(R.string.save_pin))
+                CardRow(stringResource(R.string.save_pin), merge = false)
             }
             CardDivider()
             Box(Modifier.clickable { confirmingReboot = true }) {
-                CardRow(stringResource(R.string.restart_radio))
+                CardRow(stringResource(R.string.restart_radio), merge = false)
             }
         }
     }

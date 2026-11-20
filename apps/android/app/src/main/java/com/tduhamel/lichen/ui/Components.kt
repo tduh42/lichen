@@ -230,12 +230,19 @@ fun CardDivider(inset: Dp = 16.dp) {
 
 /** A row inside a card: title, subtitle, trailing content. */
 @Composable
-fun CardRow(title: String, subtitle: String? = null, trailing: @Composable () -> Unit = {}) {
+fun CardRow(
+    title: String,
+    subtitle: String? = null,
+    /** Off when the row sits in something clickable, which then takes its words (a merged row
+     * inside would leave the button without a label). */
+    merge: Boolean = true,
+    trailing: @Composable () -> Unit = {},
+) {
     Row(
         Modifier
             .fillMaxWidth()
             // One node for screen readers: the title, the subtitle and a switch's state together.
-            .semantics(mergeDescendants = true) {}
+            .then(if (merge) Modifier.semantics(mergeDescendants = true) {} else Modifier)
             .heightIn(min = 48.dp)
             .padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,

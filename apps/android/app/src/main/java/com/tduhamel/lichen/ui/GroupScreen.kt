@@ -126,7 +126,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                 item {
                     CardList(Modifier.padding(top = 10.dp)) {
                         Box(Modifier.clickable { renaming = true }) {
-                            CardRow(stringResource(R.string.group_name_label)) {
+                            CardRow(stringResource(R.string.group_name_label), merge = false) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                     Text(g.name, fontSize = 15.sp, color = t.tx2)
                                     Icon(Icons.Outlined.Edit, null, tint = t.tx2)
@@ -139,13 +139,13 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                 item {
                     CardList {
                         Box(Modifier.clickable { showingCode = true }) {
-                            CardRow(stringResource(R.string.invite_qr), stringResource(R.string.invite_qr_note)) {
+                            CardRow(stringResource(R.string.invite_qr), stringResource(R.string.invite_qr_note), merge = false) {
                                 Icon(Icons.Outlined.QrCode2, null, tint = t.tx2)
                             }
                         }
                         CardDivider()
                         Box(Modifier.clickable { inviting = true }) {
-                            CardRow(stringResource(R.string.invite_contacts)) {
+                            CardRow(stringResource(R.string.invite_contacts), merge = false) {
                                 Icon(Icons.Outlined.PersonAddAlt, null, tint = t.tx2)
                             }
                         }
@@ -163,7 +163,7 @@ fun GroupScreen(model: AppModel, chat: ChatId, back: () -> Unit, left: () -> Uni
                     }
                     CardDivider()
                     Box(Modifier.clickable { sharing = true }) {
-                        CardRow(stringResource(R.string.precision_shared_with_group)) {
+                        CardRow(stringResource(R.string.precision_shared_with_group), merge = false) {
                             Text(
                                 model.share(ChatId.group(g.gid))?.let { precisionName(it.precision) } ?: stringResource(R.string.not_shared),
                                 fontSize = 15.sp, color = t.tx2,

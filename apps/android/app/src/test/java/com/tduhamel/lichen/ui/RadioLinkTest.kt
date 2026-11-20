@@ -5,7 +5,6 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
@@ -223,6 +222,30 @@ class RadioLinkTest : UiTest() {
         assertEquals(null, model.radioError)
     }
 
+    /** RL-5: the radio's position put in its adverts, after the warning: this phone's when the
+     * radio has no GPS (B-and-22), shown in figures any reader takes, "45.12345, 5.12345",
+     * whatever the language (B-and-20). */
+    @Test
+    fun RL_5_advertisedPositionInFigures() = advertisedPosition()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_5_advertisedPositionInFigures_fr() = advertisedPosition()
+
+    private fun advertisedPosition() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings") { model.radioSettings != null }
+        toggle(R.string.position_in_adverts)
+        tapInDialog(R.string.show_it)
+        advanceUntil("in its adverts", 30) { model.radioSettings?.positionInAdverts == true }
+        // Where it is: its GPS's fix, or this phone's.
+        if (model.radioSettings?.latE6 == 0 && has(R.string.use_phone_position)) tap(R.string.use_phone_position)
+        advanceUntil("its position", 30, { model.radioSettings }) { model.radioSettings?.latE6 != 0 }
+        see(R.string.position_advertised)
+        val where = Regex("""^\d+\.\d{5}, \d+\.\d{5}$""")
+        assertTrue("its coordinates: ${shown()}", shown().any { where.matches(it) })
+    }
+
     /** RL-6: a setting the radio cannot take: said so, the old value stays. */
     @Test
     fun RL_6_refusedSettingKeepsTheOldValue() = refused()
@@ -245,8 +268,9 @@ class RadioLinkTest : UiTest() {
         val freq = "%.3f".format(before.freqKhz.toDouble() / 1000)
         compose.onNode(hasSetTextAction() and hasText(freq)).performTextReplacement("5000")
         // Its click action, not a touch: under Robolectric a touch elsewhere drops what the field
-        // holds (the phone keeps it, checked on the emulator).
-        compose.onNode(hasClickAction() and hasAnyDescendant(hasText(str(R.string.apply)))).performSemanticsAction(SemanticsActions.OnClick)
+        // holds (the phone keeps it, checked on the emulator). The row is one button with its
+        // words (B-and-24).
+        compose.onNode(hasClickAction() and hasText(str(R.string.apply))).performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
         text(R.string.lora_confirm_title).assertIsDisplayed()
         text("%.3f MHz".format(5000.0), substring = true).assertIsDisplayed()

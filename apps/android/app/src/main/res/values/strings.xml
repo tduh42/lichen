@@ -362,6 +362,8 @@
     <string name="km1">1 km</string>
     <string name="km10">10 km</string>
     <string name="now">now</string>
+    <string name="show_details">Show details</string>
+    <string name="hide_details">Hide details</string>
     <string name="location_sharing">Location sharing</string>
     <string name="location_off">Location access is off</string>
     <string name="location_off_note">Allow it to share your position.</string>
