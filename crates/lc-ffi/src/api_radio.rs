@@ -57,6 +57,9 @@ pub struct RadioSettings {
     /// (ADR-0042); read again at most every 10 minutes while connected.
     pub battery_percent: Option<u8>,
     pub battery_low: bool,
+    /// The radio answered: the values are its own. False until then (they are zeros): the
+    /// apps say the settings are being read (QA bug B-ios-15).
+    pub read: bool,
 }
 
 impl From<&lc_core::radio::RadioSettings> for RadioSettings {
@@ -102,6 +105,7 @@ impl From<&lc_core::radio::RadioSettings> for RadioSettings {
             battery_low: r.battery_mv.is_some_and(|mv| {
                 lc_core::radio::battery_percent(mv) <= lc_core::radio::BATTERY_LOW_PERCENT
             }),
+            read: r.read,
         }
     }
 }

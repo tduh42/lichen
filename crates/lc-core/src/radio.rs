@@ -46,6 +46,9 @@ pub struct RadioSettings {
     pub build_date: String,
     /// Whether the companion repeats (`SET_RADIO_PARAMS` keeps it as it is).
     pub repeat: bool,
+    /// The radio answered (`SELF_INFO`): the values above are its own, not zeros waiting for
+    /// it; the last ones read while it is away.
+    pub read: bool,
 }
 
 impl RadioSettings {
