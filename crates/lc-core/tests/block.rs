@@ -239,7 +239,7 @@ fn a_blocked_members_group_posts_are_not_shown() {
 }
 
 /// After an unblock, what was dated inside the block stays out (ADR-0034, B-core-4): a direct
-/// text is declined unanswered (its sender gives it up, §7.2), a group post and a MeshCore
+/// text is acknowledged and dropped (its sender moves on, D-11), a group post and a MeshCore
 /// message are dropped; what is dated after it comes.
 #[test]
 fn what_was_sent_during_a_block_stays_out_after_it() {
@@ -280,37 +280,31 @@ fn what_was_sent_during_a_block_stays_out_after_it() {
     });
     let alice = net.key(a);
 
-    // A direct text dated inside: never acknowledged, Bob's phone gives it up.
-    let id = net
+    // A direct text dated inside, his phone still trying it, then a new one: the old one is
+    // acknowledged and dropped, never shown, so his phone moves on and the new one arrives at
+    // once (D-11), not after the old one's timeout.
+    let old = net
         .with_core(b, |core, now| core.send_text(&alice, "inside", inside, now))
         .unwrap()
         .unwrap();
-    let mut bob_events = Vec::new();
-    assert!(net.run_until(net.now + 30 * MIN, |n| {
-        bob_events.extend(n.take_events(b));
-        bob_events.iter().any(
-            |e| matches!(e, Event::Failed { id: x, .. } | Event::Delivered { id: x } if *x == id),
-        )
-    }));
-    assert!(
-        bob_events.contains(&Event::Failed {
-            id,
-            reason: FailReason::Timeout
-        }),
-        "{bob_events:?}"
-    );
-    assert!(texts(&net.take_events(a)).is_empty());
-    // Dated after: delivered.
-    let id = net
+    let new = net
         .with_core(b, |core, now| core.send_text(&alice, "after", after, now))
         .unwrap()
         .unwrap();
-    let mut got = Vec::new();
-    assert!(net.run_until(net.now + 30 * MIN, |n| {
-        got.extend(texts(&n.take_events(a)));
-        n.take_events(b).contains(&Event::Delivered { id })
-    }));
+    let (mut got, mut bob_events) = (Vec::new(), Vec::new());
+    assert!(
+        net.run_until(net.now + 2 * MIN, |n| {
+            got.extend(texts(&n.take_events(a)));
+            bob_events.extend(n.take_events(b));
+            bob_events.contains(&Event::Delivered { id: new })
+        }),
+        "the new message waited: {bob_events:?}"
+    );
     assert_eq!(got, ["after"]);
+    assert!(
+        bob_events.contains(&Event::Delivered { id: old }),
+        "{bob_events:?}"
+    );
 
     // A group post dated inside is not reported; Carol has it.
     net.with_core(b, |core, now| {

@@ -3939,16 +3939,9 @@ impl Core {
                         Content::decode(datagram).and_then(|m| m.sent_at()),
                     )
                 {
-                    // Sent while its author was blocked (ADR-0034): dropped unanswered, even
-                    // after the unblock. No ACK (§7.2): the sender's retries fail at their
-                    // expiry.
-                    if let Some(s) = self
-                        .peers
-                        .get_mut(&c)
-                        .and_then(|p| p.session.as_deref_mut())
-                    {
-                        s.decline();
-                    }
+                    // Sent while its author was blocked, now retried (ADR-0034, D-11): the
+                    // session acknowledges it as any datagram, so their phone moves on to what
+                    // they write now, and it is dropped, never shown.
                 } else if let Ok(Some(datagram)) = result
                     // Local notices never come from the air (§6).
                     && !Content::is_local(&datagram)
