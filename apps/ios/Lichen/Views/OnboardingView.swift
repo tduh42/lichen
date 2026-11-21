@@ -143,7 +143,7 @@ struct PairingView: View {
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Code shown on the radio").font(.system(.body, weight: .semibold))
-                    Text("When you pair, iOS asks for the 6 digits shown on the radio's screen: type them in its prompt. The radio then stays paired with this phone.")
+                    Text("When you pair, iOS asks for the 6 digits shown on the radio’s screen: type them in its prompt. The radio then stays paired with this phone.")
                         .font(.system(.subheadline))
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)

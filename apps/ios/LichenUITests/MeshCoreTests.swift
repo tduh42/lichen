@@ -109,7 +109,7 @@ final class MeshCoreTests: LichenUITest {
         // A code scanned: its channel joined, and opened.
         button(tr("New message")).tap()
         button(tr("Join a channel")).tap()
-        cardButton(tr("Scan a channel's QR code")).tap()
+        cardButton(tr("Scan a channel’s QR code")).tap()
         wait(element("Ridge"), 5, "the scanned channel is not shown")
         button(tr("Join the channel")).tap()
         wait(app.navigationBars.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Ridge'")).firstMatch,

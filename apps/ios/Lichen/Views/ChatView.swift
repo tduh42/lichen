@@ -918,7 +918,7 @@ private struct MessageView: View {
     /// "≈ 2.1 s of airtime": a reaction costs about a short text (§6.2).
     private var reactionCost: String {
         guard let e = model.reactionCost(message.chat) else { return "" }
-        return String(localized: "≈ \(String(format: "%.1f", Double(e.airtimeMs) / 1000)) s of airtime")
+        return String(localized: "≈ \(decimal(Double(e.airtimeMs) / 1000, 1)) s of airtime")
     }
 
     /// Long press: copy or select a text; cancel one that is still waiting, send a failed one
@@ -1122,8 +1122,8 @@ extension StoredMessage {
             }
         case let .sending(sent, total):
             if case .channel = message.chat { return String(localized: "Sending to the channel") }
-            if case .mesh = message.chat { return String(localized: "Waiting for their radio's acknowledgement") }
-            if case .room = message.chat { return String(localized: "Waiting for the room's acknowledgement") }
+            if case .mesh = message.chat { return String(localized: "Waiting for their radio’s acknowledgement") }
+            if case .room = message.chat { return String(localized: "Waiting for the room’s acknowledgement") }
             if isGroup { return String(localized: "Sending to the group") }
             return total > 1 ? String(localized: "Waiting for the acknowledgement") :
                 String(localized: "Sending \(min(Int(sent), Int(total))) / \(Int(total)) fragments")
@@ -1139,7 +1139,7 @@ extension StoredMessage {
         }
     }
 
-    var airtime: String { String(format: "%.1f", Double(airtimeMs) / 1000) }
+    var airtime: String { decimal(Double(airtimeMs) / 1000, 1) }
 
     /// "24 h", "35 min": how long a waiting text still has before it expires (§6.1).
     private func timeLeft(_ expiresAtMs: Int64) -> String {
@@ -1925,14 +1925,14 @@ private struct Composer: View {
                 return isChannelChat ? String(localized: "Flooded to everyone on the channel, without acknowledgement")
                                      : String(localized: "Up to \(max) bytes, acknowledged by their radio")
             }
-            let s = String(format: "%.1f", Double(e.airtimeMs) / 1000)
+            let s = decimal(Double(e.airtimeMs) / 1000, 1)
             return String(localized: "\(draft.utf8.count)/\(max) bytes · ≈ \(s) s of airtime")
         }
         guard let e = model.estimate(chat, text: draft) else {
             if case .group = chat { return String(localized: "Flooded to every member, without acknowledgement") }
             return nil
         }
-        let s = String(format: "%.1f", Double(e.airtimeMs) / 1000)
+        let s = decimal(Double(e.airtimeMs) / 1000, 1)
         if case .group = chat {
             return String(localized: "Your cost: \(fragmentsText(e.fragments)) · ≈ \(s) s of airtime · relays add theirs, no acknowledgement")
         }

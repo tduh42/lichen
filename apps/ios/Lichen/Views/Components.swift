@@ -408,6 +408,12 @@ struct LaterNote: View {
 func seconds(_ ms: UInt64) -> String { String(ms / 1000) }
 
 /// "62.5 kHz", "62,5 kHz" in French.
+/// A decimal in the app's language, "869,618" in French (B-ios-26), as Android writes them
+/// (B-and-25). Coordinates keep the point: figures any map and any reader take (B-and-20).
+func decimal(_ x: Double, _ digits: Int) -> String {
+    x.formatted(.number.precision(.fractionLength(digits)).grouping(.never))
+}
+
 func bandwidth(_ hz: UInt32) -> String {
     (Double(hz) / 1000).formatted(.number.precision(.fractionLength(0...1))) + " kHz"
 }

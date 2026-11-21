@@ -67,7 +67,7 @@ struct RadioSettingsView: View {
                     // Connected, the radio has not answered yet: no zeros shown as its values (D-9).
                     HStack(spacing: 10) {
                         ProgressView()
-                        Text("Reading the radio's settings…").foregroundStyle(Theme.tx2)
+                        Text("Reading the radio’s settings…").foregroundStyle(Theme.tx2)
                     }
                     .padding(.top, 24)
                 } else {
@@ -214,7 +214,7 @@ struct RadioSettingsView: View {
                 .buttonStyle(.plain)
                 .disabled(chosen.map { $0 == (r.freqKhz, r.bwHz, r.sf, r.cr) } ?? true)
             }
-            Text("A radio on other settings no longer hears the radios of its mesh: choose your region's preset, or the values your local community uses.")
+            Text("A radio on other settings no longer hears the radios of its mesh: choose your region’s preset, or the values your local community uses.")
                 .font(.footnote)
                 .foregroundStyle(Theme.tx2)
                 .padding(.horizontal, 4)
@@ -250,9 +250,9 @@ struct RadioSettingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel("GPS").padding(.top, 10)
             CardList {
-                CardRow(title: String(localized: "The radio's GPS"),
-                        subtitle: String(localized: "Keeps the radio's position current. It draws power.")) {
-                    Toggle("The radio's GPS",
+                CardRow(title: String(localized: "The radio’s GPS"),
+                        subtitle: String(localized: "Keeps the radio’s position current. It draws power.")) {
+                    Toggle("The radio’s GPS",
                            isOn: Binding(get: { r.gps == true },
                                          set: { on in model.radioSet { try model.core.setGps(on: on) } }))
                         .labelsHidden()
@@ -291,7 +291,7 @@ struct RadioSettingsView: View {
             CardList {
                 CardRow(title: String(localized: "Position in adverts"),
                         subtitle: r.positionInAdverts
-                            ? String(localized: "Every advert shows the radio's position to the whole mesh, unencrypted.")
+                            ? String(localized: "Every advert shows the radio’s position to the whole mesh, unencrypted.")
                             : String(localized: "Off: adverts carry no position.")) {
                     Toggle("Position in adverts",
                            isOn: Binding(get: { r.positionInAdverts },
@@ -303,7 +303,7 @@ struct RadioSettingsView: View {
                     CardRow(title: String(localized: "Position advertised"), subtitle: position(r))
                     // Why there is none: the GPS is on but has no fix (it needs open sky).
                     if r.gps == true && r.latE6 == 0 && r.lonE6 == 0 {
-                        Text("The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position.")
+                        Text("The radio’s GPS has no fix yet: it needs open sky. Until then, it can advertise this phone’s position.")
                             .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -318,7 +318,7 @@ struct RadioSettingsView: View {
                                 try model.core.setAdvertPosition(latE6: Int32((fix.lat * 1e6).rounded()), lonE6: Int32((fix.lon * 1e6).rounded()))
                             }
                         } label: {
-                            CardRow(title: String(localized: "Use this phone's position")) {
+                            CardRow(title: String(localized: "Use this phone’s position")) {
                                 Image(systemName: "location").foregroundStyle(Theme.tx2)
                             }
                             .contentShape(Rectangle())
@@ -343,7 +343,7 @@ struct RadioSettingsView: View {
                     setPrefs(r, telemetry: Telemetry(base: r.telemetry.base, location: r.telemetry.location, environment: v))
                 }
             }
-            Text("Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen's own positions always travel encrypted, only to the people you choose.")
+            Text("Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen’s own positions always travel encrypted, only to the people you choose.")
                 .font(.footnote)
                 .foregroundStyle(Theme.tx2)
                 .padding(.horizontal, 4)
@@ -449,8 +449,8 @@ struct RadioSettingsView: View {
             SectionLabel("Bluetooth").padding(.top, 10)
             CardList {
                 CardRow(title: String(localized: "PIN"),
-                        subtitle: pinSaved ? String(localized: "Saved: used from the radio's next restart. Pair the phone again with it.")
-                                           : String(localized: "Six digits; empty for the radio's default.")) {
+                        subtitle: pinSaved ? String(localized: "Saved: used from the radio’s next restart. Pair the phone again with it.")
+                                           : String(localized: "Six digits; empty for the radio’s default.")) {
                     TextField("123456", text: $pinText)
                         .keyboardType(.numberPad)
                         .multilineTextAlignment(.trailing)
@@ -505,8 +505,10 @@ struct RadioSettingsView: View {
         }
     }
 
+    /// The frequency in MHz, in the app's language ("869,618" in French): the field reads it
+    /// back with a comma or a point.
     private func mhz(_ khz: UInt32) -> String {
-        String(format: "%.3f", Double(khz) / 1000)
+        decimal(Double(khz) / 1000, 3)
     }
 
     private func summary(_ khz: UInt32, _ hz: UInt32, _ sf: UInt8, _ cr: UInt8) -> String {
@@ -516,7 +518,7 @@ struct RadioSettingsView: View {
     /// Volts, and a rough charge for a lithium cell (3.3 V empty, 4.2 V full).
     private func battery(_ mv: UInt16) -> String {
         let percent = Int((min(max((Double(mv) - 3_300) / 900, 0), 1) * 100).rounded())
-        return String(localized: "\(String(format: "%.2f", Double(mv) / 1000)) V · about \(percent) %")
+        return String(localized: "\(decimal(Double(mv) / 1000, 2)) V · about \(percent) %")
     }
 
     private func position(_ r: RadioSettings) -> String {

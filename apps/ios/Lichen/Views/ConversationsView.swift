@@ -377,7 +377,7 @@ struct RadioLine: View {
         } else if open {
             Button { withAnimation(.snappy) { open = false } } label: { RadioCard(folds: true) }
                 .buttonStyle(.plain)
-                .accessibilityHint("Hides the radio's details")
+                .accessibilityHint("Hides the radio’s details")
         } else {
             Button { withAnimation(.snappy) { open = true } } label: {
                 HStack(spacing: 8) {
@@ -537,11 +537,11 @@ struct RequestCard: View {
                     .font(.system(.footnote, weight: .bold))
                     .foregroundStyle(Theme.tx2)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Someone using \(request.name)'s radio wants to write to you")
+                    Text("Someone using \(request.name)’s radio wants to write to you")
                         .font(.system(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.tx)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Anyone in range can write under a radio's name. Accept only if you know who this is; accepting does not verify them.")
+                    Text("Anyone in range can write under a radio’s name. Accept only if you know who this is; accepting does not verify them.")
                         .font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                 }

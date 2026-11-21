@@ -27,7 +27,7 @@ struct IdentityView: View {
                     .submitLabel(.done)
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Label("Your key's fingerprint", systemImage: "key")
+                    Label("Your key’s fingerprint", systemImage: "key")
                         .font(.system(.callout, weight: .semibold))
                         .labelStyle(TintedIconLabel(tint: Theme.ok))
                     KeyFingerprint(groups: model.fingerprint)
@@ -43,7 +43,7 @@ struct IdentityView: View {
                 if model.isDemo {
                     // The demo runs on a throwaway identity: its words are not the phone's, and
                     // writing them down must not mark the phone's identity as backed up.
-                    Banner(kind: .iroh, title: String(localized: "The demo's identity"),
+                    Banner(kind: .iroh, title: String(localized: "The demo’s identity"),
                            message: String(localized: "The demo network uses an identity of its own, thrown away when you leave it. Yours, and its 24 words, are back then."))
                 } else if !model.phraseBackedUp {
                     Banner(kind: .warn, title: String(localized: "Not backed up"),

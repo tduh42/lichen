@@ -1148,7 +1148,7 @@ final class AppModel {
             // ADR-0046: it waits in Messages; tapping the notification opens the app there.
             requests = core.requests()
             notifier.request(title: String(localized: "Message request"),
-                             body: String(localized: "Someone using \(self.name(of: node))'s radio wants to write to you"))
+                             body: String(localized: "Someone using \(self.name(of: node))’s radio wants to write to you"))
         case .requestsChanged:
             requests = core.requests()
         case .channelsUpdated:
@@ -2887,7 +2887,7 @@ extension Message {
             return mine ? String(localized: "You set messages to disappear after \(after)")
                 : String(localized: "\(who) set messages to disappear after \(after)")
         // The name shown before (SR-30): a verified contact keeps it, the line says what changed.
-        case 12: return String(localized: "\(actorName)'s radio is now called “\(text)”")
+        case 12: return String(localized: "\(actorName)’s radio is now called “\(text)”")
         // A handover (§10.8): the former admin acts, the successor is the subject.
         case 40:
             if mine { return String(localized: "You made \(names) admin") }
@@ -2947,10 +2947,10 @@ extension LichenError {
         case .NotSearching: return String(localized: "You are not locating this person.")
         case let .TooSoon(waitS): return String(localized: "Possible again in \(waitS) s.")
         case .NoPosition: return String(localized: "Your position is not known yet.")
-        case .Storage: return String(localized: "The phone's storage could not be read or written.")
+        case .Storage: return String(localized: "The phone’s storage could not be read or written.")
         case .NotCancellable: return String(localized: "Part of it already went out: it can no longer be cancelled.")
         case .NotReferable: return String(localized: "This message is from before replies existed: it cannot be answered.")
-        case .NoClock: return String(localized: "The phone's clock is not set yet.")
+        case .NoClock: return String(localized: "The phone’s clock is not set yet.")
         case .Expired: return String(localized: "This invitation has expired: ask for a new one.")
         case .InvalidSetting: return String(localized: "The radio does not take this setting.")
         case .NotAnExport: return String(localized: "This file is not a database exported by the MeshCore app.")

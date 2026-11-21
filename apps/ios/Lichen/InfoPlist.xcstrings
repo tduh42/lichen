@@ -13,7 +13,7 @@
       "comment" : "Camera permission prompt",
       "extractionState" : "manual",
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen scans your contacts' codes to add them, verified, in person." } },
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen scans your contacts’ codes to add them, verified, in person." } },
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen scanne les codes de tes contacts pour les ajouter, vérifiés, en personne." } }
       }
     },

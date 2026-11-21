@@ -1,12 +1,21 @@
 import XCTest
 
 /// The app's French words (its String Catalog, compiled into this bundle): no English left
-/// where the French UI has its own word (D-6). No app is launched.
+/// where the French UI has its own word (D-6); the typographic apostrophe in both languages
+/// (B-ios-26). No app is launched.
 final class StringsTests: XCTestCase {
     /// Every French string and plural form, by key.
     private func french() throws -> [String: String] {
+        let all = try table("fr")
+        XCTAssertGreaterThan(all.count, 500, "the French strings are not all there")
+        return all
+    }
+
+    /// Every string and plural form of `lang` compiled into this bundle, by key ("key [one]" for
+    /// a plural form). English has its plural forms only: its other text is the keys.
+    private func table(_ lang: String) throws -> [String: String] {
         let bundle = Bundle(for: StringsTests.self)
-        let dir = try XCTUnwrap(bundle.path(forResource: "fr", ofType: "lproj"), "no French in the bundle")
+        let dir = try XCTUnwrap(bundle.path(forResource: lang, ofType: "lproj"), "no \(lang) in the bundle")
         var all: [String: String] = [:]
         let strings = URL(fileURLWithPath: dir).appendingPathComponent("Localizable.strings")
         if let table = NSDictionary(contentsOf: strings) as? [String: String] {
@@ -23,7 +32,6 @@ final class StringsTests: XCTestCase {
                 }
             }
         }
-        XCTAssertGreaterThan(all.count, 500, "the French strings are not all there")
         return all
     }
 
@@ -60,6 +68,17 @@ final class StringsTests: XCTestCase {
         // And two, in the plural.
         XCTAssertEqual(try render("%lld measures", [2], "en"), "2 measures")
         XCTAssertEqual(try render("%lld messages, %lld media files, %@", [2, 3, "2 KB"], "fr"), "2 messages, 3 fichiers médias, 2 KB")
+    }
+
+    /// B-ios-26 (as Android's B-and-16): the typographic apostrophe ’ in every English and French
+    /// text, never a straight one. English is the keys and its plural forms.
+    func testB26_TypographicApostrophe() throws {
+        let fr = try french()
+        XCTAssertEqual(fr.filter { $0.value.contains("'") }.keys.sorted(), [], "French with a straight apostrophe")
+        let english = Array(fr.keys) + Array(try table("en").values)
+        XCTAssertEqual(english.filter { $0.contains("'") }.sorted(), [], "English with a straight apostrophe")
+        XCTAssertEqual(fr["The radio’s GPS"], "Le GPS de la radio")
+        XCTAssertEqual(fr["Airtime left this hour"], "Temps d’antenne restant cette heure")
     }
 
     /// D-6: « Envoyer une annonce », « Préréglage », « Clés d’envoi … »; no "advert", "Preset" or

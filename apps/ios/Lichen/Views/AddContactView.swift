@@ -152,7 +152,7 @@ struct AddContactView: View {
             }
         } else {
             Banner(kind: .warn, title: String(localized: "Connect your radio first"),
-                   message: String(localized: "Your code carries your radio's address, so people can reach you."))
+                   message: String(localized: "Your code carries your radio’s address, so people can reach you."))
                 // Its own height, not the screen's (a spacer follows).
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -357,7 +357,7 @@ private struct JoinPanel: View {
                 }
                 #endif
                 Banner(kind: .ok, title: String(localized: "You joined \(name)"),
-                       message: String(localized: "\(admin) added you. The other members' keys arrive over the next minutes."))
+                       message: String(localized: "\(admin) added you. The other members’ keys arrive over the next minutes."))
                 Button("Open the group") {
                     model.openRequest = .group(gid: gid)
                     done()
@@ -546,7 +546,7 @@ private struct ScanPanel: View {
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
-                Text("Point the camera at your contact's code.")
+                Text("Point the camera at your contact’s code.")
                     .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
             }
             HStack {

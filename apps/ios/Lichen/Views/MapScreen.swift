@@ -424,7 +424,7 @@ struct SharePanel: View {
                     .buttonStyle(.plain)
                 }
                 .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
-                Text("Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.")
+                Text("Sent only when you stray more than 50 m from your track. Encryption doesn’t hide your radio position.")
                     .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)

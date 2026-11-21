@@ -66,17 +66,17 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ t'a ajouté au groupe"
+            "value": "%@ t’a ajouté au groupe"
           }
         }
       }
     },
-    "%@ added you. The other members' keys arrive over the next minutes.": {
+    "%@ added you. The other members’ keys arrive over the next minutes.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ t'a ajouté. Les clés des autres membres arrivent dans les minutes qui suivent."
+            "value": "%@ t’a ajouté. Les clés des autres membres arrivent dans les minutes qui suivent."
           }
         }
       }
@@ -156,7 +156,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ t'invite dans « %2$@ »"
+            "value": "%1$@ t’invite dans « %2$@ »"
           }
         }
       }
@@ -286,7 +286,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ t'a retiré du groupe"
+            "value": "%@ t’a retiré du groupe"
           }
         }
       }
@@ -426,7 +426,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ · ≈ %@ s d'antenne"
+            "value": "%@ · ≈ %@ s d’antenne"
           }
         }
       }
@@ -436,17 +436,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@ · ≈ %2$@ s de temps d'antenne, %3$@ %% de ton heure"
-          }
-        }
-      }
-    },
-    "%@'s radio is now called “%@”": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La radio de %1$@ s’appelle maintenant « %2$@ »"
+            "value": "%1$@ · ≈ %2$@ s de temps d’antenne, %3$@ %% de ton heure"
           }
         }
       }
@@ -471,6 +461,16 @@
         }
       }
     },
+    "%@’s radio is now called “%@”": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio de %1$@ s’appelle maintenant « %2$@ »"
+          }
+        }
+      }
+    },
     "%lld": {
       "localizations": {
         "fr": {
@@ -481,7 +481,7 @@
         }
       }
     },
-    "%lld / %lld members' keys received; a departure rotates them.": {
+    "%lld / %lld members’ keys received; a departure rotates them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -496,7 +496,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld / %lld reçues. Les messages des autres s'affichent dès que leur clé arrive."
+            "value": "%lld / %lld reçues. Les messages des autres s’affichent dès que leur clé arrive."
           }
         }
       }
@@ -767,13 +767,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld fragment, pas d'ACK après plusieurs tours."
+                  "value": "%lld fragment, pas d’ACK après plusieurs tours."
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld fragments, pas d'ACK après plusieurs tours."
+                  "value": "%lld fragments, pas d’ACK après plusieurs tours."
                 }
               }
             }
@@ -1486,7 +1486,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld/%lld octets · ≈ %@ s de temps d'antenne"
+            "value": "%lld/%lld octets · ≈ %@ s de temps d’antenne"
           }
         }
       }
@@ -1596,7 +1596,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Annonce LoRa d'un paquet, transfert de pair à pair"
+            "value": "Annonce LoRa d’un paquet, transfert de pair à pair"
           }
         }
       }
@@ -1606,7 +1606,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Annonce LoRa d'un paquet, transfert pair à pair (%@)"
+            "value": "Annonce LoRa d’un paquet, transfert pair à pair (%@)"
           }
         }
       }
@@ -1806,7 +1806,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le secret d'un canal fait 32 chiffres hexadécimaux."
+            "value": "Le secret d’un canal fait 32 chiffres hexadécimaux."
           }
         }
       }
@@ -1906,12 +1906,12 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Une version plus récente est utilisée par %@. Une partie de ce qu'ils envoient peut ne pas s'afficher."
+            "value": "Une version plus récente est utilisée par %@. Une partie de ce qu’ils envoient peut ne pas s’afficher."
           }
         }
       }
     },
-    "A radio on other settings no longer hears the radios of its mesh: choose your region's preset, or the values your local community uses.": {
+    "A radio on other settings no longer hears the radios of its mesh: choose your region’s preset, or the values your local community uses.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -1921,7 +1921,7 @@
         }
       }
     },
-    "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore's own encryption to the room: the room and everyone logged in read them.": {
+    "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore’s own encryption to the room: the room and everyone logged in read them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -1931,7 +1931,7 @@
         }
       }
     },
-    "A room's posts are MeshCore messages: the room and everyone logged in read them. Up to 15 characters.": {
+    "A room’s posts are MeshCore messages: the room and everyone logged in read them. Up to 15 characters.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -1946,17 +1946,17 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Une position arrondie est le centre d'une case d'une grille fixe, jamais un bruit aléatoire : en faire la moyenne n'apprend rien de plus."
+            "value": "Une position arrondie est le centre d’une case d’une grille fixe, jamais un bruit aléatoire : en faire la moyenne n’apprend rien de plus."
           }
         }
       }
     },
-    "A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.": {
+    "A simulated MeshCore network with two other users and a group, in real time: the app’s real core, without a radio.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l'app, sans radio."
+            "value": "Un réseau MeshCore simulé, avec deux autres personnes et un groupe, en temps réel : le vrai cœur de l’app, sans radio."
           }
         }
       }
@@ -2196,7 +2196,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Budget d'antenne épuisé"
+            "value": "Budget d’antenne épuisé"
           }
         }
       }
@@ -2206,7 +2206,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Temps d'antenne restant"
+            "value": "Temps d’antenne restant"
           }
         }
       }
@@ -2216,7 +2216,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Temps d'antenne restant cette heure"
+            "value": "Temps d’antenne restant cette heure"
           }
         }
       }
@@ -2236,7 +2236,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Temps d'antenne restant : %@ s. La personne l'ouvre avec l'app de son type."
+            "value": "Temps d’antenne restant : %@ s. La personne l’ouvre avec l’app de son type."
           }
         }
       }
@@ -2356,7 +2356,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Une autre identité répond maintenant pour sa radio : une app réinstallée, ou quelqu'un d'autre. Tes messages vont toujours à celle que tu connais. Compare les numéros de sécurité avant d'accepter la nouvelle."
+            "value": "Une autre identité répond maintenant pour sa radio : une app réinstallée, ou quelqu’un d’autre. Tes messages vont toujours à celle que tu connais. Compare les numéros de sécurité avant d’accepter la nouvelle."
           }
         }
       }
@@ -2371,12 +2371,12 @@
         }
       }
     },
-    "Anyone in range can write under a radio's name. Accept only if you know who this is; accepting does not verify them.": {
+    "Anyone in range can write under a radio’s name. Accept only if you know who this is; accepting does not verify them.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "N'importe qui à portée peut écrire sous le nom d'une radio. Accepte seulement si tu sais qui c'est ; accepter ne vérifie pas cette personne."
+            "value": "N’importe qui à portée peut écrire sous le nom d’une radio. Accepte seulement si tu sais qui c’est ; accepter ne vérifie pas cette personne."
           }
         }
       }
@@ -2476,7 +2476,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demande à %@ d'afficher un nouveau code."
+            "value": "Demande à %@ d’afficher un nouveau code."
           }
         }
       }
@@ -2506,7 +2506,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Demande à %@ de t'ajouter…"
+            "value": "Demande à %@ de t’ajouter…"
           }
         }
       }
@@ -2696,7 +2696,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Annuler l'envoi"
+            "value": "Annuler l’envoi"
           }
         }
       }
@@ -2896,7 +2896,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codec2 1600 : 10 s ≈ 13 fragments sur un saut. Plus clair, deux fois plus de temps d'antenne."
+            "value": "Codec2 1600 : 10 s ≈ 13 fragments sur un saut. Plus clair, deux fois plus de temps d’antenne."
           }
         }
       }
@@ -2906,7 +2906,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codec2 2400 : 10 s ≈ 20 fragments sur un saut. Le plus clair, trois fois plus de temps d'antenne."
+            "value": "Codec2 2400 : 10 s ≈ 20 fragments sur un saut. Le plus clair, trois fois plus de temps d’antenne."
           }
         }
       }
@@ -2916,7 +2916,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codec2 700C : 10 s ≈ 6 fragments sur un saut. Le moins de temps d'antenne, robotique."
+            "value": "Codec2 700C : 10 s ≈ 6 fragments sur un saut. Le moins de temps d’antenne, robotique."
           }
         }
       }
@@ -3026,7 +3026,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compare les numéros de sécurité avec %@ avant d'accepter sa nouvelle clé."
+            "value": "Compare les numéros de sécurité avec %@ avant d’accepter sa nouvelle clé."
           }
         }
       }
@@ -3036,7 +3036,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compare les nouveaux chiffres ci-dessous avant d'approuver."
+            "value": "Compare les nouveaux chiffres ci-dessous avant d’approuver."
           }
         }
       }
@@ -3066,7 +3066,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Compressé à %@ · %@ · ≈ %@ s de temps d'antenne, %@ %% de ton heure"
+            "value": "Compressé à %@ · %@ · ≈ %@ s de temps d’antenne, %@ %% de ton heure"
           }
         }
       }
@@ -3106,7 +3106,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecte d'abord la radio : les canaux sont enregistrés dedans."
+            "value": "Connecte d’abord la radio : les canaux sont enregistrés dedans."
           }
         }
       }
@@ -3116,7 +3116,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecte d'abord ta radio"
+            "value": "Connecte d’abord ta radio"
           }
         }
       }
@@ -3126,7 +3126,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connecte d'abord ta radio."
+            "value": "Connecte d’abord ta radio."
           }
         }
       }
@@ -3346,7 +3346,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossible d'annuler."
+            "value": "Impossible d’annuler."
           }
         }
       }
@@ -3446,7 +3446,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Impossible d'envoyer."
+            "value": "Impossible d’envoyer."
           }
         }
       }
@@ -3586,7 +3586,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Remis · %@ s de temps d'antenne"
+            "value": "Remis · %@ s de temps d’antenne"
           }
         }
       }
@@ -3617,13 +3617,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Remis · %lld fragment · %@ s d'antenne"
+                  "value": "Remis · %lld fragment · %@ s d’antenne"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Remis · %lld fragments · %@ s d'antenne"
+                  "value": "Remis · %lld fragments · %@ s d’antenne"
                 }
               }
             }
@@ -3766,7 +3766,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jeter l'enregistrement"
+            "value": "Jeter l’enregistrement"
           }
         }
       }
@@ -3926,7 +3926,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chaque saut coûte du temps d'antenne aux relais ; les messages tiennent jusqu'à 8"
+            "value": "Chaque saut coûte du temps d’antenne aux relais ; les messages tiennent jusqu’à 8"
           }
         }
       }
@@ -4046,7 +4046,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Coût estimé : %@ · ≈ %@ s d'antenne"
+            "value": "Coût estimé : %@ · ≈ %@ s d’antenne"
           }
         }
       }
@@ -4071,7 +4071,7 @@
         }
       }
     },
-    "Every advert shows the radio's position to the whole mesh, unencrypted.": {
+    "Every advert shows the radio’s position to the whole mesh, unencrypted.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -4131,7 +4131,7 @@
         }
       }
     },
-    "Everyone who has this channel's secret reads it. Posts are flooded once and never acknowledged.": {
+    "Everyone who has this channel’s secret reads it. Posts are flooded once and never acknowledged.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -4441,7 +4441,7 @@
         }
       }
     },
-    "From a MeshCore app or from lichen: it holds the channel's name and secret.": {
+    "From a MeshCore app or from lichen: it holds the channel’s name and secret.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -4831,7 +4831,7 @@
         }
       }
     },
-    "Heard, not in the radio's contacts": {
+    "Heard, not in the radio’s contacts": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -4846,7 +4846,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Signe de vie à l'arrêt"
+            "value": "Signe de vie à l’arrêt"
           }
         }
       }
@@ -4861,7 +4861,7 @@
         }
       }
     },
-    "Hides the radio's details": {
+    "Hides the radio’s details": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -4946,7 +4946,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Comment l'envoyer à %@"
+            "value": "Comment l’envoyer à %@"
           }
         }
       }
@@ -5076,7 +5076,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Code d'invitation pour %@"
+            "value": "Code d’invitation pour %@"
           }
         }
       }
@@ -5136,7 +5136,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il est supprimé sur les téléphones qui reçoivent ceci. Ceux qui l'ont déjà lu l'ont lu."
+            "value": "Il est supprimé sur les téléphones qui reçoivent ceci. Ceux qui l’ont déjà lu l’ont lu."
           }
         }
       }
@@ -5151,7 +5151,7 @@
         }
       }
     },
-    "It shows your radio's name, “%@” and its position.": {
+    "It shows your radio’s name, “%@” and its position.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -5161,7 +5161,7 @@
         }
       }
     },
-    "It shows your radio's name, “%@”.": {
+    "It shows your radio’s name, “%@”.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -5196,7 +5196,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son secret vient de celui qui l'a créé."
+            "value": "Son secret vient de celui qui l’a créé."
           }
         }
       }
@@ -5301,7 +5301,7 @@
         }
       }
     },
-    "Keeps the radio's position current. It draws power.": {
+    "Keeps the radio’s position current. It draws power.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -5356,7 +5356,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Plus gros qu'annoncé : abandonné."
+            "value": "Plus gros qu’annoncé : abandonné."
           }
         }
       }
@@ -5456,7 +5456,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "M'autoriser à être localisé par ce groupe"
+            "value": "M’autoriser à être localisé par ce groupe"
           }
         }
       }
@@ -5606,7 +5606,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Charger l'image complète"
+            "value": "Charger l’image complète"
           }
         }
       }
@@ -5696,7 +5696,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'accès à la position est coupé"
+            "value": "L’accès à la position est coupé"
           }
         }
       }
@@ -5856,7 +5856,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Recherche d'un chemin"
+            "value": "Recherche d’un chemin"
           }
         }
       }
@@ -6061,12 +6061,12 @@
         }
       }
     },
-    "Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group's QR code. Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.": {
+    "Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group’s QR code. Every member gets the others’ sender keys over encrypted sessions. Group messages are flooded and signed.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les clés d'envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en inondation et signés."
+            "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les clés d’envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en inondation et signés."
           }
         }
       }
@@ -6271,7 +6271,7 @@
         }
       }
     },
-    "MeshCore's public channel: everyone in range reads it. It starts muted.": {
+    "MeshCore’s public channel: everyone in range reads it. It starts muted.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -6356,7 +6356,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'accès au micro est coupé"
+            "value": "L’accès au micro est coupé"
           }
         }
       }
@@ -6746,7 +6746,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'expéditeur ne la propose plus."
+            "value": "L’expéditeur ne la propose plus."
           }
         }
       }
@@ -6826,7 +6826,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aucun répéteur n'a répondu à la découverte de chemin. Réessaie plus près, ou quand un relais est actif."
+            "value": "Aucun répéteur n’a répondu à la découverte de chemin. Réessaie plus près, ou quand un relais est actif."
           }
         }
       }
@@ -6846,7 +6846,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aucun transport ne joint l'expéditeur : active iroh ou Tor."
+            "value": "Aucun transport ne joint l’expéditeur : active iroh ou Tor."
           }
         }
       }
@@ -6886,7 +6886,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Personne d'autre pour l'instant. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
+            "value": "Personne d’autre pour l’instant. Tu n’as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
           }
         }
       }
@@ -6916,7 +6916,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Personne pour l'instant : partage ta position avec un contact ou rejoins un groupe."
+            "value": "Personne pour l’instant : partage ta position avec un contact ou rejoins un groupe."
           }
         }
       }
@@ -7036,7 +7036,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Plus assez de temps d'antenne cette heure : ça passera dans %lld min."
+            "value": "Plus assez de temps d’antenne cette heure : ça passera dans %lld min."
           }
         }
       }
@@ -7256,7 +7256,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "J'arrive, radio éteinte pour l'instant"
+            "value": "J’arrive, radio éteinte pour l’instant"
           }
         }
       }
@@ -7316,7 +7316,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seulement sur ce téléphone : sa radio s'appelle %@, et rien ne lui est envoyé."
+            "value": "Seulement sur ce téléphone : sa radio s’appelle %@, et rien ne lui est envoyé."
           }
         }
       }
@@ -7336,7 +7336,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seul l'administrateur du groupe peut faire ça."
+            "value": "Seul l’administrateur du groupe peut faire ça."
           }
         }
       }
@@ -7406,7 +7406,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ouverture d'une session chiffrée"
+            "value": "Ouverture d’une session chiffrée"
           }
         }
       }
@@ -7491,7 +7491,7 @@
         }
       }
     },
-    "Over LoRa to each contact you share with, flooded to each group, on the mesh's usual radio settings.": {
+    "Over LoRa to each contact you share with, flooded to each group, on the mesh’s usual radio settings.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -7656,7 +7656,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les utilisateurs d'une appli MeshCore voient ce nom, et tes messages dans les canaux commencent par lui. Ta radio l'annonce."
+            "value": "Les utilisateurs d’une appli MeshCore voient ce nom, et tes messages dans les canaux commencent par lui. Ta radio l’annonce."
           }
         }
       }
@@ -7716,7 +7716,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les photos et fichiers passent par Internet quand les deux téléphones y ont accès ; LoRa ne porte qu'une annonce d'un paquet. iroh d'abord, Tor quand iroh ne joint pas l'expéditeur."
+            "value": "Les photos et fichiers passent par Internet quand les deux téléphones y ont accès ; LoRa ne porte qu’une annonce d’un paquet. iroh d’abord, Tor quand iroh ne joint pas l’expéditeur."
           }
         }
       }
@@ -7791,7 +7791,7 @@
         }
       }
     },
-    "Point the camera at a channel's code from a MeshCore app or from lichen.": {
+    "Point the camera at a channel’s code from a MeshCore app or from lichen.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -7801,12 +7801,12 @@
         }
       }
     },
-    "Point the camera at your contact's code.": {
+    "Point the camera at your contact’s code.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vise le code de ton contact avec l'appareil photo."
+            "value": "Vise le code de ton contact avec l’appareil photo."
           }
         }
       }
@@ -8096,7 +8096,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Radio non connectée : les messages l'attendent, jusqu'à 24 h"
+            "value": "Radio non connectée : les messages l’attendent, jusqu’à 24 h"
           }
         }
       }
@@ -8136,7 +8136,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les radios que ton nœud a entendues. Avec quelqu'un qui a lichen, la discussion est chiffrée de bout en bout ; avec quelqu'un qui n'a qu'une appli MeshCore, c'est une discussion MeshCore, lisible par les radios."
+            "value": "Les radios que ton nœud a entendues. Avec quelqu’un qui a lichen, la discussion est chiffrée de bout en bout ; avec quelqu’un qui n’a qu’une appli MeshCore, c’est une discussion MeshCore, lisible par les radios."
           }
         }
       }
@@ -8171,7 +8171,7 @@
         }
       }
     },
-    "Reading the radio's settings…": {
+    "Reading the radio’s settings…": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -8401,7 +8401,7 @@
         }
       }
     },
-    "Repeaters, room servers and people's radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes' own adverts.": {
+    "Repeaters, room servers and people’s radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes’ own adverts.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -8801,7 +8801,7 @@
         }
       }
     },
-    "Saved: used from the radio's next restart. Pair the phone again with it.": {
+    "Saved: used from the radio’s next restart. Pair the phone again with it.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -8831,7 +8831,7 @@
         }
       }
     },
-    "Scan a channel's QR code": {
+    "Scan a channel’s QR code": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -8976,7 +8976,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoyer l'annonce"
+            "value": "Envoyer l’annonce"
           }
         }
       }
@@ -8996,7 +8996,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoyer l'aperçu"
+            "value": "Envoyer l’aperçu"
           }
         }
       }
@@ -9006,7 +9006,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Seuil d'envoi"
+            "value": "Seuil d’envoi"
           }
         }
       }
@@ -9056,7 +9056,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'envoi différé arrive dans une prochaine version."
+            "value": "L’envoi différé arrive dans une prochaine version."
           }
         }
       }
@@ -9151,12 +9151,12 @@
         }
       }
     },
-    "Sent only when you stray more than 50 m from your track. Encryption doesn't hide your radio position.": {
+    "Sent only when you stray more than 50 m from your track. Encryption doesn’t hide your radio position.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoi seulement quand tu t'écartes de plus de 50 m de ta trajectoire. Le chiffrement ne masque pas ta position radio."
+            "value": "Envoi seulement quand tu t’écartes de plus de 50 m de ta trajectoire. Le chiffrement ne masque pas ta position radio."
           }
         }
       }
@@ -9296,7 +9296,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le partage s'arrête tout seul à la fin ; les autres voient ton marqueur disparaître."
+            "value": "Le partage s’arrête tout seul à la fin ; les autres voient ton marqueur disparaître."
           }
         }
       }
@@ -9316,7 +9316,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les messages courts passent en priorité ; les envois longs attendent que l'heure se libère."
+            "value": "Les messages courts passent en priorité ; les envois longs attendent que l’heure se libère."
           }
         }
       }
@@ -9406,7 +9406,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revoir les écrans d'accueil"
+            "value": "Revoir les écrans d’accueil"
           }
         }
       }
@@ -9501,7 +9501,7 @@
         }
       }
     },
-    "Six digits; empty for the radio's default.": {
+    "Six digits; empty for the radio’s default.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -9511,22 +9511,22 @@
         }
       }
     },
-    "Someone using %@'s radio": {
+    "Someone using %@’s radio": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quelqu'un qui utilise la radio de %@"
+            "value": "Quelqu’un qui utilise la radio de %@"
           }
         }
       }
     },
-    "Someone using %@'s radio wants to write to you": {
+    "Someone using %@’s radio wants to write to you": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quelqu'un qui utilise la radio de %@ veut t'écrire"
+            "value": "Quelqu’un qui utilise la radio de %@ veut t’écrire"
           }
         }
       }
@@ -9686,7 +9686,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le firmware companion stock ne relaie pas : c'est le rôle d'un nœud répéteur."
+            "value": "Le firmware companion stock ne relaie pas : c’est le rôle d’un nœud répéteur."
           }
         }
       }
@@ -9866,7 +9866,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Le SOS reste actif jusqu'à ce que tu l'arrêtes. Il ne remplace pas le 112."
+            "value": "Le SOS reste actif jusqu’à ce que tu l’arrêtes. Il ne remplace pas le 112."
           }
         }
       }
@@ -9886,7 +9886,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'app s'est arrêtée avant la remise."
+            "value": "L’app s’est arrêtée avant la remise."
           }
         }
       }
@@ -9951,7 +9951,7 @@
         }
       }
     },
-    "The demo's identity": {
+    "The demo’s identity": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -10101,22 +10101,12 @@
         }
       }
     },
-    "The phone's clock is not set yet.": {
+    "The phone’s clock is not set yet.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "L'horloge du téléphone n'est pas encore réglée."
-          }
-        }
-      }
-    },
-    "The phone's storage could not be read or written.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le stockage du téléphone n’a pas pu être lu ou écrit."
+            "value": "L’horloge du téléphone n’est pas encore réglée."
           }
         }
       }
@@ -10127,6 +10117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Le stockage sécurisé du téléphone est illisible pour le moment, souvent avant le premier déverrouillage. Rien n’a été modifié : déverrouille le téléphone, puis réessaie."
+          }
+        }
+      }
+    },
+    "The phone’s storage could not be read or written.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le stockage du téléphone n’a pas pu être lu ou écrit."
           }
         }
       }
@@ -10186,7 +10186,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La radio n'a plus d'emplacement de canal libre."
+            "value": "La radio n’a plus d’emplacement de canal libre."
           }
         }
       }
@@ -10226,7 +10226,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "La radio arrête de le suivre. Ses messages restent ici jusqu'à ce que tu supprimes la conversation."
+            "value": "La radio arrête de le suivre. Ses messages restent ici jusqu’à ce que tu supprimes la conversation."
           }
         }
       }
@@ -10241,7 +10241,7 @@
         }
       }
     },
-    "The radio's GPS": {
+    "The radio’s GPS": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -10251,7 +10251,7 @@
         }
       }
     },
-    "The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position.": {
+    "The radio’s GPS has no fix yet: it needs open sky. Until then, it can advertise this phone’s position.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -10266,7 +10266,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Identiques sur les deux téléphones = pas d'intermédiaire. À comparer de vive voix ou par un autre canal."
+            "value": "Identiques sur les deux téléphones = pas d’intermédiaire. À comparer de vive voix ou par un autre canal."
           }
         }
       }
@@ -10316,7 +10316,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son identité n'est pas encore connue : échangez un message ou scanne son code d'abord."
+            "value": "Son identité n’est pas encore connue : échangez un message ou scanne son code d’abord."
           }
         }
       }
@@ -10346,7 +10346,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sa clé n'est pas encore connue : échangez d'abord un message, ou scanne son code."
+            "value": "Sa clé n’est pas encore connue : échangez d’abord un message, ou scanne son code."
           }
         }
       }
@@ -10376,7 +10376,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son téléphone t'ajoute par LoRa, en général en une ou deux minutes. Tu peux fermer cet écran : le groupe apparaîtra dans tes conversations."
+            "value": "Son téléphone t’ajoute par LoRa, en général en une ou deux minutes. Tu peux fermer cet écran : le groupe apparaîtra dans tes conversations."
           }
         }
       }
@@ -10386,7 +10386,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Son téléphone est injoignable : hors ligne, ou l'app est fermée."
+            "value": "Son téléphone est injoignable : hors ligne, ou l’app est fermée."
           }
         }
       }
@@ -10416,7 +10416,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sa radio n'a pas répondu à la poignée de main : éteinte, hors de portée, ou l'app fermée."
+            "value": "Sa radio n’a pas répondu à la poignée de main : éteinte, hors de portée, ou l’app fermée."
           }
         }
       }
@@ -10436,7 +10436,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Il n'y a pas de version complète à demander."
+            "value": "Il n’y a pas de version complète à demander."
           }
         }
       }
@@ -10461,7 +10461,7 @@
         }
       }
     },
-    "These messages use MeshCore's own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.": {
+    "These messages use MeshCore’s own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -10551,7 +10551,7 @@
         }
       }
     },
-    "This code holds the channel's secret: anyone who scans it, with lichen or a MeshCore app, reads %@ and can post in it.": {
+    "This code holds the channel’s secret: anyone who scans it, with lichen or a MeshCore app, reads %@ and can post in it.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -10666,7 +10666,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce n'est pas un code lichen."
+            "value": "Ce n’est pas un code lichen."
           }
         }
       }
@@ -10696,7 +10696,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce message date d'avant les réponses : on ne peut pas y répondre."
+            "value": "Ce message date d’avant les réponses : on ne peut pas y répondre."
           }
         }
       }
@@ -10746,7 +10746,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aujourd'hui"
+            "value": "Aujourd’hui"
           }
         }
       }
@@ -10786,7 +10786,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tor n'a pas pu se connecter"
+            "value": "Tor n’a pas pu se connecter"
           }
         }
       }
@@ -10926,7 +10926,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tape les 24 mots de l'identité à restaurer, séparés par des espaces. Elle remplace l'identité de ce téléphone."
+            "value": "Tape les 24 mots de l’identité à restaurer, séparés par des espaces. Elle remplace l’identité de ce téléphone."
           }
         }
       }
@@ -10986,7 +10986,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Indisponible : active iroh ou Tor dans les Réglages pour récupérer l'original."
+            "value": "Indisponible : active iroh ou Tor dans les Réglages pour récupérer l’original."
           }
         }
       }
@@ -11086,7 +11086,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jusqu'à ce que je les réactive"
+            "value": "Jusqu’à ce que je les réactive"
           }
         }
       }
@@ -11106,7 +11106,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jusqu'à %lld octets, avec accusé de réception de sa radio"
+            "value": "Jusqu’à %lld octets, avec accusé de réception de sa radio"
           }
         }
       }
@@ -11221,7 +11221,7 @@
         }
       }
     },
-    "Use this phone's position": {
+    "Use this phone’s position": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -11246,7 +11246,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Vérifié par le scan. Son téléphone affiche les mêmes chiffres dès qu'il te connaît : après ton premier message, ou quand il scanne ton code."
+            "value": "Vérifié par le scan. Son téléphone affiche les mêmes chiffres dès qu’il te connaît : après ton premier message, ou quand il scanne ton code."
           }
         }
       }
@@ -11346,7 +11346,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Qualité de la voix contre temps d'antenne : %@ · ≈ %@ s"
+            "value": "Qualité de la voix contre temps d’antenne : %@ · ≈ %@ s"
           }
         }
       }
@@ -11376,7 +11376,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "En attente de temps d'antenne · vers %@"
+            "value": "En attente de temps d’antenne · vers %@"
           }
         }
       }
@@ -11396,7 +11396,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "En attente de l'ACK"
+            "value": "En attente de l’ACK"
           }
         }
       }
@@ -11411,7 +11411,7 @@
         }
       }
     },
-    "Waiting for the room's acknowledgement": {
+    "Waiting for the room’s acknowledgement": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -11421,12 +11421,12 @@
         }
       }
     },
-    "Waiting for their radio's acknowledgement": {
+    "Waiting for their radio’s acknowledgement": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "En attente de l'accusé de réception de sa radio"
+            "value": "En attente de l’accusé de réception de sa radio"
           }
         }
       }
@@ -11446,7 +11446,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "En attente d'envoi"
+            "value": "En attente d’envoi"
           }
         }
       }
@@ -11471,7 +11471,7 @@
         }
       }
     },
-    "What lichen did lately, for its developers: versions, your radio's model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.": {
+    "What lichen did lately, for its developers: versions, your radio’s model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -11486,7 +11486,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce que voient les utilisateurs d'une appli MeshCore"
+            "value": "Ce que voient les utilisateurs d’une appli MeshCore"
           }
         }
       }
@@ -11501,17 +11501,17 @@
         }
       }
     },
-    "When you pair, iOS asks for the 6 digits shown on the radio's screen: type them in its prompt. The radio then stays paired with this phone.": {
+    "When you pair, iOS asks for the 6 digits shown on the radio’s screen: type them in its prompt. The radio then stays paired with this phone.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "À l'appairage, iOS demande les 6 chiffres affichés sur l'écran de la radio : saisis-les dans sa fenêtre. La radio reste ensuite appairée à ce téléphone."
+            "value": "À l’appairage, iOS demande les 6 chiffres affichés sur l’écran de la radio : saisis-les dans sa fenêtre. La radio reste ensuite appairée à ce téléphone."
           }
         }
       }
     },
-    "Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen's own positions always travel encrypted, only to the people you choose.": {
+    "Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen’s own positions always travel encrypted, only to the people you choose.": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -11556,7 +11556,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Avec %@. Tu n'as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
+            "value": "Avec %@. Tu n’as pas vérifié cette personne en vrai : ne rejoins que si tu la connais."
           }
         }
       }
@@ -11606,7 +11606,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sans sauvegarde, perdre ce téléphone, c'est perdre ton identité et tes contacts vérifiés."
+            "value": "Sans sauvegarde, perdre ce téléphone, c’est perdre ton identité et tes contacts vérifiés."
           }
         }
       }
@@ -11626,7 +11626,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Écris ces 24 mots sur papier, dans l'ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi."
+            "value": "Écris ces 24 mots sur papier, dans l’ordre, et garde-les en lieu sûr. Qui les a peut se faire passer pour toi."
           }
         }
       }
@@ -11841,12 +11841,12 @@
         }
       }
     },
-    "Your code carries your radio's address, so people can reach you.": {
+    "Your code carries your radio’s address, so people can reach you.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ton code contient l'adresse de ta radio, pour qu'on puisse te joindre."
+            "value": "Ton code contient l’adresse de ta radio, pour qu’on puisse te joindre."
           }
         }
       }
@@ -11921,7 +11921,7 @@
         }
       }
     },
-    "Your key's fingerprint": {
+    "Your key’s fingerprint": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -12076,7 +12076,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ta position n'est pas encore connue"
+            "value": "Ta position n’est pas encore connue"
           }
         }
       }
@@ -12406,7 +12406,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tes discussions lichen avec les mêmes personnes restent chiffrées de bout en bout ; rien n'en passe jamais dans une discussion MeshCore."
+            "value": "Tes discussions lichen avec les mêmes personnes restent chiffrées de bout en bout ; rien n’en passe jamais dans une discussion MeshCore."
           }
         }
       }
@@ -12436,7 +12436,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "pas d'accusé de réception"
+            "value": "pas d’accusé de réception"
           }
         }
       }
@@ -12466,7 +12466,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "à l'instant"
+            "value": "à l’instant"
           }
         }
       }
@@ -12526,7 +12526,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "l'admin"
+            "value": "l’admin"
           }
         }
       }
@@ -12536,7 +12536,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "l'app s'est arrêtée avant la remise"
+            "value": "l’app s’est arrêtée avant la remise"
           }
         }
       }
@@ -12556,7 +12556,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "son identité a changé : vérifie-la d'abord"
+            "value": "son identité a changé : vérifie-la d’abord"
           }
         }
       }
@@ -12656,7 +12656,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "≈ %@ s de temps d'antenne"
+            "value": "≈ %@ s de temps d’antenne"
           }
         }
       }

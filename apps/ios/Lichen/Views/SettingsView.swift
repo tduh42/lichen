@@ -255,7 +255,7 @@ struct SettingsView: View {
                             } else {
                                 Button { model.startDemo() } label: {
                                     CardRow(title: String(localized: "Try the demo network"),
-                                            subtitle: String(localized: "A simulated MeshCore network with two other users and a group, in real time: the app's real core, without a radio.")) {
+                                            subtitle: String(localized: "A simulated MeshCore network with two other users and a group, in real time: the app’s real core, without a radio.")) {
                                         Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                     }
                                     .contentShape(Rectangle())
@@ -490,13 +490,14 @@ struct SettingsView: View {
 
     private var preset: String {
         guard let r = model.radio else { return String(localized: "Read from the radio once connected") }
-        return "SF\(r.sf) / \(bandwidth(r.bwHz)) · CR 4/\(r.cr) · \(String(format: "%.3f", Double(r.freqKhz) / 1000)) MHz"
+        return "SF\(r.sf) / \(bandwidth(r.bwHz)) · CR 4/\(r.cr) · \(decimal(Double(r.freqKhz) / 1000, 3)) MHz"
     }
 
     private var subBand: String {
         let duty = Double(model.budget.limitMs) / 36_000
         let khz = model.radio?.freqKhz ?? 869_618
-        let band = (869_400...869_650).contains(khz) ? "869.4–869.65 MHz" : String(format: "%.3f MHz", Double(khz) / 1000)
+        let band = (869_400...869_650).contains(khz) ? "\(decimal(869.4, 1))–\(decimal(869.65, 2)) MHz"
+                                                    : "\(decimal(Double(khz) / 1000, 3)) MHz"
         return "\(band) · \(String(format: "%.0f", duty)) %"
     }
 
@@ -523,7 +524,7 @@ struct BlockedView: View {
                         Avatar(name: b.name, key: b.node)
                         VStack(alignment: .leading, spacing: 2) {
                             // A request's identity (ADR-0046), not the radio it came through.
-                            Text(b.request ? String(localized: "Someone using \(b.name)'s radio") : b.name)
+                            Text(b.request ? String(localized: "Someone using \(b.name)’s radio") : b.name)
                                 .font(.system(.body, weight: .semibold))
                             Text(String(localized: "Since \(Date(timeIntervalSince1970: TimeInterval(b.atMs) / 1000).formatted(date: .abbreviated, time: .omitted))"))
                                 .font(.system(.footnote))
@@ -585,8 +586,8 @@ struct AdvertChoiceSheet: View {
         let r = model.radioSettings
         let name = r.map(\.name).flatMap { $0.isEmpty ? nil : $0 } ?? model.nodeName
         let position = r.map { $0.positionInAdverts && ($0.latE6 != 0 || $0.lonE6 != 0) } ?? false
-        return position ? String(localized: "It shows your radio's name, “\(name)” and its position.")
-                        : String(localized: "It shows your radio's name, “\(name)”.")
+        return position ? String(localized: "It shows your radio’s name, “\(name)” and its position.")
+                        : String(localized: "It shows your radio’s name, “\(name)”.")
     }
 
     private func option(flood: Bool, _ title: String, _ note: String) -> some View {

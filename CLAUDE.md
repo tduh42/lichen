@@ -120,6 +120,7 @@ cargo test -p lc-core --test requests --test block --test mesh --test second_rea
                                   # the second read's reproductions (fake network)
 python3 -I testdata/meshcore/mesh.py > testdata/meshcore/mesh.toml     # a vector oracle (each says how it runs)
 python3 -I scripts/licences.py                                         # the apps' licence list (check.sh: --check)
+python3 -I scripts/ios-strings.py --check                              # the iOS text takes ’, never ' (check.sh)
 python3 -I docs/readme/gen.py                                          # the README's diagrams
 scripts/install-ios.sh                            # Release build onto a USB iPhone (free Apple ID), from a Terminal
 cargo run --release -p lc-cli -- search /dev/cu.usbmodem14301 --csv local/rx.csv --at 45.19,5.72   # field recorder

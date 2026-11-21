@@ -55,7 +55,7 @@ struct SosView: View {
                      String(localized: "Your exact GPS position, again every 2 minutes. Without GPS, a beacon your groups can locate by radio."))
                 card(String(localized: "To whom"), recipients)
                 card(String(localized: "How"),
-                     String(localized: "Over LoRa to each contact you share with, flooded to each group, on the mesh's usual radio settings."))
+                     String(localized: "Over LoRa to each contact you share with, flooded to each group, on the mesh’s usual radio settings."))
             }
             Spacer(minLength: 0)
             Text("The SOS stays on until you stop it. It does not replace 112.")

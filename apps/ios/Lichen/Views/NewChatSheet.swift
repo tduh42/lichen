@@ -90,7 +90,7 @@ struct NewChatSheet: View {
                 } header: {
                     Text("New group")
                 } footer: {
-                    Text("Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group's QR code. Every member gets the others' sender keys over encrypted sessions. Group messages are flooded and signed.")
+                    Text("Members are contacts you have already talked with in lichen; people next to you can also join by scanning the group’s QR code. Every member gets the others’ sender keys over encrypted sessions. Group messages are flooded and signed.")
                 }
                 if let error {
                     Text(error).foregroundStyle(Theme.danger)

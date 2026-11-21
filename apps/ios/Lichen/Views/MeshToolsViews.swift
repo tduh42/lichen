@@ -60,7 +60,7 @@ struct NodesView: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    Text("Repeaters, room servers and people's radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes' own adverts.")
+                    Text("Repeaters, room servers and people’s radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes’ own adverts.")
                         .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
                         .padding(.horizontal, 4)
@@ -164,7 +164,7 @@ struct NodeDetailView: View {
 
     private func header(_ n: NodeInfo) -> some View {
         CardList {
-            CardRow(title: n.kind.label, subtitle: [n.onRadio ? nil : String(localized: "Heard, not in the radio's contacts"),
+            CardRow(title: n.kind.label, subtitle: [n.onRadio ? nil : String(localized: "Heard, not in the radio’s contacts"),
                                                     String(localized: "Last heard \(model.heard(n.lastHeardS))")]
                 .compactMap { $0 }.joined(separator: " · "))
             if let lat = n.lat, let lon = n.lon {
@@ -225,7 +225,7 @@ struct TraceCard: View {
                     ForEach(Array(trace.legs.enumerated()), id: \.offset) { i, leg in
                         if i > 0 { CardDivider() }
                         CardRow(title: "\(end(leg.from)) → \(end(leg.to))") {
-                            Text(leg.snrDb.map { String(format: "%.1f dB", $0) } ?? "–")
+                            Text(verbatim: leg.snrDb.map { "\(decimal(Double($0), 1)) dB" } ?? "–")
                                 .font(.system(.callout, design: .monospaced))
                                 .foregroundStyle(color(leg.snrDb))
                         }
@@ -252,7 +252,7 @@ struct TraceCard: View {
     private func summary(_ t: TraceInfo) -> String {
         switch t.state {
         case .sending: String(localized: "On its way through the repeaters and back.")
-        case .done: String(localized: "Back in \(String(format: "%.1f", Double(t.rttMs ?? 0) / 1000)) s · SNR measured by each hop, out and back")
+        case .done: String(localized: "Back in \(decimal(Double(t.rttMs ?? 0) / 1000, 1)) s · SNR measured by each hop, out and back")
         case .noAnswer: String(localized: "No answer: a hop did not hear it, or the radio was disconnected.")
         case .refused: String(localized: "The radio refused the trace.")
         }
@@ -308,7 +308,7 @@ struct ServerLoginCard: View {
                     .disabled(!model.isConnected || login == .pending || password.utf8.count > 15)
                 }
             }
-            Text(room ? String(localized: "A room's posts are MeshCore messages: the room and everyone logged in read them. Up to 15 characters.")
+            Text(room ? String(localized: "A room’s posts are MeshCore messages: the room and everyone logged in read them. Up to 15 characters.")
                       : String(localized: "The admin password is never kept on this phone. Guests can read the status only."))
                 .font(.system(.caption))
                 .foregroundStyle(Theme.tx2)
@@ -356,7 +356,7 @@ struct RepeaterCards: View {
                     ForEach(Array(ns.enumerated()), id: \.offset) { _, n in
                         CardRow(title: n.name ?? n.prefix.uppercased(),
                                 subtitle: String(localized: "Heard \(MapScreen.ago(UInt64(Date().timeIntervalSince1970) - UInt64(n.heardAgoS)))")) {
-                            Text(String(format: "%.1f dB", n.snrDb))
+                            Text(verbatim: "\(decimal(Double(n.snrDb), 1)) dB")
                                 .font(.system(.callout, design: .monospaced))
                                 .foregroundStyle(Theme.tx2)
                         }
@@ -390,12 +390,12 @@ struct RepeaterCards: View {
 
     @ViewBuilder
     private func statusRows(_ s: ServerStats) -> some View {
-        CardRow(title: String(localized: "Battery"), subtitle: String(format: "%.2f V", Double(s.batteryMv) / 1000))
+        CardRow(title: String(localized: "Battery"), subtitle: "\(decimal(Double(s.batteryMv) / 1000, 2)) V")
         CardDivider()
         CardRow(title: String(localized: "Up for"), subtitle: Self.duration(s.uptimeS))
         CardDivider()
         CardRow(title: String(localized: "Radio"),
-                subtitle: String(localized: "Noise floor \(Int(s.noiseFloor)) dBm · last RSSI \(Int(s.lastRssi)) dBm · SNR \(String(format: "%.1f", s.lastSnrDb)) dB"))
+                subtitle: String(localized: "Noise floor \(Int(s.noiseFloor)) dBm · last RSSI \(Int(s.lastRssi)) dBm · SNR \(decimal(Double(s.lastSnrDb), 1)) dB"))
         CardDivider()
         CardRow(title: String(localized: "Packets"),
                 subtitle: String(localized: "\(Int(s.packetsRecv)) received · \(Int(s.packetsSent)) sent · \(Int(s.txQueue)) waiting"))
@@ -601,7 +601,7 @@ struct ChannelQRSheet: View {
             ScrollView {
                 VStack(spacing: 16) {
                     Banner(kind: .warn, title: String(localized: "Whoever scans it joins"),
-                           message: String(localized: "This code holds the channel's secret: anyone who scans it, with lichen or a MeshCore app, reads \(channel.name) and can post in it."))
+                           message: String(localized: "This code holds the channel’s secret: anyone who scans it, with lichen or a MeshCore app, reads \(channel.name) and can post in it."))
                     if shown, let text = model.channelQr(channel.id), let image = QRCode.image(text) {
                         Image(uiImage: image)
                             .interpolation(.none)
@@ -664,7 +664,7 @@ struct ScanChannelSheet: View {
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .frame(maxHeight: 360)
-                    Text(error ?? String(localized: "Point the camera at a channel's code from a MeshCore app or from lichen."))
+                    Text(error ?? String(localized: "Point the camera at a channel’s code from a MeshCore app or from lichen."))
                         .font(.system(.footnote))
                         .foregroundStyle(error == nil ? Theme.tx2 : Theme.danger)
                     Spacer()

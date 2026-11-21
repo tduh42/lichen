@@ -185,7 +185,7 @@ final class ContactsTests: LichenUITest {
         wait(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Back in %@ s · SNR measured by each hop, out and back", "")
             .components(separatedBy: " ").prefix(2).joined(separator: " "))).firstMatch, 30, "the trace did not come back")
         // You → hub → crest → hub → You: four legs, each with an SNR.
-        let legs = app.staticTexts.matching(NSPredicate(format: "label MATCHES '-?[0-9]+\\\\.[0-9] dB'"))
+        let legs = app.staticTexts.matching(NSPredicate(format: "label MATCHES '-?[0-9]+[.,][0-9] dB'"))
         XCTAssertEqual(legs.count, 4, "legs: \(legs.allElementsBoundByIndex.map(\.label))")
         keep("ct-trace")
     }
@@ -194,7 +194,7 @@ final class ContactsTests: LichenUITest {
     /// is read (its notification comes and goes meanwhile; a tap while the card is still being
     /// laid out can be lost).
     private func request() -> XCUIElement {
-        let card = wait(containing(tr("Someone using %@'s radio wants to write to you", "Camille")), Self.camilleTimeout,
+        let card = wait(containing(tr("Someone using %@’s radio wants to write to you", "Camille")), Self.camilleTimeout,
                         "no request from Camille")
         pause(3)
         return card
@@ -212,7 +212,7 @@ final class ContactsTests: LichenUITest {
         wait(composer, 10, "her chat did not open")
         waitText("Hi! I'm at the refuge", 5)
         back()
-        XCTAssertFalse(containing(tr("Someone using %@'s radio wants to write to you", "Camille")).exists, "the card stayed")
+        XCTAssertFalse(containing(tr("Someone using %@’s radio wants to write to you", "Camille")).exists, "the card stayed")
         wait(row("Camille"), 5, "no row for Camille")
     }
 
@@ -226,13 +226,13 @@ final class ContactsTests: LichenUITest {
         block.tap()
         pause(1)
         keep("ct-request-block-tapped")
-        waitGone(containing(tr("Someone using %@'s radio wants to write to you", "Camille")), 5, "the card stayed")
+        waitGone(containing(tr("Someone using %@’s radio wants to write to you", "Camille")), 5, "the card stayed")
         XCTAssertFalse(row("Camille").exists)
         tab(.settings)
         let blocked = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Blocked"))).firstMatch
         reveal(blocked)
         blocked.tap()
-        wait(element(tr("Someone using %@'s radio", "Camille")), 5, "the blocked request is not listed")
+        wait(element(tr("Someone using %@’s radio", "Camille")), 5, "the blocked request is not listed")
         keep("ct-request-blocked")
     }
 
@@ -240,7 +240,7 @@ final class ContactsTests: LichenUITest {
         launch(["-requestDemo", "YES"])
         _ = request()
         button(tr("Delete")).tap()
-        waitGone(containing(tr("Someone using %@'s radio wants to write to you", "Camille")), 5, "the card stayed")
+        waitGone(containing(tr("Someone using %@’s radio wants to write to you", "Camille")), 5, "the card stayed")
         XCTAssertFalse(row("Camille").exists, "a deleted request left a conversation")
         XCTAssertFalse(containing("Hi! I'm at the refuge").exists, "its message stayed")
     }
