@@ -48,7 +48,9 @@ final class ContactsTests: LichenUITest {
     /// CT-2: Camille renamed on this phone: the chat's title, Messages and the notification
     /// use the new name, the node's own name stays under it; reset, her own name again.
     func testCT2_RenameAContact() {
-        launch(["-open", "Camille", "-quietDemo", "YES"])
+        // At the wall clock's pace: her answer comes once Messages is on screen, not while her
+        // chat still is (no banner then).
+        launch(["-open", "Camille", "-quietDemo", "YES"], speed: 1, banners: true)
         wait(keyButton, Self.camilleTimeout, "no session with Camille")
         let title = app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch
         wait(title, 5, "no title button").tap()
@@ -244,9 +246,13 @@ final class ContactsTests: LichenUITest {
     }
 
     /// CT-10: Camille blocked: her answer is lost and she is listed in Settings › Blocked;
-    /// unblocked there, her answers come again.
+    /// unblocked there, what she sends reaches us again: her acknowledgement of a new text.
+    /// Her answer to it waits until her phone gives up the one written while blocked, declined
+    /// and never acknowledged (ADR-0034, §7.2): a few minutes, left to the core's scenario
+    /// (`ct_10_our_text_on_the_air_at_the_block`).
     func testCT10_BlockAndUnblock() {
-        launch(["-open", "Camille", "-quietDemo", "YES"])
+        // At the wall clock's pace: the block must come before her answer (B-ios-8).
+        launch(["-open", "Camille", "-quietDemo", "YES"], speed: 1)
         wait(keyButton, Self.camilleTimeout, "no session with Camille")
         send("Are you still at the refuge?")
         // Blocked before her answer comes (about 5 s after it reaches her).
@@ -270,16 +276,12 @@ final class ContactsTests: LichenUITest {
         tab(.messages)
         openChat("Camille", 5)
         send("Back again")
-        waitLabel(message("Back again"), contains: tr("Delivered"), 120)
-        // Her messages come back. B-ios-8 (handed to core): her answer to the new text may not
-        // come at all, and what she sent while blocked, said to be lost (Settings › Blocked),
-        // comes once unblocked.
-        let options = XCTExpectedFailure.Options()
-        options.isStrict = false
-        XCTExpectFailure("B-ios-8: after an unblock, the old answer comes and the new one may not", options: options) {
-            XCTAssertTrue(containing("Copy: \"Back again\"").waitForExistence(timeout: 90), "no answer to Back again")
-            XCTAssertFalse(containing("Copy: \"Are you still").exists, "what she sent while blocked came later")
-        }
+        // Her phone's acknowledgement reaches us again.
+        waitLabel(message("Back again"), contains: tr("Delivered"), 60)
+        keep("ct-unblocked")
+        // What she sent while blocked stays lost, as Settings › Blocked says (B-ios-8).
+        pause(10)
+        XCTAssertFalse(containing("Copy: \"Are you still").exists, "what she sent while blocked came later")
     }
 
     /// CT-11: the radio files Marc as a repeater (`-marcRepeater`): he is not one of the

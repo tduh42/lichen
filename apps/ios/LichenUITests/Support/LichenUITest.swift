@@ -9,8 +9,8 @@ import XCTest
 /// - `LICHEN_LANG=fr`: the app in French, else English;
 /// - `LICHEN_DARK=1`: the app in dark mode, else light.
 ///
-/// Every launch brings the demo's script 20 s sooner (`-demoSkip 20`): Camille's first message
-/// comes about 18 s in.
+/// Every launch brings the demo's script 20 s sooner (`-demoSkip 20`) and runs it 4 times
+/// faster than the wall clock (`-demoSpeed 4`): Camille's first message comes about 5 s in.
 class LichenUITest: XCTestCase {
     private(set) var app = XCUIApplication()
 
@@ -39,7 +39,7 @@ class LichenUITest: XCTestCase {
     /// unless `onboarded` is false, with `arguments` (CLAUDE.md lists them).
     @discardableResult
     func launch(_ arguments: [String] = [], demo: Bool = true, onboarded: Bool = true, skip: Int = 20,
-                dark: Bool? = nil) -> XCUIApplication {
+                speed: Int = 4, fresh: Bool = true, banners: Bool = false, dark: Bool? = nil) -> XCUIApplication {
         app = XCUIApplication()
         var args = arguments
         func setting(_ key: String, _ value: String) {
@@ -48,10 +48,16 @@ class LichenUITest: XCTestCase {
         if demo {
             setting("demo", "YES")
             if skip > 0 { setting("demoSkip", String(skip)) }
+            // The demo 4 times faster than the wall clock (D-8): Camille's first message about
+            // 5 s in.
+            if speed > 1 { setting("demoSpeed", String(speed)) }
             // Nothing an earlier test left (drafts, settings) changes this one.
-            setting("freshInstall", "YES")
+            if fresh { setting("freshInstall", "YES") }
         }
         if onboarded { setting("onboarded", "YES") }
+        // No banner over the app unless the test looks at them: taps near the top wait behind
+        // one for up to 15 s (a minute of the demo's time).
+        if !banners { setting("noBanners", "YES") }
         args += french ? ["-AppleLanguages", "(fr)", "-AppleLocale", "fr_FR"]
                        : ["-AppleLanguages", "(en)", "-AppleLocale", "en_GB"]
         // What earlier runs left in the settings must not change this one.
@@ -73,7 +79,7 @@ class LichenUITest: XCTestCase {
     /// The app again, as the user opens it after it was closed: same data, same language.
     func relaunch(_ arguments: [String] = [], demo: Bool = false, onboarded: Bool = false) {
         app.terminate()
-        launch(arguments, demo: demo, onboarded: onboarded, skip: 0)
+        launch(arguments, demo: demo, onboarded: onboarded || demo, skip: demo ? 20 : 0, fresh: false)
     }
 
     /// Taps Allow on the notification permission when it shows (once per install).
@@ -225,6 +231,20 @@ class LichenUITest: XCTestCase {
     var keyButton: XCUIElement {
         app.navigationBars.buttons.matching(NSPredicate(format: "label IN %@",
             [tr("Verify their key"), tr("Key verified"), tr("Their key changed: compare")])).firstMatch
+    }
+
+    /// Camille's lichen chat, once `-open Camille` opened it: her key button in the bar. If the
+    /// debug switch from her MeshCore chat to her lichen one was missed (it races her first
+    /// message), her row opens it, as a user would.
+    func openedCamille(file: StaticString = #filePath, line: UInt = #line) {
+        let bar = app.navigationBars.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch
+        wait(bar, 30, "her chat did not open", file: file, line: line)
+        if keyButton.waitForExistence(timeout: Self.camilleTimeout / 2) { return }
+        back()
+        let r = wait(row("Camille"), Self.camilleTimeout / 2, "no row for Camille", file: file, line: line)
+        r.tap()
+        wait(keyButton, 10, "no session with Camille", file: file, line: line)
     }
 
     /// Types `text` in the composer and sends it.

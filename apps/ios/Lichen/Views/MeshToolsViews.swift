@@ -677,6 +677,15 @@ struct ScanChannelSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
+            #if DEBUG
+            // -scanChannel <code>: the camera reads this channel code (the simulator has none).
+            .onAppear {
+                if code == nil, let text = UserDefaults.standard.string(forKey: "scanChannel") {
+                    code = model.parseChannelQr(text)
+                    if code == nil { error = String(localized: "Not a MeshCore channel code.") }
+                }
+            }
+            #endif
         }
     }
 

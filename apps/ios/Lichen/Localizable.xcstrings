@@ -703,30 +703,140 @@
     },
     "%lld members": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld member"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld members"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld membres"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membre"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membres"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld members · flood": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld member · flood"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld members · flood"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld membres · flood"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membre · flood"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld membres · flood"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld members · keys %lld/%lld": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@members@ · keys %2$lld/%3$lld"
+          },
+          "substitutions": {
+            "members": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg member"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg members"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld membres · clés %lld/%lld"
+            "value": "%#@members@ · clés %2$lld/%3$lld"
+          },
+          "substitutions": {
+            "members": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg membre"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg membres"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2181,6 +2291,26 @@
         }
       }
     },
+    "Check": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier"
+          }
+        }
+      }
+    },
+    "Check your phrase": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifie ta phrase"
+          }
+        }
+      }
+    },
     "Choose the backup file": {
       "localizations": {
         "fr": {
@@ -2381,6 +2511,16 @@
         }
       }
     },
+    "Compare safety numbers with %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare vos numéros de sécurité avec %@"
+          }
+        }
+      }
+    },
     "Compare safety numbers with %@ before accepting their new key.": {
       "localizations": {
         "fr": {
@@ -2497,6 +2637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connecte ta radio pour voir les nœuds qu’elle connaît."
+          }
+        }
+      }
+    },
+    "Connect your radio to send and receive.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecte ta radio pour envoyer et recevoir."
           }
         }
       }
@@ -5121,6 +5271,16 @@
         }
       }
     },
+    "Look at the phrase again, and correct your paper if needed.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relis la phrase, et corrige ton papier s’il le faut."
+          }
+        }
+      }
+    },
     "Looking for a path": {
       "localizations": {
         "fr": {
@@ -5941,6 +6101,16 @@
         }
       }
     },
+    "No lichen contact to forward to.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun contact lichen à qui le transférer."
+          }
+        }
+      }
+    },
     "No longer in the group: %@": {
       "localizations": {
         "fr": {
@@ -6012,6 +6182,16 @@
       }
     },
     "No radio connected": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune radio connectée"
+          }
+        }
+      }
+    },
+    "No radio connected yet": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -6371,6 +6551,16 @@
         }
       }
     },
+    "Now let %@ scan your code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maintenant, fais scanner ton code par %@"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "fr": {
@@ -6457,6 +6647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Un fichier avec tes messages, contacts, groupes, réglages et médias. Seuls tes 24 mots l’ouvrent : garde les deux, mais pas ensemble."
+          }
+        }
+      }
+    },
+    "One of these words is not the one in your phrase.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un de ces mots n’est pas celui de ta phrase."
           }
         }
       }
@@ -7076,7 +7276,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preset"
+            "value": "Préréglage"
           }
         }
       }
@@ -8026,7 +8226,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Envoyer un advert"
+            "value": "Envoyer une annonce"
           }
         }
       }
@@ -8106,7 +8306,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sender keys à jour"
+            "value": "Clés d’envoi à jour"
           }
         }
       }
@@ -8457,6 +8657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Afficher le code"
+          }
+        }
+      }
+    },
+    "Show the phrase again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revoir la phrase"
           }
         }
       }
@@ -9171,6 +9381,16 @@
         }
       }
     },
+    "The radio did not take this setting": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio n’a pas pris ce réglage"
+          }
+        }
+      }
+    },
     "The radio does not take this setting.": {
       "localizations": {
         "fr": {
@@ -9341,6 +9561,16 @@
         }
       }
     },
+    "Their key is not verified yet. Compare the numbers with them, in person or on a call.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sa clé n’est pas encore vérifiée. Compare les chiffres avec cette personne, en face ou au téléphone."
+          }
+        }
+      }
+    },
     "Their messages, introductions and group posts no longer reach this phone, and their posts already in your groups are hidden. They are not told. Their position and SOS in a group still show.": {
       "localizations": {
         "fr": {
@@ -9377,6 +9607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Son téléphone envoie des balises : localise par radio."
+          }
+        }
+      }
+    },
+    "Their phone verifies you the same way, and both of you see the same numbers.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Son téléphone te vérifie de la même façon, et vous voyez tous les deux les mêmes chiffres."
           }
         }
       }
@@ -9631,6 +9871,16 @@
         }
       }
     },
+    "This is your own code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "C’est ton propre code."
+          }
+        }
+      }
+    },
     "This message is from before replies existed: it cannot be answered.": {
       "localizations": {
         "fr": {
@@ -9867,6 +10117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tape les 24 mots de l'identité à restaurer, séparés par des espaces. Elle remplace l'identité de ce téléphone."
+          }
+        }
+      }
+    },
+    "Type these three words of your phrase, from your paper.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tape ces trois mots de ta phrase, depuis ton papier."
           }
         }
       }
@@ -10316,7 +10576,7 @@
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sender keys en attente"
+            "value": "Clés d’envoi en attente"
           }
         }
       }
@@ -10527,6 +10787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sans sauvegarde, perdre ce téléphone, c'est perdre ton identité et tes contacts vérifiés."
+          }
+        }
+      }
+    },
+    "Word %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mot %lld"
           }
         }
       }

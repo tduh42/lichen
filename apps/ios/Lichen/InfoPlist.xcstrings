@@ -48,6 +48,14 @@
         "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen reaches a MeshCore radio on your network: one on Wi-Fi, or one a computer relays." } },
         "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen joint une radio MeshCore sur ton réseau : en Wi-Fi, ou relayée par un ordinateur." } }
       }
+    },
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Photo library (add only) permission prompt: Save Image in the share sheet",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "lichen saves the photos you choose to keep in your library." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "lichen enregistre dans ta photothèque les photos que tu choisis de garder." } }
+      }
     }
   },
   "version" : "1.0"
