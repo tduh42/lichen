@@ -905,6 +905,10 @@
     <string name="new_contacts">Nouveaux contacts</string>
     <string name="radio_settings">Réglages de la radio</string>
     <string name="reading_radio_settings">Lecture des réglages de la radio…</string>
+    <string name="meshcore_public_key">Clé publique MeshCore</string>
+    <string name="meshcore_code">Code MeshCore</string>
+    <string name="meshcore_code_note">Avec l’app MeshCore d’origine, on peut le scanner pour ajouter cette radio.</string>
+    <string name="copied">Copiée</string>
     <string name="radio_settings_none">Connecte une radio pour voir ses réglages.</string>
     <string name="hours_n">%1$d h</string>
     <string name="minutes_n">%1$d min</string>
@@ -1026,7 +1030,6 @@
     <string name="hours_ago">il y a %1$d h</string>
     <string name="days_ago">il y a %1$d j</string>
     <string name="advertised_position">Position annoncée</string>
-    <string name="key">Clé</string>
     <string name="path">Chemin</string>
     <string name="no_path">Aucun chemin connu</string>
     <string name="no_path_flood_note">Ta radio l’atteint par inondation tant qu’elle n’a pas appris de chemin.</string>

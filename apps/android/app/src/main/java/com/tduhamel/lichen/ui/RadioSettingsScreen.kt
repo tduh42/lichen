@@ -1,5 +1,9 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.fillMaxWidth
+import com.tduhamel.lichen.core.meshcoreContactCode
+import com.tduhamel.lichen.core.NodeKind
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -107,7 +111,8 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { DeviceSection(r) }
+            item { DeviceSection(model, r) }
+            item { MeshCoreCode(model, r) }
             item { LoraSection(model, r) }
             item { PowerSection(model, r) }
             if (r.gps != null) item { GpsSection(model, r) }
@@ -129,7 +134,7 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
 }
 
 @Composable
-private fun DeviceSection(r: RadioSettings) {
+private fun DeviceSection(model: AppModel, r: RadioSettings) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionLabel(stringResource(R.string.radio), Modifier.padding(top = 10.dp))
         CardList {
@@ -148,6 +153,31 @@ private fun DeviceSection(r: RadioSettings) {
                 CardDivider()
                 CardRow(stringResource(R.string.storage), stringResource(R.string.radio_storage, used.toInt(), total.toInt()))
             }
+            // Its MeshCore public key, to copy or share (F-1).
+            model.nodeKey?.let { key ->
+                CardDivider()
+                MeshCoreKeyRow(key, share = true)
+            }
+        }
+    }
+}
+
+/** The stock MeshCore app's contact code for this radio (F-1, §15.3): a QR code a MeshCore user
+ * scans to add it. */
+@Composable
+private fun MeshCoreCode(model: AppModel, r: RadioSettings) {
+    val t = lichen
+    val key = model.nodeKey ?: return
+    val code = remember(r.name, key.toList()) { runCatching { meshcoreContactCode(r.name, key, NodeKind.COMPANION) }.getOrNull() } ?: return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(stringResource(R.string.meshcore_code), Modifier.padding(top = 10.dp))
+        Column(
+            Modifier.fillMaxWidth().background(t.s1, CardShape).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            QrImage(code, stringResource(R.string.meshcore_code), Modifier.size(220.dp))
+            Text(stringResource(R.string.meshcore_code_note), fontSize = 13.sp, color = t.tx2, textAlign = TextAlign.Center)
         }
     }
 }

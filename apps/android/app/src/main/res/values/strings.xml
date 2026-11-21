@@ -895,6 +895,10 @@
     <string name="new_contacts">New contacts</string>
     <string name="radio_settings">Radio settings</string>
     <string name="reading_radio_settings">Reading the radio’s settings…</string>
+    <string name="meshcore_public_key">MeshCore public key</string>
+    <string name="meshcore_code">MeshCore code</string>
+    <string name="meshcore_code_note">Someone with the stock MeshCore app can scan it to add this radio.</string>
+    <string name="copied">Copied</string>
     <string name="radio_settings_none">Connect a radio to see its settings.</string>
     <string name="hours_n">%1$d h</string>
     <string name="minutes_n">%1$d min</string>
@@ -1014,7 +1018,6 @@
     <string name="hours_ago">%1$d h ago</string>
     <string name="days_ago">%1$d d ago</string>
     <string name="advertised_position">Advertised position</string>
-    <string name="key">Key</string>
     <string name="path">Path</string>
     <string name="no_path">No path known</string>
     <string name="no_path_flood_note">Your radio floods to reach it until it learns a path.</string>
