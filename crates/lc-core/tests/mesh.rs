@@ -227,7 +227,12 @@ fn channel_qr_codes() {
         env!("CARGO_MANIFEST_DIR")
     );
     let t: toml::Table = std::fs::read_to_string(path).unwrap().parse().unwrap();
-    let codes = t["qr"].as_array().unwrap();
+    let codes: Vec<&toml::Value> = t["qr"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v.get("channel_name").is_some())
+        .collect();
     assert_eq!(codes.len(), 3);
     for v in codes {
         let (text, name) = (
@@ -270,6 +275,55 @@ fn channel_qr_codes() {
         None,
         "longer than a slot takes"
     );
+}
+
+/// The stock app's contact codes (`testdata/meshcore/mesh.toml`, from MeshCore's
+/// `docs/qr_codes.md`, its own example included): read, written back as lichen writes them,
+/// and the refusals (§15.3; user request F-1).
+#[test]
+fn contact_codes() {
+    use lc_core::plain::{contact_code, parse_contact_code};
+    let path = format!(
+        "{}/../../testdata/meshcore/mesh.toml",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let t: toml::Table = std::fs::read_to_string(path).unwrap().parse().unwrap();
+    let (mut read, mut written, mut refused) = (0, 0, 0);
+    for v in t["qr"].as_array().unwrap() {
+        let text = v["text"].as_str().unwrap();
+        if v.get("refused").and_then(toml::Value::as_bool) == Some(true) {
+            assert_eq!(parse_contact_code(text), None, "{text}");
+            refused += 1;
+            continue;
+        }
+        let Some(name) = v.get("contact_name").and_then(toml::Value::as_str) else {
+            // A channel's code is no contact's.
+            assert_eq!(parse_contact_code(text), None, "{text}");
+            continue;
+        };
+        let key: [u8; 32] = hex::decode(v["public_key"].as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let kind = u8::try_from(v["node_type"].as_integer().unwrap()).unwrap();
+        assert_eq!(
+            parse_contact_code(text),
+            Some((name.to_owned(), key, kind)),
+            "{text}"
+        );
+        read += 1;
+        let ours = contact_code(name, &key, kind);
+        assert_eq!(
+            parse_contact_code(&ours),
+            Some((name.to_owned(), key, kind))
+        );
+        // Written as lichen writes it: name, key, type, percent-encoded.
+        if text.starts_with("meshcore://contact/add?name=") && !text.contains('+') {
+            assert_eq!(ours, text);
+            written += 1;
+        }
+    }
+    assert_eq!((read, written, refused), (4, 2, 8));
 }
 
 /// `app` – `hub` – `room`, the radio knowing both; Bob, a contact, posted before in the room.

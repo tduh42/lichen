@@ -154,4 +154,61 @@ def main():
     url = f"meshcore://channel/add?secret={secret.hex()}&{urllib.parse.urlencode({'name': 'Hut team', 'region_scope': 'alps'})}"
     qr("channel-plus-and-scope", url, "Hut team", secret)
 
+    # --- A node's contact code (§15.3) --------------------------------------------------------
+    # docs/qr_codes.md: meshcore://contact/add?name=<URL-encoded>&public_key=<64 hex digits>
+    # &type=<1 companion, 2 repeater, 3 room server, 4 sensor>. Read with urllib's parser;
+    # refused when the key is not 64 hex digits, the type not 1 to 4, or the name empty or
+    # longer than 31 bytes (a MeshCore name).
+    def read_contact(url):
+        parts = urllib.parse.urlsplit(url)
+        if f"{parts.scheme}://{parts.netloc}{parts.path}" != "meshcore://contact/add":
+            return None
+        q = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
+        name, key = q.get("name", [""])[0].strip(), q.get("public_key", [""])[0]
+        kind = {"1": 1, "2": 2, "3": 3, "4": 4}.get(q.get("type", [""])[0])
+        if len(key) != 64 or any(c not in "0123456789abcdefABCDEF" for c in key):
+            return None
+        if kind is None or not name or len(name.encode()) > 31:
+            return None
+        return name, bytes.fromhex(key), kind
+
+    def contact(name, url, contact_name, key, kind):
+        assert read_contact(url) == (contact_name, key, kind), url
+        out("qr", name, url, "docs/qr_codes.md", contact_name=contact_name, public_key=key,
+            node_type=kind)
+
+    # The documentation's own example, as it is written there ('+' for the space).
+    contact("contact-doc-example",
+            "meshcore://contact/add?name=Example+Contact&public_key="
+            "9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1",
+            "Example Contact",
+            bytes.fromhex("9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1"), 1)
+    # As lichen writes them: name, public_key, type, the name percent-encoded.
+    for name, contact_name, key, kind in [
+        ("contact-companion", "ThinkNode M5", bytes(range(0xA0, 0xC0)), 1),
+        ("contact-room-encoded", "Refuge board · été", bytes(range(32)), 3),
+    ]:
+        url = (f"meshcore://contact/add?name={urllib.parse.quote(contact_name, safe='')}"
+               f"&public_key={key.hex()}&type={kind}")
+        contact(name, url, contact_name, key, kind)
+    # Another writer's order, an upper-case key, '+' for the space, a parameter we ignore.
+    key = bytes(range(0x40, 0x60))
+    contact("contact-repeater-order",
+            f"meshcore://contact/add?type=2&public_key={key.hex().upper()}&name=hub+west&ttl=3",
+            "hub west", key, 2)
+    # Refused.
+    good = "9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1"
+    for name, url in [
+        ("contact-short-key", f"meshcore://contact/add?name=x&public_key={good[:62]}&type=1"),
+        ("contact-key-not-hex", f"meshcore://contact/add?name=x&public_key=zz{good[2:]}&type=1"),
+        ("contact-type-0", f"meshcore://contact/add?name=x&public_key={good}&type=0"),
+        ("contact-type-5", f"meshcore://contact/add?name=x&public_key={good}&type=5"),
+        ("contact-no-type", f"meshcore://contact/add?name=x&public_key={good}"),
+        ("contact-empty-name", f"meshcore://contact/add?name=&public_key={good}&type=1"),
+        ("contact-long-name", f"meshcore://contact/add?name={'a' * 32}&public_key={good}&type=1"),
+        ("contact-channel-path", f"meshcore://channel/add?name=x&public_key={good}&type=1"),
+    ]:
+        assert read_contact(url) is None, url
+        out("qr", name, url, "docs/qr_codes.md", refused=True)
+
 main()

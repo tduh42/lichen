@@ -88,18 +88,82 @@ pub fn hashtag(tag: &str) -> Option<(String, [u8; 16])> {
 /// `meshcore://channel/add?name=<percent-encoded>&secret=<32 hex digits>`.
 pub fn channel_qr(name: &str, secret: &[u8; 16]) -> String {
     let mut out = String::from("meshcore://channel/add?name=");
-    for &b in name.as_bytes() {
+    push_query_value(&mut out, name);
+    out.push_str("&secret=");
+    push_hex(&mut out, secret);
+    out
+}
+
+/// A query value percent-encoded: every byte but letters, digits and `-._~` (§15.3).
+fn push_query_value(out: &mut String, v: &str) {
+    for &b in v.as_bytes() {
         if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
             out.push(char::from(b));
         } else {
             out.push_str(&format!("%{b:02X}"));
         }
     }
-    out.push_str("&secret=");
-    for b in secret {
+}
+
+fn push_hex(out: &mut String, bytes: &[u8]) {
+    for b in bytes {
         out.push_str(&format!("{b:02x}"));
     }
+}
+
+/// `N` bytes from exactly `2 N` hex digits, either case.
+fn hex_array<const N: usize>(hex: &str) -> Option<[u8; N]> {
+    if hex.len() != 2 * N {
+        return None;
+    }
+    let mut out = [0u8; N];
+    for (o, i) in out.iter_mut().zip((0..2 * N).step_by(2)) {
+        *o = u8::from_str_radix(hex.get(i..i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+/// The stock app's contact code for a node (§15.3, MeshCore's `docs/qr_codes.md`):
+/// `meshcore://contact/add?name=<percent-encoded>&public_key=<64 hex digits>&type=<kind>`,
+/// `kind` one of [`crate::contact_kind`]'s CHAT, REPEATER, ROOM or SENSOR (1 to 4).
+pub fn contact_code(name: &str, key: &PubKey, kind: u8) -> String {
+    let mut out = String::from("meshcore://contact/add?name=");
+    push_query_value(&mut out, name);
+    out.push_str("&public_key=");
+    push_hex(&mut out, key);
+    out.push_str(&format!("&type={kind}"));
     out
+}
+
+/// A node from the stock app's contact code (§15.3): its name, key and type (1 to 4), or
+/// `None` when the text is not one, the key is not 64 hex digits, the type not 1 to 4, or the
+/// name empty or longer than a MeshCore name. Other parameters are ignored.
+pub fn parse_contact_code(text: &str) -> Option<(String, PubKey, u8)> {
+    let (base, query) = text.trim().split_once('?')?;
+    if !base.eq_ignore_ascii_case("meshcore://contact/add") {
+        return None;
+    }
+    let (mut name, mut key, mut kind) = (None, None, None);
+    for pair in query.split('&') {
+        let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
+        match k {
+            "name" => name = Some(query_value(v)?),
+            "public_key" => key = Some(hex_array::<32>(&query_value(v)?)?),
+            "type" => {
+                kind = Some(match query_value(v)?.as_str() {
+                    "1" => crate::contact_kind::CHAT,
+                    "2" => crate::contact_kind::REPEATER,
+                    "3" => crate::contact_kind::ROOM,
+                    "4" => crate::contact_kind::SENSOR,
+                    _ => return None,
+                });
+            }
+            _ => {}
+        }
+    }
+    let name = name?.trim().to_owned();
+    (!name.is_empty() && name.len() <= NAME_MAX && !name.contains('\0'))
+        .then_some((name, key?, kind?))
 }
 
 /// Decodes a query value: `+` is a space, `%XX` a byte; `None` for a bad escape or text
@@ -135,17 +199,7 @@ pub fn parse_channel_qr(text: &str) -> Option<(String, [u8; 16])> {
         let (k, v) = pair.split_once('=').unwrap_or((pair, ""));
         match k {
             "name" => name = Some(query_value(v)?),
-            "secret" => {
-                let hex = query_value(v)?;
-                if hex.len() != 32 {
-                    return None;
-                }
-                let mut out = [0u8; 16];
-                for (o, i) in out.iter_mut().zip((0..32).step_by(2)) {
-                    *o = u8::from_str_radix(hex.get(i..i + 2)?, 16).ok()?;
-                }
-                secret = Some(out);
-            }
+            "secret" => secret = Some(hex_array::<16>(&query_value(v)?)?),
             _ => {}
         }
     }

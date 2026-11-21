@@ -201,3 +201,83 @@ channel_name = "Hut team"
 secret = "0f0e0d0c0b0a09080706050403020100"
 source = "docs/qr_codes.md"
 
+[[qr]]
+name = "contact-doc-example"
+text = "meshcore://contact/add?name=Example+Contact&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+contact_name = "Example Contact"
+public_key = "9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1"
+node_type = 1
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-companion"
+text = "meshcore://contact/add?name=ThinkNode%20M5&public_key=a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf&type=1"
+contact_name = "ThinkNode M5"
+public_key = "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf"
+node_type = 1
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-room-encoded"
+text = "meshcore://contact/add?name=Refuge%20board%20%C2%B7%20%C3%A9t%C3%A9&public_key=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f&type=3"
+contact_name = "Refuge board · été"
+public_key = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+node_type = 3
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-repeater-order"
+text = "meshcore://contact/add?type=2&public_key=404142434445464748494A4B4C4D4E4F505152535455565758595A5B5C5D5E5F&name=hub+west&ttl=3"
+contact_name = "hub west"
+public_key = "404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f"
+node_type = 2
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-short-key"
+text = "meshcore://contact/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765&type=1"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-key-not-hex"
+text = "meshcore://contact/add?name=x&public_key=zzd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-type-0"
+text = "meshcore://contact/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=0"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-type-5"
+text = "meshcore://contact/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=5"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-no-type"
+text = "meshcore://contact/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-empty-name"
+text = "meshcore://contact/add?name=&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-long-name"
+text = "meshcore://contact/add?name=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+refused = true
+source = "docs/qr_codes.md"
+
+[[qr]]
+name = "contact-channel-path"
+text = "meshcore://channel/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+refused = true
+source = "docs/qr_codes.md"
+
