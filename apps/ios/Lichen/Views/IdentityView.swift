@@ -110,50 +110,109 @@ struct IdentityView: View {
 struct RecoveryPhraseSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
+    /// The three positions asked for once the user says the words are written down (D-7).
+    @State private var asked: [Int]?
+    @State private var answers = ["", "", ""]
+    @State private var wrong = false
 
     var body: some View {
         let words = model.recoveryPhrase()
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.")
-                        .font(.system(.subheadline))
-                        .foregroundStyle(Theme.tx2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
-                        ForEach(Array(words.enumerated()), id: \.offset) { i, w in
-                            HStack(spacing: 8) {
-                                Text("\(i + 1)")
-                                    .font(.system(.footnote).monospacedDigit())
-                                    .foregroundStyle(Theme.tx2)
-                                    .frame(width: 22, alignment: .trailing)
-                                Text(verbatim: w).font(.system(.body, design: .monospaced, weight: .semibold))
-                                    .accessibilityIdentifier("phrase.\(i + 1)")
-                            }
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                    .privacySensitive()
-                    Button("I wrote them down") {
-                        model.phraseBackedUp = true
-                        dismiss()
-                    }
-                    .buttonStyle(.primary)
-                    .padding(.top, 8)
+                if let asked {
+                    confirm(words, asked)
+                } else {
+                    phrase(words)
                 }
-                .padding(16)
             }
             .screen()
             .secretCover()
-            .navigationTitle("Recovery phrase")
+            .navigationTitle(asked == nil ? "Recovery phrase" : "Check your phrase")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
             }
         }
+    }
+
+    private func phrase(_ words: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Write these 24 words on paper, in order, and keep them somewhere safe. Anyone who has them can be you.")
+                .font(.system(.subheadline))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
+                ForEach(Array(words.enumerated()), id: \.offset) { i, w in
+                    HStack(spacing: 8) {
+                        Text("\(i + 1)")
+                            .font(.system(.footnote).monospacedDigit())
+                            .foregroundStyle(Theme.tx2)
+                            .frame(width: 22, alignment: .trailing)
+                        Text(verbatim: w).font(.system(.body, design: .monospaced, weight: .semibold))
+                            .accessibilityIdentifier("phrase.\(i + 1)")
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            .privacySensitive()
+            // Written down: three of the words, at random, before it counts as a backup.
+            Button("I wrote them down") {
+                asked = Array((0..<words.count).shuffled().prefix(3)).sorted()
+                answers = ["", "", ""]
+                wrong = false
+            }
+            .buttonStyle(.primary)
+            .padding(.top, 8)
+        }
+        .padding(16)
+    }
+
+    private func confirm(_ words: [String], _ asked: [Int]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Type these three words of your phrase, from your paper.")
+                .font(.system(.subheadline))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(Array(asked.enumerated()), id: \.offset) { k, position in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Word \(position + 1)").font(.system(.subheadline, weight: .semibold))
+                    TextField(text: $answers[k]) { Text("Word \(position + 1)") }
+                        .accessibilityIdentifier("confirm.\(k + 1)")
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .font(.system(.body, design: .monospaced))
+                        .padding(10)
+                        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line))
+                }
+            }
+            .privacySensitive()
+            if wrong {
+                Banner(kind: .sos, title: String(localized: "One of these words is not the one in your phrase."),
+                       message: String(localized: "Look at the phrase again, and correct your paper if needed."))
+            }
+            Button("Check") {
+                let right = zip(asked, answers).allSatisfy { position, answer in
+                    words.indices.contains(position)
+                        && answer.trimmingCharacters(in: .whitespaces).lowercased() == words[position].lowercased()
+                }
+                if right {
+                    model.phraseBackedUp = true
+                    dismiss()
+                } else {
+                    wrong = true
+                }
+            }
+            .buttonStyle(.primary)
+            .disabled(answers.contains { $0.trimmingCharacters(in: .whitespaces).isEmpty })
+            Button("Show the phrase again") { self.asked = nil }
+                .font(.system(.callout, weight: .semibold))
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .padding(16)
     }
 }
 

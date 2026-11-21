@@ -12,8 +12,7 @@ final class DirectChatTests: LichenUITest {
     /// air: her answers come in seconds) unless `quiet` is false.
     private func openCamille(_ arguments: [String] = [], quiet: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         launch(["-open", "Camille"] + (quiet ? ["-quietDemo", "YES"] : []) + arguments)
-        wait(composer, 30, "her chat did not open", file: file, line: line)
-        wait(keyButton, Self.camilleTimeout, "no session with Camille", file: file, line: line)
+        openedCamille(file: file, line: line)
     }
 
     /// Her answer to `text`.
@@ -35,7 +34,7 @@ final class DirectChatTests: LichenUITest {
     /// DM-2 and DM-12: her first message makes her row, with an unread badge, the tab's badge
     /// and a banner; opening her chat reads it.
     func testDM2_ReceiveAText() {
-        launch()
+        launch(banners: true)
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let banner = springboard.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS 'Camille' AND label CONTAINS 'refuge'")).firstMatch
@@ -272,6 +271,29 @@ final class DirectChatTests: LichenUITest {
         waitText("It works! See you tonight", 60)
         XCTAssertEqual(bubbles(firstWhole), 1, "forwarded more than once")
         keep("dm-forwarded")
+    }
+
+    /// DM-13, D-2: a blocked contact is not offered to forward to, as when sharing.
+    func testDM13_ForwardLeavesBlockedContactsOut() {
+        openCamille()
+        // Camille blocked, then Marc's message to forward.
+        button(tr("More")).tap()
+        button(tr("Block")).tap()
+        wait(app.buttons.matching(NSPredicate(format: "label == %@", tr("Block"))).element(boundBy: 0), 5).tap()
+        wait(containing(tr("You blocked %@. Nothing they send reaches this phone.", "Camille")), 5, "no blocked bar")
+        back()
+        openChat("Marc", 30)
+        let marc = "Hi! Marc from the refuge. Are you on lichen? I only have the MeshCore app."
+        wait(textOf(marc), 10, "no message from Marc")
+        menu(textOf(marc), tr("Forward"))
+        wait(app.navigationBars[tr("Forward")], 5, "no Forward sheet")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Public' OR label ENDSWITH ', Public'")).firstMatch.exists,
+                      "the sheet lists nothing")
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label == 'Camille' OR label ENDSWITH ', Camille'")).firstMatch.exists,
+                       "a blocked contact is offered")
+        // Nobody else with lichen: no Contacts section, rather than its title alone.
+        XCTAssertFalse(app.staticTexts[tr("Contacts")].exists, "an empty Contacts section")
+        keep("dm-forward-blocked")
     }
 
     /// DM-14: a link and a place in a text: copied whole; the place opens the map.

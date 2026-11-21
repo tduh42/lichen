@@ -52,6 +52,16 @@ struct ChatView: View {
                        action: (String(localized: "Compare"), { verifying = pending }))
                     .padding(.horizontal, 14)
                     .padding(.top, 8)
+            } else if case let .contact(key) = chat, model.asksToCompare(key) {
+                // Their key is known and not verified: this phone is asked to compare too,
+                // whoever scanned whom (B-user-1).
+                CompareBanner(name: model.title(of: chat)) {
+                    verifying = Data()
+                } later: {
+                    model.compareLaterWith(key)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
             ScrollViewReader { proxy in
                 ScrollView {
@@ -606,6 +616,59 @@ struct TintedIconLabel: LabelStyle {
             configuration.icon.foregroundStyle(tint)
             configuration.title
         }
+    }
+}
+
+/// "Compare safety numbers with Camille", with Compare and Later (B-user-1): until they are
+/// verified, or the user says Later.
+private struct CompareBanner: View {
+    let name: String
+    let compare: () -> Void
+    let later: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "lock.open")
+                    .font(.system(.footnote, weight: .bold))
+                    .foregroundStyle(Theme.warnFg)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Compare safety numbers with \(name)")
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Theme.warnFg)
+                    Text("Their key is not verified yet. Compare the numbers with them, in person or on a call.")
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            // Side by side, or one above the other when large text does not fit (Dynamic Type).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) { buttons }
+                VStack(spacing: 10) { buttons }
+            }
+        }
+        .padding(12)
+        .background(Theme.warnBg, in: RoundedRectangle(cornerRadius: 14))
+        // One element, its buttons its actions, as a Banner: 44 pt targets, text that grows.
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private var buttons: some View {
+        Button(action: compare) { Text("Compare").fixedSize().frame(maxWidth: .infinity) }
+            .buttonStyle(.plain)
+            .font(.system(.subheadline, weight: .semibold))
+            .frame(minHeight: 44)
+            .background(Theme.actBg, in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(Theme.actFg)
+        Button(action: later) { Text("Later").fixedSize().frame(maxWidth: .infinity) }
+            .buttonStyle(.plain)
+            .font(.system(.subheadline, weight: .semibold))
+            .frame(minHeight: 44)
+            .background(Theme.s1.opacity(0.9), in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(Theme.tx)
     }
 }
 
@@ -1565,8 +1628,9 @@ private struct Composer: View {
             #if DEBUG
             // -screen share: the location sheet.
             if model.debugScreen == "share" { locating = true }
-            // -screen file / fileBig: the file sheet with a 3 KB note, or a 240 KB document.
-            if model.debugScreen == "file" || model.debugScreen == "fileBig", file == nil {
+            // -screen file / fileBig: the file sheet with a 3 KB note, or a 240 KB document, in
+            // a lichen chat (not the MeshCore one -open may show first).
+            if model.debugScreen == "file" || model.debugScreen == "fileBig", isContact, file == nil {
                 let big = model.debugScreen == "fileBig"
                 let line = Data("Refuge de la Pra: code 4521, wood in the shed, water 200 m north.\n".utf8)
                 file = FileDraft(name: big ? "Topo Vercors 2026.pdf" : "Refuge notes.txt",
@@ -1578,7 +1642,8 @@ private struct Composer: View {
                     let t = Double(i) / 8_000
                     return Int16(6_000 * sin(2 * .pi * (150 + 30 * sin(t * 3)) * t) * (0.6 + 0.4 * sin(t * 9)))
                 }
-                review = Review(pcm: pcm, mode: 2, voice: prepareVoice(pcm: pcm, mode: 2))
+                // In the chat's own mode: 700C for a group (ADR-0035).
+                review = Review(pcm: pcm, mode: recordMode, voice: prepareVoice(pcm: pcm, mode: recordMode))
             }
             // -screen media: the photo sheet with the demo landscape.
             if model.debugScreen == "media", isContact, image == nil,
