@@ -8,11 +8,106 @@ Sources, at https://github.com/meshcore-dev/MeshCore/blob/81dbae5/ :
   examples/simple_repeater/MyMesh.{cpp,h}   (a repeater's answers)
   examples/simple_room_server/MyMesh.cpp    (a room server's answers)
   docs/qr_codes.md                          (the stock app's QR codes)
-The line of each handler is given. Regenerate with:
+  src/Mesh.cpp, src/Packet.cpp, src/helpers/AdvertDataHelpers.cpp   (a node's signed advert)
+The line of each handler is given. Adverts are signed with test keys by the RFC 8032 reference
+Ed25519 below (Python has none). Regenerate with:
     python3 -I testdata/meshcore/mesh.py > testdata/meshcore/mesh.toml
 """
+import hashlib
 import struct
 import urllib.parse
+
+# --- Ed25519, RFC 8032 §6 (the reference code, unchanged but for names) ---------------------
+P = 2**255 - 19
+Q = 2**252 + 27742317777372353535851937790883648493
+D = -121665 * pow(121666, P - 2, P) % P
+
+
+def _add(a, b):
+    x = (a[1] - a[0]) * (b[1] - b[0]) % P
+    y = (a[1] + a[0]) * (b[1] + b[0]) % P
+    c, d = 2 * a[3] * b[3] * D % P, 2 * a[2] * b[2] % P
+    e, f, g, h = y - x, d - c, d + c, y + x
+    return (e * f, g * h, f * g, e * h)
+
+
+def _mul(s, pt):
+    q = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            q = _add(q, pt)
+        pt = _add(pt, pt)
+        s >>= 1
+    return q
+
+
+def _recover_x(y, sign):
+    if y >= P:
+        return None
+    x2 = (y * y - 1) * pow(D * y * y + 1, P - 2, P)
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (P + 3) // 8, P)
+    if (x * x - x2) % P != 0:
+        x = x * pow(2, (P - 1) // 4, P) % P
+    if (x * x - x2) % P != 0:
+        return None
+    if (x & 1) != sign:
+        x = P - x
+    return x
+
+
+_GY = 4 * pow(5, P - 2, P) % P
+_GX = _recover_x(_GY, 0)
+G = (_GX, _GY, 1, _GX * _GY % P)
+
+
+def _compress(pt):
+    zinv = pow(pt[2], P - 2, P)
+    x, y = pt[0] * zinv % P, pt[1] * zinv % P
+    return int.to_bytes(y | ((x & 1) << 255), 32, "little")
+
+
+def _decompress(s):
+    y = int.from_bytes(s, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    x = _recover_x(y, sign)
+    return None if x is None else (x, y, 1, x * y % P)
+
+
+def _hq(*parts):
+    return int.from_bytes(hashlib.sha512(b"".join(parts)).digest(), "little") % Q
+
+
+def _expand(seed):
+    h = hashlib.sha512(seed).digest()
+    a = int.from_bytes(h[:32], "little")
+    a &= (1 << 254) - 8
+    a |= 1 << 254
+    return a, h[32:]
+
+
+def ed25519_public(seed):
+    return _compress(_mul(_expand(seed)[0], G))
+
+
+def ed25519_sign(seed, msg):
+    a, prefix = _expand(seed)
+    pub = _compress(_mul(a, G))
+    r = _hq(prefix, msg)
+    rs = _compress(_mul(r, G))
+    return rs + int.to_bytes((r + _hq(rs, pub, msg) * a) % Q, 32, "little")
+
+
+def ed25519_verify(pub, msg, sig):
+    a, r = _decompress(pub), _decompress(sig[:32])
+    s = int.from_bytes(sig[32:], "little")
+    if a is None or r is None or s >= Q:
+        return False
+    h = _hq(sig[:32], pub, msg)
+    lhs, rhs = _mul(s, G), _add(r, _mul(h, a))
+    return (lhs[0] * rhs[2] - rhs[0] * lhs[2]) % P == 0 and (lhs[1] * rhs[2] - rhs[1] * lhs[2]) % P == 0
 
 
 def out(section, name, frame, source, **fields):
@@ -210,5 +305,164 @@ def main():
     ]:
         assert read_contact(url) is None, url
         out("qr", name, url, "docs/qr_codes.md", refused=True)
+
+    # --- A node's shared contact link (§15.3, §16.6) -------------------------------------------
+    # meshcore:// + the hex of the packet EXPORT_CONTACT returns (MyMesh.cpp#L1379): header 0x11
+    # (ADVERT, flood) ‖ path_len ‖ path ‖ key (32) ‖ timestamp u32 ‖ signature (64) ‖ app_data
+    # (Packet.cpp#L52, Mesh.cpp#L404). app_data (AdvertDataHelpers.cpp#L4): flags (type in bits
+    # 0-3, 0x10 position, 0x20 and 0x40 two u16 fields, 0x80 name) ‖ [lat i32 ‖ lon i32] ‖
+    # [feat1 u16] ‖ [feat2 u16] ‖ name, 32 bytes at most (MeshCore.h#L12). The signature covers
+    # key ‖ timestamp ‖ app_data (Mesh.cpp#L271). lichen imports the packet as the link holds
+    # it, path included (IMPORT_CONTACT, MyMesh.cpp#L1409: the radio caches the path as the
+    # advert's, L358-L388), and adds the contact with ADD_UPDATE_CONTACT (MyMesh.cpp#L1328,
+    # updateContactFromFrame L194), with no path of its own, when the radio did not take it.
+    def app_data(kind, name, pos=None, feat1=None, feat2=None):
+        flags, rest = kind, b""
+        if pos is not None:
+            flags |= 0x10
+            rest += struct.pack("<ii", *pos)
+        if feat1 is not None:
+            flags |= 0x20
+            rest += struct.pack("<H", feat1)
+        if feat2 is not None:
+            flags |= 0x40
+            rest += struct.pack("<H", feat2)
+        if name:
+            flags |= 0x80
+            rest += name
+        return bytes([flags]) + rest
+
+    def advert(seed, ts, data, header=0x11, path=b"", path_len=None, sign_over=None):
+        key = ed25519_public(seed)
+        signed = key + struct.pack("<I", ts) + (data if sign_over is None else sign_over)
+        payload = key + struct.pack("<I", ts) + ed25519_sign(seed, signed) + data
+        return bytes([header, len(path) if path_len is None else path_len]) + path + payload
+
+    def read_link(text):
+        """(name, key, kind, position, timestamp, path, packet), or "code" / "signature"."""
+        if not text.startswith("meshcore://"):
+            return "code"
+        h = text[len("meshcore://"):]
+        if not h or len(h) % 2 or any(c not in "0123456789abcdefABCDEF" for c in h):
+            return "code"
+        raw = bytes.fromhex(h)
+        if len(raw) < 2 or raw[0] != 0x11:
+            return "code"
+        size, count = (raw[1] >> 6) + 1, raw[1] & 63
+        if size == 4 or size * count > 64 or len(raw) < 2 + size * count:
+            return "code"
+        payload = raw[2 + size * count:]
+        if len(payload) < 32 + 4 + 64 + 1 or len(payload) > 32 + 4 + 64 + 32:
+            return "code"
+        key, ts, sig, data = payload[:32], payload[32:36], payload[36:100], payload[100:]
+        flags, i = data[0], 1
+        pos = None
+        if flags & 0x10:
+            if len(data) < i + 8:
+                return "code"
+            pos = struct.unpack_from("<ii", data, i)
+            i += 8
+        for bit in (0x20, 0x40):
+            if flags & bit:
+                if len(data) < i + 2:
+                    return "code"
+                i += 2
+        name = data[i:]
+        if flags & 0x0F not in (1, 2, 3, 4) or not flags & 0x80 or not name or b"\0" in name:
+            return "code"
+        try:
+            name = name.decode("utf-8")
+        except UnicodeDecodeError:
+            return "code"
+        if not ed25519_verify(key, key + ts + data, sig):
+            return "signature"
+        if pos == (0, 0):
+            pos = None
+        return name, key, flags & 0x0F, pos, struct.unpack("<I", ts)[0], (count, raw[2:2 + size * count]), raw
+
+    def add_frame(key, kind, name, ts, pos):
+        lat, lon = pos or (0, 0)
+        return (bytes([9]) + key + bytes([kind, 0, 0xFF]) + bytes(64)
+                + name.encode().ljust(32, b"\0") + struct.pack("<Iii", ts, lat, lon))
+
+    def link(vname, text, source="MyMesh.cpp#L1409"):
+        r = read_link(text)
+        assert isinstance(r, tuple), (vname, r)
+        name, key, kind, pos, ts, (hops, path), packet = r
+        fields = dict(contact_name=name, public_key=key, node_type=kind, timestamp=ts, signed=True,
+                      hops=hops, path=path)
+        if pos:
+            fields.update(lat_e6=pos[0], lon_e6=pos[1])
+        fields.update(import_frame=bytes([18]) + packet, add_frame=add_frame(key, kind, name, ts, pos))
+        out("link", vname, text, source, **fields)
+
+    def refused(vname, text, why):
+        assert read_link(text) == why, (vname, read_link(text))
+        out("link", vname, text, "Mesh.cpp#L252", refused=why)
+
+    # Test keys only: never a real radio's.
+    companion = hashlib.sha256(b"lichen test node: companion").digest()
+    repeater = hashlib.sha256(b"lichen test node: repeater").digest()
+    room = hashlib.sha256(b"lichen test node: room").digest()
+    sensor = hashlib.sha256(b"lichen test node: sensor").digest()
+    ts = 1_793_000_000
+
+    def url(packet, upper=False):
+        h = packet.hex()
+        return "meshcore://" + (h.upper() if upper else h)
+
+    hut = advert(companion, ts, app_data(1, b"Hut radio"))
+    link("link-companion", url(hut))
+    link("link-companion-upper-case", url(hut, upper=True))
+    link("link-repeater-position", url(advert(repeater, ts + 1, app_data(2, b"hub west", pos=(12_345_678, -98_765_432)))))
+    link("link-room-feature-fields", url(advert(room, ts + 2, app_data(3, b"Refuge board", feat1=0x0102, feat2=7))))
+    # The name fills app_data's 32 bytes: 31 bytes of UTF-8, then 23 with a position.
+    name31 = ("é" * 15 + "s").encode()
+    assert len(name31) == 31
+    link("link-sensor-name-fills-app-data", url(advert(sensor, ts + 3, app_data(4, name31))))
+    name23 = ("ü" * 11 + "x").encode()
+    assert len(name23) == 23
+    link("link-position-and-longest-name", url(advert(sensor, ts + 4, app_data(4, name23, pos=(-1, 1)))))
+    # A position of 0, 0 is none, as the radio reports it (§16.1).
+    link("link-position-zero-is-none", url(advert(companion, ts + 5, app_data(1, b"Hut radio", pos=(0, 0)))))
+    # A contact's kept advert carries the path it came by: read, reported and imported with it.
+    link("link-with-2-hop-path", url(advert(repeater, ts + 6, app_data(2, b"crest"), path=bytes([0x5A, 0x77]))))
+    link("link-with-2-byte-path", url(advert(room, ts + 7, app_data(3, b"Refuge board"),
+                                              path=bytes([0x5A, 0x01, 0x77, 0x02]), path_len=0x42)))
+
+    # Refused: not a link, or a signature that does not verify.
+    good = advert(companion, ts, app_data(1, b"Hut radio"))
+    changed = bytearray(good)
+    changed[-1] ^= 0x01
+    refused("link-bad-signature", url(bytes(changed)), "signature")
+    other = advert(repeater, ts, app_data(1, b"Hut radio"))
+    refused("link-signed-by-another-key", url(ed25519_public(companion).join([good[:2], other[34:]])), "signature")
+    refused("link-trailing-byte", url(good + b"!"), "signature")
+    refused("link-timestamp-changed", url(good[:34] + struct.pack("<I", ts + 1) + good[38:]), "signature")
+    refused("link-direct-route", url(bytes([0x12]) + good[1:]), "code")
+    refused("link-transport-flood", url(bytes([0x10]) + good[1:]), "code")
+    refused("link-not-an-advert", url(bytes([0x15]) + good[1:]), "code")
+    refused("link-version-1", url(bytes([0x51]) + good[1:]), "code")
+    refused("link-truncated-signature", url(good[:2 + 32 + 4 + 40]), "code")
+    refused("link-no-app-data", url(good[:2 + 32 + 4 + 64]), "code")
+    refused("link-odd-length", url(good)[:-1], "code")
+    refused("link-not-hex", url(good)[:-2] + "zz", "code")
+    refused("link-empty", "meshcore://", "code")
+    refused("link-bad-path-length", url(advert(companion, ts, app_data(1, b"Hut radio"), path_len=0xC1, path=b"\0")), "code")
+    refused("link-path-past-the-end", url(good[:1] + bytes([63])), "code")
+    refused("link-app-data-33-bytes", url(advert(sensor, ts, app_data(4, name31 + b"s"))), "code")
+    refused("link-type-0", url(advert(companion, ts, app_data(0, b"Hut radio"))), "code")
+    refused("link-type-5", url(advert(companion, ts, app_data(5, b"Hut radio"))), "code")
+    refused("link-no-name", url(advert(companion, ts, app_data(1, b""))), "code")
+    refused("link-name-not-utf8", url(advert(companion, ts, app_data(1, b"Hut \xff"))), "code")
+    refused("link-name-with-nul", url(advert(companion, ts, app_data(1, b"Hut\0radio"))), "code")
+    refused("link-position-cut-short", url(advert(companion, ts, bytes([0x91, 1, 2, 3]))), "code")
+    # A contact code reads as before ([[qr]]); lichen adds it with ADD_UPDATE_CONTACT, unsigned.
+    key = bytes(range(0xA0, 0xC0))
+    code = f"meshcore://contact/add?name=ThinkNode%20M5&public_key={key.hex()}&type=1"
+    assert read_contact(code) == ("ThinkNode M5", key, 1)
+    out("link", "link-contact-code", code, "MyMesh.cpp#L1328", contact_name="ThinkNode M5",
+        public_key=key, node_type=1, timestamp=0, signed=False, hops=0, path=b"",
+        add_frame=add_frame(key, 1, "ThinkNode M5", 0, None))
 
 main()

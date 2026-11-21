@@ -126,6 +126,9 @@ pub enum RadioSetting {
     /// The node's name (§15.4).
     Name,
     Other,
+    /// A contact added from a link (§16.6): the radio did not add it (its table is full, or
+    /// it refused the record).
+    Contact,
 }
 
 impl From<lc_core::radio::RadioSetting> for RadioSetting {
@@ -142,6 +145,7 @@ impl From<lc_core::radio::RadioSetting> for RadioSetting {
             S::Pin => Self::Pin,
             S::Name => Self::Name,
             S::Other => Self::Other,
+            S::Contact => Self::Contact,
         }
     }
 }

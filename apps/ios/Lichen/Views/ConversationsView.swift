@@ -9,6 +9,10 @@ struct ConversationsView: View {
     @State private var deleting: Row?
     @State private var renaming: Data?
     @State private var searching = false
+    #if DEBUG
+    /// `-screen` opened its sheet: once, not each time the list shows again.
+    @State private var debugScreenShown = false
+    #endif
     @State private var showingArchived = false
 
     var body: some View {
@@ -100,9 +104,12 @@ struct ConversationsView: View {
                     model.openRequest = nil
                 }
                 #if DEBUG
-                if model.debugScreen == "contact" { addingContact = true }
-                // -screen searchMessages -query <text>: the search sheet, filled in.
-                if model.debugScreen == "searchMessages" { searching = true }
+                if !debugScreenShown {
+                    debugScreenShown = true
+                    if model.debugScreen == "contact" { addingContact = true }
+                    // -screen searchMessages -query <text>: the search sheet, filled in.
+                    if model.debugScreen == "searchMessages" { searching = true }
+                }
                 #endif
             }
             .sheet(isPresented: $composing) {

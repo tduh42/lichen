@@ -15,13 +15,15 @@ struct AddContactView: View {
     @State private var addedInPerson = false
     @State private var showingMyCode = false
     @State private var invite: ScannedInvite?
+    /// A MeshCore contact link (F-2): its card, to add it to the radio.
+    @State private var link: ScannedLink?
     @State private var error: String?
 
     enum Tab: Hashable { case myCode, scan }
 
     var body: some View {
         VStack(spacing: 16) {
-            if invite == nil {
+            if invite == nil, link == nil {
                 Picker("Mode", selection: $tab) {
                     Text("My code").tag(Tab.myCode)
                     Text("Scan").tag(Tab.scan)
@@ -31,6 +33,11 @@ struct AddContactView: View {
 
             if let invite {
                 JoinPanel(text: invite.text, info: invite.info, inPerson: invite.inPerson) { finish() }
+            } else if let link {
+                MeshCoreLinkPanel(text: link.text, link: link.info, open: { chat in
+                    if next == nil { model.openRequest = chat }
+                    finish()
+                }, cancel: { self.link = nil }, done: finish)
             } else if let added, showingMyCode {
                 ShowYourCode(name: added.name) { openChat(added) }
             } else if let added {
@@ -50,9 +57,11 @@ struct AddContactView: View {
             }
             if let error {
                 Banner(kind: .sos, title: error)
+                    // Its own height, not the screen's (a spacer follows).
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
-            if added == nil, invite == nil {
+            if added == nil, invite == nil, link == nil {
                 Button(next == nil ? String(localized: "Close") : String(localized: "Later")) { finish() }
                     .buttonStyle(.secondary)
             }
@@ -82,6 +91,21 @@ struct AddContactView: View {
             return
         }
         addedInPerson = inPerson
+        // A MeshCore contact link (F-2, ADR-0047): the stock app's signed advert, or a
+        // contact code. Its card first; nothing reaches the radio before "Add to the radio".
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().hasPrefix("meshcore:") {
+            switch model.readMeshCoreLink(text) {
+            case let .success(l) where l.key == model.nodeKey:
+                error = String(localized: "This is your own code.")
+            case let .success(l):
+                link = ScannedLink(text: text, info: l)
+            case .failure(.BadCode):
+                error = String(localized: "This MeshCore link could not be read.")
+            case let .failure(e):
+                error = e.display
+            }
+            return
+        }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lichen:1:g:") {
             switch model.parseInvite(text) {
             case let .success(info): invite = ScannedInvite(text: text, info: info, inPerson: inPerson)
@@ -167,6 +191,125 @@ private struct ShowYourCode: View {
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ScannedLink {
+    let text: String
+    let info: MeshCoreLink
+}
+
+/// A MeshCore contact link, read (F-2, ADR-0047): the node it names, its kind and key, and
+/// whether its own radio signed it; then "Add to the radio", and what the radio did.
+private struct MeshCoreLinkPanel: View {
+    let text: String
+    let link: MeshCoreLink
+    let open: (ChatID) -> Void
+    /// Back to the scanner, nothing sent.
+    let cancel: () -> Void
+    /// Add a contact closes.
+    let done: () -> Void
+    @Environment(AppModel.self) private var model
+    @State private var step = Step.ready
+    /// `model.linkRefusals` when the link went to the radio: one more is its refusal.
+    @State private var refusalsBefore = 0
+    @State private var error: String?
+
+    enum Step { case ready, adding, added, already }
+
+    /// On the radio: among the people, or under Nodes for a repeater, room server or sensor.
+    private var onRadio: Bool {
+        model.coreContacts.contains { $0.key == link.key } || model.nodes.contains { $0.key == link.key && $0.onRadio }
+    }
+
+    private var refused: Bool { step == .adding && model.linkRefusals > refusalsBefore }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 14) {
+                    Avatar(name: link.name, key: link.key, size: 48)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(verbatim: link.name).font(.system(.title3, weight: .semibold))
+                        Label(link.kind.label, systemImage: link.kind.symbol)
+                            .font(.system(.subheadline)).foregroundStyle(Theme.tx2)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                Divider().overlay(Theme.line)
+                MeshCoreKeyRow(key: link.key)
+                Divider().overlay(Theme.line)
+                Label(link.signed ? String(localized: "Signed by its radio.")
+                                  : String(localized: "Not signed: anyone can write such a code."),
+                      systemImage: link.signed ? "checkmark.seal" : "exclamationmark.triangle")
+                    .font(.system(.footnote))
+                    .foregroundStyle(link.signed ? Theme.ok : Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 11)
+                // How the advert reached the radio that shared it: signed adverts only (a
+                // contact code says nothing of it).
+                if link.signed {
+                    Divider().overlay(Theme.line)
+                    Label(link.hops == 0 ? String(localized: "Heard by the sharer’s radio: directly")
+                                         : String(localized: "Heard by the sharer’s radio: through \(Int(link.hops)) repeaters"),
+                          systemImage: "antenna.radiowaves.left.and.right")
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 11)
+                }
+            }
+            .background(Theme.s1, in: RoundedRectangle(cornerRadius: 14))
+            if refused {
+                Banner(kind: .sos, title: String(localized: "The radio did not add it."))
+                Button("Close", action: done).buttonStyle(.secondary)
+            } else {
+                switch step {
+                case .ready:
+                    Button("Add to the radio", action: add).buttonStyle(.primary)
+                    Button("Cancel", action: cancel).buttonStyle(.secondary)
+                case .adding:
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Adding to your radio…").font(.system(.callout, weight: .medium))
+                    }
+                case .added, .already:
+                    Banner(kind: .ok, title: step == .added ? String(localized: "Added to your radio.")
+                                                             : String(localized: "Already on your radio."))
+                    if link.kind == .companion {
+                        Button("Open the chat") { openChat() }.buttonStyle(.primary)
+                        Button("Close", action: done).buttonStyle(.secondary)
+                    } else {
+                        Button("Done", action: done).buttonStyle(.primary)
+                    }
+                }
+            }
+            if let error { Banner(kind: .sos, title: error) }
+        }
+        // Banners take their own height, not the screen's.
+        .fixedSize(horizontal: false, vertical: true)
+        .onChange(of: onRadio) { _, now in if now, step == .adding { step = .added } }
+    }
+
+    private func add() {
+        error = nil
+        refusalsBefore = model.linkRefusals
+        switch model.addMeshCoreLink(text) {
+        case .success(.sent): step = onRadio ? .added : .adding
+        case .success(.alreadyOnTheRadio): step = .already
+        case .success(.ownRadio): error = String(localized: "This is your own code.")
+        case .failure(.NoIdentity): error = String(localized: "Connect your radio first")
+        case let .failure(e): error = e.display
+        }
+    }
+
+    /// Their chat: the MeshCore one, or lichen's once their identity is known.
+    private func openChat() {
+        let lichen = model.coreContacts.first { $0.key == link.key }?.identity != nil
+        open(lichen ? .contact(key: link.key) : .mesh(key: link.key))
     }
 }
 
@@ -390,10 +533,16 @@ private struct ScanPanel: View {
     @State private var pasted = ""
     @State private var cameraOK = AVCaptureDevice.default(for: .video) != nil
 
+    /// A lichen code, or a MeshCore contact link (F-2).
+    static func isCode(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return t.hasPrefix("lichen:") || t.hasPrefix("meshcore://")
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             if cameraOK {
-                QRScanner { code in found(code, true) }
+                QRScanner(prefixes: ["lichen:", "meshcore://"]) { code in found(code, true) }
                     .frame(height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line))
@@ -409,7 +558,7 @@ private struct ScanPanel: View {
                     .padding(10)
                     .background(Theme.s1, in: RoundedRectangle(cornerRadius: 10))
                 Button("Add") { found(pasted, false) }
-                    .disabled(!pasted.hasPrefix("lichen:"))
+                    .disabled(!Self.isCode(pasted))
             }
         }
     }

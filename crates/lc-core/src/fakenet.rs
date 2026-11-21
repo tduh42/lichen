@@ -140,6 +140,24 @@ pub struct Node {
     pub clients: Vec<(usize, u8)>,
     /// A room server's posts: author's key, Unix seconds, text.
     pub posts: Vec<(PubKey, u32, String)>,
+    /// What the companion holds of contacts added from outside the simulation (§16.6).
+    pub contact_adverts: Vec<ContactAdvert>,
+    /// The size of its contact table: an advert past it is not added, `ADD_UPDATE_CONTACT`
+    /// answers `ERR 3`.
+    pub contacts_max: usize,
+}
+
+/// A contact a fake companion added from outside the simulation (§16.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContactAdvert {
+    pub key: PubKey,
+    /// The advert's timestamp, by its node's clock.
+    pub timestamp: u32,
+    /// Degrees × 10⁶.
+    pub position: Option<(i32, i32)>,
+    /// The companion keeps the advert itself (imported: what `EXPORT_CONTACT` would return),
+    /// not only the record.
+    pub kept: bool,
 }
 
 /// Channel slots of a simulated companion.
@@ -329,6 +347,8 @@ impl Net {
             passwords: None,
             clients: Vec::new(),
             posts: Vec::new(),
+            contact_adverts: Vec::new(),
+            contacts_max: 350,
         });
         self.neighbors.push(Vec::new());
         self.nodes.len() - 1
@@ -942,6 +962,13 @@ impl Net {
             .iter()
             .find(|n| n.key == *key)
             .and_then(|n| n.advert_position)
+            .or_else(|| {
+                let n = self.nodes.get(on)?;
+                n.contact_adverts
+                    .iter()
+                    .find(|c| c.key == *key)
+                    .and_then(|c| c.position)
+            })
             .unwrap_or((0, 0));
         v.extend_from_slice(&unix.to_le_bytes());
         v.extend_from_slice(&lat.to_le_bytes());
@@ -1340,6 +1367,144 @@ impl Net {
         self.push_to_app(i, &frame);
     }
 
+    /// `IMPORT_CONTACT` (`MyMesh.cpp` L1409, `BaseChatMesh.cpp` L588): `OK` for an ADVERT
+    /// packet, then the advert handled as if heard by flood (§16.6), silently: a forged one, the
+    /// radio's own or one without a name is ignored, so is one no later than the contact's;
+    /// with manual add and its type outside the auto-add mask, a path of as many hops as the
+    /// auto-add limit or more, or a full table, it is pushed as `NEW_ADVERT` and not added; else
+    /// it is added or updated (no path of its own) and pushed as `ADVERT`.
+    fn import_contact(&mut self, i: usize, packet: &[u8]) -> Vec<Vec<u8>> {
+        let read = lc_meshcore::Packet::decode(packet)
+            .ok()
+            .filter(|p| p.ptype == PayloadType::Advert && packet.len() > 2 + 32 + 64 - 1);
+        let Some(p) = read else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let mut out = vec![vec![resp::OK]];
+        let Ok(a) = lc_meshcore::advert::Advert::decode(p.payload) else {
+            return out;
+        };
+        let Some(node) = self.nodes.get(i) else {
+            return out;
+        };
+        let name = String::from_utf8_lossy(a.name).into_owned();
+        if !a.verify() || *a.key == node.key || name.is_empty() {
+            return out;
+        }
+        let known = node.contacts.iter().any(|(k, ..)| k == a.key);
+        let last = node
+            .contact_adverts
+            .iter()
+            .find(|c| c.key == *a.key)
+            .map_or(0, |c| c.timestamp);
+        if known && a.timestamp <= last {
+            return out;
+        }
+        let bit = match a.kind {
+            contact_kind::CHAT => 0x02,
+            contact_kind::REPEATER => 0x04,
+            contact_kind::ROOM => 0x08,
+            contact_kind::SENSOR => 0x10,
+            _ => 0,
+        };
+        let manual = node.settings.prefs[3] & 1 != 0;
+        let full = !known && node.contacts.len() >= node.contacts_max;
+        let max_hops = node.settings.autoadd.1;
+        let far = max_hops > 0 && p.path.hops() >= max_hops;
+        let position = a.position.filter(|&p| p != (0, 0));
+        if !known && ((manual && node.settings.autoadd.0 & bit == 0) || far || full) {
+            let mut v = vec![resp::NEW_ADVERT];
+            v.extend_from_slice(a.key);
+            v.extend_from_slice(&[a.kind, 0, PATH_UNKNOWN]);
+            v.extend_from_slice(&[0; 64]);
+            let mut n = [0u8; 32];
+            n[..a.name.len().min(31)].copy_from_slice(&a.name[..a.name.len().min(31)]);
+            v.extend_from_slice(&n);
+            let (lat, lon) = position.unwrap_or((0, 0));
+            v.extend_from_slice(&a.timestamp.to_le_bytes());
+            v.extend_from_slice(&lat.to_le_bytes());
+            v.extend_from_slice(&lon.to_le_bytes());
+            v.extend_from_slice(&self.radio_unix_s(i).to_le_bytes());
+            out.push(v);
+            if full {
+                out.push(vec![0x90]);
+            }
+            return out;
+        }
+        self.keep_contact(i, *a.key, name, a.kind, a.timestamp, position, true);
+        let mut v = vec![resp::ADVERT];
+        v.extend_from_slice(a.key);
+        out.push(v);
+        out
+    }
+
+    /// `ADD_UPDATE_CONTACT` (`MyMesh.cpp` L1328, `updateContactFromFrame` L194): the record
+    /// added or updated, `ERR 3` when the table is full.
+    fn add_update_contact(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let (Some(key), Some(&kind), Some(name), Some(ts)) = (
+            frame.get(1..33).and_then(|k| PubKey::try_from(k).ok()),
+            frame.get(33),
+            frame.get(100..132),
+            frame
+                .get(132..136)
+                .and_then(|b| <[u8; 4]>::try_from(b).ok()),
+        ) else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let position = frame
+            .get(136..144)
+            .map(|b| {
+                let (lat, lon) = b.split_at(4);
+                let int = |x: &[u8]| i32::from_le_bytes(<[u8; 4]>::try_from(x).unwrap_or_default());
+                (int(lat), int(lon))
+            })
+            .filter(|&p| p != (0, 0));
+        let name =
+            String::from_utf8_lossy(name.split(|&b| b == 0).next().unwrap_or(&[])).into_owned();
+        let Some(node) = self.nodes.get(i) else {
+            return vec![];
+        };
+        if node.contacts.iter().all(|(k, ..)| *k != key) && node.contacts.len() >= node.contacts_max
+        {
+            return vec![vec![resp::ERR, 3]];
+        }
+        self.keep_contact(i, key, name, kind, u32::from_le_bytes(ts), position, false);
+        vec![vec![resp::OK]]
+    }
+
+    /// Companion `i` holds `key` as a contact (no path), with what its advert said; the advert
+    /// itself once `imported`.
+    #[allow(clippy::too_many_arguments)]
+    fn keep_contact(
+        &mut self,
+        i: usize,
+        key: PubKey,
+        name: String,
+        kind: u8,
+        ts: u32,
+        position: Option<(i32, i32)>,
+        imported: bool,
+    ) {
+        let Some(n) = self.nodes.get_mut(i) else {
+            return;
+        };
+        match n.contacts.iter_mut().find(|(k, ..)| *k == key) {
+            Some(c) => {
+                c.1 = name;
+                c.3 = kind;
+            }
+            None => n.contacts.push((key, name, None, kind)),
+        }
+        let kept = imported || n.contact_adverts.iter().any(|c| c.key == key && c.kept);
+        n.contact_adverts.retain(|c| c.key != key);
+        n.contact_adverts.push(ContactAdvert {
+            key,
+            timestamp: ts,
+            position,
+            kept,
+        });
+    }
+
     /// The stock companion's answer to one app command.
     fn companion_command(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
         let Some(&code) = frame.first() else {
@@ -1515,6 +1680,8 @@ impl Net {
                 out.push(vec![resp::END_OF_CONTACTS, 0, 0, 0, 0]);
                 out
             }
+            cmd::IMPORT_CONTACT => self.import_contact(i, frame.get(1..).unwrap_or(&[])),
+            cmd::ADD_UPDATE_CONTACT => self.add_update_contact(i, frame),
             cmd::GET_CONTACT_BY_KEY => {
                 let k = frame.get(1..33);
                 match node.contacts.iter().find(|(c, ..)| Some(&c[..]) == k) {

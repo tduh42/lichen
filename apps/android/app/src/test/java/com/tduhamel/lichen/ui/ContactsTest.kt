@@ -440,4 +440,132 @@ class ContactsTest : UiTest() {
         tapDesc(R.string.new_message)
         assertFalse(has(str(R.string.meshcore_contact, hopsBadge(context.resources, 1u)), substring = true) && has("Marc"))
     }
+
+    // CT-12: a MeshCore contact from a link (F-2, ADR-0047), on the demo radio.
+
+    /** Add a contact › Scan, with [text] pasted and Add tapped. */
+    private fun pasteLink(text: String) {
+        tap(R.string.scan)
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextReplacement(text)
+        tap(R.string.add)
+    }
+
+    /** CT-12: a signed link pasted shows its card (name, kind, key in groups of 8, signed); Add
+     * puts the contact among the people and opens their MeshCore chat; pasted again, it is
+     * already on the radio, and its chat opens. */
+    @Test
+    fun CT_12_addFromASignedLink() = addFromASignedLink()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_12_addFromASignedLink_fr() = addFromASignedLink()
+
+    private fun addFromASignedLink() {
+        launch("demo" to true, "screen" to "contact")
+        advanceUntil("the radio's key") { model.nodeKey != null }
+        // A node the sharer's radio heard through 2 repeaters: said on its card; Cancel.
+        pasteLink(TWO_HOP_LINK)
+        see("crest")
+        see(plural(R.plurals.heard_through_repeaters, 2, 2))
+        tap(R.string.cancel)
+        pasteLink(SIGNED_LINK)
+        see("Hut radio")
+        see(R.string.heard_directly)
+        see(R.string.node_kind_companion)
+        see("83b6ede3 fdf630ce afd3fc18", substring = true)
+        see(R.string.link_signed)
+        assertFalse(model.contacts.any { it.name == "Hut radio" })
+        tap(R.string.add_to_radio)
+        advanceUntil("added", 30) { has(R.string.added_to_radio) }
+        val hut = model.contacts.first { it.name == "Hut radio" }
+        assertTrue(hut.identity == null)
+        tap(R.string.open_the_chat)
+        advanceUntil("its MeshCore chat", 10) { hasDesc(str(R.string.about_meshcore_chats)) }
+        see("Hut radio")
+        // Among the people, as a MeshCore chat.
+        tapDesc(R.string.back)
+        tapDesc(R.string.new_message)
+        see(str(R.string.meshcore_contact, hopsBadge(context.resources, model.contacts.first { it.name == "Hut radio" }.hops)))
+        see("Hut radio")
+        back()
+
+        // Pasted again: already on the radio, and its chat opens.
+        tapDesc(R.string.add_contact)
+        pasteLink(SIGNED_LINK)
+        tap(R.string.add_to_radio)
+        see(R.string.already_on_radio)
+        tap(R.string.open_the_chat)
+        advanceUntil("its MeshCore chat", 10) { hasDesc(str(R.string.about_meshcore_chats)) }
+        assertEquals(1, model.contacts.count { it.name == "Hut radio" })
+    }
+
+    /** CT-12: a signed link with one hex digit changed (its timestamp) is refused as changed or
+     * made up: no card, nothing added. */
+    @Test
+    fun CT_12_changedLinkRefused() = changedLinkRefused()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_12_changedLinkRefused_fr() = changedLinkRefused()
+
+    private fun changedLinkRefused() {
+        launch("demo" to true, "screen" to "contact")
+        advanceUntil("the radio's key") { model.nodeKey != null }
+        val changed = SIGNED_LINK.replace("4002df6a", "4102df6a")
+        assertTrue(changed != SIGNED_LINK)
+        pasteLink(changed)
+        see(R.string.err_bad_signature)
+        assertFalse(has(R.string.add_to_radio))
+        assertFalse(model.contacts.any { it.name == "Hut radio" })
+    }
+
+    /** CT-12: a contact code is read as unsigned, and added among the people. */
+    @Test
+    fun CT_12_contactCodeAddedUnsigned() = contactCodeAdded()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_12_contactCodeAddedUnsigned_fr() = contactCodeAdded()
+
+    private fun contactCodeAdded() {
+        launch("demo" to true, "screen" to "contact")
+        advanceUntil("the radio's key") { model.nodeKey != null }
+        pasteLink(CONTACT_CODE)
+        see("Example Contact")
+        see(R.string.link_unsigned)
+        assertFalse(has(R.string.heard_directly))
+        tap(R.string.add_to_radio)
+        advanceUntil("added", 30) { has(R.string.added_to_radio) }
+        assertTrue(model.contacts.any { it.name == "Example Contact" })
+        // Close leaves Add a contact; the contact is among the people.
+        tap(R.string.close)
+        tapDesc(R.string.new_message)
+        see("Example Contact")
+    }
+
+    /** CT-12: with the radio gone, the link's card says to connect it first. */
+    @Test
+    fun CT_12_linkWithNoRadio() {
+        launch("demo" to true, "screen" to "contact")
+        advanceUntil("the radio's key") { model.nodeKey != null }
+        model.setDemoRadio(false)
+        advanceUntil("the radio off", 20) { !model.isConnected }
+        pasteLink(SIGNED_LINK)
+        see("Hut radio")
+        tap(R.string.add_to_radio)
+        see(R.string.connect_radio_first)
+    }
+
+    private companion object {
+        /** A companion's signed advert, as the stock app shares it (testdata/meshcore/mesh.toml,
+         * `link-companion`: test keys). */
+        const val SIGNED_LINK = "meshcore://110083b6ede3fdf630ceafd3fc187fb096c9cc228e15f1f88749c1efd4e963e7b2724002df6a7e1bae75dd2c45634dddd2c8bc8358fbcaec698e8de8bce1772a5e92d9e3484adb0cf917bddc6c591c3c5113bffdeaa95f4653ab8ec4c9b7424b4717a383180a8148757420726164696f"
+
+        /** A repeater's signed advert that came to the sharing radio through 2 repeaters
+         * (mesh.toml, `link-with-2-hop-path`). */
+        const val TWO_HOP_LINK = "meshcore://11025a779b3307f6ab98064f997635bf58e102adaceee753b26d5372c328d234a2a855af4602df6a778ef066d76f220fc37acd532b34c9956551adc36e4e0d48dbc53714291572dabd9426998b59a773c6c9fda79d93f6d3098bf1483e165433463b2ac9659feb0a826372657374"
+
+        /** A contact code (mesh.toml, the F-1 vectors): unsigned. */
+        const val CONTACT_CODE = "meshcore://contact/add?name=Example+Contact&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+    }
 }

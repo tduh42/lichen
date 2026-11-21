@@ -323,4 +323,113 @@ final class ContactsTests: LichenUITest {
         wait(contact("Camille"), 10)
         XCTAssertFalse(contact("Marc").exists, "Marc listed with the people")
     }
+
+    // MARK: CT-12, a MeshCore contact from a link (F-2, ADR-0047)
+
+    /// A companion's signed advert, as the stock app shares it (`testdata/meshcore/mesh.toml`,
+    /// `link-companion`: test keys).
+    static let signedLink = "meshcore://110083b6ede3fdf630ceafd3fc187fb096c9cc228e15f1f88749c1efd4e963e7b2724002df6a7e1bae75dd2c45634dddd2c8bc8358fbcaec698e8de8bce1772a5e92d9e3484adb0cf917bddc6c591c3c5113bffdeaa95f4653ab8ec4c9b7424b4717a383180a8148757420726164696f"
+    /// A repeater's signed advert that came to the sharing radio through 2 repeaters
+    /// (`mesh.toml`, `link-with-2-hop-path`).
+    static let twoHopLink = "meshcore://11025a779b3307f6ab98064f997635bf58e102adaceee753b26d5372c328d234a2a855af4602df6a778ef066d76f220fc37acd532b34c9956551adc36e4e0d48dbc53714291572dabd9426998b59a773c6c9fda79d93f6d3098bf1483e165433463b2ac9659feb0a826372657374"
+    /// A contact code (`mesh.toml`, the F-1 vectors): unsigned.
+    static let contactCode = "meshcore://contact/add?name=Example+Contact&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+
+    /// Add a contact › Scan, once the radio is up (its code shows), with `text` in the paste
+    /// field and Add tapped.
+    private func pasteLink(_ text: String, radioUp: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
+        wait(app.navigationBars[tr("Add a contact")], 10, "no contact screen", file: file, line: line)
+        if radioUp { wait(element(tr("Your contact code")), 20, "the radio is not up", file: file, line: line) }
+        app.buttons[tr("Scan")].tap()
+        let field = wait(app.textFields["pasteCode"], 5, "no paste field", file: file, line: line)
+        field.tap()
+        field.typeText(text)
+        button(tr("Add")).tap()
+    }
+
+    /// CT-12: a signed link pasted shows its card (name, kind, key, signed, how the sharer's
+    /// radio heard it); Add puts the contact among the people and opens their MeshCore chat;
+    /// pasted again, it is already on the radio and its chat opens.
+    func testCT12_AddAMeshCoreContactFromASignedLink() {
+        launch(["-screen", "contact", "-quietDemo", "YES"])
+        // A node the sharer's radio heard through 2 repeaters: said on its card; Cancel.
+        pasteLink(Self.twoHopLink)
+        wait(element("crest"), 5, "no card for the 2-hop link")
+        XCTAssertTrue(element(tr("Heard by the sharer’s radio: through %lld repeaters", 2)).exists, "no hops line")
+        keep("ct-link-two-hops")
+        button(tr("Cancel")).tap()
+        pasteLink(Self.signedLink, radioUp: false)
+        wait(element("Hut radio"), 5, "no card for the link")
+        XCTAssertTrue(element(tr("Heard by the sharer’s radio: directly")).exists, "no line for a link heard directly")
+        XCTAssertTrue(element(tr("Companion")).exists, "no kind on the card")
+        // The key row (shown in groups of 8) reads out its 64 digits.
+        XCTAssertEqual(element(tr("MeshCore public key")).value as? String,
+                       "83b6ede3fdf630ceafd3fc187fb096c9cc228e15f1f88749c1efd4e963e7b272")
+        XCTAssertTrue(element(tr("Signed by its radio.")).exists, "not said to be signed")
+        XCTAssertFalse(element(tr("Not signed: anyone can write such a code.")).exists, "said to be unsigned")
+        keep("ct-link-card")
+        button(tr("Add to the radio")).tap()
+        wait(element(tr("Added to your radio.")), 10, "not added")
+        keep("ct-link-added")
+        button(tr("Open the chat")).tap()
+        wait(composer, 10, "the chat did not open")
+        wait(app.navigationBars.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Hut radio'")).firstMatch, 5,
+             "not Hut radio's chat")
+        back()
+        // Among the people, as a MeshCore chat.
+        button(tr("New message")).tap()
+        wait(contact("Hut radio"), 10, "not among the people")
+        app.buttons[tr("Cancel")].firstMatch.tap()
+
+        // Pasted again: already on the radio, and its chat opens.
+        button(tr("Add a contact")).tap()
+        pasteLink(Self.signedLink)
+        wait(element("Hut radio"), 5, "no card for the link")
+        button(tr("Add to the radio")).tap()
+        wait(element(tr("Already on your radio.")), 5, "not said to be there already")
+        keep("ct-link-already")
+        button(tr("Open the chat")).tap()
+        wait(composer, 10, "the chat did not open")
+    }
+
+    /// CT-12: a signed link with one hex digit changed (its timestamp) is refused as changed or
+    /// made up, with no card and nothing added.
+    func testCT12_AChangedLinkIsRefused() {
+        launch(["-screen", "contact", "-quietDemo", "YES"])
+        let changed = Self.signedLink.replacingOccurrences(of: "4002df6a", with: "4102df6a")
+        XCTAssertNotEqual(changed, Self.signedLink)
+        pasteLink(changed)
+        let refused = wait(element(tr("This link was changed or made up: its signature doesn’t match.")), 5, "not refused")
+        XCTAssertLessThan(refused.frame.height, 100, "the banner is stretched: \(refused.frame)")
+        XCTAssertFalse(button(tr("Add to the radio")).exists, "a card for a changed link")
+        keep("ct-link-bad-signature")
+    }
+
+    /// CT-12: a contact code is read as unsigned, and added.
+    func testCT12_AContactCodeIsAddedUnsigned() {
+        launch(["-screen", "contact", "-quietDemo", "YES"])
+        pasteLink(Self.contactCode)
+        wait(element("Example Contact"), 5, "no card for the code")
+        XCTAssertTrue(element(tr("Not signed: anyone can write such a code.")).exists, "not said to be unsigned")
+        XCTAssertFalse(element(tr("Signed by its radio.")).exists, "said to be signed")
+        XCTAssertFalse(containing(tr("Heard by the sharer’s radio: directly")).exists, "a hops line for a code")
+        keep("ct-link-unsigned")
+        button(tr("Add to the radio")).tap()
+        wait(element(tr("Added to your radio.")), 10, "not added")
+        button(tr("Close")).tap()
+        button(tr("New message")).tap()
+        wait(contact("Example Contact"), 10, "not among the people")
+    }
+
+    /// CT-12: with the radio gone (`-offline`: the demo radio drops 3 s in), the link's card
+    /// says to connect it first.
+    func testCT12_ALinkWithNoRadio() {
+        launch(["-screen", "contact", "-offline", "12", "-quietDemo", "YES"])
+        wait(element(tr("Your contact code")), 20, "the radio did not come up")
+        pause(4)
+        pasteLink(Self.signedLink, radioUp: false)
+        wait(element("Hut radio"), 5, "no card for the link")
+        button(tr("Add to the radio")).tap()
+        wait(element(tr("Connect your radio first")), 5, "not told to connect the radio")
+    }
 }

@@ -10,11 +10,15 @@ pub mod cmd {
     pub const SET_DEVICE_TIME: u8 = 6;
     pub const SEND_SELF_ADVERT: u8 = 7;
     pub const SET_ADVERT_NAME: u8 = 8;
+    /// A contact record, added or updated (§16.6).
+    pub const ADD_UPDATE_CONTACT: u8 = 9;
     pub const SET_RADIO_PARAMS: u8 = 11;
     pub const SYNC_NEXT_MESSAGE: u8 = 10;
     pub const SET_RADIO_TX_POWER: u8 = 12;
     pub const RESET_PATH: u8 = 13;
     pub const SET_ADVERT_LATLON: u8 = 14;
+    /// A node's advert, handled as if heard (§16.6).
+    pub const IMPORT_CONTACT: u8 = 18;
     pub const REBOOT: u8 = 19;
     pub const GET_BATT_AND_STORAGE: u8 = 20;
     pub const DEVICE_QUERY: u8 = 22;

@@ -326,6 +326,277 @@ fn contact_codes() {
     assert_eq!((read, written, refused), (4, 2, 8));
 }
 
+/// The stock app's shared contact links (`mesh.toml` `[[link]]`, signed by `mesh.py` with
+/// test keys): read, the signature checked, and the frames lichen sends for each (§15.3,
+/// §16.6; user request F-2). A contact code reads through the same call, unsigned.
+#[test]
+fn contact_links() {
+    use lc_core::plain::{LinkError, parse_contact_code, read_meshcore_link};
+    use lc_meshcore::Command;
+    let path = format!(
+        "{}/../../testdata/meshcore/mesh.toml",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let t: toml::Table = std::fs::read_to_string(path).unwrap().parse().unwrap();
+    let bytes = |v: &toml::Value, k: &str| hex::decode(v[k].as_str().unwrap()).unwrap();
+    let (mut signed, mut codes, mut refused) = (0, 0, 0);
+    for v in t["link"].as_array().unwrap() {
+        let text = v["text"].as_str().unwrap();
+        match v.get("refused").and_then(toml::Value::as_str) {
+            Some("code") => {
+                assert_eq!(read_meshcore_link(text), Err(LinkError::NotALink), "{text}");
+                refused += 1;
+                continue;
+            }
+            Some(_) => {
+                assert_eq!(
+                    read_meshcore_link(text),
+                    Err(LinkError::BadSignature),
+                    "{text}"
+                );
+                refused += 1;
+                continue;
+            }
+            None => {}
+        }
+        let link = read_meshcore_link(text).unwrap_or_else(|e| panic!("{text}: {e:?}"));
+        assert_eq!(link.name, v["contact_name"].as_str().unwrap(), "{text}");
+        assert_eq!(link.key.to_vec(), bytes(v, "public_key"));
+        assert_eq!(i64::from(link.kind), v["node_type"].as_integer().unwrap());
+        assert_eq!(
+            i64::from(link.timestamp),
+            v["timestamp"].as_integer().unwrap()
+        );
+        assert_eq!(link.signed(), v["signed"].as_bool().unwrap());
+        assert_eq!(
+            i64::from(link.hops),
+            v["hops"].as_integer().unwrap(),
+            "{text}"
+        );
+        assert_eq!(link.path, bytes(v, "path"), "{text}");
+        let position = v.get("lat_e6").map(|lat| {
+            let lon = v["lon_e6"].as_integer().unwrap();
+            (lat.as_integer().unwrap() as i32, lon as i32)
+        });
+        assert_eq!(link.position, position, "{text}");
+        let mut buf = [0u8; lc_meshcore::FRAME_MAX];
+        let (lat_e6, lon_e6) = link.position.unwrap_or((0, 0));
+        let n = Command::AddUpdateContact {
+            key: &link.key,
+            kind: link.kind,
+            name: link.name.as_bytes(),
+            last_advert: link.timestamp,
+            lat_e6,
+            lon_e6,
+        }
+        .encode(&mut buf)
+        .unwrap();
+        assert_eq!(buf[..n], bytes(v, "add_frame")[..], "{text}");
+        match &link.advert {
+            Some(packet) => {
+                let n = (Command::ImportContact { packet })
+                    .encode(&mut buf)
+                    .unwrap();
+                assert_eq!(buf[..n], bytes(v, "import_frame")[..], "{text}");
+                signed += 1;
+            }
+            None => codes += 1,
+        }
+    }
+    assert_eq!((signed, codes, refused), (9, 1, 22));
+    // F-1's codes read the same through it.
+    for v in t["qr"].as_array().unwrap() {
+        let text = v["text"].as_str().unwrap();
+        match parse_contact_code(text) {
+            Some((name, key, kind)) => {
+                let link = read_meshcore_link(text).unwrap();
+                assert!(!link.signed() && link.position.is_none());
+                assert_eq!((link.name, link.key, link.kind), (name, key, kind));
+            }
+            None => assert_eq!(read_meshcore_link(text), Err(LinkError::NotALink), "{text}"),
+        }
+    }
+}
+
+/// A node's shared link, signed with a test key: `meshcore://` and the hex of its advert.
+fn signed_link(seed: u8, kind: u8, name: &str, position: Option<(i32, i32)>) -> (String, [u8; 32]) {
+    signed_link_via(seed, kind, name, position, &[])
+}
+
+/// The same, its advert having come through `path` (1-byte hashes) to the radio that shared it.
+fn signed_link_via(
+    seed: u8,
+    kind: u8,
+    name: &str,
+    position: Option<(i32, i32)>,
+    path: &[u8],
+) -> (String, [u8; 32]) {
+    use lc_meshcore::ecdh::{expand_seed, public_key, sign};
+    let prv = expand_seed(&[seed; 32]);
+    let key = public_key(&prv);
+    let ts = 1_793_000_000u32.to_le_bytes();
+    let mut data = vec![kind | 0x80 | if position.is_some() { 0x10 } else { 0 }];
+    if let Some((lat, lon)) = position {
+        data.extend_from_slice(&lat.to_le_bytes());
+        data.extend_from_slice(&lon.to_le_bytes());
+    }
+    data.extend_from_slice(name.as_bytes());
+    let sig = sign(&prv, &[&key, &ts, &data]).unwrap();
+    let mut raw = vec![0x11, u8::try_from(path.len()).unwrap()];
+    raw.extend_from_slice(path);
+    raw.extend_from_slice(&key);
+    raw.extend_from_slice(&ts);
+    raw.extend_from_slice(&sig);
+    raw.extend_from_slice(&data);
+    (format!("meshcore://{}", hex::encode(raw)), key)
+}
+
+fn add_link(m: &mut Mesh, text: &str) -> Result<lc_core::MeshAdd, lc_core::Error> {
+    let link = lc_core::plain::read_meshcore_link(text).unwrap();
+    m.net
+        .with_core(m.app, |c, _| c.add_meshcore_contact(&link))
+        .unwrap()
+}
+
+/// What the app's radio holds of `key` added from a link: the advert's position, and whether
+/// it keeps the advert itself.
+fn on_radio(m: &Mesh, key: [u8; 32]) -> Option<(Option<(i32, i32)>, bool)> {
+    m.net.nodes[m.app]
+        .contact_adverts
+        .iter()
+        .find(|c| c.key == key)
+        .map(|c| (c.position, c.kept))
+}
+
+/// A signed link: imported, so the radio keeps the advert; the node comes as any contact,
+/// with its type and position. Added again, it is already there (§16.6).
+#[test]
+fn a_shared_link_is_imported() {
+    let mut m = mesh(21);
+    let (text, key) = signed_link(
+        40,
+        contact_kind::REPEATER,
+        "ridge",
+        Some((12_345_678, -98_765_432)),
+    );
+    m.net.take_events(m.app);
+    assert_eq!(add_link(&mut m, &text), Ok(lc_core::MeshAdd::Sent));
+    assert!(run(&mut m, 5_000).contains(&Event::ContactsUpdated));
+    assert_eq!(
+        on_radio(&m, key),
+        Some((Some((12_345_678, -98_765_432)), true))
+    );
+    let nodes = nodes_of(&m);
+    let ridge = find(&nodes, key);
+    assert!(ridge.on_radio);
+    assert_eq!(
+        (ridge.name.as_str(), ridge.kind),
+        ("ridge", contact_kind::REPEATER)
+    );
+    assert_eq!(ridge.position, Some((12_345_678, -98_765_432)));
+    assert_eq!(
+        add_link(&mut m, &text),
+        Ok(lc_core::MeshAdd::AlreadyOnTheRadio)
+    );
+    assert!(
+        m.net
+            .with_core(m.app, |c, _| c.take_radio_refusals())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// A radio in manual add does not take an imported advert (it pushes `NEW_ADVERT`): lichen
+/// adds the node with `ADD_UPDATE_CONTACT` from the advert's fields (§16.6, ADR-0047).
+#[test]
+fn a_link_the_radio_does_not_take_is_added() {
+    let mut m = mesh(22);
+    let app = m.app;
+    m.net.nodes[app].settings.prefs[3] = 1;
+    m.net.nodes[app].settings.autoadd = (0, 0);
+    let (text, key) = signed_link(41, contact_kind::CHAT, "Hut radio", None);
+    assert_eq!(add_link(&mut m, &text), Ok(lc_core::MeshAdd::Sent));
+    run(&mut m, 5_000);
+    assert_eq!(on_radio(&m, key), Some((None, false)));
+    let hut = m
+        .net
+        .with_core_ref(app, |c| c.contacts().find(|c| c.key == key).cloned())
+        .unwrap()
+        .expect("a person on the radio");
+    assert_eq!(
+        (hut.name.as_str(), hut.kind),
+        ("Hut radio", contact_kind::CHAT)
+    );
+    assert!(find(&nodes_of(&m), key).on_radio);
+}
+
+/// The link's path goes to the radio with the advert (§16.6): under the auto-add hop limit the
+/// radio takes it; at the limit it does not, and lichen adds the node with
+/// `ADD_UPDATE_CONTACT`, with no path of its own either way.
+#[test]
+fn a_link_s_path_and_the_hop_limit() {
+    let mut m = mesh(25);
+    let app = m.app;
+    m.net.nodes[app].settings.autoadd = (0, 2);
+    let (near, near_key) = signed_link_via(44, contact_kind::CHAT, "near", None, &[0x5A]);
+    let link = lc_core::plain::read_meshcore_link(&near).unwrap();
+    assert_eq!((link.hops, link.path.as_slice()), (1, &[0x5A][..]));
+    assert_eq!(link.advert.as_ref().unwrap()[1..3], [1, 0x5A]);
+    let (far, far_key) = signed_link_via(45, contact_kind::CHAT, "far", None, &[0x5A, 0x77]);
+    assert_eq!(add_link(&mut m, &near), Ok(lc_core::MeshAdd::Sent));
+    assert_eq!(add_link(&mut m, &far), Ok(lc_core::MeshAdd::Sent));
+    run(&mut m, 5_000);
+    assert_eq!(on_radio(&m, near_key), Some((None, true)));
+    assert_eq!(on_radio(&m, far_key), Some((None, false)));
+    let nodes = nodes_of(&m);
+    for key in [near_key, far_key] {
+        let n = find(&nodes, key);
+        assert!(n.on_radio);
+        assert_eq!(n.out_path, None, "no path of its own");
+    }
+}
+
+/// A full radio: the import is pushed back as heard, and `ADD_UPDATE_CONTACT` answers `ERR 3`:
+/// the contact is refused like a setting (§1.1, §16.6).
+#[test]
+fn a_full_radio_refuses_a_link() {
+    let mut m = mesh(23);
+    let app = m.app;
+    m.net.nodes[app].contacts_max = 3;
+    let (text, key) = signed_link(42, contact_kind::CHAT, "Hut radio", None);
+    assert_eq!(add_link(&mut m, &text), Ok(lc_core::MeshAdd::Sent));
+    run(&mut m, 5_000);
+    assert_eq!(on_radio(&m, key), None);
+    assert_eq!(
+        m.net
+            .with_core(app, |c, _| c.take_radio_refusals())
+            .unwrap(),
+        vec![lc_core::radio::RadioSetting::Contact]
+    );
+    assert!(!find(&nodes_of(&m), key).on_radio);
+}
+
+/// A contact code is added unsigned, with `ADD_UPDATE_CONTACT`; the radio's own code is not
+/// sent; without a radio nothing is.
+#[test]
+fn a_contact_code_and_what_is_not_sent() {
+    use lc_core::plain::contact_code;
+    let mut m = mesh(24);
+    let key = [0x42; 32];
+    let code = contact_code("hub west", &key, contact_kind::REPEATER);
+    assert_eq!(add_link(&mut m, &code), Ok(lc_core::MeshAdd::Sent));
+    run(&mut m, 5_000);
+    assert_eq!(on_radio(&m, key), Some((None, false)));
+    assert_eq!(find(&nodes_of(&m), key).kind, contact_kind::REPEATER);
+    let own = contact_code("app", &m.net.key(m.app), contact_kind::CHAT);
+    assert_eq!(add_link(&mut m, &own), Ok(lc_core::MeshAdd::OwnRadio));
+    let app = m.app;
+    m.net.disconnect(app);
+    run(&mut m, 1_000);
+    let (text, _) = signed_link(43, contact_kind::CHAT, "Hut radio", None);
+    assert_eq!(add_link(&mut m, &text), Err(lc_core::Error::NoIdentity));
+}
+
 /// `app` – `hub` – `room`, the radio knowing both; Bob, a contact, posted before in the room.
 fn with_room(seed: u64) -> (Mesh, usize) {
     let mut m = mesh(seed);

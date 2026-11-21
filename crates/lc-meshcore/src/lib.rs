@@ -16,6 +16,7 @@
     )
 )]
 
+pub mod advert;
 pub mod air;
 pub mod airtime;
 mod bytes;

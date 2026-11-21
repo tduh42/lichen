@@ -215,6 +215,89 @@ pub fn read_meshcore_contact_code(text: String) -> Result<MeshCoreContact, Liche
     })
 }
 
+/// A MeshCore node read from a link the stock app shares (§15.3): its signed advert, or a
+/// contact code.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct MeshCoreLink {
+    pub name: String,
+    /// Its MeshCore public key (32 bytes): the node key.
+    pub key: Vec<u8>,
+    pub kind: NodeKind,
+    /// The position its advert carries, when it has one (degrees).
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    /// Signed by the node itself (a shared advert); false for a contact code, which anyone can
+    /// write for any key under any name.
+    pub signed: bool,
+    /// Hops of the path the advert came by to the radio that shared it (0: heard directly, or
+    /// a contact code).
+    pub hops: u8,
+    /// That path's hashes, `hops` of them, each `path.len() / hops` bytes (1 to 3): the first
+    /// bytes of the repeaters' keys, from the node outwards. Empty for 0 hops.
+    pub path: Vec<u8>,
+}
+
+impl From<&lc_core::MeshLink> for MeshCoreLink {
+    fn from(l: &lc_core::MeshLink) -> Self {
+        Self {
+            name: l.name.clone(),
+            key: l.key.to_vec(),
+            kind: NodeKind::of(l.kind),
+            lat: l.position.map(|(lat, _)| f64::from(lat) / 1e6),
+            lon: l.position.map(|(_, lon)| f64::from(lon) / 1e6),
+            signed: l.signed(),
+            hops: l.hops,
+            path: l.path.clone(),
+        }
+    }
+}
+
+/// What `add_meshcore_contact` did (§16.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum MeshCoreAdd {
+    /// Sent to the radio. The contact then comes as any other (`ContactsUpdated`: among the
+    /// people for a companion, the nodes for the others), or the radio's refusal comes as a
+    /// refused setting, `RadioSetting::Contact` (`take_radio_refusals`).
+    Sent,
+    /// The radio already has it: nothing was sent; open its chat.
+    AlreadyOnTheRadio,
+    /// The link is the connected radio's own.
+    OwnRadio,
+}
+
+fn read_link(text: &str) -> Result<lc_core::MeshLink, LichenError> {
+    lc_core::plain::read_meshcore_link(text).map_err(|e| match e {
+        lc_core::LinkError::NotALink => LichenError::BadCode,
+        lc_core::LinkError::BadSignature => LichenError::BadSignature,
+    })
+}
+
+/// Reads a MeshCore contact link (§15.3, ADR-0047): `meshcore://` and the hex of a node's
+/// signed advert, as the stock app shares it, or a contact code
+/// (`meshcore://contact/add?…`). `BadCode` when it is neither, or not one a MeshCore node
+/// writes; `BadSignature` for an advert whose signature does not verify (changed after its
+/// node signed it, or made up).
+#[uniffi::export]
+pub fn read_meshcore_link(text: String) -> Result<MeshCoreLink, LichenError> {
+    Ok(MeshCoreLink::from(&read_link(&text)?))
+}
+
+#[uniffi::export]
+impl LichenCore {
+    /// Adds the node of a MeshCore contact link to the radio (§16.6): the errors of
+    /// `read_meshcore_link`, and `NoIdentity` when no radio is connected.
+    pub fn add_meshcore_contact(&self, text: String) -> Result<MeshCoreAdd, LichenError> {
+        let link = read_link(&text)?;
+        let mut inner = self.lock();
+        let added = inner.core.add_meshcore_contact(&link)?;
+        Ok(match added {
+            lc_core::MeshAdd::Sent => MeshCoreAdd::Sent,
+            lc_core::MeshAdd::AlreadyOnTheRadio => MeshCoreAdd::AlreadyOnTheRadio,
+            lc_core::MeshAdd::OwnRadio => MeshCoreAdd::OwnRadio,
+        })
+    }
+}
+
 #[uniffi::export]
 impl LichenCore {
     /// The radio's path to `node`, hop by hop (§16.2): `None` when it floods to reach it (or
