@@ -165,6 +165,14 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             let visible = MainActor.assumeIsolated {
                 chat != nil && chat == self.visibleChat && self.locked?() != true
             }
+            #if DEBUG
+            // -noBanners YES (UI tests): no banner over the app, which a test's taps would wait
+            // behind; still in the notification list.
+            if UserDefaults.standard.bool(forKey: "noBanners") {
+                completionHandler(visible ? [] : [.list])
+                return
+            }
+            #endif
             completionHandler(visible ? [] : [.banner, .list, .sound])
         }
     }

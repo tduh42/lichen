@@ -53,6 +53,8 @@
 	<string>lichen reaches a MeshCore radio on your network: one on Wi-Fi, or one a computer relays.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>lichen sends your position, encrypted, to the people and groups you share it with, and shows you on the map.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>lichen saves the photos you choose to keep in your library.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>lichen records your voice messages, encoded with Codec2 to fit on LoRa.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -104,6 +104,11 @@ final class RadioLinkTests: LichenUITest {
         relaunch(["-tab", "settings"], onboarded: true)
         wait(cardButton(tr("Radios")), 10)
         XCTAssertTrue(cardButton(tr("Radios")).label.contains(tr("%lld saved", 1)), "after a restart: \(cardButton(tr("Radios")).label)")
+        // A radio was paired before: it dropped, rather than "no radio yet" (D-1).
+        tab(.messages)
+        wait(containing(tr("Radio disconnected")), 5, "a radio paired before is not said to have dropped")
+        XCTAssertFalse(containing(tr("No radio connected yet")).exists)
+        tab(.settings)
         cardButton(tr("Radios")).tap()
         wait(element("Workshop bridge"), 5)
         XCTAssertFalse(element("Heltec V4").exists)
@@ -230,6 +235,32 @@ final class RadioLinkTests: LichenUITest {
         app.alerts[tr("Not changed")].buttons["OK"].tap()
         XCTAssertFalse(containing(tr("Saved: used from the radio's next restart. Pair the phone again with it.")).exists,
                        "a refused PIN is said to be saved")
+    }
+
+    /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said, and the
+    /// power shown stays the radio's.
+    func testRL6_TheRadioRefusesASetting() {
+        launch(["-tab", "settings", "-screen", "radio", "-radioRefuses", "power"])
+        let power = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch
+        wait(power, 30, "no transmit power")
+        let before = power.label
+        app.steppers.firstMatch.buttons.element(boundBy: 0).tap()
+        let refused = app.alerts[tr("Not changed")]
+        wait(refused, 10, "the radio's refusal is not said")
+        XCTAssertTrue(refused.staticTexts[tr("The radio did not take this setting")].exists, "the refusal's words")
+        keep("rl-radio-refused")
+        refused.buttons["OK"].tap()
+        XCTAssertEqual(power.label, before, "the power shown is not the radio's")
+    }
+
+    /// D-8: with `-demoSpeed 4` the demo runs four times faster: Camille's first message, about
+    /// 18 s into the demo, comes in under 10 s.
+    func testRL1_TheDemoRunsFasterWithDemoSpeed() {
+        let start = Date()
+        launch(["-quietDemo", "YES"], speed: 4)
+        wait(row("Camille"), 30, "no message from Camille")
+        let took = Date().timeIntervalSince(start)
+        XCTAssertLessThan(took, 10, "Camille's first message after \(Int(took)) s")
     }
 
     /// RL-7: the radio's battery in its settings; with Show radio details, the radio card on

@@ -28,15 +28,16 @@ final class ChatNavigationTests: LichenUITest {
         tab(.messages)
         sleep(3)
         XCTAssertFalse(inChat(app).exists, "coming back to Messages opened a chat again")
-        // A while later, messages arriving: still the list.
-        sleep(20)
+        // A while later (a minute and more of the demo's time at speed 4), messages arriving:
+        // still the list.
+        sleep(6)
         XCTAssertFalse(inChat(app).exists, "a chat opened by itself")
     }
 
     /// Tapping a notification opens its chat. It used to abort the app: the delegate's
     /// completion ran off the main thread.
     func testTappingANotificationOpensItsChat() {
-        launch([])
+        launch([], banners: true)
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         // Camille's first message comes while the list is on screen: a banner.
         let banner = springboard.descendants(matching: .any)
@@ -85,9 +86,9 @@ final class ChatNavigationTests: LichenUITest {
                 let shown = bar.descendants(matching: .any).allElementsBoundByIndex.map(\.label)
                 XCTAssertTrue(title.waitForExistence(timeout: 5),
                               "round \(round): tapped “\(tapped)”, the bar shows \(shown)")
-                sleep(3)
+                sleep(1)
                 app.navigationBars.buttons.element(boundBy: 0).tap()
-                sleep(2)
+                sleep(1)
                 XCTAssertFalse(inChat(app).exists, "round \(round): Back from \(name) did not reach the list")
             }
         }
@@ -101,7 +102,8 @@ final class ChatNavigationTests: LichenUITest {
         // Her photo comes about two minutes in.
         let photo = containing("The view from the refuge tonight")
         XCTAssertTrue(photo.waitForExistence(timeout: 240), "no photo")
-        sleep(30)
+        // Two minutes of the demo's time at speed 4: everything read, the photo's bubble grown.
+        sleep(8)
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Camille'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))

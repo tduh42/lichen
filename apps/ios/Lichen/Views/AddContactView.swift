@@ -11,6 +11,9 @@ struct AddContactView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var tab = Tab.myCode
     @State private var added: ContactInfo?
+    /// Added from a code scanned in person: then they scan ours (B-user-1).
+    @State private var addedInPerson = false
+    @State private var showingMyCode = false
     @State private var invite: ScannedInvite?
     @State private var error: String?
 
@@ -28,12 +31,17 @@ struct AddContactView: View {
 
             if let invite {
                 JoinPanel(text: invite.text, info: invite.info, inPerson: invite.inPerson) { finish() }
+            } else if let added, showingMyCode {
+                ShowYourCode(name: added.name) { openChat(added) }
             } else if let added {
                 VerifyPanel(node: added.key) {
-                    // Their conversation opens, ready for the first message (the list shows
-                    // contacts once there is a message).
-                    if next == nil { model.openRequest = .contact(key: added.key) }
-                    finish()
+                    // Scanned in person and the numbers match: now they scan ours, so that both
+                    // phones verify each other in the same sitting (B-user-1).
+                    if addedInPerson, model.contact(added.key)?.verified == true, model.myCard() != nil {
+                        showingMyCode = true
+                    } else {
+                        openChat(added)
+                    }
                 }
             } else if tab == .myCode {
                 myCode
@@ -68,6 +76,12 @@ struct AddContactView: View {
     /// invitation asks to join (§10.5).
     private func scanned(_ text: String, inPerson: Bool) {
         error = nil
+        // Our own card or invitation, scanned or pasted back (D-3).
+        if model.isOwnCode(text) {
+            error = String(localized: "This is your own code.")
+            return
+        }
+        addedInPerson = inPerson
         if text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("lichen:1:g:") {
             switch model.parseInvite(text) {
             case let .success(info): invite = ScannedInvite(text: text, info: info, inPerson: inPerson)
@@ -84,6 +98,13 @@ struct AddContactView: View {
 
     private func finish() {
         if let next { next() } else { dismiss() }
+    }
+
+    /// Their conversation opens, ready for the first message (the list shows contacts once
+    /// there is a message).
+    private func openChat(_ contact: ContactInfo) {
+        if next == nil { model.openRequest = .contact(key: contact.key) }
+        finish()
     }
 
     @ViewBuilder private var myCode: some View {
@@ -111,6 +132,41 @@ struct AddContactView: View {
                 // Its own height, not the screen's (a spacer follows).
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+/// After we scanned their code in person: ours, for them to scan, so that their phone verifies
+/// us too (B-user-1).
+private struct ShowYourCode: View {
+    let name: String
+    let done: () -> Void
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Now let \(name) scan your code")
+                .font(.system(.title3, weight: .semibold))
+                .multilineTextAlignment(.center)
+            Text("Their phone verifies you the same way, and both of you see the same numbers.")
+                .font(.system(.subheadline))
+                .foregroundStyle(Theme.tx2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if let card = model.myCard(), let image = QRCode.image(card) {
+                Image(uiImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(14)
+                    .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    .frame(maxWidth: 240)
+                    .accessibilityLabel("Your contact code")
+            }
+            Button("Done", action: done)
+                .buttonStyle(.primary)
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

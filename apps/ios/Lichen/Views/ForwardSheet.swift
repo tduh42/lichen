@@ -28,17 +28,23 @@ struct ForwardSheet: View {
                         }
                     }
                 }
-                Section("Contacts") {
-                    ForEach(model.contacts.filter { $0.identity != nil }, id: \.key) { c in
-                        row(c.name, key: c.key, to: .contact(key: c.key))
+                // Blocked contacts are left out, as when sharing (D-2); no section without them.
+                let people = model.contacts.filter { $0.identity != nil && !model.isBlocked($0.key) }
+                if !people.isEmpty {
+                    Section("Contacts") {
+                        ForEach(people, id: \.key) { c in
+                            row(c.name, key: c.key, to: .contact(key: c.key))
+                        }
                     }
+                } else if fits == .contactsOnly {
+                    Text("No lichen contact to forward to.").foregroundStyle(Theme.tx2)
                 }
                 if fits == .text {
                     Section {
                         ForEach(model.channels, id: \.id) { c in
                             row(c.name, key: c.id, to: .channel(id: c.id))
                         }
-                        ForEach(model.contacts.filter { $0.identity == nil }, id: \.key) { c in
+                        ForEach(model.contacts.filter { $0.identity == nil && !model.isBlocked($0.key) }, id: \.key) { c in
                             row(c.name, key: c.key, to: .mesh(key: c.key))
                         }
                     } header: {

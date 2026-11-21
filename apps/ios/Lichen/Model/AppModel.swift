@@ -41,6 +41,13 @@ final class AppModel {
     var phraseBackedUp = UserDefaults.standard.bool(forKey: "lichen.phraseBackedUp") {
         didSet { UserDefaults.standard.set(phraseBackedUp, forKey: "lichen.phraseBackedUp") }
     }
+    /// Contacts (node keys, hex) whose safety numbers the user said to compare later: their
+    /// chat no longer asks (B-user-1).
+    var compareLater = Set(UserDefaults.standard.stringArray(forKey: "lichen.compareLater") ?? []) {
+        didSet { UserDefaults.standard.set(Array(compareLater).sorted(), forKey: "lichen.compareLater") }
+    }
+    /// The pairing screen, asked for from Messages (no radio paired yet, D-1).
+    var showPairing = false
     // Internet bridge (ADR-0015).
     /// iroh reachable (a relay answered).
     var bridgeOnline = false
@@ -307,6 +314,11 @@ final class AppModel {
     @ObservationIgnored private var debugFilled = false
     @ObservationIgnored private var debugAnswered = false
     @ObservationIgnored private let started = ProcessInfo.processInfo.systemUptime
+    /// The core's clock (`now()`): `clockBase` ms at uptime `clockMark`, running `clockSpeed`
+    /// times faster than the wall clock (1, but up to 4 in the demo with debug `demoSpeed`).
+    @ObservationIgnored private var clockBase: UInt64 = 0
+    @ObservationIgnored private var clockMark = ProcessInfo.processInfo.systemUptime
+    @ObservationIgnored private(set) var clockSpeed = 1.0
     @ObservationIgnored let locator = Locator()
     @ObservationIgnored private var lastFed: UInt64?
     @ObservationIgnored private var demoFixTimer: Timer?
@@ -593,7 +605,14 @@ final class AppModel {
         // The demo's people are friends: their groups are joined without asking, and their
         // introductions are not requests (ADR-0046); -requestDemo YES keeps requests on, to see
         // Camille's first message arrive as one.
-        core.setGroupConsent(ask: false)
+        #if DEBUG
+        // -groupInvitationDemo YES: the demo keeps group invitations on: Camille's group arrives
+        // as an invitation in Messages, to join or decline (§10.1).
+        let groupInvitationDemo = UserDefaults.standard.bool(forKey: "groupInvitationDemo")
+        #else
+        let groupInvitationDemo = false
+        #endif
+        if !groupInvitationDemo { core.setGroupConsent(ask: false) }
         #if DEBUG
         let requestDemo = UserDefaults.standard.bool(forKey: "requestDemo")
         #else
@@ -622,10 +641,18 @@ final class AppModel {
         // -quietDemo YES: no group, photo, position share or channel post: Camille answers in
         // seconds (UI tests of direct chats).
         if args.bool(forKey: "quietDemo") { net.quiet() }
+        // -radioRefuses power: the demo radio refuses transmit power changes (D-4).
+        if args.string(forKey: "radioRefuses") == "power" { net.refuseTxPower() }
+        // -demoSpeed N (up to 4): the demo network and the core run N times faster than the wall
+        // clock (UI tests). Never outside the demo.
+        let speed = min(4, max(1, args.integer(forKey: "demoSpeed")))
+        net.setSpeed(speed: UInt32(speed))
+        setClockSpeed(Double(speed))
         #endif
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
-        demoTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+        // Every 0.2 s of the demo's time.
+        demoTimer = Timer.scheduledTimer(withTimeInterval: 0.2 / clockSpeed, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.demoStep() }
         }
         updateLocator()
@@ -638,7 +665,7 @@ final class AppModel {
         if expiry > 0 { core.setOutboxExpiry(ms: UInt64(expiry) * 1000) }
         let off = args.integer(forKey: "offline")
         if off > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(off)) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(off) / clockSpeed) { [weak self] in
                 guard let self, self.isDemo else { return }
                 self.setDemoRadio(on: false)
                 if let c = self.contacts.first(where: { $0.name == "Camille" }) {
@@ -651,7 +678,7 @@ final class AppModel {
         }
         let on = args.integer(forKey: "online")
         if on > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(on)) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(on) / clockSpeed) { [weak self] in
                 guard let self, self.isDemo else { return }
                 self.setDemoRadio(on: true)
             }
@@ -714,6 +741,7 @@ final class AppModel {
     }
 
     private func leaveDemo() {
+        if clockSpeed != 1 { setClockSpeed(1) }
         demoRadioOff = false
         demoTimer?.invalidate()
         demoFixTimer?.invalidate()
@@ -780,7 +808,21 @@ final class AppModel {
     // MARK: runner
 
     func now() -> UInt64 {
-        UInt64((ProcessInfo.processInfo.systemUptime - started) * 1000)
+        let uptime = ProcessInfo.processInfo.systemUptime
+        guard clockSpeed > 1 else { return clockBase + UInt64((uptime - clockMark) * 1000 * clockSpeed) }
+        // -demoSpeed: a stall of the app (a UI test's accessibility queries) is not multiplied
+        // into a jump past the core's 5 s wait for the radio's answer, which would then be
+        // dropped: at most 0.25 s of the wall clock counts per reading.
+        clockBase += UInt64(min(max(uptime - clockMark, 0), 0.25) * 1000 * clockSpeed)
+        clockMark = uptime
+        return clockBase
+    }
+
+    /// The core's clock goes on from where it is, `speed` times faster than the wall clock.
+    private func setClockSpeed(_ speed: Double) {
+        clockBase = now()
+        clockMark = ProcessInfo.processInfo.systemUptime
+        clockSpeed = speed
     }
 
     private func companionChanged(_ s: Companion.State) {
@@ -852,7 +894,8 @@ final class AppModel {
         if !searches.isEmpty || sos { reportBattery() }
         timer?.invalidate()
         if let next = core.nextWakeup() {
-            let delay = max(0.02, Double(Int64(next) - Int64(t)) / 1000)
+            // The core's time to wait, on the wall clock.
+            let delay = max(0.02, Double(Int64(next) - Int64(t)) / 1000 / clockSpeed)
             timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
                 MainActor.assumeIsolated { self?.pump() }
             }
@@ -881,6 +924,11 @@ final class AppModel {
         case let .identityConflict(node, identity):
             conflicts[node] = identity
         case .radioSettings:
+            // A setting the radio itself refused (D-4): said, and the value shown stays the
+            // radio's.
+            if !core.takeRadioRefusals().isEmpty {
+                radioError = String(localized: "The radio did not take this setting")
+            }
             // Read again after a change (ADR-0032): the header follows the radio's parameters.
             let r = core.radioSettings()
             radioSettings = r
@@ -1019,8 +1067,13 @@ final class AppModel {
             // Tapping it opens the admin's conversation; the invitation waits in Messages.
             notifier.message(.contact(key: admin), title: String(localized: "Group invitation"),
                              body: String(localized: "\(self.name(of: admin)) invites you to “\(name)”"), actions: false)
-        case let .groupJoined(gid, _, admin):
-            if joining.removeValue(forKey: admin) != nil { joinedByInvite[admin] = gid }
+        case let .groupJoined(gid, name, admin):
+            // The group whose invitation we accepted, by its admin and its name: another of
+            // theirs that adds us meanwhile is not it.
+            if joining[admin] == name {
+                joining.removeValue(forKey: admin)
+                joinedByInvite[admin] = gid
+            }
             groupsChanged()
         case .groupUpdated, .groupLeft:
             groupsChanged()
@@ -1914,6 +1967,7 @@ final class AppModel {
         do {
             _ = try core.acceptInvite(text: text, scanned: scanned, nowMs: now())
             joining[info.admin] = info.groupName
+            joinedByInvite[info.admin] = nil
             coreContacts = core.contacts()
             pump()
             return nil
@@ -2346,6 +2400,25 @@ final class AppModel {
     func myCard() -> String? {
         let name = myName.isEmpty ? nodeName : myName
         return try? core.contactCard(name: name)
+    }
+
+    /// One of our own codes (our card, an invitation to a group of ours), scanned or pasted
+    /// back (D-3).
+    func isOwnCode(_ text: String) -> Bool {
+        core.ownCode(text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Their chat asks to compare safety numbers (B-user-1): their key is known and not
+    /// verified, no new key waits, and the user did not say Later. On both phones, whoever
+    /// scanned whom: the one who did not scan learns the other's key from a message.
+    func asksToCompare(_ node: Data) -> Bool {
+        guard let c = contact(node), c.identity != nil, !c.verified, conflicts[node] == nil else { return false }
+        return !compareLater.contains(node.hex)
+    }
+
+    /// Later: their chat stops asking to compare.
+    func compareLaterWith(_ node: Data) {
+        compareLater.insert(node.hex)
     }
 
     /// Adds the contact of a card: verified when scanned in person, not when pasted (§4.7).

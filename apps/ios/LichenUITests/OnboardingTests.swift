@@ -26,6 +26,21 @@ final class OnboardingTests: LichenUITest {
         return words
     }
 
+    /// "I wrote them down", then the three words asked (D-7): `wrong` types a wrong first word.
+    private func confirmPhrase(_ words: [String], wrong: Bool = false, file: StaticString = #filePath, line: UInt = #line) {
+        wait(app.textFields["confirm.3"], 5, "no words asked", file: file, line: line)
+        for k in 1...3 {
+            let field = app.textFields["confirm.\(k)"]
+            // "Word 5": its prompt.
+            let prompt = [field.placeholderValue ?? "", field.label].first { !$0.isEmpty } ?? ""
+            let position = Int(prompt.components(separatedBy: CharacterSet.decimalDigits.inverted).joined()) ?? 0
+            XCTAssertTrue((1...24).contains(position), "asked: \(prompt)", file: file, line: line)
+            field.tap()
+            field.typeText(wrong && k == 1 ? "lichenzz" : words[position - 1])
+        }
+        button(tr("Check")).tap()
+    }
+
     /// The welcome screens of a first launch, "Later" at each step: the identity screen keeps
     /// its fingerprint. Returns it.
     private func onboardWithoutRadio() -> [String] {
@@ -38,9 +53,9 @@ final class OnboardingTests: LichenUITest {
         XCTAssertEqual(groups.count, 6, "fingerprint: \(groups)")
         XCTAssertTrue(element(tr("Not backed up")).exists, "a new identity is not marked as not backed up")
         keep("on-identity")
-        // The phrase, written down: no longer marked.
+        // The phrase, written down and three of its words given back: no longer marked.
         cardButton(tr("Recovery phrase")).tap()
-        _ = phrase(close: "I wrote them down")
+        confirmPhrase(phrase(close: "I wrote them down"))
         waitGone(element(tr("Not backed up")), 5, "still marked as not backed up")
         button(tr("Continue")).tap()
         wait(app.navigationBars[tr("Add a contact")], 5, "no contact screen")
@@ -58,9 +73,45 @@ final class OnboardingTests: LichenUITest {
     func testON1_FirstLaunchToTheEnd() {
         _ = onboardWithoutRadio()
         wait(element(tr("No conversations yet")), 10, "Messages is not empty")
-        XCTAssertTrue(element(tr("Radio disconnected")).exists, "no radio prompt")
-        XCTAssertTrue(button(tr("Retry")).exists, "no way to retry the radio")
+        // No radio was ever paired: not one that dropped (D-1).
+        XCTAssertTrue(containing(tr("No radio connected yet")).exists, "no radio prompt")
+        XCTAssertTrue(containing(tr("Connect your radio to send and receive.")).exists)
+        XCTAssertFalse(containing(tr("Radio disconnected")).exists, "a first launch says a radio dropped")
         keep("on-messages-empty")
+        button(tr("Connect")).tap()
+        wait(app.navigationBars[tr("Pair a radio")], 5, "Connect does not open the pairing")
+    }
+
+    /// ON-3, D-7: the phrase confirmed by three of its words; a wrong one is said, the phrase
+    /// can be read again, and only three right words mark it backed up.
+    func testON3_ConfirmTheWrittenPhrase() {
+        launch(["-freshInstall", "YES", "-tab", "settings"], demo: false)
+        let identity = cardButton(tr("Your identity"))
+        reveal(identity)
+        identity.tap()
+        cardButton(tr("Recovery phrase")).tap()
+        let words = phrase(close: "I wrote them down")
+        confirmPhrase(words, wrong: true)
+        wait(containing(tr("One of these words is not the one in your phrase.")), 5, "a wrong word is not said")
+        keep("on-phrase-wrong")
+        // Read again, then three right words.
+        button(tr("Show the phrase again")).tap()
+        confirmPhrase(phrase(close: "I wrote them down"))
+        waitGone(element(tr("Not backed up")), 5, "still marked as not backed up")
+        XCTAssertTrue(app.navigationBars[tr("Your identity")].exists, "the sheet stayed")
+    }
+
+    /// ON-3, D-7: closing the check without the three words leaves the phrase not backed up.
+    func testON3_ClosingTheCheckIsNotABackup() {
+        launch(["-freshInstall", "YES", "-tab", "settings"], demo: false)
+        let identity = cardButton(tr("Your identity"))
+        reveal(identity)
+        identity.tap()
+        cardButton(tr("Recovery phrase")).tap()
+        _ = phrase(close: "I wrote them down")
+        wait(app.textFields["confirm.1"], 5, "no words asked")
+        button(tr("Close")).tap()
+        wait(element(tr("Not backed up")), 5, "closing the check backed the phrase up")
     }
 
     /// ON-2: started again, the same identity and no welcome screens.
@@ -173,6 +224,24 @@ final class OnboardingTests: LichenUITest {
         XCTAssertEqual(expected, groups, "the card's key is not the identity shown")
     }
 
+    /// ON-4, D-3: our own code, pasted back, is said to be ours (not "could not be read").
+    func testON4_OwnCodeIsSaidSo() throws {
+        launch()
+        wait(element(tr("%@ connected", "ThinkNode M5")), 20, "no radio")
+        button(tr("Add a contact")).tap()
+        let qr = wait(element(tr("Your contact code")), 10, "no code")
+        let card = try XCTUnwrap(Self.decodeQR(qr.screenshot().image), "the code does not decode")
+        UIPasteboard.general.string = card
+        app.buttons[tr("Scan")].tap()
+        let field = wait(app.textFields["pasteCode"], 5, "no paste field")
+        field.tap()
+        field.press(forDuration: 1.2)
+        wait(app.menuItems.matching(NSPredicate(format: "label IN %@", ["Paste", "Coller"])).firstMatch, 5, "no Paste").tap()
+        button(tr("Add")).tap()
+        wait(containing(tr("This is your own code.")), 5, "our own code is not said to be ours")
+        keep("on-own-code")
+    }
+
     static func decodeQR(_ image: UIImage) -> String? {
         guard let ci = CIImage(image: image),
               let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
@@ -234,21 +303,50 @@ final class OnboardingTests: LichenUITest {
         waitLabel(keyButton, contains: tr("Verify their key"), 5)
     }
 
-    /// Settings › Send an advert, then back to the chat: Léa's radio must know ours before it
-    /// answers our path discovery (bugs-ios.md B-ios-1).
-    private func advertise() {
-        tab(.settings)
-        let advert = wait(cardButton(tr("Send an advert")), 5)
-        advert.tap()
-        wait(containing(tr("Sent: radios around can add yours as a contact.")), 5)
-        tab(.messages)
-        wait(composer, 5)
+    /// The banner asking to compare safety numbers with `name` (B-user-1).
+    private func compareBanner(_ name: String) -> XCUIElement {
+        containing(tr("Compare safety numbers with %@", name))
+    }
+
+    /// ON-6, B-user-1, the phone that did not scan: Camille's key, learned from her first
+    /// message and not verified, makes her chat ask to compare; Compare shows the numbers, and
+    /// once they match the banner goes.
+    func testON6_TheOtherPhoneIsAskedToCompare() {
+        launch(["-open", "Camille", "-quietDemo", "YES"])
+        wait(keyButton, Self.camilleTimeout, "no session with Camille")
+        wait(compareBanner("Camille"), 5, "her chat does not ask to compare")
+        keep("on-compare-banner")
+        button(tr("Compare")).tap()
+        let number = wait(app.descendants(matching: .any)["safetyNumber"], 5, "Compare shows no numbers")
+        XCTAssertEqual(Self.groups(number.label, length: 5).count, 12, number.label)
+        button(tr("The numbers match")).tap()
+        waitGone(number, 5)
+        waitGone(compareBanner("Camille"), 5, "the banner stayed once verified")
+        waitLabel(keyButton, contains: tr("Key verified"), 5)
+    }
+
+    /// ON-6, B-user-1: Later puts the banner away, after a restart too; neither compared nor
+    /// put off, it comes back after a restart.
+    func testON6_CompareLaterAndAfterARestart() {
+        launch(["-open", "Camille", "-quietDemo", "YES"])
+        wait(keyButton, Self.camilleTimeout, "no session with Camille")
+        wait(compareBanner("Camille"), 5, "her chat does not ask to compare")
+        relaunch(["-open", "Camille", "-quietDemo", "YES"], demo: true)
+        wait(keyButton, Self.camilleTimeout, "no session with Camille after a restart")
+        wait(compareBanner("Camille"), 5, "the banner did not come back after a restart")
+        button(tr("Later")).tap()
+        waitGone(compareBanner("Camille"), 5, "Later did not put it away")
+        relaunch(["-open", "Camille", "-quietDemo", "YES"], demo: true)
+        wait(keyButton, Self.camilleTimeout, "no session with Camille after a restart")
+        pause(2)
+        XCTAssertFalse(compareBanner("Camille").exists, "put off, it came back after a restart")
+        XCTAssertEqual(keyButton.label, tr("Verify their key"), "Later verified her")
     }
 
     /// ON-7, pasted: Léa's code added by paste is not verified; her conversation starts and a
     /// text reaches her.
     func testON7_AddAContactByPastingTheirCode() {
-        launch(["-screen", "contact", "-contactDemo", "paste"])
+        launch(["-screen", "contact", "-contactDemo", "paste", "-quietDemo", "YES"])
         wait(app.navigationBars[tr("Add a contact")], 10, "no contact screen")
         app.buttons[tr("Scan")].tap()
         let field = wait(app.textFields["pasteCode"], 5, "no paste field")
@@ -265,23 +363,29 @@ final class OnboardingTests: LichenUITest {
         keep("on-paste-added")
         button(tr("The numbers match")).tap()
         wait(composer, 10, "her conversation did not open")
-        advertise()
         send("Hello Léa")
         waitText(tr("Delivered"), 60)
     }
 
     /// ON-7, scanned in person (the camera's stand-in, `-contactDemo scan`): Léa added,
-    /// verified; her conversation starts.
-    func testON7_AddAContactByScanningTheirCode() {
-        launch(["-contactDemo", "scan"])
+    /// verified; then our code for her to scan (B-user-1); her conversation starts and asks
+    /// nothing more.
+    func testON7_AddAContactByScanningTheirCode() throws {
+        launch(["-contactDemo", "scan", "-quietDemo", "YES"])
         let added = wait(containing(tr("%@ added, verified", "Léa")), 20, "Léa not added by the scan")
         XCTAssertLessThan(added.frame.height, 100, "the banner is stretched: \(added.frame)")
         keep("on-scan-added")
         button(tr("Done")).tap()
+        wait(containing(tr("Now let %@ scan your code", "Léa")), 5, "our code is not offered for her to scan")
+        let qr = wait(element(tr("Your contact code")), 5, "no code to scan")
+        let card = try XCTUnwrap(Self.decodeQR(qr.screenshot().image), "the code does not decode")
+        XCTAssertTrue(card.hasPrefix("lichen:1:"), card)
+        keep("on-show-your-code")
+        button(tr("Done")).tap()
         wait(composer, 10, "her conversation did not open")
         wait(keyButton, 5)
         XCTAssertEqual(keyButton.label, tr("Key verified"))
-        advertise()
+        XCTAssertFalse(compareBanner("Léa").exists, "a verified contact is asked to compare")
         send("Hello Léa")
         waitText(tr("Delivered"), 60)
     }

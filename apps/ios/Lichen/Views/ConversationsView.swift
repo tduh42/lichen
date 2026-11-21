@@ -112,6 +112,14 @@ struct ConversationsView: View {
                 }
             }
             .sheet(isPresented: $addingContact) { NavigationStack { AddContactView() } }
+            .sheet(isPresented: Binding(get: { model.showPairing }, set: { model.showPairing = $0 })) {
+                NavigationStack {
+                    PairingView()
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { Button("Close") { model.showPairing = false } }
+                        }
+                }
+            }
             .renameAlert(node: renaming, isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } }))
             .confirmationDialog(
                 deleting.map { String(localized: "Delete the conversation with \($0.title)?") } ?? "",
@@ -582,9 +590,17 @@ struct StatusBanners: View {
 
     var body: some View {
         Group {
-            // The demo's simulated radio switched off (Settings › Demo, `-offline`) too: Retry
-            // switches it back on.
-            if !model.isConnected && (!model.isDemo || model.demoRadioOff) {
+            // No radio was ever paired on this phone (D-1): not one that dropped.
+            if !model.isConnected && !model.isDemo && model.savedRadios.isEmpty {
+                Banner(
+                    kind: .warn,
+                    title: String(localized: "No radio connected yet"),
+                    message: String(localized: "Connect your radio to send and receive."),
+                    action: (String(localized: "Connect"), { model.showPairing = true })
+                )
+            } else if !model.isConnected && (!model.isDemo || model.demoRadioOff) {
+                // The demo's simulated radio switched off (Settings › Demo, `-offline`) too: Retry
+                // switches it back on.
                 Banner(
                     kind: .warn,
                     title: String(localized: "Radio disconnected"),

@@ -192,6 +192,14 @@ struct Demo {
     next_fix: u64,
     /// Wall clock at simulated time 0, Unix milliseconds.
     wall0: u64,
+    /// The radio refuses transmit power changes (debug `radioRefuses power`, §1.1).
+    refuse_power: bool,
+    /// The radio's answers made here rather than by the simulated radio (a refusal), handed
+    /// to the app before the radio's own.
+    answers: Vec<Vec<u8>>,
+    /// How much faster than the wall clock the app runs the demo (debug `demoSpeed`, 1 to 4):
+    /// the bots' clocks follow the wall clock, not the simulated time.
+    speed: u64,
     /// The full variant of Camille's photo, kept for when it is asked for.
     camille_full: Option<(MediaId, Vec<u8>)>,
     /// The user's images Camille received in full.
@@ -307,7 +315,7 @@ impl Demo {
         self.net.link(g, app);
         self.net.link(g, hub);
         self.net.connect(g);
-        let wall = self.wall0 + self.net.now;
+        let wall = self.wall_ms();
         let _ = self.net.with_core(g, |c, now| c.set_clock(wall, now));
         self.guest = Some(g);
         g
@@ -315,7 +323,13 @@ impl Demo {
 
     /// The bots' wall clock, Unix seconds.
     const fn unix_s(&self) -> u64 {
-        (self.wall0 + self.net.now) / 1000
+        self.wall_ms() / 1000
+    }
+
+    /// The bots' wall clock, Unix milliseconds: simulated time slowed back down when the app
+    /// runs the demo faster (`speed`).
+    const fn wall_ms(&self) -> u64 {
+        self.wall0 + self.net.now / self.speed
     }
 
     fn sim_now(&mut self, app_now: u64) -> u64 {
@@ -327,6 +341,16 @@ impl Demo {
         let t = self.sim_now(app_now);
         if t > self.net.now {
             self.net.run_until(t, |_| false);
+        }
+        if self.speed > 1 {
+            // The bots' phones keep the wall clock (their messages' times, their fixes).
+            let wall = self.wall_ms();
+            for bot in [Some(self.camille), Some(self.julien), self.guest]
+                .into_iter()
+                .flatten()
+            {
+                let _ = self.net.with_core(bot, |c, now| c.set_clock(wall, now));
+            }
         }
         self.bots();
     }
@@ -990,6 +1014,9 @@ impl DemoNetwork {
                 julien_walk: None,
                 next_fix: 0,
                 wall0: wall,
+                speed: 1,
+                refuse_power: false,
+                answers: Vec::new(),
                 camille_full: None,
                 camille_has_full: Vec::new(),
                 announced: false,
@@ -1019,6 +1046,17 @@ impl DemoNetwork {
             *at = sooner(*at, skip);
         }
         d.julien_from = sooner(d.julien_from, skip);
+    }
+
+    /// The app runs the demo `speed` times faster than the wall clock (debug `demoSpeed`, 1 to
+    /// 4, UI tests): the simulated network follows the app's clock, and the bots' phones keep
+    /// the wall clock for what they write. Call right after `new`.
+    pub fn set_speed(&self, speed: u32) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.speed = u64::from(speed.clamp(1, 4));
     }
 
     /// A quiet demo (debug `quietDemo`, for UI tests of direct chats): no group, no photo, no
@@ -1144,6 +1182,16 @@ impl DemoNetwork {
         d.camille_sos = Some((after_s * SEC, (after_s + for_s) * SEC));
     }
 
+    /// The radio answers ERR to every transmit power change (debug `radioRefuses power`, §1.1):
+    /// a setting the radio itself refuses, past the core's own checks. Call right after `new`.
+    pub fn refuse_tx_power(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.refuse_power = true;
+    }
+
     /// A frame from the app to its (simulated) companion.
     pub fn write(&self, frame: Vec<u8>, now_ms: u64) {
         let mut d = self
@@ -1151,6 +1199,11 @@ impl DemoNetwork {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.advance(now_ms);
+        if d.refuse_power && frame.first() == Some(&lc_meshcore::codes::cmd::SET_RADIO_TX_POWER) {
+            // MyMesh.cpp answers ERR 6 (illegal argument) to a value it does not take.
+            d.answers.push(vec![lc_meshcore::codes::resp::ERR, 6]);
+            return;
+        }
         let app = d.app;
         d.net.external_write(app, &frame);
     }
@@ -1176,7 +1229,9 @@ impl DemoNetwork {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.advance(now_ms);
         let app = d.app;
-        d.net.external_read(app)
+        let mut frames = std::mem::take(&mut d.answers);
+        frames.extend(d.net.external_read(app));
+        frames
     }
 }
 
@@ -1508,6 +1563,96 @@ mod skip {
         }
     }
 
+    /// `demoSpeed 4`: the app's clock runs 4 times faster; Camille's first message, written about
+    /// 10 s into the simulated script, carries a time about 2.5 s after the demo's start, as
+    /// the wall clock says.
+    #[test]
+    fn demo_speed_keeps_the_bots_on_the_wall_clock() {
+        for (speed, most) in [(1, 15), (4, 5)] {
+            let demo = DemoNetwork::new();
+            demo.skip_ahead(20);
+            demo.quiet();
+            demo.set_speed(speed);
+            let wall0_s = demo.inner.lock().unwrap().wall0 / 1000;
+            let core = LichenCore::new("t".into(), vec![16; 32], vec![116; 32], None).unwrap();
+            core.set_request_consent(false);
+            core.connect(0);
+            let mut sent_at = None;
+            for step in 0..(40 * 10) {
+                let now = step * 100;
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while let Some(e) = core.poll_event() {
+                    if let LichenEvent::Received {
+                        message:
+                            Message::Text {
+                                sent_at: at, text, ..
+                            },
+                        ..
+                    } = e
+                        && text.starts_with("Hi! I'm at the refuge")
+                    {
+                        sent_at = sent_at.or(Some(u64::from(at)));
+                    }
+                }
+            }
+            let after = sent_at.expect("no message from Camille") - wall0_s;
+            assert!(
+                after <= most,
+                "speed {speed}: written {after} s after the start"
+            );
+            if speed > 1 {
+                assert!(
+                    after >= 1,
+                    "speed {speed}: written {after} s after the start"
+                );
+            }
+        }
+    }
+
+    /// `radioRefuses power`: a transmit power change is refused by the radio, the core
+    /// reports it, and the power read back is the radio's.
+    #[test]
+    fn the_radio_refuses_a_power_change() {
+        let demo = DemoNetwork::new();
+        demo.refuse_tx_power();
+        let core = LichenCore::new("t".into(), vec![17; 32], vec![117; 32], None).unwrap();
+        core.connect(0);
+        let mut before = None;
+        let mut refused = Vec::new();
+        for step in 0..(20 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if matches!(e, LichenEvent::RadioSettings) {
+                    refused.extend(core.take_radio_refusals());
+                }
+            }
+            if before.is_none() && now >= 5_000 {
+                let tx = core.radio_settings().tx_dbm;
+                core.set_tx_power(tx - 1).unwrap();
+                before = Some(tx);
+            }
+        }
+        assert_eq!(refused, vec![crate::RadioSetting::TxPower]);
+        assert_eq!(
+            Some(core.radio_settings().tx_dbm),
+            before,
+            "the power changed"
+        );
+    }
+
     /// `demoSkip 20` (the UI tests'): Camille's first message comes 20 seconds sooner, then
     /// Marc's, in the script's order. More is not faster: before about 10 s the bots are still
     /// meeting each other on the air, and Marc's message is lost.
@@ -1532,50 +1677,55 @@ mod card {
     use super::*;
     use crate::{LichenCore, LichenEvent};
 
-    /// `contactDemo`: Léa's card adds her, verified when scanned, and a text to her is
-    /// delivered once her radio heard ours.
+    /// `contactDemo`: Léa's card adds her (verified when scanned in person, not when pasted),
+    /// and a text to her is delivered at once: adding a contact from a card sends our advert,
+    /// so that her radio knows ours (protocol §4.7, B-ios-1).
     #[test]
     fn lea_card_adds_a_contact_to_write_to() {
-        let demo = DemoNetwork::new();
-        let core = LichenCore::new("t".into(), vec![10; 32], vec![110; 32], None).unwrap();
-        core.set_group_consent(false);
-        core.set_request_consent(false);
-        core.connect(0);
-        let mut lea = None;
-        let mut delivered = None;
-        for step in 0..(120 * 10) {
-            let now = step * 100;
-            for f in demo.read(now) {
-                core.on_companion_frame(f, now);
-            }
-            core.tick(now);
-            while let Some(f) = core.poll_companion(now) {
-                demo.write(f, now);
-            }
-            while let Some(e) = core.poll_event() {
-                match e {
-                    LichenEvent::Delivered { .. } => delivered = delivered.or(Some(now)),
-                    LichenEvent::Failed { .. } => panic!("{e:?} at {now} ms"),
-                    _ => {}
+        for scanned in [true, false] {
+            let demo = DemoNetwork::new();
+            let core = LichenCore::new("t".into(), vec![10; 32], vec![110; 32], None).unwrap();
+            core.set_group_consent(false);
+            core.set_request_consent(false);
+            core.connect(0);
+            let mut lea = None;
+            let mut delivered = None;
+            for step in 0..(120 * 10) {
+                let now = step * 100;
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while let Some(e) = core.poll_event() {
+                    match e {
+                        LichenEvent::Delivered { .. } => delivered = delivered.or(Some(now)),
+                        LichenEvent::Failed { .. } => {
+                            panic!("scanned {scanned}: {e:?} at {now} ms")
+                        }
+                        _ => {}
+                    }
+                }
+                if lea.is_none() && now >= 5_000 {
+                    let card = demo.lea_card().expect("no card");
+                    let c = core.add_contact_card(card, scanned).unwrap();
+                    assert_eq!(c.name, "Léa");
+                    assert_eq!(c.verified, scanned);
+                    core.send_text(c.key.clone(), "Hello Léa".into(), 1, now)
+                        .unwrap();
+                    lea = Some(c.key);
+                }
+                if delivered.is_some() {
+                    break;
                 }
             }
-            if lea.is_none() && now >= 5_000 {
-                let card = demo.lea_card().expect("no card");
-                let c = core.add_contact_card(card, true).unwrap();
-                assert_eq!(c.name, "Léa");
-                assert!(c.verified);
-                // Her radio must know ours to answer the path discovery (§4.5): an advert
-                // first (bugs-ios.md B-ios-1: without it, the text fails with NoPath).
-                core.send_advert(true, now);
-                core.send_text(c.key.clone(), "Hello Léa".into(), 1, now)
-                    .unwrap();
-                lea = Some(c.key);
-            }
-            if delivered.is_some() {
-                break;
-            }
+            assert!(
+                delivered.is_some(),
+                "scanned {scanned}: the text to Léa was not delivered"
+            );
         }
-        assert!(delivered.is_some(), "the text to Léa was not delivered");
     }
 }
 
