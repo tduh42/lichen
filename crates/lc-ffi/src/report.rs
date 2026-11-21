@@ -122,6 +122,8 @@ impl Diag {
             Event::Beacon { sos: true, .. } => ("SOS beacon received", None),
             Event::Beacon { sos: false, .. } => ("beacon received", None),
             Event::TxPower { dbm, .. } => ("TX power changed", Some((i64::from(*dbm), "dBm"))),
+            Event::Advert { sent: true, .. } => ("advert sent", None),
+            Event::Advert { sent: false, .. } => ("advert not sent", None),
             Event::Requested { .. } => ("introduction request", None),
             Event::RequestMessage { snr4, .. } => ("request message received", snr(*snr4)),
             Event::RequestAccepted { .. } => ("request accepted", None),

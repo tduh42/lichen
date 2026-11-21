@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @AppStorage("appearance") private var appearance = Appearance.system
-    @State private var advertSent = false
+    @State private var choosingAdvert = false
     @State private var naming = false
     @State private var meshName = ""
     @State private var nameError: String?
@@ -15,6 +15,21 @@ struct SettingsView: View {
     @State private var exportingBackup = false
     @State private var radioOpen = false
     @AppStorage(radioDetailsKey) private var radioDetails = false
+
+    /// The advert row's subtitle (B-user-4): what an advert is for, then what the radio answered.
+    private var advertStatus: String {
+        switch model.advert {
+        case nil:
+            String(localized: "Tells radios around that yours is here, so they can add it as a contact.")
+        case .sending:
+            String(localized: "Sending…")
+        case let .sent(flood, at):
+            flood ? String(localized: "Advert sent at \(at.formatted(date: .omitted, time: .shortened)) (whole mesh)")
+                  : String(localized: "Advert sent at \(at.formatted(date: .omitted, time: .shortened)) (nearby)")
+        case .notSent:
+            String(localized: "The radio did not send it.")
+        }
+    }
 
     var body: some View {
         @Bindable var model = model
@@ -72,16 +87,17 @@ struct SettingsView: View {
                             CardRow(title: String(localized: "Relay for others"),
                                     subtitle: String(localized: "Stock companion firmware does not repeat: a repeater node does that."))
                             CardDivider()
-                            Button { model.sendAdvert(); advertSent = true } label: {
-                                CardRow(title: String(localized: "Send an advert"),
-                                        subtitle: advertSent ? String(localized: "Sent: radios around can add yours as a contact.")
-                                                             : String(localized: "Lets radios around add yours as a contact")) {
-                                    Image(systemName: "dot.radiowaves.left.and.right").foregroundStyle(Theme.lora)
+                            // Our advert (B-user-4): nearby or the whole mesh, chosen; then what the
+                            // radio answered (without a radio: not sent).
+                            Button { choosingAdvert = true } label: {
+                                CardRow(title: String(localized: "Send an advert"), subtitle: advertStatus) {
+                                    Image(systemName: "dot.radiowaves.left.and.right")
+                                        .foregroundStyle(model.isConnected ? Theme.lora : Theme.tx2)
                                 }
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .disabled(!model.isConnected)
-                            .opacity(model.isConnected ? 1 : 0.5)
+                            .sheet(isPresented: $choosingAdvert) { AdvertChoiceSheet() }
                             CardDivider()
                             // What MeshCore users and channels see (protocol.md §15.4).
                             Button { meshName = model.nodeName; naming = true } label: {
@@ -527,5 +543,62 @@ struct BlockedView: View {
         .background(Theme.bg)
         .navigationTitle("Blocked")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// How far our advert goes, chosen as in the stock app (B-user-4, D-14): nearby (zero hop) or
+/// the whole mesh (flood), each with what it reaches; what it carries: the radio's name, and its
+/// position when position in adverts is on and the radio has one.
+struct AdvertChoiceSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                CardList {
+                    option(flood: false, String(localized: "Nearby"), String(localized: "Only radios in direct range hear it."))
+                    CardDivider()
+                    option(flood: true, String(localized: "Whole mesh"),
+                           String(localized: "Repeaters pass it on to every radio they reach."))
+                }
+                Text(carries)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(Theme.bg)
+            .navigationTitle("Send an advert")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var carries: String {
+        let r = model.radioSettings
+        let name = r.map(\.name).flatMap { $0.isEmpty ? nil : $0 } ?? model.nodeName
+        let position = r.map { $0.positionInAdverts && ($0.latE6 != 0 || $0.lonE6 != 0) } ?? false
+        return position ? String(localized: "It shows your radio's name, “\(name)” and its position.")
+                        : String(localized: "It shows your radio's name, “\(name)”.")
+    }
+
+    private func option(flood: Bool, _ title: String, _ note: String) -> some View {
+        Button {
+            dismiss()
+            model.sendAdvert(flood: flood)
+        } label: {
+            CardRow(title: title, subtitle: note) {
+                Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

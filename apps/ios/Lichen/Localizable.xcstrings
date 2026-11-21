@@ -2131,6 +2131,26 @@
         }
       }
     },
+    "Advert sent at %@ (nearby)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annonce envoyée à %@ (à proximité)"
+          }
+        }
+      }
+    },
+    "Advert sent at %@ (whole mesh)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annonce envoyée à %@ (tout le réseau)"
+          }
+        }
+      }
+    },
     "Advertised position": {
       "localizations": {
         "fr": {
@@ -5131,6 +5151,26 @@
         }
       }
     },
+    "It shows your radio's name, “%@” and its position.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elle montre le nom de ta radio, « %@ » et sa position."
+          }
+        }
+      }
+    },
+    "It shows your radio's name, “%@”.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elle montre le nom de ta radio, « %@ »."
+          }
+        }
+      }
+    },
     "Its messages are deleted from this phone. The contact stays.": {
       "localizations": {
         "fr": {
@@ -5417,16 +5457,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "M'autoriser à être localisé par ce groupe"
-          }
-        }
-      }
-    },
-    "Lets radios around add yours as a contact": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Permet aux radios autour d'ajouter la tienne en contact"
           }
         }
       }
@@ -6401,6 +6431,16 @@
         }
       }
     },
+    "Nearby": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À proximité"
+          }
+        }
+      }
+    },
     "Needs an Internet connection": {
       "localizations": {
         "fr": {
@@ -7277,6 +7317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Seulement sur ce téléphone : sa radio s'appelle %@, et rien ne lui est envoyé."
+          }
+        }
+      }
+    },
+    "Only radios in direct range hear it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seules les radios à portée directe l’entendent."
           }
         }
       }
@@ -8341,6 +8391,16 @@
         }
       }
     },
+    "Repeaters pass it on to every radio they reach.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les répéteurs la relaient à toutes les radios qu’ils atteignent."
+          }
+        }
+      }
+    },
     "Repeaters, room servers and people's radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes' own adverts.": {
       "localizations": {
         "fr": {
@@ -9021,6 +9081,16 @@
         }
       }
     },
+    "Sending…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoi…"
+          }
+        }
+      }
+    },
     "Sends each acknowledgement again: more reliable, more airtime.": {
       "localizations": {
         "fr": {
@@ -9117,16 +9187,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Envoyée quand Internet revient"
-          }
-        }
-      }
-    },
-    "Sent: radios around can add yours as a contact.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Envoyé : les radios autour peuvent ajouter la tienne en contact."
           }
         }
       }
@@ -9781,6 +9841,16 @@
         }
       }
     },
+    "Tells radios around that yours is here, so they can add it as a contact.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signale ta radio aux radios autour, pour qu’elles puissent l’ajouter en contact."
+          }
+        }
+      }
+    },
     "The 24 words of this identity": {
       "localizations": {
         "fr": {
@@ -10077,6 +10147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La radio ne l’a pas ajouté."
+          }
+        }
+      }
+    },
+    "The radio did not send it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio ne l’a pas envoyée."
           }
         }
       }
@@ -11457,6 +11537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Qui le scanne le rejoint"
+          }
+        }
+      }
+    },
+    "Whole mesh": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout le réseau"
           }
         }
       }

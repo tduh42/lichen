@@ -100,7 +100,7 @@ fun SettingsScreen(
     storage: () -> Unit = {},
 ) {
     val t = lichen
-    var advertSent by remember { mutableStateOf(false) }
+    var choosingAdvert by remember { mutableStateOf(false) }
     var naming by remember { mutableStateOf(false) }
     var nameError by remember { mutableStateOf<String?>(null) }
     var importResult by remember { mutableStateOf<String?>(null) }
@@ -174,13 +174,12 @@ fun SettingsScreen(
                     CardDivider()
                     CardRow(stringResource(R.string.relay_for_others), stringResource(R.string.relay_for_others_note))
                     CardDivider()
-                    Box(Modifier.clickable(enabled = model.isConnected) {
-                        model.sendAdvert()
-                        advertSent = true
-                    }) {
+                    // Our advert (B-user-4): nearby or the whole mesh, chosen; then what the radio
+                    // answered (without a radio: not sent).
+                    Box(Modifier.clickable { choosingAdvert = true }) {
                         CardRow(
                             stringResource(R.string.send_advert),
-                            stringResource(if (advertSent) R.string.advert_sent else R.string.send_advert_note),
+                            advertStatus(model.advert),
                             merge = false,
                         ) {
                             Icon(Icons.Outlined.SettingsInputAntenna, null, tint = if (model.isConnected) t.lora else t.tx2)
@@ -382,6 +381,7 @@ fun SettingsScreen(
             }
         }
     }
+    if (choosingAdvert) AdvertChoice(model) { choosingAdvert = false }
     if (naming) {
         var name by remember { mutableStateOf(model.nodeName) }
         AlertDialog(
@@ -412,6 +412,64 @@ fun SettingsScreen(
             containerColor = t.s1,
         )
     }
+}
+
+/** The advert row's subtitle (B-user-4): what an advert is for, then what the radio answered. */
+@Composable
+private fun advertStatus(a: AppModel.AdvertState?): String = when (a) {
+    null -> stringResource(R.string.send_advert_note)
+    is AppModel.AdvertState.Sending -> stringResource(R.string.advert_sending)
+    is AppModel.AdvertState.Sent -> stringResource(
+        if (a.flood) R.string.advert_sent_mesh else R.string.advert_sent_nearby,
+        timeOf(LocalContext.current, a.atMs),
+    )
+    is AppModel.AdvertState.NotSent -> stringResource(R.string.advert_not_sent)
+}
+
+/** How far our advert goes, chosen as in the stock app (B-user-4, D-14): nearby (zero hop) or
+ * the whole mesh (flood), each with what it reaches; what it carries: the radio's name, and its
+ * position when position in adverts is on and the radio has one. */
+@Composable
+private fun AdvertChoice(model: AppModel, close: () -> Unit) {
+    val t = lichen
+    val r = model.radioSettings
+    val name = r?.name?.ifEmpty { null } ?: model.nodeName
+    val withPosition = r != null && r.positionInAdverts && (r.latE6 != 0 || r.lonE6 != 0)
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(stringResource(R.string.send_advert)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                for ((flood, title, note) in listOf(
+                    Triple(false, R.string.advert_nearby, R.string.advert_nearby_note),
+                    Triple(true, R.string.advert_mesh, R.string.advert_mesh_note),
+                )) {
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                close()
+                                model.sendAdvert(flood)
+                            }
+                            .padding(vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        Text(stringResource(title), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx)
+                        Text(stringResource(note), fontSize = 14.sp, color = t.tx2)
+                    }
+                }
+                Text(
+                    stringResource(if (withPosition) R.string.advert_carries_position else R.string.advert_carries, name),
+                    fontSize = 13.sp,
+                    color = t.tx2,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = close) { Text(stringResource(R.string.cancel), color = t.tx2) } },
+        containerColor = t.s1,
+    )
 }
 
 /** The app lock ([com.tduhamel.lichen.model.AppLock]): on after one successful authentication,

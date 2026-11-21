@@ -40,6 +40,7 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 |---|---|---|
 | `SET_RADIO_PARAMS` (11, L1424) | `freq kHz u32 ‖ bw Hz u32 ‖ sf ‖ cr ‖ repeat` | `OK`, applied at once; `ERR 6` outside 150,000–2,500,000 kHz, 7,000–500,000 Hz, SF 5–12, CR 5–8, or a repeat frequency not allowed |
 | `SET_RADIO_TX_POWER` (12) | `dBm i8` | `OK` within −9 and the radio's maximum (`SELF_INFO`) |
+| `SEND_SELF_ADVERT` (7, L1297) | `flood` (1: repeaters pass it on; otherwise zero-hop, heard in direct range only) | `OK` once the advert goes to the air; `ERR 3` when the radio has no packet free. It carries the node's name, and its position when `advert_loc_policy` is 1 |
 | `SET_ADVERT_LATLON` (14, L1266) | `lat i32 ‖ lon i32` (degrees × 10⁶) | `OK`; a GPS fix overwrites it |
 | `REBOOT` (19, L1512) | `"reboot"` | none: the radio restarts |
 | `GET_BATT_AND_STORAGE` (20) | — | `BATT_AND_STORAGE` (12): `mV u16 ‖ used KB u32 ‖ total KB u32` |
@@ -53,6 +54,8 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 Commands go one at a time, each answered within 5 s or given up. `APP_START` not answered in time is sent again, after the commands waiting, until `SELF_INFO` comes: a late `SELF_INFO` answers nothing any more and is dropped, and without it the node, its settings and the connection itself are unknown. Until then the settings are marked not read, and the apps say they are being read rather than show zeros (QA of 2026-11-20, B-ios-15).
 
 A setting lichen checks and sends may still be refused by the radio (`ERR`: a board without a GPS, a firmware that does not take it): the app is told which one, and the value it shows stays the radio's, read again after every setting (QA of 2026-11-19, B-ios-10).
+
+**Our advert, asked for by the user** (Settings › Send an advert): zero-hop ("Nearby") or flooded ("Whole mesh"), the user's choice, told what it reaches and what it carries (the name; the position when position in adverts is on and the radio has one). The app is told the radio's answer: sent (`OK`), or not sent (`ERR`, no answer within 5 s, the radio gone before it answered, or no radio at all); it says which, never "sent" on the tap alone (QA of 2026-11-21, B-user-4, D-14).
 
 `SELF_INFO` carries the four preferences of `SET_OTHER_PARAMS` at offsets 44–47 (`multi_acks`, `advert_loc_policy`, `telemetry`, `manual_add`), between the position and the radio parameters. A position in adverts or in location telemetry is only ever set by an explicit choice of the user (ADR-0032).
 

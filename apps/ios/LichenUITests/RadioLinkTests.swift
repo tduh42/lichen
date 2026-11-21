@@ -316,6 +316,81 @@ final class RadioLinkTests: LichenUITest {
         XCTAssertTrue(use.exists, "without its GPS on, the radio may take the phone's position again")
     }
 
+    /// Waits until the advert row says the advert was sent, at a time ("20:41"), nearby or to
+    /// the whole mesh.
+    private func waitSent(flood: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        let parts = tr(flood ? "Advert sent at %@ (whole mesh)" : "Advert sent at %@ (nearby)").components(separatedBy: "%@")
+        let pattern = ".*" + NSRegularExpression.escapedPattern(for: parts[0]) + #"\d{1,2}[:.h]\d{2}( ?[AaPp]\.?[Mm]\.?)?"#
+            + NSRegularExpression.escapedPattern(for: parts.last ?? "") + ".*"
+        let sent = app.buttons.matching(NSPredicate(format: "label MATCHES %@", pattern)).firstMatch
+        wait(sent, 10, "not said sent \(flood ? "to the whole mesh" : "nearby")", file: file, line: line)
+    }
+
+    /// RL-10, B-user-4 (D-14): Settings › Send an advert: what it is for; a choice, nearby or the
+    /// whole mesh, each with what it reaches, and what it carries (the radio's name); cancelled,
+    /// nothing goes; sent, the time and the reach from the radio's answer; with the radio off,
+    /// not sent.
+    func testRL10_SendAnAdvert() {
+        launch(["-tab", "settings"])
+        let row = cardButton(tr("Send an advert"))
+        wait(row, 30, "no Send an advert row")
+        reveal(row)
+        XCTAssertTrue(row.label.contains(tr("Tells radios around that yours is here, so they can add it as a contact.")),
+                      "what an advert is for: \(row.label)")
+        // The choice, cancelled.
+        row.tap()
+        let nearby = cardButton(tr("Nearby"))
+        let mesh = cardButton(tr("Whole mesh"))
+        wait(nearby, 5, "no Nearby")
+        XCTAssertTrue(nearby.label.contains(tr("Only radios in direct range hear it.")), nearby.label)
+        XCTAssertTrue(mesh.label.contains(tr("Repeaters pass it on to every radio they reach.")), mesh.label)
+        XCTAssertTrue(element(tr("It shows your radio's name, “%@”.", "ThinkNode M5")).exists, "what it carries")
+        keep("rl-advert-choice")
+        button(tr("Cancel")).tap()
+        waitGone(nearby, 5, "the choice stayed")
+        XCTAssertTrue(row.label.contains(tr("Tells radios around that yours is here, so they can add it as a contact.")),
+                      "something went: \(row.label)")
+        // Nearby, then the whole mesh: when, and how far, once the radio answered.
+        row.tap()
+        wait(nearby, 5).tap()
+        waitSent(flood: false)
+        row.tap()
+        wait(mesh, 5).tap()
+        waitSent(flood: true)
+        keep("rl-advert-sent")
+        // The radio off: not sent, said.
+        let radio = app.switches[tr("Simulated radio connected")]
+        reveal(radio)
+        flip(radio)
+        XCTAssertEqual(radio.value as? String, "0", "the simulated radio is still on")
+        pause(1)
+        reveal(row, up: false)
+        row.tap()
+        wait(mesh, 5).tap()
+        waitLabel(row, contains: tr("The radio did not send it."), 10)
+        keep("rl-advert-not-sent")
+    }
+
+    /// RL-10, B-user-4: with position in adverts on and a position (this phone's, given on Radio
+    /// settings), the advert says it carries the position too.
+    func testRL10_AdvertCarriesThePosition() {
+        openRadioSettings()
+        showPositionInAdverts()
+        let use = cardButton(tr("Use this phone's position"))
+        wait(use, 10, "this phone's position is not offered")
+        reveal(use)
+        use.tap()
+        wait(advertisedFigures, 10, "the radio does not advertise a position")
+        back()
+        let row = cardButton(tr("Send an advert"))
+        wait(row, 10, "not back on Settings")
+        reveal(row)
+        row.tap()
+        wait(element(tr("It shows your radio's name, “%@” and its position.", "ThinkNode M5")), 5,
+             "the position is not said")
+        keep("rl-advert-position")
+    }
+
     /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said, and the
     /// power shown stays the radio's.
     func testRL6_TheRadioRefusesASetting() {

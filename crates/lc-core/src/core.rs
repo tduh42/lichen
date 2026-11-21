@@ -391,6 +391,13 @@ pub enum Event {
     },
     /// The nodes the radio knows or heard changed (§16.1): read [`Core::nodes`].
     NodesUpdated,
+    /// Our advert ([`Core::send_advert`], flooded or not) went to the air (`sent`: the radio
+    /// answered OK), or did not: refused, unanswered, the radio gone before it answered, or
+    /// no radio at all (§1.1).
+    Advert {
+        flood: bool,
+        sent: bool,
+    },
     /// A trace to `node`, or what its room server or repeater answered, changed (§16.3,
     /// §16.5): read [`Core::trace_of`] and [`Core::server`].
     NodeTool {
@@ -545,6 +552,8 @@ pub(crate) enum Expect {
     LinkImported(PubKey),
     /// `GET_CONTACT_BY_KEY` after adding a link's node: ERR, the radio refused it.
     LinkAdded(PubKey),
+    /// Our advert (`SEND_SELF_ADVERT`), flooded or not (§1.1): OK once it goes to the air.
+    Advert(bool),
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -564,7 +573,8 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
             | Expect::TxPower(_)
             | Expect::ChannelSet(_)
             | Expect::ChannelPost(_)
-            | Expect::Setting(_),
+            | Expect::Setting(_)
+            | Expect::Advert(_),
             R::Ok,
         ) => true,
         (Expect::Scope, R::DefaultFloodScope { .. }) => true,
@@ -1472,6 +1482,20 @@ impl Core {
     pub fn disconnect(&mut self, _now: Millis) {
         self.online = false;
         self.radio_time_owed = false;
+        // Our adverts not answered yet were not sent (§1.1).
+        let adverts: Vec<bool> = self
+            .awaiting
+            .map(|(e, _)| e)
+            .into_iter()
+            .chain(self.commands.iter().map(|(_, e)| *e))
+            .filter_map(|e| match e {
+                Expect::Advert(flood) => Some(flood),
+                _ => None,
+            })
+            .collect();
+        for flood in adverts {
+            self.events.push_back(Event::Advert { flood, sent: false });
+        }
         self.commands.clear();
         self.awaiting = None;
         self.plain_disconnected();
@@ -1952,9 +1976,14 @@ impl Core {
 
     /// Announces our node (`SEND_SELF_ADVERT`): radios that hear it add it as a contact.
     /// `flood` lets repeaters relay it; otherwise only direct neighbours hear it. Its airtime
-    /// counts like any transmission.
+    /// counts like any transmission. [`Event::Advert`] tells whether the radio sent it; without
+    /// a radio, not, at once.
     pub fn send_advert(&mut self, flood: bool, now: Millis) {
-        self.command(&Command::SendSelfAdvert { flood }, Expect::Ok);
+        if !self.online {
+            self.events.push_back(Event::Advert { flood, sent: false });
+            return;
+        }
+        self.command(&Command::SendSelfAdvert { flood }, Expect::Advert(flood));
         // Header and path length, key, timestamp, signature, flags, name.
         let len = 2 + 32 + 4 + 64 + 1 + self.name.len().min(32);
         let airtime = self.radio.airtime_us(len) / 1000;
@@ -1986,6 +2015,10 @@ impl Core {
             self.awaiting = None;
             if expect == Expect::Contacts {
                 self.contacts_cut_short(now);
+            }
+            // Our advert, unanswered: not sent, as far as we can tell (§1.1).
+            if let Expect::Advert(flood) = expect {
+                self.events.push_back(Event::Advert { flood, sent: false });
             }
             // A radio slow to answer APP_START (busy, or a phone short of time): its late
             // SELF_INFO answers nothing any more and is dropped, and without it we are not
@@ -2330,6 +2363,9 @@ impl Core {
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             Response::Ok => match expect {
                 Some(Expect::TxPower(dbm)) => self.search_power_applied(dbm),
+                Some(Expect::Advert(flood)) => {
+                    self.events.push_back(Event::Advert { flood, sent: true });
+                }
                 Some(Expect::ChannelPost(id)) => self.events.push_back(Event::GroupSent { id }),
                 _ => {}
             },
@@ -2351,6 +2387,9 @@ impl Core {
                 Some(Expect::Setting(s)) => self.radio_refused(s),
                 Some(Expect::LinkImported(key)) => self.link_not_imported(key),
                 Some(Expect::LinkAdded(key)) => self.link_not_added(key),
+                Some(Expect::Advert(flood)) => {
+                    self.events.push_back(Event::Advert { flood, sent: false });
+                }
                 _ => {}
             },
             Response::Sent {
@@ -4157,6 +4196,58 @@ mod tests {
         core.on_companion_frame(&channel_info(2, "#hike", [3; 16]), 30);
         assert_eq!(core.awaiting, None, "answered");
         assert_eq!(names(&core), vec!["#hike".to_owned()]);
+    }
+
+    /// B-user-4 (§1.1): our advert says whether the radio sent it: OK, sent; ERR, no answer in
+    /// time, the radio gone before it answered, or no radio at all, not sent; nearby or
+    /// flooded as asked.
+    #[test]
+    fn our_advert_says_whether_the_radio_sent_it() {
+        use lc_meshcore::codes::{cmd, resp};
+        let adverts = |c: &mut Core| {
+            std::iter::from_fn(|| c.poll_event())
+                .filter_map(|e| match e {
+                    Event::Advert { flood, sent } => Some((flood, sent)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        // No radio: not sent, at once, and nothing goes to it.
+        core.send_advert(true, 0);
+        assert_eq!(adverts(&mut core), vec![(true, false)]);
+        assert!(core.poll_companion(0).is_none());
+        core.online = true;
+        // Nearby, answered OK.
+        core.send_advert(false, 10);
+        assert_eq!(
+            core.poll_companion(10),
+            Some(vec![cmd::SEND_SELF_ADVERT, 0])
+        );
+        assert!(adverts(&mut core).is_empty(), "not before the answer");
+        core.on_companion_frame(&[resp::OK], 20);
+        assert_eq!(adverts(&mut core), vec![(false, true)]);
+        // Whole mesh, refused (no packet free).
+        core.send_advert(true, 30);
+        assert_eq!(
+            core.poll_companion(30),
+            Some(vec![cmd::SEND_SELF_ADVERT, 1])
+        );
+        core.on_companion_frame(&[resp::ERR, 3], 40);
+        assert_eq!(adverts(&mut core), vec![(true, false)]);
+        // Unanswered: given up after 5 s.
+        core.send_advert(true, 50);
+        assert!(core.poll_companion(50).is_some());
+        assert!(core.poll_companion(50 + COMMAND_TIMEOUT_MS - 1).is_none());
+        assert!(adverts(&mut core).is_empty(), "still waiting");
+        let _ = core.poll_companion(50 + COMMAND_TIMEOUT_MS);
+        assert_eq!(adverts(&mut core), vec![(true, false)]);
+        // The radio gone: the one awaited and the one queued behind it, not sent.
+        core.send_advert(false, 6_000);
+        core.send_advert(true, 6_000);
+        assert!(core.poll_companion(6_000).is_some());
+        core.disconnect(6_010);
+        assert_eq!(adverts(&mut core), vec![(false, false), (true, false)]);
     }
 
     /// Second read of 2026-11-17, N12: a radio pushing adverts without end does not grow the

@@ -895,6 +895,7 @@ class AppModel(val app: Application) {
     }
 
     private fun resetState() {
+        advert = null
         nodeName = ""
         nodeKey = null
         radio = null
@@ -1228,6 +1229,11 @@ class AppModel(val app: Application) {
             }
             // lc-ffi keeps the power to restore; we show it while it is lowered.
             is LichenEvent.TxPower -> loweredPower = if (e.previous == null) null else e.dbm
+            // What the radio answered to the advert asked for in Settings (B-user-4); the core's
+            // own adverts (after a card, a join) say nothing there.
+            is LichenEvent.Advert -> if (advert is AdvertState.Sending) {
+                advert = if (e.sent) AdvertState.Sent(e.flood, System.currentTimeMillis()) else AdvertState.NotSent(e.flood)
+            }
             is LichenEvent.PlainReceived -> {
                 // A MeshCore message (§15.1): "Marc · MeshCore", or "Lucie · Public" on a
                 // channel. Never like a lichen chat's: a node can send plain text under any
@@ -1626,10 +1632,30 @@ class AppModel(val app: Application) {
     }
 
     /** A MeshCore advert (flood), so that radios around add ours as a contact. */
-    fun sendAdvert() {
-        core.sendAdvert(true, now())
+    /** Our advert, asked for in Settings (B-user-4): waiting for the radio's answer, then sent
+     * (when, how far) or not. */
+    sealed interface AdvertState {
+        val flood: Boolean
+
+        data class Sending(override val flood: Boolean) : AdvertState
+        data class Sent(override val flood: Boolean, val atMs: Long) : AdvertState
+        data class NotSent(override val flood: Boolean) : AdvertState
+    }
+
+    var advert by mutableStateOf<AdvertState?>(null)
+        private set
+
+    /** Our node's advert, zero-hop (`flood` false: radios in direct range) or flooded (repeaters
+     * pass it on): [advert] follows what the radio answers (protocol.md §1.1). */
+    fun sendAdvert(flood: Boolean) {
+        advert = AdvertState.Sending(flood)
+        core.sendAdvert(flood, now())
         pump()
     }
+
+    /** The demo network, for tests that look at what its radio received. */
+    @androidx.annotation.VisibleForTesting
+    internal val demoNetwork: DemoNetwork? get() = demo
 
     /** What sending `text` to `chat` costs us; for a group, our own floods (both copies). */
     fun estimate(chat: ChatId, text: String): Estimate? {

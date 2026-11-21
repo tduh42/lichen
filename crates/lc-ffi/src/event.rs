@@ -175,6 +175,12 @@ pub enum LichenEvent {
         dbm: i8,
         previous: Option<i8>,
     },
+    /// Our advert (`send_advert`, flooded or not) went to the air (`sent`: the radio answered
+    /// OK), or did not: refused, unanswered, the radio gone, or no radio (§1.1).
+    Advert {
+        flood: bool,
+        sent: bool,
+    },
     /// A plain MeshCore message (§15.1), already in the history (`MessageChanged`): for the
     /// notification. `label`: the sender's name (contact, or a channel post's author).
     PlainReceived {
@@ -361,6 +367,7 @@ impl LichenEvent {
                 by: by.to_vec(),
             },
             Event::TxPower { dbm, previous } => Self::TxPower { dbm, previous },
+            Event::Advert { flood, sent } => Self::Advert { flood, sent },
             // The apps read the nodes with the contacts.
             Event::NodesUpdated => Self::ContactsUpdated,
             Event::NodeTool { node } => Self::NodeUpdated {

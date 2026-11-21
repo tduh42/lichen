@@ -123,7 +123,17 @@
     <!-- Réglages -->
     <string name="radio">Radio</string>
     <string name="send_advert">Envoyer une annonce</string>
-    <string name="send_advert_note">Permet aux radios proches d’ajouter la tienne comme contact.</string>
+    <string name="send_advert_note">Signale ta radio aux radios autour, pour qu’elles puissent l’ajouter en contact.</string>
+    <string name="advert_nearby">À proximité</string>
+    <string name="advert_nearby_note">Seules les radios à portée directe l’entendent.</string>
+    <string name="advert_mesh">Tout le réseau</string>
+    <string name="advert_mesh_note">Les répéteurs la relaient à toutes les radios qu’ils atteignent.</string>
+    <string name="advert_carries">Elle montre le nom de ta radio, « %1$s ».</string>
+    <string name="advert_carries_position">Elle montre le nom de ta radio, « %1$s » et sa position.</string>
+    <string name="advert_sending">Envoi…</string>
+    <string name="advert_sent_nearby">Annonce envoyée à %1$s (à proximité)</string>
+    <string name="advert_sent_mesh">Annonce envoyée à %1$s (tout le réseau)</string>
+    <string name="advert_not_sent">La radio ne l’a pas envoyée.</string>
     <string name="appearance">Apparence</string>
     <string name="system">Système</string>
     <string name="dark">Sombre</string>
@@ -449,7 +459,6 @@
     <string name="sub_band">Sous-bande</string>
     <string name="relay_for_others">Relayer pour les autres</string>
     <string name="relay_for_others_note">Le firmware companion stock ne relaie pas : c’est le rôle d’un nœud répéteur.</string>
-    <string name="advert_sent">Envoyé : les radios autour peuvent ajouter la tienne en contact.</string>
     <string name="send_threshold">Seuil d’envoi</string>
     <string name="send_threshold_note">Écart à la trajectoire prévue</string>
     <string name="heartbeat">Signe de vie à l’arrêt</string>

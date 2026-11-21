@@ -273,18 +273,23 @@ fn never_delivered_twice() {
 }
 
 /// An advert is one companion command (`SEND_SELF_ADVERT`, flood or not) and costs airtime.
+/// It needs a radio: the core of a connected companion (without one, see
+/// `our_advert_says_whether_the_radio_sent_it`).
 #[test]
 fn adverts_go_to_the_companion_and_cost_airtime() {
-    let mut c = lc_core::Core::new(lc_core::Config::new("t", [1; 32], [2; 32]));
-    let before = c.budget(0).0;
-    c.send_advert(true, 0);
-    assert_eq!(c.poll_companion(0), Some(vec![7, 1]));
-    let after = c.budget(0).0;
-    assert!(after > before, "{before} -> {after} ms");
-    // The zero-hop variant, once the companion answered the first.
-    c.on_companion_frame(&[0], 1);
-    c.send_advert(false, 2);
-    assert_eq!(c.poll_companion(2), Some(vec![7, 0]));
+    let (mut net, a, _) = chain(0, 0, 1, false);
+    net.with_core(a, |c, now| {
+        let before = c.budget(now).0;
+        c.send_advert(true, now);
+        assert_eq!(c.poll_companion(now), Some(vec![7, 1]));
+        let after = c.budget(now).0;
+        assert!(after > before, "{before} -> {after} ms");
+        // The zero-hop variant, once the companion answered the first.
+        c.on_companion_frame(&[0], now + 1);
+        c.send_advert(false, now + 2);
+        assert_eq!(c.poll_companion(now + 2), Some(vec![7, 0]));
+    })
+    .unwrap();
 }
 
 /// Sessions are renewed after their age or byte limit (§4.4): the next message waits for a

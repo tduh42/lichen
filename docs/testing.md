@@ -21,7 +21,7 @@ found gets a test that fails before its fix, at the lowest layer that shows it.
 
 Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`).
 
-**Coverage:** 81 of 83 scenarios have at least one automated test (FFI 74, iOS 79, Android 79, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
+**Coverage:** 82 of 84 scenarios have at least one automated test (FFI 74, iOS 80, Android 80, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
 
 ## 1. Onboarding and identity
 
@@ -48,6 +48,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 | RL-7 | Battery and radio card | Battery level shown; radio details when turned on | `-lichen.radioDetails YES` | FFI rl_7_battery_and_radio_details<br>iOS RadioLinkTests.testRL7_BatteryAndRadioDetails<br>Android RadioLinkTest.RL_7_batteryAndRadioCard (+fr) |
 | RL-8 | Radio clock set at connection | The radio's time follows the phone's | | lc-core tests/radio.rs: connecting_sets_the_radios_clock |
 | RL-9 | Contact list read whole / cut short | All contacts, asked again when records are missing | | lc-core src/core.rs: a_contact_list_cut_short_still_counts, records_lost_before_the_end_are_asked_for_again<br>· real radio: every contact of a real companion |
+| RL-10 | Send an advert | A choice, nearby or the whole mesh, each saying what it reaches; what it carries (the name, the position when advertised); the time and reach once the radio answered; not sent without a radio | | iOS RadioLinkTests: testRL10_SendAnAdvert, testRL10_AdvertCarriesThePosition<br>Android RadioLinkTest.RL_10_sendAnAdvert (+fr) |
 
 ## 3. Contacts, nodes, rooms, repeaters, requests, blocks
 
