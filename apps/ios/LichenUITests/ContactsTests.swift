@@ -246,10 +246,8 @@ final class ContactsTests: LichenUITest {
     }
 
     /// CT-10: Camille blocked: her answer is lost and she is listed in Settings › Blocked;
-    /// unblocked there, what she sends reaches us again: her acknowledgement of a new text.
-    /// Her answer to it waits until her phone gives up the one written while blocked, declined
-    /// and never acknowledged (ADR-0034, §7.2): a few minutes, left to the core's scenario
-    /// (`ct_10_our_text_on_the_air_at_the_block`).
+    /// unblocked there, her answers come again at once (D-11: her phone's retry of the one
+    /// written while blocked is acknowledged and dropped, so it moves on).
     func testCT10_BlockAndUnblock() {
         // At the wall clock's pace: the block must come before her answer (B-ios-8).
         launch(["-open", "Camille", "-quietDemo", "YES"], speed: 1)
@@ -276,12 +274,38 @@ final class ContactsTests: LichenUITest {
         tab(.messages)
         openChat("Camille", 5)
         send("Back again")
-        // Her phone's acknowledgement reaches us again.
+        // Her phone's acknowledgement reaches us again, and her answer.
         waitLabel(message("Back again"), contains: tr("Delivered"), 60)
+        waitText("Copy: \"Back again\"", 60)
         keep("ct-unblocked")
         // What she sent while blocked stays lost, as Settings › Blocked says (B-ios-8).
         pause(10)
         XCTAssertFalse(containing("Copy: \"Are you still").exists, "what she sent while blocked came later")
+    }
+
+    /// F-1: a contact's MeshCore public key (Camille, with lichen, under her safety number;
+    /// Marc, MeshCore only, in his chat's info) and a node's (hub), each copied whole.
+    func testF1_ContactAndNodeKeys() {
+        launch(["-open", "Camille", "-quietDemo", "YES"])
+        openedCamille()
+        keyButton.tap()
+        let camille = checkMeshCoreKey(meshcoreKey)
+        keep("ct-meshcore-key")
+        button(tr("Close")).tap()
+        back()
+        openChat("Marc", 30)
+        button(tr("MeshCore · not lichen-encrypted")).tap()
+        let marc = checkMeshCoreKey(meshcoreKey)
+        XCTAssertNotEqual(marc, camille)
+        button(tr("Done")).tap()
+        back()
+        tab(.settings)
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Nodes"))).firstMatch, 10).tap()
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'hub'")).firstMatch, 20, "no hub").tap()
+        let hub = checkMeshCoreKey(meshcoreKey)
+        XCTAssertFalse([camille, marc].contains(hub), "the hub's key is someone else's")
+        // The last one copied is the one pasted.
+        XCTAssertEqual(pasted(), hub, "not the key copied")
     }
 
     /// CT-11: the radio files Marc as a repeater (`-marcRepeater`): he is not one of the

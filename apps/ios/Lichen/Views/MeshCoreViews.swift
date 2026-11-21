@@ -39,6 +39,10 @@ struct PlainInfoSheet: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Banner(kind: .warn, title: String(localized: "Not lichen-encrypted"),
                            message: room != nil ? roomText : channel == nil ? directText : channelText)
+                    // Their radio's MeshCore public key (F-1).
+                    if case let .mesh(key) = chat {
+                        CardList { MeshCoreKeyRow(key: key) }
+                    }
                     if let room {
                         ServerLoginCard(key: room, room: true)
                     }

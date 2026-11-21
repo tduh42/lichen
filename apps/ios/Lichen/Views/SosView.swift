@@ -233,12 +233,20 @@ struct SosReceivedView: View {
     }
 }
 
-/// "850 m", "2.4 km".
+/// "850 m", "2.4 km" ("2,4 km" in French): metres below 1 km, kilometres above, in any
+/// locale (D-13), as the mesh, the map and the Android app write them; a locale's own units
+/// gave "2.5 mi" in English.
 func distanceText(_ m: Double) -> String {
     let f = MeasurementFormatter()
-    f.unitOptions = .naturalScale
-    f.numberFormatter.maximumFractionDigits = m < 1_000 ? 0 : 1
-    return f.string(from: Measurement(value: m, unit: UnitLength.meters))
+    f.unitOptions = .providedUnit
+    // Rounded first, so that 999.6 m reads "1 km", not "1,000 m".
+    let metres = m.rounded()
+    if metres < 1_000 {
+        f.numberFormatter.maximumFractionDigits = 0
+        return f.string(from: Measurement(value: metres, unit: UnitLength.meters))
+    }
+    f.numberFormatter.maximumFractionDigits = 1
+    return f.string(from: Measurement(value: m / 1_000, unit: UnitLength.kilometers))
 }
 
 extension AppModel {

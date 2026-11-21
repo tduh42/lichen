@@ -197,6 +197,9 @@ struct Demo {
     /// The radio's answers made here rather than by the simulated radio (a refusal), handed
     /// to the app before the radio's own.
     answers: Vec<Vec<u8>>,
+    /// The radio answers nothing before this simulated time, then all at once (debug
+    /// `radioSlow`, D-9).
+    hold_until: u64,
     /// How much faster than the wall clock the app runs the demo (debug `demoSpeed`, 1 to 4):
     /// the bots' clocks follow the wall clock, not the simulated time.
     speed: u64,
@@ -1016,6 +1019,7 @@ impl DemoNetwork {
                 wall0: wall,
                 speed: 1,
                 refuse_power: false,
+                hold_until: 0,
                 answers: Vec::new(),
                 camille_full: None,
                 camille_has_full: Vec::new(),
@@ -1192,6 +1196,17 @@ impl DemoNetwork {
         d.refuse_power = true;
     }
 
+    /// The radio holds its answers for the first `seconds` of the demo's time, then gives them
+    /// all at once (debug `radioSlow`, D-9): a busy radio whose settings are not read yet.
+    /// Call right after `new`.
+    pub fn hold_replies(&self, seconds: u64) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.hold_until = seconds * SEC;
+    }
+
     /// A frame from the app to its (simulated) companion.
     pub fn write(&self, frame: Vec<u8>, now_ms: u64) {
         let mut d = self
@@ -1228,6 +1243,9 @@ impl DemoNetwork {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.advance(now_ms);
+        if d.net.now < d.hold_until {
+            return Vec::new();
+        }
         let app = d.app;
         let mut frames = std::mem::take(&mut d.answers);
         frames.extend(d.net.external_read(app));
@@ -1613,6 +1631,34 @@ mod skip {
                 );
             }
         }
+    }
+
+    /// `radioSlow 20`: the radio's settings are not read for the first 20 s (`read` false),
+    /// then they are, and the radio is connected.
+    #[test]
+    fn a_slow_radio_is_read_once_it_answers() {
+        let demo = DemoNetwork::new();
+        demo.hold_replies(20);
+        let core = LichenCore::new("t".into(), vec![18; 32], vec![118; 32], None).unwrap();
+        core.connect(0);
+        let mut read_at = None;
+        for step in 0..(40 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while core.poll_event().is_some() {}
+            if read_at.is_none() && core.radio_settings().read {
+                read_at = Some(now);
+            }
+        }
+        let at = read_at.expect("the settings were never read");
+        assert!((20_000..30_000).contains(&at), "read at {at} ms");
+        assert!(core.radio_settings().freq_khz > 0);
     }
 
     /// `radioRefuses power`: a transmit power change is refused by the radio, the core
