@@ -443,9 +443,9 @@ fn ct_10_block_and_unblock_a_contact() {
     sim.core.unblock(camille.key.clone()).unwrap();
     assert!(!sim.core.is_blocked(camille.key.clone()));
     assert!(sim.core.blocked().is_empty());
-    // Her photo's caption at 150 s comes, once her phone gave up the hello it was still
-    // trying to deliver (a few minutes: it is declined, §7.2).
-    sim.until("her next message", 900, |c| {
+    // Her photo's caption at 150 s comes: the hello her phone was still trying is
+    // acknowledged and dropped, so nothing holds it back (D-11).
+    sim.until("her next message", 240, |c| {
         texts(&c.history(chat.clone(), None, 50).unwrap())
             .iter()
             .any(|t| t.starts_with("The view from the refuge"))
@@ -467,9 +467,9 @@ fn ct_10_block_and_unblock_a_contact() {
     sim.until_status(&chat, m.id, 120, |s| *s == MessageStatus::Delivered);
 }
 
-/// CT-10 (B-ios-8): our text on the air when we block Camille still says delivered once she
-/// has it; her answer, written while blocked, never shows, and what she says after the
-/// unblock does.
+/// CT-10 (B-ios-8, B-ios-19): our text on the air when we block Camille still says delivered
+/// once she has it; her answer, written while blocked, never shows, and what she says after
+/// the unblock comes at once.
 #[test]
 fn ct_10_our_text_on_the_air_at_the_block() {
     let mut sim = Sim::new(92);
@@ -512,8 +512,10 @@ fn ct_10_our_text_on_the_air_at_the_block() {
             sim.now,
         )
         .unwrap();
-    sim.until_status(&chat, back.id, 600, |s| *s == MessageStatus::Delivered);
-    sim.until("her answer to the second", 600, |c| {
+    // Her answer to it comes as fast as before the block: the one she wrote while blocked,
+    // still on her phone, is acknowledged and dropped (D-11, from B-ios-19).
+    sim.until_status(&chat, back.id, 60, |s| *s == MessageStatus::Delivered);
+    sim.until("her answer to the second", 60, |c| {
         texts(&c.history(chat.clone(), None, 100).unwrap())
             .iter()
             .any(|t| t.starts_with("Copy: \"Back again\""))
