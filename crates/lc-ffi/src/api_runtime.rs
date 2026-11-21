@@ -66,6 +66,7 @@ impl LichenCore {
             full_requests: Vec::new(),
             full_sending: Vec::new(),
             advert_owed: None,
+            radio_name: String::new(),
         };
         inner.diag.note(0, "core started", None);
         // The history is available before the node connects.
@@ -291,6 +292,12 @@ impl LichenCore {
         });
         // A MeshCore message is notified under the name the user gave its sender, as its
         // conversation is titled: the core knows the radio's name only.
+        if let LichenEvent::PlainReceived {
+            text, mentions_us, ..
+        } = &mut out
+        {
+            *mentions_us = lc_core::mention::mentions(text, &i.our_name());
+        }
         if let LichenEvent::PlainReceived {
             chat: ChatRef::Mesh { key: node },
             label,

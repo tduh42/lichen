@@ -139,10 +139,26 @@ class LifecycleTest : UiTest() {
         tapInDialog(R.string.mute_always)
         assertTrue(model.isMuted(public))
         // The shade cleared: only what comes from now on.
-        context.getSystemService(NotificationManager::class.java).cancelAll()
+        val shade = context.getSystemService(NotificationManager::class.java)
+        shade.cancelAll()
+        // Its posts come without a notification, except one that mentions our radio (§15.9,
+        // Lucie's at 110 s), notified even muted.
         var seen = last(public)?.id
-        advanceUntil("a Public post", 400) { last(public)?.id != seen }
-        assertNull("no notification", noteFor(public))
+        var quiet = false
+        advanceUntil("a Public post that does not mention us", 600) {
+            val post = last(public)
+            if (post != null && post.id != seen) {
+                seen = post.id
+                if (post.mentionsUs) {
+                    assertNotNull("a mention, muted: still notified", noteFor(public))
+                } else {
+                    assertNull("no notification", noteFor(public))
+                    quiet = true
+                }
+                shade.cancelAll()
+            }
+            quiet
+        }
         // The group archived: back in Messages with its next post.
         advanceUntil("Julien's post", 300) { last(group()) != null }
         val group = group()!!

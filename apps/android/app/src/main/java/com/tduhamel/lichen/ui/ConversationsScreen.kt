@@ -291,7 +291,9 @@ private fun badge(model: AppModel, chat: ChatId, res: android.content.res.Resour
 
 /** One line for the conversation list ("Camille: …" in groups and channels). */
 private fun preview(model: AppModel, m: com.tduhamel.lichen.core.StoredMessage, res: android.content.res.Resources): String {
+    // A MeshCore text's mentions as "@name" (§15.9).
     val text = m.message.display(res, model.nodeKey)
+        .let { if (ChatId.of(m.chat).plain) com.tduhamel.lichen.core.meshcoreDisplayText(it) else it }
     val author = m.author
     return when {
         m.authorName != null && !m.outgoing -> "${m.authorName}: $text"

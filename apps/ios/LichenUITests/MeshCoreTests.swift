@@ -36,6 +36,58 @@ final class MeshCoreTests: LichenUITest {
         keep("mc-public")
     }
 
+    /// MC-5: mentions and replies (§15.9). Public muted: Lucie's post that mentions our radio is
+    /// notified all the same, "Lucie mentioned you in Public"; in the channel it shows
+    /// "@ThinkNode M5", no brackets, marked as mentioning us. Marc's reply to her quotes her post,
+    /// and the quote leads to it. Ours to her post says whom it answers, and is quoted.
+    func testMC5_MentionsAndReplies() {
+        let sun = "Sun on the plateau, the path to the refuge is dry."
+        // Half speed: Public is muted before Lucie's mention (110 s into the demo).
+        launch(speed: 2, banners: true)
+        // Public muted, from its row's menu (once the list stays still).
+        let publicRow = wait(row("Public"), 60, "no Public")
+        var at = publicRow.frame
+        for _ in 0..<10 {
+            pause(0.7)
+            if publicRow.frame == at { break }
+            at = publicRow.frame
+        }
+        publicRow.press(forDuration: 1.5)
+        wait(app.buttons[tr("Mute")], 5, "no Mute").tap()
+        wait(app.buttons[tr("Until I turn it back on")], 5, "no mute durations").tap()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let mentioned = springboard.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", tr("%@ mentioned you in %@", "Lucie", "Public"))).firstMatch
+        XCTAssertTrue(mentioned.waitForExistence(timeout: 120), "no notification for the mention")
+        keep("mc-mention-notification")
+        // In the notification and in Messages: "@ThinkNode M5", no brackets.
+        XCTAssertFalse(mentioned.label.contains("@[ThinkNode M5]"), mentioned.label)
+        let preview = wait(row("Public"), 5, "no Public")
+        XCTAssertTrue(preview.label.contains("Coming up, @ThinkNode M5?"), preview.label)
+        XCTAssertFalse(preview.label.contains("@[ThinkNode M5]"), preview.label)
+        row("Public").tap()
+        wait(composer, 30, "Public did not open")
+        wait(containing("Coming up, @ThinkNode M5?"), 60, "Lucie's mention is not shown")
+        XCTAssertFalse(containing("@[ThinkNode M5]").exists, "the mention shows its brackets")
+        let marked = app.descendants(matching: .any).matching(NSPredicate(format: "value == %@", tr("Mentions you"))).firstMatch
+        XCTAssertTrue(marked.exists, "the mention of us is not marked")
+        // Marc's reply, 320 s into the demo.
+        wait(containing("@Lucie Thanks!"), 200, "no reply from Marc")
+        let quote = wait(element(tr("In reply to %@: %@", "Lucie", sun)), 10, "Marc's reply has no quote")
+        keep("mc-mention-quote")
+        quote.tap()
+        XCTAssertTrue(wait(textOf(sun), 10, "the quote does not lead to her post").isHittable)
+        // Ours, to her post.
+        menu(textOf(sun), tr("Reply"))
+        wait(containing(tr("Replying to %@", "Lucie")), 5, "not said whom it answers")
+        send("On my way")
+        let ours = wait(bubble("@Lucie On my way", with: tr("Sent")), 60, "our reply did not go")
+        XCTAssertTrue(ours.label.contains("Lucie"), ours.label)
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", tr("In reply to %@: %@", "Lucie", sun))).count >= 2,
+                      "our reply has no quote")
+        keep("mc-mention-reply")
+    }
+
     /// MC-3: a channel's code shows after its warning and holds the channel; a code scanned
     /// (`-scanChannel`, the camera's stand-in) joins its channel.
     func testMC3_ChannelCodeShowAndJoin() throws {

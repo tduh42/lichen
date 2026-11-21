@@ -44,7 +44,13 @@ pub(crate) struct Inner {
     pub(crate) full_sending: Vec<(u64, PubKey, lc_core::content::MediaId)>,
     /// Our advert, owed since a card was added with the radio away (§4.7): flooded or not.
     pub(crate) advert_owed: Option<bool>,
+    /// Our radio's name as it last reported it, kept across restarts: what a mention of us
+    /// names (§15.9) before the radio answers again.
+    pub(crate) radio_name: String,
 }
+
+/// The setting that keeps our radio's last name (§15.9).
+pub(crate) const RADIO_NAME: &str = "radio_name";
 
 /// A contact asks for the full variant of one of our images (§13.3): it goes only if the user
 /// accepts.
@@ -241,6 +247,10 @@ impl Inner {
         for q in store.requests().unwrap_or_default() {
             self.core.restore_request(q.node, q.identity);
         }
+        // Our radio's name, for the mentions of us before it answers (§15.9).
+        if let Ok(Some(v)) = store.setting(RADIO_NAME) {
+            self.radio_name = String::from_utf8_lossy(&v).into_owned();
+        }
         // A TX power a search lowered before the app stopped: the radio kept it.
         if let Ok(Some(v)) = store.setting(TX_POWER_RESTORE)
             && let [dbm] = v.as_slice()
@@ -403,6 +413,7 @@ impl Inner {
     /// reply with what it answers, the reactions to it.
     pub(crate) fn present(&self, m: store::Message) -> StoredMessage {
         let row = m.id;
+        let chat = m.chat;
         let quote = match &m.content {
             Content::Reply { target, .. } => Some(self.quote(&m.chat, target)),
             _ => None,
@@ -461,7 +472,97 @@ impl Inner {
         }
         out.quote = quote;
         out.reactions = reactions;
+        // A MeshCore message's mentions (§15.9): a leading one is a reply to that person.
+        if matches!(chat, Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_))
+            && let Message::Text { text, .. } = &out.message
+        {
+            out.reply_to_name = lc_core::mention::reply_to(text);
+            out.mentions_us = !out.outgoing && lc_core::mention::mentions(text, &self.our_name());
+            out.quote = self.plain_quote(&chat, row, out.reply_to_name.as_deref());
+        }
         out
+    }
+
+    /// Our radio's name (§15.4): the one it reports, else the last it reported, kept across
+    /// restarts. What a mention of us names (§15.9).
+    pub(crate) fn our_name(&self) -> String {
+        match self.core.node_name() {
+            "" => self.radio_name.clone(),
+            n => n.to_owned(),
+        }
+    }
+
+    /// Keeps our radio's name when it changes (§15.9).
+    pub(crate) fn note_radio_name(&mut self) {
+        let name = self.core.node_name();
+        if name.is_empty() || name == self.radio_name {
+            return;
+        }
+        self.radio_name = name.to_owned();
+        if let Some(st) = &self.store {
+            let _ = st.set_setting(RADIO_NAME, Some(name.as_bytes()));
+        }
+    }
+
+    /// The message a MeshCore reply answers (§15.9): for ours, the one the user answered; else
+    /// the latest earlier message of this conversation whose sender has that name.
+    fn plain_quote(&self, chat: &Chat, row: i64, name: Option<&str>) -> Option<Quote> {
+        let st = self.store.as_ref()?;
+        let answered = st
+            .plain_reply(row)
+            .ok()
+            .flatten()
+            .and_then(|t| st.get(t).ok().flatten())
+            .filter(|m| m.chat == *chat);
+        if let Some(m) = answered {
+            return Some(self.plain_quoted(m));
+        }
+        let name = name?;
+        st.history(chat, Some(row), PLAIN_QUOTE_LOOKBACK)
+            .ok()?
+            .into_iter()
+            .rev()
+            .find(|m| self.plain_sender(m).as_deref() == Some(name))
+            .map(|m| self.plain_quoted(m))
+    }
+
+    /// Who sent a MeshCore message, by the name a mention gives (§15.9): us, by our radio's
+    /// name; a channel's or a room's author, by the name its post carries; a node in a direct
+    /// chat, by the name its radio advertises.
+    pub(crate) fn plain_sender(&self, m: &store::Message) -> Option<String> {
+        if m.outgoing {
+            return Some(self.our_name());
+        }
+        match (&m.chat, &m.content) {
+            (Chat::Channel(_) | Chat::Room(_), Content::Text { text, .. }) => {
+                lc_core::plain::split_post(text).0.map(str::to_owned)
+            }
+            (Chat::Mesh(k), _) => self
+                .core
+                .contacts()
+                .find(|c| c.key == *k)
+                .map(|c| c.name.clone()),
+            _ => None,
+        }
+    }
+
+    /// A MeshCore message as a quote: the start of its text, a post without its author.
+    fn plain_quoted(&self, m: store::Message) -> Quote {
+        let text = match &m.content {
+            Content::Text { text, .. } => text.as_str(),
+            _ => "",
+        };
+        let body = match m.chat {
+            Chat::Channel(_) | Chat::Room(_) if !m.outgoing => lc_core::plain::split_post(text).1,
+            _ => text,
+        };
+        Quote {
+            message_id: Some(m.id),
+            outgoing: m.outgoing,
+            author: None,
+            kind: QuoteKind::Text,
+            excerpt: body.chars().take(100).collect(),
+        }
     }
 
     /// What reference `target` of `chat` points at (§6.2).
@@ -597,3 +698,6 @@ impl Inner {
         }
     }
 }
+
+/// How far back a MeshCore reply looks for the message it answers (§15.9).
+const PLAIN_QUOTE_LOOKBACK: u32 = 200;

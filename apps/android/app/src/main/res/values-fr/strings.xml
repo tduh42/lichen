@@ -1167,6 +1167,11 @@
         <item quantity="many">Entendu par la radio qui l’a partagé : via %1$d répéteurs</item>
         <item quantity="other">Entendu par la radio qui l’a partagé : via %1$d répéteurs</item>
     </plurals>
+    <!-- MeshCore mentions and replies (F-3, ADR-0048) -->
+    <string name="mentioned_you_in">%1$s te mentionne dans %2$s</string>
+    <string name="mentioned_you">%1$s te mentionne</string>
+    <string name="mentions_you">Te mentionne</string>
+    <string name="cannot_reply_to_name">Impossible de répondre à ce nom.</string>
     <string name="archived">Archivées</string>
     <string name="archive">Archiver</string>
     <string name="unarchive">Désarchiver</string>

@@ -21,7 +21,7 @@ found gets a test that fails before its fix, at the lowest layer that shows it.
 
 Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`).
 
-**Coverage:** 80 of 82 scenarios have at least one automated test (FFI 73, iOS 78, Android 78, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
+**Coverage:** 81 of 83 scenarios have at least one automated test (FFI 74, iOS 79, Android 79, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
 
 ## 1. Onboarding and identity
 
@@ -93,6 +93,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 | MC-2 | Public channel: read and post | Posts with their authors; a post goes out | `-open Public` | FFI mc_2_public_channel_read_and_post<br>iOS MeshCoreTests.testMC2_PublicChannelReadAndPost<br>Android MeshCoreTest.MC_2_publicChannelReadAndPost (+fr)<br>· real radio: a Public post |
 | MC-3 | Channel QR: show and join | The code shows after the warning; scanning one joins the channel | | FFI mc_3_channel_qr_show_and_join<br>iOS MeshCoreTests.testMC3_ChannelCodeShowAndJoin<br>Android MeshCoreTest.MC_3_channelQrShowAndJoin (+fr) |
 | MC-4 | Import the MeshCore app's history | Messages imported once; a second import adds nothing | | FFI mc_4_import_the_meshcore_app_history<br>iOS MeshCoreTests.testMC4_ImportTheMeshCoreHistory<br>Android MeshCoreTest.MC_4_importTheMeshCoreHistory (+fr) |
+| MC-5 | Mentions and replies | `@[Name]` shown as a mention; a reply quotes that person's latest earlier message; a mention of our radio is highlighted and notifies even when muted; Reply sends `@[Name] ` first | `-open Public` | FFI mc_5_mentions_and_replies<br>iOS MeshCoreTests.testMC5_MentionsAndReplies<br>Android MeshCoreTest.MC_5_mentionsAndReplies (+fr) |
 
 ## 6. Media
 

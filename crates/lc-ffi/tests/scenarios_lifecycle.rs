@@ -363,7 +363,7 @@ fn lc_5_background_and_back() {
         assert_eq!(posts.iter().filter(|x| *x == t).count(), 1, "{posts:?}");
     }
     for kept in [
-        "The fog is lifting, the ridge is clear now.",
+        "Fog is lifting. Coming up, @[ThinkNode M5]?",
         "Sun on the plateau, the path to the refuge is dry.",
     ] {
         assert!(posts.iter().any(|t| t == kept), "{kept:?} not in {posts:?}");

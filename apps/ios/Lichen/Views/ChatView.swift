@@ -307,7 +307,7 @@ struct ChatView: View {
             if draft.isEmpty { draft = model.draft(chat) }
             // The message the draft answers, kept with it (ADR-0034).
             if replyTo == nil, editing == nil, let id = model.replyDraft(chat) {
-                if model.loadUntil(chat, id), let m = model.chats[chat]?.first(where: { $0.id == id }), m.referable {
+                if model.loadUntil(chat, id), let m = model.chats[chat]?.first(where: { $0.id == id }), m.referable || model.plainReplyable(m) {
                     replyTo = m
                 } else {
                     model.setReplyDraft(chat, nil)
@@ -745,6 +745,8 @@ private struct UnreadDivider: View {
 private struct QuoteBox: View {
     let quote: Quote
     let chat: ChatID
+    /// Whom a MeshCore reply mentions (§15.9): the quoted message's author.
+    var name: String? = nil
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -768,6 +770,7 @@ private struct QuoteBox: View {
 
     private var author: String {
         if quote.outgoing { return String(localized: "You") }
+        if let name { return name }
         if let a = quote.author { return model.name(of: a) }
         return model.title(of: chat)
     }
@@ -838,7 +841,7 @@ private struct MessageView: View {
         VStack(alignment: message.outgoing ? .trailing : .leading, spacing: 3) {
             if let q = message.quote {
                 Button { if let id = q.messageId { openQuote(id) } } label: {
-                    QuoteBox(quote: q, chat: message.chat)
+                    QuoteBox(quote: q, chat: message.chat, name: message.replyToName)
                 }
                 .buttonStyle(.plain)
                 .disabled(q.messageId == nil)
@@ -935,6 +938,10 @@ private struct MessageView: View {
             } label: {
                 Label("React", systemImage: "face.smiling")
             }
+        }
+        // A MeshCore message: answered by naming its sender (§15.9).
+        if !message.referable, model.plainReplyable(message) {
+            Button(action: reply) { Label("Reply", systemImage: "arrowshape.turn.up.left") }
         }
         if case let .text(_, text) = message.message {
             Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") }
@@ -1039,13 +1046,23 @@ private struct MessageView: View {
                     .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.line))
                     .foregroundStyle(Theme.tx2)
             case let .text(_, text):
-                // Links open in the browser when tapped, places on the map (ADR-0034).
-                LinkedText(text: text, outgoing: message.outgoing)
+                // Links open in the browser when tapped, places on the map (ADR-0034); a
+                // MeshCore text's mentions show as "@name" (§15.9).
+                LinkedText(text: text, outgoing: message.outgoing,
+                           spans: message.chat.isPlain ? model.meshSpans(text) : nil)
                     .font(.system(.callout))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(message.outgoing ? Theme.actBg : Theme.s2, in: RoundedRectangle(cornerRadius: 18))
-                    .foregroundStyle(message.outgoing ? Theme.actFg : Theme.tx)
+                    .background(message.mentionsUs ? Theme.irohBg : message.outgoing ? Theme.actBg : Theme.s2,
+                                in: RoundedRectangle(cornerRadius: 18))
+                    .overlay {
+                        // A MeshCore message that mentions our radio stands out (§15.9).
+                        if message.mentionsUs {
+                            RoundedRectangle(cornerRadius: 18).stroke(Theme.iroh, lineWidth: 1.5)
+                        }
+                    }
+                    .foregroundStyle(message.outgoing && !message.mentionsUs ? Theme.actFg : Theme.tx)
+                    .accessibilityValue(message.mentionsUs ? String(localized: "Mentions you") : "")
             default:
                 Text(message.message.display)
                     .font(.system(.callout))
@@ -1433,7 +1450,9 @@ private struct Composer: View {
 
     /// Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
     private var plainOver: Int {
-        chat.isPlain ? max(0, draft.utf8.count - model.plainTextMax(chat)) : 0
+        // A reply names whom it answers first, `@[Name] ` (§15.9): that counts too.
+        let mention = replyTo.flatMap { chat.isPlain && editing == nil ? "@[\(model.plainSender($0))] ".utf8.count : nil } ?? 0
+        return chat.isPlain ? max(0, draft.utf8.count + mention - model.plainTextMax(chat)) : 0
     }
 
     var body: some View {
@@ -1727,6 +1746,7 @@ private struct Composer: View {
     /// "Replying to Camille", "Replying to yourself".
     private func replyAuthor(_ m: StoredMessage) -> String {
         if m.outgoing { return String(localized: "Replying to yourself") }
+        if let n = m.authorName { return String(localized: "Replying to \(n)") }
         if let a = m.author { return String(localized: "Replying to \(model.name(of: a))") }
         return String(localized: "Replying to \(model.title(of: chat))")
     }
@@ -2595,13 +2615,15 @@ private struct BlockedBar: View {
 struct LinkedText: View {
     let text: String
     let outgoing: Bool
+    /// A MeshCore text's spans (§15.9): its mentions shown as "@name"; `nil` for a lichen text.
+    var spans: [TextSpan]? = nil
     @Environment(AppModel.self) private var model
 
     /// The scheme of the in-app links that stand for places; never registered with the system.
     private static let placeScheme = "lichen-place"
 
     var body: some View {
-        Text(Self.attributed(text))
+        Text(spans.map { Self.attributed(text, spans: $0, accent: outgoing ? Theme.actFg : Theme.iroh) } ?? Self.attributed(text))
             .tint(outgoing ? Theme.actFg : Theme.tx)
             .environment(\.openURL, OpenURLAction { url in
                 guard url.scheme == Self.placeScheme else {
@@ -2628,6 +2650,38 @@ struct LinkedText: View {
                 a[r].link = URL(string: "\(placeScheme):\(lat),\(lon)")
             }
             a[r].underlineStyle = .single
+        }
+        return a
+    }
+
+    /// A MeshCore text from its spans (§15.9): mentions as "@name" in `accent`, without the
+    /// brackets; links and places as in `attributed(_:)`.
+    static func attributed(_ text: String, spans: [TextSpan], accent: Color) -> AttributedString {
+        let ns = text as NSString
+        var a = AttributedString()
+        for s in spans {
+            let range = NSRange(location: Int(s.start), length: Int(s.end) - Int(s.start))
+            guard range.length > 0, range.location + range.length <= ns.length else { continue }
+            let piece = ns.substring(with: range)
+            switch s.kind {
+            case .text:
+                a.append(AttributedString(piece))
+            case let .mention(name, _):
+                var m = AttributedString("@" + name)
+                m.foregroundColor = accent
+                m.inlinePresentationIntent = .stronglyEmphasized
+                a.append(m)
+            case let .web(url):
+                var l = AttributedString(piece)
+                l.link = URL(string: url)
+                l.underlineStyle = .single
+                a.append(l)
+            case let .place(lat, lon):
+                var l = AttributedString(piece)
+                l.link = URL(string: "\(placeScheme):\(lat),\(lon)")
+                l.underlineStyle = .single
+                a.append(l)
+            }
         }
         return a
     }

@@ -1,5 +1,9 @@
 package com.tduhamel.lichen.ui
 
+import android.Manifest
+import android.app.Application
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
@@ -9,6 +13,12 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
+import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.zxing.BinaryBitmap
@@ -26,6 +36,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
 
@@ -105,6 +116,75 @@ class MeshCoreTest : UiTest() {
         }
         assertEquals(1, count("Heading up the ridge at noon"))
         see(str(R.string.state_sent), substring = true)
+    }
+
+    /** MC-5: mentions and replies on MeshCore (§15.9). Public muted: Lucie's post that
+     * mentions our radio still notifies, "Lucie mentioned you in Public"; in the channel it shows
+     * "@ThinkNode M5", no brackets, and stands out. Marc's reply to her shows her post as a quote,
+     * which leads to it. Ours to her post: "Replying to Lucie", quoted, sent as "@[Lucie] …". */
+    @Test
+    fun MC_5_mentionsAndReplies() = mentionsAndReplies()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MC_5_mentionsAndReplies_fr() = mentionsAndReplies()
+
+    private fun notes(): List<Notification> =
+        shadowOf(context.getSystemService(NotificationManager::class.java)).allNotifications
+
+    private fun mentionsAndReplies() {
+        shadowOf(context as Application).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        launch("demo" to true)
+        val chat = public()
+        model.mute(chat, null)
+        fun titles() = notes().map { it.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() }
+        // Seen from Messages, the channel closed: its notifications are not held back.
+        advanceUntil("Lucie's mention, notified", 200, { titles() }) {
+            titles().contains(str(R.string.mentioned_you_in, "Lucie", "Public"))
+        }
+        // Muted: her other posts are not notified.
+        assertFalse(titles().toString(), titles().any { it == "Lucie · Public" })
+        // In the notification and in Messages: "@ThinkNode M5", no brackets.
+        val shown = "Fog is lifting. Coming up, @ThinkNode M5?"
+        val note = notes().last {
+            it.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() == str(R.string.mentioned_you_in, "Lucie", "Public")
+        }
+        assertEquals(shown, note.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString())
+        see("Lucie: $shown", substring = true)
+        assertFalse(has("@[ThinkNode M5]", substring = true))
+        val sun = "Sun on the plateau, the path to the refuge is dry."
+        advanceUntil("Marc's reply on the air", 400) { model.now() >= 340_000uL }
+
+        compose.onAllNodesWithText("Public").onFirst().performClick()
+        compose.waitForIdle()
+        advanceUntil("Marc's reply", 30) { texts(chat).any { it.startsWith("@[Lucie] Thanks!") } }
+        see("Coming up, @ThinkNode M5?", substring = true)
+        assertFalse(has("@[ThinkNode M5]", substring = true))
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, str(R.string.mentions_you)))
+            .assertExists()
+        // Marc's reply: "@Lucie", and her post above it as a quote, which leads to it.
+        see("@Lucie Thanks!", substring = true)
+        val marc = messages(chat).first { (it.message as? Message.Text)?.text?.startsWith("@[Lucie] Thanks!") == true }
+        assertEquals(messages(chat).first { (it.message as? Message.Text)?.text == sun }.id, marc.quote?.messageId)
+        assertEquals(2, count(sun))
+        compose.onAllNodesWithText(sun).onLast().performClick()
+        compose.waitForIdle()
+        compose.onAllNodesWithText(sun).onFirst().assertIsDisplayed()
+
+        // Ours, to her post.
+        compose.onAllNodesWithText(sun).onFirst().performTouchInput { longClick() }
+        compose.waitForIdle()
+        tapInDialog(R.string.reply)
+        text(R.string.replying_to, "Lucie").assertIsDisplayed()
+        write("On my way")
+        advanceUntil("our reply on the air", 60) {
+            messages(chat).any { it.outgoing && it.status == MessageStatus.Flooded }
+        }
+        val ours = messages(chat).single { it.outgoing }
+        assertEquals("@[Lucie] On my way", (ours.message as Message.Text).text)
+        assertEquals(marc.quote?.messageId, ours.quote?.messageId)
+        see("@Lucie On my way", substring = true)
+        assertEquals(3, count(sun))
     }
 
     /** MC-3: the channel's QR code, after the warning, is the code the stock app reads; a

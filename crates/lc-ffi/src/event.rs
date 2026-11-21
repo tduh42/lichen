@@ -181,6 +181,9 @@ pub enum LichenEvent {
         chat: ChatRef,
         label: Option<String>,
         text: String,
+        /// It mentions our radio's name (§15.9): notified even in a muted conversation, as
+        /// "<label> mentioned you".
+        mentions_us: bool,
     },
     /// The radio's MeshCore channels changed, or were read (§15.3): see `channels()`.
     ChannelsUpdated,
@@ -307,6 +310,8 @@ impl LichenEvent {
                 chat: ChatRef::from_store(&plain_chat(m.chat)),
                 label: m.label,
                 text: m.text,
+                // Filled in with our radio's name (`LichenCore::event`).
+                mentions_us: false,
             },
             Event::ChannelsUpdated => Self::ChannelsUpdated,
             Event::GroupMessage {

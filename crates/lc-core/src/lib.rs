@@ -16,6 +16,7 @@ pub mod identity;
 pub mod import;
 pub mod links;
 pub mod location;
+pub mod mention;
 pub mod mesh;
 pub mod plain;
 pub mod radio;

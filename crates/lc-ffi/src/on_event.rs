@@ -102,10 +102,13 @@ impl Inner {
         match e {
             Event::Connected { .. } => {
                 self.save_contacts();
+                self.note_radio_name();
                 if let Some(flood) = self.advert_owed.take() {
                     self.core.send_advert(flood, self.last_now);
                 }
             }
+            // A rename read back (§15.4): mentions of us follow it (§15.9).
+            Event::RadioSettings => self.note_radio_name(),
             Event::ContactsUpdated
             | Event::GroupJoined { .. }
             | Event::GroupUpdated { .. }

@@ -366,6 +366,10 @@ CREATE TABLE IF NOT EXISTS positions (
     snr4 INTEGER NOT NULL,
     PRIMARY KEY (sender, gid)
 );
+CREATE TABLE IF NOT EXISTS plain_replies (
+    message INTEGER PRIMARY KEY,
+    target INTEGER NOT NULL
+);
 ";
 
 /// The last position received from a sender in a conversation.
@@ -2160,8 +2164,31 @@ impl Store {
         Ok(texts)
     }
 
+    /// Our MeshCore reply `message` answers row `target` (§15.9): kept so that it quotes the
+    /// very message the user answered, not only the latest by that name.
+    pub fn set_plain_reply(&self, message: i64, target: i64) -> Result<(), Error> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO plain_replies (message, target) VALUES (?1, ?2)",
+            params![message, target],
+        )?;
+        Ok(())
+    }
+
+    /// The row our MeshCore reply `message` answers, when it was sent as a reply (§15.9).
+    pub fn plain_reply(&self, message: i64) -> Result<Option<i64>, Error> {
+        self.conn
+            .query_row(
+                "SELECT target FROM plain_replies WHERE message = ?1",
+                params![message],
+                |r| r.get(0),
+            )
+            .optional()
+    }
+
     /// Deletes one message (a cancelled one, §6.1).
     pub fn delete_message(&self, id: i64) -> Result<(), Error> {
+        self.conn
+            .execute("DELETE FROM plain_replies WHERE message = ?1", params![id])?;
         self.conn
             .execute("DELETE FROM messages WHERE id = ?1", params![id])?;
         self.scrub();

@@ -1152,6 +1152,11 @@
         <item quantity="one">Heard by the sharer’s radio: through %1$d repeater</item>
         <item quantity="other">Heard by the sharer’s radio: through %1$d repeaters</item>
     </plurals>
+    <!-- MeshCore mentions and replies (F-3, ADR-0048) -->
+    <string name="mentioned_you_in">%1$s mentioned you in %2$s</string>
+    <string name="mentioned_you">%1$s mentioned you</string>
+    <string name="mentions_you">Mentions you</string>
+    <string name="cannot_reply_to_name">Can’t reply to this name.</string>
     <string name="archived">Archived</string>
     <string name="archive">Archive</string>
     <string name="unarchive">Unarchive</string>
