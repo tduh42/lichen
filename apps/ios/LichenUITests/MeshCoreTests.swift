@@ -8,7 +8,9 @@ final class MeshCoreTests: LichenUITest {
     /// MC-1: Marc's plain message arrives in his MeshCore chat, marked as such; our answer
     /// reaches his radio, and he answers.
     func testMC1_PlainChatWithAStockUser() {
-        launch(["-open", "Marc", "-sayPlain", "Yes, both: lichen and MeshCore"])
+        // The quiet demo: Marc answers once, without retrying as a real app would, and a busy
+        // air (the group, the photo, the channel's posts) can lose his answer for good.
+        launch(["-open", "Marc", "-sayPlain", "Yes, both: lichen and MeshCore", "-quietDemo", "YES"])
         wait(composer, 30, "his chat did not open")
         wait(textOf(marc), 30, "no message from Marc")
         XCTAssertTrue(containing(tr("MeshCore · not lichen-encrypted")).exists, "not said to be a MeshCore chat")

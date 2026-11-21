@@ -366,7 +366,12 @@ struct VerifySheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VerifyPanel(node: node, pending: pending) { dismiss() }.padding(16)
+                VStack(alignment: .leading, spacing: 14) {
+                    VerifyPanel(node: node, pending: pending) { dismiss() }
+                    // Their radio's MeshCore public key (F-1).
+                    CardList { MeshCoreKeyRow(key: node) }
+                }
+                .padding(16)
             }
             .screen()
             .navigationTitle(pending == nil ? "Safety number" : "New key")

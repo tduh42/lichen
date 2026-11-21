@@ -15,8 +15,9 @@ final class MediaTests: LichenUITest {
 
     /// Our photo's preview, sent from the photo sheet (`-screen media`), with its cost said.
     private func sendPhoto() -> XCUIElement {
-        openCamille(["-screen", "media"])
-        wait(app.navigationBars[tr("Send a photo")], 20, "no photo sheet")
+        // The sheet opens in her lichen chat, over it.
+        openCamille(["-screen", "media"], opened: false)
+        wait(app.navigationBars[tr("Send a photo")], 60, "no photo sheet")
         XCTAssertTrue(containing(tr("LoRa preview")).exists, "the LoRa preview is not offered")
         XCTAssertTrue(containing(tr("Airtime left: %@ s. Images are never flooded.", "#").components(separatedBy: "#")[0]).exists,
                       "the cost is not said")
@@ -44,7 +45,12 @@ final class MediaTests: LichenUITest {
     func testMD2_FullPhotoNotNowThenAskedAgain() {
         _ = sendPhoto()
         wait(fullRequest, 60, "no request for the full photo")
-        fullRequest.buttons[tr("Not now")].tap()
+        // Its buttons' words whole: « Pas maintenant » broke as « Pas mainte-nant » side by side
+        // with « Envoyer » (B-ios-25); stacked, it has the card's width.
+        let notNow = fullRequest.buttons[tr("Not now")]
+        if french { XCTAssertGreaterThan(notNow.frame.width, 150, "« \(tr("Not now")) » squeezed: \(notNow.frame)") }
+        keep("md-full-request-buttons")
+        notNow.tap()
         waitGone(fullRequest, 10, "Not now left the card")
         pause(5)
         XCTAssertFalse(containing("Got the full picture").exists, "the full photo went anyway")

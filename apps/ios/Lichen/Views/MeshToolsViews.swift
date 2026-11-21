@@ -173,7 +173,7 @@ struct NodeDetailView: View {
                         subtitle: String(format: "%.5f, %.5f", lat, lon))
             }
             CardDivider()
-            CardRow(title: String(localized: "Key"), subtitle: n.key.prefix(8).hex)
+            MeshCoreKeyRow(key: n.key)
         }
     }
 }

@@ -503,10 +503,60 @@
     },
     "%lld bytes too long: MeshCore takes %lld": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@b@ too long: MeshCore takes %2$lld"
+          },
+          "substitutions": {
+            "b": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg byte"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg bytes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld octets de trop : MeshCore en prend %lld"
+            "value": "%#@b@ de trop : MeshCore en prend %2$lld"
+          },
+          "substitutions": {
+            "b": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg octet"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg octets"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -533,10 +583,100 @@
     },
     "%lld direct messages and %lld channel posts imported.": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@d@ and %#@c@ imported."
+          },
+          "substitutions": {
+            "d": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg direct message"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg direct messages"
+                    }
+                  }
+                }
+              }
+            },
+            "c": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg channel post"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg channel posts"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld messages directs et %2$lld messages de canaux importés."
+            "value": "%#@d@ et %#@c@ importés."
+          },
+          "substitutions": {
+            "d": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message direct"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages directs"
+                    }
+                  }
+                }
+              }
+            },
+            "c": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message de canal"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages de canaux"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -683,20 +823,80 @@
     },
     "%lld measures": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld measure"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld measures"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mesures"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mesure"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mesures"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld measures · range calibrated on their GPS": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld measure · range calibrated on their GPS"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld measures · range calibrated on their GPS"
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mesures · portée calibrée sur son GPS"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mesure · portée calibrée sur son GPS"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mesures · portée calibrée sur son GPS"
+                }
+              }
+            }
           }
         }
       }
@@ -843,20 +1043,200 @@
     },
     "%lld messages · %lld media": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@m@ · %#@d@"
+          },
+          "substitutions": {
+            "m": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages"
+                    }
+                  }
+                }
+              }
+            },
+            "d": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg media"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg media"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld messages · %lld médias"
+            "value": "%#@m@ · %#@d@"
+          },
+          "substitutions": {
+            "m": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages"
+                    }
+                  }
+                }
+              }
+            },
+            "d": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg média"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg médias"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld messages, %lld media files, %@": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@m@, %#@f@, %3$@"
+          },
+          "substitutions": {
+            "m": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages"
+                    }
+                  }
+                }
+              }
+            },
+            "f": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg media file"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg media files"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "%1$lld messages, %2$lld fichiers médias, %3$@"
+            "value": "%#@m@, %#@f@, %3$@"
+          },
+          "substitutions": {
+            "m": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg message"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg messages"
+                    }
+                  }
+                }
+              }
+            },
+            "f": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg fichier média"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg fichiers médias"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -1043,10 +1423,40 @@
     },
     "%lld were already here.": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld was already here."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld were already here."
+                }
+              }
+            }
+          }
+        },
         "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld y étaient déjà."
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld y était déjà."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld y étaient déjà."
+                }
+              }
+            }
           }
         }
       }
@@ -2797,6 +3207,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conversations"
+          }
+        }
+      }
+    },
+    "Copied": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiée"
+          }
+        }
+      }
+    },
+    "Copies it": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La copie"
           }
         }
       }
@@ -4731,16 +5161,6 @@
         }
       }
     },
-    "Key": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clé"
-          }
-        }
-      }
-    },
     "Key %@… · backed up": {
       "localizations": {
         "fr": {
@@ -5591,12 +6011,42 @@
         }
       }
     },
+    "MeshCore code": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore code of this radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code MeshCore de cette radio"
+          }
+        }
+      }
+    },
     "MeshCore nodes": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Nœuds MeshCore"
+          }
+        }
+      }
+    },
+    "MeshCore public key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clé publique MeshCore"
           }
         }
       }
@@ -7343,10 +7793,60 @@
     },
     "Queued %@ for %u conversations": {
       "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Queued %1$@ for %#@n@"
+          },
+          "substitutions": {
+            "n": {
+              "argNum": 2,
+              "formatSpecifier": "u",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg conversation"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg conversations"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "En file %@ pour %u conversations"
+            "value": "En file %1$@ pour %#@n@"
+          },
+          "substitutions": {
+            "n": {
+              "argNum": 2,
+              "formatSpecifier": "u",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg conversation"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg conversations"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -7467,6 +7967,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lire l’état"
+          }
+        }
+      }
+    },
+    "Reading the radio's settings…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture des réglages de la radio…"
           }
         }
       }
@@ -8541,6 +9051,16 @@
         }
       }
     },
+    "Share the key": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partager la clé"
+          }
+        }
+      }
+    },
     "Share the report": {
       "localizations": {
         "fr": {
@@ -8787,6 +9307,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quelqu'un qui utilise la radio de %@ veut t'écrire"
+          }
+        }
+      }
+    },
+    "Someone with the stock MeshCore app can scan it to add this radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avec l’app MeshCore d’origine, on peut le scanner pour ajouter cette radio."
           }
         }
       }

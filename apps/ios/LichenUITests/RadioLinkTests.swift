@@ -237,6 +237,20 @@ final class RadioLinkTests: LichenUITest {
                        "a refused PIN is said to be saved")
     }
 
+    /// RL-5, D-9: a radio slow to answer (`-radioSlow 40`, 10 s at speed 4): its settings are
+    /// said to be read, not shown as zeros or as no radio, until it answers; then its values.
+    func testRL5_SettingsBeingRead() {
+        launch(["-tab", "settings", "-screen", "radio", "-radioSlow", "40"])
+        wait(containing(tr("Reading the radio's settings…")), 10, "not said to be reading")
+        XCTAssertFalse(containing("0.000 MHz").exists, "zeros shown as the radio's values")
+        XCTAssertFalse(containing(tr("Connect a radio to see its settings.")).exists, "a connected radio said to be missing")
+        keep("rl-reading")
+        let power = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch
+        wait(power, 60, "the radio's values did not come")
+        XCTAssertTrue(containing("869.618 MHz").exists, "not the radio's frequency")
+        XCTAssertFalse(containing(tr("Reading the radio's settings…")).exists, "still said to be reading")
+    }
+
     /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said, and the
     /// power shown stays the radio's.
     func testRL6_TheRadioRefusesASetting() {
@@ -261,6 +275,24 @@ final class RadioLinkTests: LichenUITest {
         wait(row("Camille"), 30, "no message from Camille")
         let took = Date().timeIntervalSince(start)
         XCTAssertLessThan(took, 10, "Camille's first message after \(Int(took)) s")
+    }
+
+    /// F-1: the radio's MeshCore public key (64 hex digits, in groups of 8), copied whole; its
+    /// MeshCore code is the stock app's contact code for this radio, with that key.
+    func testF1_TheRadiosMeshCoreKeyAndCode() throws {
+        openRadioSettings()
+        let hex = checkMeshCoreKey(meshcoreKey)
+        XCTAssertTrue(cardButton(tr("Share the key")).exists, "no way to share the key")
+        let qr = element(tr("MeshCore code of this radio"))
+        reveal(qr)
+        let code = try XCTUnwrap(OnboardingTests.decodeQR(qr.screenshot().image), "the code does not decode")
+        XCTAssertTrue(code.hasPrefix("meshcore://contact/add?"), code)
+        XCTAssertTrue(code.contains("public_key=\(hex)"), "not the key shown: \(code)")
+        XCTAssertTrue(code.contains("type=1"), code)
+        XCTAssertTrue(containing(tr("Someone with the stock MeshCore app can scan it to add this radio.")).exists, "not said what it is for")
+        keep("rl-meshcore-code")
+        // Copied whole: the 64 digits, without the spaces shown between groups.
+        XCTAssertEqual(pasted(), hex, "not the key copied")
     }
 
     /// RL-7: the radio's battery in its settings; with Show radio details, the radio card on

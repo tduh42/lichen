@@ -51,9 +51,10 @@ class LichenUITest: XCTestCase {
             // The demo 4 times faster than the wall clock (D-8): Camille's first message about
             // 5 s in.
             if speed > 1 { setting("demoSpeed", String(speed)) }
-            // Nothing an earlier test left (drafts, settings) changes this one.
-            if fresh { setting("freshInstall", "YES") }
         }
+        // Nothing an earlier test left (drafts, settings) changes this one, in the demo or not;
+        // a relaunch keeps what this one made.
+        if fresh { setting("freshInstall", "YES") }
         if onboarded { setting("onboarded", "YES") }
         // No banner over the app unless the test looks at them: taps near the top wait behind
         // one for up to 15 s (a minute of the demo's time).
@@ -246,6 +247,43 @@ class LichenUITest: XCTestCase {
         r.tap()
         wait(keyButton, 10, "no session with Camille", file: file, line: line)
     }
+
+    /// A "MeshCore public key" row (F-1): its key, 64 hex digits, checked; a tap copies it
+    /// ("Copied"). Returns the key.
+    @discardableResult
+    func checkMeshCoreKey(_ row: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> String {
+        reveal(row, file: file, line: line)
+        let hex = row.value as? String ?? ""
+        XCTAssertNotNil(hex.range(of: "^[0-9a-f]{64}$", options: .regularExpression), "the key: \(hex)", file: file, line: line)
+        row.tap()
+        waitValue(row, tr("Copied"), 5, file: file, line: line)
+        return hex
+    }
+
+    /// What the app pastes, read in its message search (the test runner may not read the
+    /// pasteboard itself): Messages › Search, Paste, the field's text, Close.
+    func pasted(file: StaticString = #filePath, line: UInt = #line) -> String {
+        tab(.messages)
+        button(tr("Search messages")).tap()
+        let field = wait(app.textFields[tr("Search messages")], 5, "no search field", file: file, line: line)
+        field.press(forDuration: 1.2)
+        wait(app.menuItems.matching(NSPredicate(format: "label IN %@", ["Paste", "Coller"])).firstMatch, 5, "no Paste",
+             file: file, line: line).tap()
+        let text = field.value as? String ?? ""
+        button(tr("Close")).tap()
+        return text
+    }
+
+    /// Waits until `element`'s value is `value`.
+    func waitValue(_ element: XCUIElement, _ value: String, _ timeout: TimeInterval,
+                   file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while (element.value as? String) != value && Date() < deadline { pause(0.3) }
+        XCTAssertEqual(element.value as? String, value, file: file, line: line)
+    }
+
+    /// The "MeshCore public key" row on screen.
+    var meshcoreKey: XCUIElement { app.descendants(matching: .any)["meshcoreKey"] }
 
     /// Types `text` in the composer and sends it.
     func send(_ text: String, file: StaticString = #filePath, line: UInt = #line) {

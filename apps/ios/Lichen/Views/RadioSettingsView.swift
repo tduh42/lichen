@@ -54,7 +54,7 @@ struct RadioSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                if let r = model.radioSettings, model.isConnected {
+                if let r = model.radioSettings, r.read, model.isConnected {
                     device(r)
                     lora(r)
                     power(r)
@@ -63,6 +63,13 @@ struct RadioSettingsView: View {
                     if r.autoaddMask != nil { contacts(r) }
                     delivery(r)
                     bluetooth(r)
+                } else if model.isConnected {
+                    // Connected, the radio has not answered yet: no zeros shown as its values (D-9).
+                    HStack(spacing: 10) {
+                        ProgressView()
+                        Text("Reading the radio's settings…").foregroundStyle(Theme.tx2)
+                    }
+                    .padding(.top, 24)
                 } else {
                     Text("Connect a radio to see its settings.")
                         .foregroundStyle(Theme.tx2)
@@ -115,6 +122,42 @@ struct RadioSettingsView: View {
                     CardRow(title: String(localized: "Storage"),
                             subtitle: String(localized: "\(Int(used)) of \(Int(total)) KB used"))
                 }
+                // Its MeshCore public key, as the stock app shows it (F-1).
+                if let key = model.nodeKey {
+                    CardDivider()
+                    MeshCoreKeyRow(key: key)
+                    CardDivider()
+                    ShareLink(item: key.hex) {
+                        CardRow(title: String(localized: "Share the key")) {
+                            Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.tx2)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            // The stock app's contact code for this radio (F-1, §15.3): a MeshCore user adds it.
+            if let key = model.nodeKey,
+               let code = try? meshcoreContactCode(name: r.name.isEmpty ? model.nodeName : r.name, key: key, kind: .companion),
+               let image = QRCode.image(code) {
+                SectionLabel("MeshCore code").padding(.top, 10)
+                VStack(spacing: 10) {
+                    Image(uiImage: image)
+                        .interpolation(.none)
+                        .resizable()
+                        .scaledToFit()
+                        .padding(12)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 14))
+                        .frame(maxWidth: 220)
+                        .accessibilityLabel("MeshCore code of this radio")
+                    Text("Someone with the stock MeshCore app can scan it to add this radio.")
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .card()
             }
         }
     }

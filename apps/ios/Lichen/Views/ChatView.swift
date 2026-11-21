@@ -625,6 +625,7 @@ private struct CompareBanner: View {
     let name: String
     let compare: () -> Void
     let later: () -> Void
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -637,9 +638,12 @@ private struct CompareBanner: View {
                     Text("Compare safety numbers with \(name)")
                         .font(.system(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.warnFg)
-                    Text("Their key is not verified yet. Compare the numbers with them, in person or on a call.")
-                        .font(.system(.footnote))
-                        .foregroundStyle(Theme.tx)
+                    // Compact at accessibility text sizes: the title and the buttons only (D-10).
+                    if !textSize.isAccessibilitySize {
+                        Text("Their key is not verified yet. Compare the numbers with them, in person or on a call.")
+                            .font(.system(.footnote))
+                            .foregroundStyle(Theme.tx)
+                    }
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -1360,18 +1364,29 @@ private struct ImageCard: View {
             Text("\(who) asks for the full photo · about \(seconds) s of airtime")
                 .font(.system(.footnote))
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button("Not now") { _ = model.answerFull(message.id, in: message.chat, send: false) }
-                    .buttonStyle(SecondaryButtonStyle(height: 40))
-                Button("Send") { error = model.answerFull(message.id, in: message.chat, send: true) }
-                    .buttonStyle(SecondaryButtonStyle(background: Theme.loraBg, foreground: Theme.loraFg, height: 40))
-                    .disabled(!model.isConnected)
+            // Side by side, or one above the other when a word would not fit whole
+            // (« Pas maintenant » broke as « Pas mainte-nant »).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { fullRequestButtons }
+                VStack(spacing: 8) { fullRequestButtons }
             }
         }
         .padding(10)
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("fullRequest")
+    }
+
+    @ViewBuilder private var fullRequestButtons: some View {
+        Button { _ = model.answerFull(message.id, in: message.chat, send: false) } label: {
+            Text("Not now").fixedSize()
+        }
+        .buttonStyle(SecondaryButtonStyle(height: 40))
+        Button { error = model.answerFull(message.id, in: message.chat, send: true) } label: {
+            Text("Send").fixedSize()
+        }
+        .buttonStyle(SecondaryButtonStyle(background: Theme.loraBg, foreground: Theme.loraFg, height: 40))
+        .disabled(!model.isConnected)
     }
 
     private func fullLabel(_ bytes: Int) -> String {

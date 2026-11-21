@@ -27,6 +27,41 @@ final class StringsTests: XCTestCase {
         return all
     }
 
+    /// `key` rendered with `args`, from the String Catalog compiled into this bundle, plural
+    /// forms included.
+    private func render(_ key: String, _ args: [CVarArg], _ lang: String) throws -> String {
+        let dir = try XCTUnwrap(Bundle(for: StringsTests.self).path(forResource: lang, ofType: "lproj"), "no \(lang)")
+        let bundle = try XCTUnwrap(Bundle(path: dir))
+        let format = bundle.localizedString(forKey: key, value: key, table: "Localizable")
+        return String(format: format, locale: Locale(identifier: lang == "fr" ? "fr_FR" : "en_GB"), arguments: args)
+    }
+
+    /// B-ios-23 (after B-ios-17): one of a thing is said in the singular, in English and French.
+    func testB23_CountsOfOneInTheSingular() throws {
+        let cases: [(String, [CVarArg], String, String)] = [
+            ("Queued %@ for %u conversations", ["now", UInt32(1)], "Queued now for 1 conversation", "En file now pour 1 conversation"),
+            ("%lld measures", [1], "1 measure", "1 mesure"),
+            ("%lld measures · range calibrated on their GPS", [1],
+             "1 measure · range calibrated on their GPS", "1 mesure · portée calibrée sur son GPS"),
+            ("%lld messages · %lld media", [1, 1], "1 message · 1 media", "1 message · 1 média"),
+            ("%lld messages, %lld media files, %@", [1, 1, "2 KB"], "1 message, 1 media file, 2 KB",
+             "1 message, 1 fichier média, 2 KB"),
+            ("%lld direct messages and %lld channel posts imported.", [1, 1],
+             "1 direct message and 1 channel post imported.", "1 message direct et 1 message de canal importés."),
+            ("%lld were already here.", [1], "1 was already here.", "1 y était déjà."),
+            ("%lld bytes too long: MeshCore takes %lld", [1, 150], "1 byte too long: MeshCore takes 150",
+             "1 octet de trop : MeshCore en prend 150"),
+            ("%lld members · flood", [1], "1 member · flood", "1 membre · flood"),
+        ]
+        for (key, args, en, fr) in cases {
+            XCTAssertEqual(try render(key, args, "en"), en, key)
+            XCTAssertEqual(try render(key, args, "fr"), fr, key)
+        }
+        // And two, in the plural.
+        XCTAssertEqual(try render("%lld measures", [2], "en"), "2 measures")
+        XCTAssertEqual(try render("%lld messages, %lld media files, %@", [2, 3, "2 KB"], "fr"), "2 messages, 3 fichiers médias, 2 KB")
+    }
+
     /// D-6: « Envoyer une annonce », « Préréglage », « Clés d’envoi … »; no "advert", "Preset" or
     /// "Sender keys" left in French.
     func testD6_NoEnglishWordsLeftInFrench() throws {
