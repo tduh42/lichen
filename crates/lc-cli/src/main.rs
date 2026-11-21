@@ -473,6 +473,11 @@ fn describe(core: &Core, e: &Event) -> String {
             None => format!("TX power {dbm} dBm"),
         },
         Event::NodesUpdated => format!("{} nodes known", core.nodes().len()),
+        Event::Advert { flood, sent } => format!(
+            "{} advert {}",
+            if *flood { "flooded" } else { "zero-hop" },
+            if *sent { "sent" } else { "not sent" }
+        ),
         Event::NodeTool { node } => format!("{}: trace or server answer", name_of(core, node)),
         Event::Requested { node, identity } => format!(
             "someone using {}'s radio wants to write: identity {} (a request)",

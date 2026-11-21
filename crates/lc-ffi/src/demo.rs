@@ -200,6 +200,8 @@ struct Demo {
     /// The radio answers nothing before this simulated time, then all at once (debug
     /// `radioSlow`, D-9).
     hold_until: u64,
+    /// The last advert the radio was asked for: flooded or not (tests, B-user-4).
+    last_advert: Option<bool>,
     /// How much faster than the wall clock the app runs the demo (debug `demoSpeed`, 1 to 4):
     /// the bots' clocks follow the wall clock, not the simulated time.
     speed: u64,
@@ -1025,6 +1027,7 @@ impl DemoNetwork {
                 speed: 1,
                 refuse_power: false,
                 hold_until: 0,
+                last_advert: None,
                 answers: Vec::new(),
                 camille_full: None,
                 camille_has_full: Vec::new(),
@@ -1226,6 +1229,15 @@ impl DemoNetwork {
         }
     }
 
+    /// The last advert the radio was asked to send: flooded (true) or zero-hop (false); `None`
+    /// before any (tests: what the radio received, B-user-4).
+    pub fn last_advert(&self) -> Option<bool> {
+        self.inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .last_advert
+    }
+
     /// A frame from the app to its (simulated) companion.
     pub fn write(&self, frame: Vec<u8>, now_ms: u64) {
         let mut d = self
@@ -1233,6 +1245,9 @@ impl DemoNetwork {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.advance(now_ms);
+        if frame.first() == Some(&lc_meshcore::codes::cmd::SEND_SELF_ADVERT) {
+            d.last_advert = Some(frame.get(1) == Some(&1));
+        }
         if d.refuse_power && frame.first() == Some(&lc_meshcore::codes::cmd::SET_RADIO_TX_POWER) {
             // MyMesh.cpp answers ERR 6 (illegal argument) to a value it does not take.
             d.answers.push(vec![lc_meshcore::codes::resp::ERR, 6]);
@@ -1730,6 +1745,46 @@ mod skip {
                 (phone.lon * 1e6).round() as i32
             )
         );
+    }
+
+    /// B-user-4: the demo radio receives the advert as asked, zero-hop or flooded, and the app
+    /// is told it was sent; without the radio, that it was not.
+    #[test]
+    fn the_demo_radio_receives_our_advert_as_asked() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("t".into(), vec![20; 32], vec![120; 32], None).unwrap();
+        core.connect(0);
+        let mut adverts = Vec::new();
+        let mut asked = Vec::new();
+        for step in 0..(20 * 10) {
+            let now = step * 100;
+            if now == 5_000 {
+                core.send_advert(false, now);
+            }
+            if now == 8_000 {
+                asked.push(demo.last_advert());
+                core.send_advert(true, now);
+            }
+            if now == 11_000 {
+                asked.push(demo.last_advert());
+                core.disconnect(now);
+                core.send_advert(true, now);
+            }
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::Advert { flood, sent } = e {
+                    adverts.push((flood, sent));
+                }
+            }
+        }
+        assert_eq!(asked, vec![Some(false), Some(true)]);
+        assert_eq!(adverts, vec![(false, true), (true, true), (true, false)]);
     }
 
     /// `radioRefuses power`: a transmit power change is refused by the radio, the core

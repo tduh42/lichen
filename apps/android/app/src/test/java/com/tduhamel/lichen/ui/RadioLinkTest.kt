@@ -24,6 +24,7 @@ import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.NodeKind
 import com.tduhamel.lichen.core.meshcoreContactCode
 import com.tduhamel.lichen.core.readMeshcoreContactCode
+import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -287,6 +288,70 @@ class RadioLinkTest : UiTest() {
         // A radio with its GPS on and a position keeps it: the phone's is no longer offered
         // (the GPS's next fix replaces it in the firmware).
         assertFalse(has(R.string.use_phone_position))
+    }
+
+    /** RL-10 (B-user-4, D-14): Settings › Send an advert: nearby or the whole mesh, each with
+     * what it reaches, and what it carries (the radio's name; its position once advertised);
+     * what the demo radio received; sent at what time, how far, from the radio's answer; with
+     * the radio off, not sent. */
+    @Test
+    fun RL_10_sendAnAdvert() = advert()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_10_sendAnAdvert_fr() = advert()
+
+    private fun sentAt(flood: Boolean): String {
+        val sent = model.advert as AppModel.AdvertState.Sent
+        assertEquals(flood, sent.flood)
+        return str(if (flood) R.string.advert_sent_mesh else R.string.advert_sent_nearby, timeOf(context, sent.atMs))
+    }
+
+    private fun advert() {
+        launch("demo" to true)
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        val demo = model.demoNetwork!!
+        val name = model.radioSettings!!.name
+        tab(R.string.tab_settings)
+        see(R.string.send_advert_note)
+        // The choice: how far each goes, what it carries; cancelled, nothing goes.
+        tap(R.string.send_advert)
+        for (s in listOf(R.string.advert_nearby, R.string.advert_nearby_note, R.string.advert_mesh, R.string.advert_mesh_note)) see(s)
+        see(str(R.string.advert_carries, name))
+        tapInDialog(R.string.cancel)
+        assertEquals(null, demo.lastAdvert())
+        assertEquals(null, model.advert)
+        // Nearby: the radio gets a zero-hop advert; "Sending…" until it answers (its answer held
+        // back a moment here), then the time.
+        demo.holdReplies(100_000uL)
+        tap(R.string.send_advert)
+        tapInDialog(R.string.advert_nearby)
+        see(R.string.advert_sending)
+        demo.holdReplies(0uL)
+        advanceUntil("the radio's answer", 10) { model.advert is AppModel.AdvertState.Sent }
+        assertEquals(false, demo.lastAdvert())
+        see(sentAt(false))
+        // The whole mesh: flooded.
+        tap(R.string.send_advert)
+        tapInDialog(R.string.advert_mesh)
+        advanceUntil("the radio's answer", 10) { (model.advert as? AppModel.AdvertState.Sent)?.flood == true }
+        assertEquals(true, demo.lastAdvert())
+        see(sentAt(true))
+        // Position in adverts on, and a position: the advert says it carries it.
+        val r = model.radioSettings!!
+        model.radioSet { model.core.setRadioPreferences(r.manualAdd, r.telemetry, true, r.multiAcks) }
+        model.radioSet { model.core.setAdvertPosition(45_123_450, 5_123_450) }
+        advanceUntil("the position in adverts", 10) { model.radioSettings?.let { it.positionInAdverts && it.latE6 != 0 } == true }
+        tap(R.string.send_advert)
+        see(str(R.string.advert_carries_position, name))
+        tapInDialog(R.string.cancel)
+        // The radio off: not sent, said.
+        model.setDemoRadio(false)
+        advance(1)
+        tap(R.string.send_advert)
+        tapInDialog(R.string.advert_mesh)
+        advanceUntil("not sent", 5) { model.advert is AppModel.AdvertState.NotSent }
+        see(R.string.advert_not_sent)
     }
 
     /** RL-5 (D-9): a radio slow to answer (its replies held for 7 s): its settings screen says

@@ -229,6 +229,15 @@ final class AppModel {
     var sos = false
     var myFix: LocationFix?
     var locationDenied = false
+
+    /// Our advert, asked for in Settings (B-user-4): waiting for the radio's answer, then sent
+    /// (when, how far) or not.
+    enum AdvertState: Equatable {
+        case sending(flood: Bool)
+        case sent(flood: Bool, at: Date)
+        case notSent(flood: Bool)
+    }
+    var advert: AdvertState?
     /// SOS incidents heard, by sender node: one alert each (`Search.swift`).
     var incidents: [Data: SosIncident] = [:]
     /// The incident whose full-screen alert is up, until dismissed.
@@ -805,6 +814,7 @@ final class AppModel {
         sosStatus = nil
         myFix = nil
         lastFed = nil
+        advert = nil
     }
 
     var isConnected: Bool {
@@ -1216,6 +1226,12 @@ final class AppModel {
         case let .txPower(dbm, previous):
             // lc-ffi keeps the power to restore; we show it while it is lowered.
             loweredPower = previous == nil ? nil : dbm
+        case let .advert(flood, sent):
+            // What the radio answered to the advert asked for in Settings (B-user-4); the core's
+            // own adverts (after a card, a join) say nothing there.
+            if case .sending = advert {
+                advert = sent ? .sent(flood: flood, at: Date()) : .notSent(flood: flood)
+            }
         case .nodeUpdated:
             // A trace or a server's answer (§16).
             meshToolsVersion += 1
@@ -1553,8 +1569,11 @@ final class AppModel {
     }
 
     /// A MeshCore advert (flood), so that radios around add ours as a contact.
-    func sendAdvert() {
-        core.sendAdvert(flood: true, nowMs: now())
+    /// Our node's advert, zero-hop (`flood` false: radios in direct range) or flooded (repeaters
+    /// pass it on): `advert` follows what the radio answers (protocol.md §1.1).
+    func sendAdvert(flood: Bool) {
+        advert = .sending(flood: flood)
+        core.sendAdvert(flood: flood, nowMs: now())
         pump()
     }
 

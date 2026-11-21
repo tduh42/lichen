@@ -119,7 +119,17 @@
     <!-- Settings -->
     <string name="radio">Radio</string>
     <string name="send_advert">Send an advert</string>
-    <string name="send_advert_note">Lets nearby radios add yours as a contact.</string>
+    <string name="send_advert_note">Tells radios around that yours is here, so they can add it as a contact.</string>
+    <string name="advert_nearby">Nearby</string>
+    <string name="advert_nearby_note">Only radios in direct range hear it.</string>
+    <string name="advert_mesh">Whole mesh</string>
+    <string name="advert_mesh_note">Repeaters pass it on to every radio they reach.</string>
+    <string name="advert_carries">It shows your radio’s name, “%1$s”.</string>
+    <string name="advert_carries_position">It shows your radio’s name, “%1$s” and its position.</string>
+    <string name="advert_sending">Sending…</string>
+    <string name="advert_sent_nearby">Advert sent at %1$s (nearby)</string>
+    <string name="advert_sent_mesh">Advert sent at %1$s (whole mesh)</string>
+    <string name="advert_not_sent">The radio did not send it.</string>
     <string name="appearance">Appearance</string>
     <string name="system">System</string>
     <string name="dark">Dark</string>
@@ -444,7 +454,6 @@
     <string name="sub_band">Sub-band</string>
     <string name="relay_for_others">Relay for others</string>
     <string name="relay_for_others_note">Stock companion firmware does not repeat: a repeater node does that.</string>
-    <string name="advert_sent">Sent: radios around can add yours as a contact.</string>
     <string name="send_threshold">Send threshold</string>
     <string name="send_threshold_note">Distance from the predicted track</string>
     <string name="heartbeat">Heartbeat when still</string>
