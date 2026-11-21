@@ -14,6 +14,17 @@ pub enum NodeKind {
 }
 
 impl NodeKind {
+    /// Its MeshCore type (1 to 4); none for an unknown one.
+    pub(crate) const fn code(self) -> Option<u8> {
+        match self {
+            Self::Companion => Some(lc_core::contact_kind::CHAT),
+            Self::Repeater => Some(lc_core::contact_kind::REPEATER),
+            Self::RoomServer => Some(lc_core::contact_kind::ROOM),
+            Self::Sensor => Some(lc_core::contact_kind::SENSOR),
+            Self::Unknown => None,
+        }
+    }
+
     pub(crate) const fn of(kind: u8) -> Self {
         match kind {
             lc_core::contact_kind::CHAT => Self::Companion,
@@ -165,6 +176,43 @@ pub struct ChannelCode {
     pub kind: ChannelKind,
     /// The radio already has it.
     pub joined: bool,
+}
+
+/// A node as the stock MeshCore app's contact code names it (§15.3).
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct MeshCoreContact {
+    pub name: String,
+    /// Its MeshCore public key (32 bytes): the node key.
+    pub key: Vec<u8>,
+    pub kind: NodeKind,
+}
+
+/// A node's contact code in the stock MeshCore app's format (§15.3, MeshCore's
+/// `docs/qr_codes.md`): `meshcore://contact/add?name=…&public_key=…&type=…`, for a QR code
+/// that a stock app scans to add the node (the radio's own: its name, `Companion`).
+/// `InvalidKey` for a key that is not 32 bytes, `InvalidSetting` for `NodeKind::Unknown`.
+#[uniffi::export]
+pub fn meshcore_contact_code(
+    name: String,
+    key: Vec<u8>,
+    kind: NodeKind,
+) -> Result<String, LichenError> {
+    let k = self::key(&key)?;
+    let kind = kind.code().ok_or(LichenError::InvalidSetting)?;
+    Ok(lc_core::plain::contact_code(&name, &k, kind))
+}
+
+/// Reads a stock MeshCore contact code (§15.3); `BadCode` when it is not one, its key not 64
+/// hex digits, its type not 1 to 4 or its name empty or longer than a MeshCore name.
+#[uniffi::export]
+pub fn read_meshcore_contact_code(text: String) -> Result<MeshCoreContact, LichenError> {
+    let (name, key, kind) =
+        lc_core::plain::parse_contact_code(&text).ok_or(LichenError::BadCode)?;
+    Ok(MeshCoreContact {
+        name,
+        key: key.to_vec(),
+        kind: NodeKind::of(kind),
+    })
 }
 
 #[uniffi::export]

@@ -573,3 +573,67 @@ fn ct_11_a_person_the_radio_files_as_a_repeater() {
     });
     assert_eq!(sim.conversation(&chat).unwrap().name, "Marc");
 }
+
+/// F-1: the stock MeshCore app's contact code: the radio's own (its name, a companion), which
+/// a stock app scans to add it, read back; a repeater's; the documentation's example; and
+/// what is refused (§15.3).
+#[test]
+fn f_1_meshcore_contact_code() {
+    use lc_ffi::{LichenError, MeshCoreContact, meshcore_contact_code, read_meshcore_contact_code};
+    let mut sim = Sim::new(93);
+    sim.until("the radio's settings and nodes", 10, |c| {
+        c.radio_settings().read && c.nodes().iter().any(|n| n.name == "hub")
+    });
+    let (name, key) = (sim.core.radio_settings().name, sim.core.node_key().unwrap());
+    let code = meshcore_contact_code(name.clone(), key.clone(), NodeKind::Companion).unwrap();
+    let hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(
+        code,
+        format!("meshcore://contact/add?name=ThinkNode%20M5&public_key={hex}&type=1")
+    );
+    assert_eq!(
+        read_meshcore_contact_code(code).unwrap(),
+        MeshCoreContact {
+            name,
+            key,
+            kind: NodeKind::Companion
+        }
+    );
+    let hub = node(&sim, "hub");
+    let code = meshcore_contact_code(hub.name.clone(), hub.key.clone(), hub.kind).unwrap();
+    assert!(code.ends_with("&type=2"), "{code}");
+    assert_eq!(
+        read_meshcore_contact_code(code).unwrap().kind,
+        NodeKind::Repeater
+    );
+    // MeshCore's own example.
+    let example = read_meshcore_contact_code(
+        "meshcore://contact/add?name=Example+Contact&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1".into(),
+    )
+    .unwrap();
+    assert_eq!(
+        (example.name.as_str(), example.kind, example.key.len()),
+        ("Example Contact", NodeKind::Companion, 32)
+    );
+    // Refused.
+    for bad in [
+        "meshcore://contact/add?name=x&public_key=9cd8&type=1",
+        "meshcore://contact/add?name=x&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=7",
+        "meshcore://channel/add?name=Public&secret=8b3387e9c5cdea6ac9e5edbaa115cd72",
+        "lichen:1:nope",
+    ] {
+        assert_eq!(
+            read_meshcore_contact_code(bad.into()),
+            Err(LichenError::BadCode),
+            "{bad}"
+        );
+    }
+    assert_eq!(
+        meshcore_contact_code("x".into(), vec![1; 31], NodeKind::Companion),
+        Err(LichenError::InvalidKey)
+    );
+    assert_eq!(
+        meshcore_contact_code("x".into(), vec![1; 32], NodeKind::Unknown),
+        Err(LichenError::InvalidSetting)
+    );
+}
