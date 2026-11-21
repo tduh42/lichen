@@ -251,6 +251,71 @@ final class RadioLinkTests: LichenUITest {
         XCTAssertFalse(containing(tr("Reading the radio's settings…")).exists, "still said to be reading")
     }
 
+    private static let noFixNote =
+        "The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position."
+
+    /// Position in adverts on, after its warning, as the radio reports it.
+    private func showPositionInAdverts() {
+        let position = app.switches[tr("Position in adverts")]
+        reveal(position)
+        flip(position)
+        let confirm = app.alerts[tr("Show your position to the whole mesh?")]
+        wait(confirm, 5, "no confirmation")
+        confirm.buttons[tr("Show it")].tap()
+        wait(element(tr("Every advert shows the radio's position to the whole mesh, unencrypted.")), 10,
+             "the radio did not report the new policy")
+    }
+
+    /// The radio's advertised position in figures, "45.12345, 5.12345", in either language.
+    private var advertisedFigures: XCUIElement {
+        app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", #"^-?\d+\.\d{5}, -?\d+\.\d{5}$"#)).firstMatch
+    }
+
+    /// RL-5, B-user-2: a radio whose GPS is on but has no fix (`-radioNoFix YES`, indoors), its
+    /// position put in its adverts: none yet, and why; this phone's position offered (the screen
+    /// asks for it, no map opened first) and taken: the radio advertises it, and the phone's is
+    /// no longer offered over the radio's own.
+    func testRL5_GpsWithoutFixTakesThePhonesPosition() {
+        launch(["-tab", "settings", "-screen", "radio", "-radioNoFix", "YES"])
+        wait(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '869.618 MHz'")).firstMatch, 30,
+             "the radio's parameters are not shown")
+        let gps = app.switches[tr("The radio's GPS")]
+        wait(gps, 10, "the radio's GPS is not reported")
+        reveal(gps)
+        XCTAssertEqual(gps.value as? String, "1", "the radio's GPS is not on")
+        showPositionInAdverts()
+        wait(element(tr("None yet")), 10, "a position before any fix")
+        let use = cardButton(tr("Use this phone's position"))
+        wait(use, 10, "this phone's position is not offered")
+        reveal(use)
+        XCTAssertTrue(element(tr(Self.noFixNote)).exists, "nothing says why there is no position")
+        keep("rl-gps-no-fix")
+        use.tap()
+        wait(advertisedFigures, 10, "the radio does not advertise the phone's position")
+        XCTAssertFalse(element(tr("None yet")).exists, "still none")
+        XCTAssertFalse(element(tr(Self.noFixNote)).exists, "the note stayed")
+        XCTAssertFalse(use.exists, "the phone's position still offered over the radio's own")
+    }
+
+    /// RL-5, B-user-2: on the demo's board, its GPS off, this phone's position is offered on
+    /// Radio settings itself: the screen asks for the phone's location, no map opened first.
+    func testRL5_PhonePositionOfferedWithoutTheMap() {
+        openRadioSettings()
+        let gps = app.switches[tr("The radio's GPS")]
+        wait(gps, 10, "the radio's GPS is not reported")
+        reveal(gps)
+        XCTAssertEqual(gps.value as? String, "0", "the demo's GPS is not off")
+        showPositionInAdverts()
+        wait(element(tr("None yet")), 10, "a position before it was given one")
+        let use = cardButton(tr("Use this phone's position"))
+        wait(use, 10, "this phone's position is not offered without the map")
+        XCTAssertFalse(element(tr(Self.noFixNote)).exists, "a fix awaited from a GPS that is off")
+        reveal(use)
+        use.tap()
+        wait(advertisedFigures, 10, "the radio does not advertise the phone's position")
+        XCTAssertTrue(use.exists, "without its GPS on, the radio may take the phone's position again")
+    }
+
     /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said, and the
     /// power shown stays the radio's.
     func testRL6_TheRadioRefusesASetting() {

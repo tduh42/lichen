@@ -1207,6 +1207,20 @@ impl DemoNetwork {
         d.hold_until = seconds * SEC;
     }
 
+    /// The radio's GPS is on but has no fix (debug `radioNoFix`, B-user-2): indoors, it
+    /// reports no position (0, 0) until the app gives its adverts one. Call right after `new`.
+    pub fn gps_without_fix(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let app = d.app;
+        if let Some(n) = d.net.nodes.get_mut(app) {
+            n.settings.gps = Some(true);
+            (n.settings.lat_e6, n.settings.lon_e6) = (0, 0);
+        }
+    }
+
     /// A frame from the app to its (simulated) companion.
     pub fn write(&self, frame: Vec<u8>, now_ms: u64) {
         let mut d = self
@@ -1659,6 +1673,58 @@ mod skip {
         let at = read_at.expect("the settings were never read");
         assert!((20_000..30_000).contains(&at), "read at {at} ms");
         assert!(core.radio_settings().freq_khz > 0);
+    }
+
+    /// `radioNoFix`: the radio's GPS is on and has no position; the phone's, given to its
+    /// adverts, is the one it reports. The demo's radio otherwise has its GPS off.
+    #[test]
+    fn a_gps_without_a_fix_takes_the_phone_s_position() {
+        let settings = |demo: &DemoNetwork, phone: Option<LocationFix>| {
+            let core = LichenCore::new("t".into(), vec![19; 32], vec![119; 32], None).unwrap();
+            core.connect(0);
+            let mut given = false;
+            for step in 0..(20 * 10) {
+                let now = step * 100;
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while core.poll_event().is_some() {}
+                if let Some(p) = phone
+                    .as_ref()
+                    .filter(|_| !given && core.radio_settings().read)
+                {
+                    let e6 = |d: f64| (d * 1e6).round() as i32;
+                    core.set_advert_position(e6(p.lat), e6(p.lon)).unwrap();
+                    given = true;
+                }
+            }
+            core.radio_settings()
+        };
+        let plain = settings(&DemoNetwork::new(), None);
+        assert_eq!(plain.gps, Some(false));
+        let demo = DemoNetwork::new();
+        demo.gps_without_fix();
+        let indoors = settings(&demo, None);
+        assert!(indoors.read);
+        assert_eq!(indoors.gps, Some(true));
+        assert_eq!((indoors.lat_e6, indoors.lon_e6), (0, 0));
+        // The phone's position, given to the adverts, is the radio's until a fix replaces it.
+        let demo = DemoNetwork::new();
+        demo.gps_without_fix();
+        let phone = demo.my_position();
+        let given = settings(&demo, Some(phone.clone()));
+        assert_eq!(given.gps, Some(true));
+        assert_eq!(
+            (given.lat_e6, given.lon_e6),
+            (
+                (phone.lat * 1e6).round() as i32,
+                (phone.lon * 1e6).round() as i32
+            )
+        );
     }
 
     /// `radioRefuses power`: a transmit power change is refused by the radio, the core

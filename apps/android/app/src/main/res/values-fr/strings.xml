@@ -932,6 +932,7 @@
     <string name="position_in_adverts_off">Désactivée : les annonces ne portent aucune position.</string>
     <string name="position_advertised">Position annoncée</string>
     <string name="use_phone_position">Utiliser la position de ce téléphone</string>
+    <string name="advert_gps_no_fix">Le GPS de la radio n’a pas encore de position : il lui faut le ciel dégagé. En attendant, elle peut annoncer la position de ce téléphone.</string>
     <string name="telemetry_base">Télémétrie : batterie et état</string>
     <string name="telemetry_location">Télémétrie : position</string>
     <string name="telemetry_environment">Télémétrie : capteurs</string>

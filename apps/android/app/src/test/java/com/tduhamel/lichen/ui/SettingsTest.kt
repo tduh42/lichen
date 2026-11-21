@@ -208,7 +208,13 @@ class SettingsTest : UiTest() {
         for (key in model.contacts.map { it.key.hex() } + listOfNotNull(model.nodeKey?.hex())) {
             assertFalse("a key in the report", report.contains(key.take(12)))
         }
-        for (word in model.recoveryPhrase().take(6)) assertFalse("a phrase word", Regex("\\b$word\\b").containsMatchIn(report.lowercase()))
+        // The recovery phrase: no two of its words in a row. One word alone proves nothing: the
+        // BIP-39 list has words the report says anyway ("radio", "message", "key", "you"), which
+        // a random identity's phrase holds about one run in twelve.
+        val lower = report.lowercase()
+        for ((a, b) in model.recoveryPhrase().zipWithNext()) {
+            assertFalse("\"$a $b\", from the phrase, in the report", Regex("\\b$a\\W+$b\\b").containsMatchIn(lower))
+        }
         val app = shadowOf(context as Application)
         while (app.nextStartedActivity != null) Unit
         tap(R.string.report_share)

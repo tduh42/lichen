@@ -253,6 +253,42 @@ class RadioLinkTest : UiTest() {
         assertTrue("its coordinates: ${shown()}", shown().any { where.matches(it) })
     }
 
+    /** RL-5 (B-user-2): a radio whose GPS is on but has no fix (indoors), its position put in
+     * its adverts: none yet, and why; this phone's position offered, and taken. */
+    @Test
+    fun RL_5_gpsWithoutFixTakesThePhonesPosition() = gpsWithoutFix()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_5_gpsWithoutFixTakesThePhonesPosition_fr() = gpsWithoutFix()
+
+    private fun gpsWithoutFix() {
+        launch("demo" to true, "radioNoFix" to true, "screen" to "radio")
+        // Its GPS, read after its other settings.
+        advanceUntil("the radio's GPS") { model.radioSettings?.gps != null }
+        assertEquals(true, model.radioSettings?.gps)
+        toggle(R.string.position_in_adverts)
+        tapInDialog(R.string.show_it)
+        advanceUntil("in its adverts", 30) { model.radioSettings?.positionInAdverts == true }
+        see(R.string.none_yet)
+        // This phone's position offered (the screen asks for it), and why.
+        advanceUntil("this phone's position offered", 30, { shown() }) { has(R.string.use_phone_position) }
+        see(R.string.advert_gps_no_fix)
+        val fix = model.myFix!!
+        tap(R.string.use_phone_position)
+        // SET_ADVERT_LATLON: the radio advertises it, in figures.
+        advanceUntil("the phone's position on the radio", 30, { model.radioSettings }) { model.radioSettings?.latE6 != 0 }
+        val r = model.radioSettings!!
+        assertEquals(Math.round(fix.lat * 1e6).toInt(), r.latE6)
+        assertEquals(Math.round(fix.lon * 1e6).toInt(), r.lonE6)
+        assertFalse(has(R.string.none_yet))
+        assertFalse(has(R.string.advert_gps_no_fix))
+        see(String.format(java.util.Locale.ROOT, "%.5f, %.5f", r.latE6 / 1e6, r.lonE6 / 1e6))
+        // A radio with its GPS on and a position keeps it: the phone's is no longer offered
+        // (the GPS's next fix replaces it in the firmware).
+        assertFalse(has(R.string.use_phone_position))
+    }
+
     /** RL-5 (D-9): a radio slow to answer (its replies held for 7 s): its settings screen says
      * they are being read, neither "Connect a radio" nor zeros as values; then its values. */
     @Test

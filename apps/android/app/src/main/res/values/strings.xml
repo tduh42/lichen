@@ -922,6 +922,7 @@
     <string name="position_in_adverts_off">Off: adverts carry no position.</string>
     <string name="position_advertised">Position advertised</string>
     <string name="use_phone_position">Use this phone’s position</string>
+    <string name="advert_gps_no_fix">The radio’s GPS has no fix yet: it needs open sky. Until then, it can advertise this phone’s position.</string>
     <string name="telemetry_base">Telemetry: battery and status</string>
     <string name="telemetry_location">Telemetry: position</string>
     <string name="telemetry_environment">Telemetry: sensors</string>

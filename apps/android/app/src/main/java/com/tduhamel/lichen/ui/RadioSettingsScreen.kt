@@ -303,9 +303,12 @@ private fun AppModel.setPrefs(
 
 @Composable
 private fun PrivacySection(model: AppModel, r: RadioSettings) {
-    // A radio without GPS advertising its position takes this phone's (below): the phone's
-    // location runs while that choice is on screen, as on the map.
-    val usesPhone = r.positionInAdverts && r.gps != true
+    // A radio advertising its position takes this phone's (below) when it has none of its own:
+    // without GPS, or with its GPS on but no fix yet, indoors (B-user-2). The phone's location
+    // runs while that choice is on screen, as on the map. A radio whose GPS has a position keeps
+    // it: its own fix is better.
+    val noPosition = r.latE6 == 0 && r.lonE6 == 0
+    val usesPhone = r.positionInAdverts && (r.gps != true || noPosition)
     DisposableEffect(usesPhone) {
         if (usesPhone) model.needsLocation("radio", true)
         onDispose { if (usesPhone) model.needsLocation("radio", false) }
@@ -328,8 +331,17 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
                 // Figures any reader and any map takes, "45.12345, 5.12345", as a place in a message.
                 else String.format(java.util.Locale.ROOT, "%.5f, %.5f", r.latE6 / 1e6, r.lonE6 / 1e6)
                 CardRow(stringResource(R.string.position_advertised), pos)
+                // Why there is none: the GPS is on but has no fix (it needs open sky).
+                if (r.gps == true && noPosition) {
+                    Text(
+                        stringResource(R.string.advert_gps_no_fix),
+                        fontSize = 13.sp,
+                        color = t.tx2,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 11.dp),
+                    )
+                }
                 val fix = model.myFix
-                if (r.gps != true && fix != null) {
+                if (usesPhone && fix != null) {
                     CardDivider()
                     Box(Modifier.clickable {
                         model.radioSet { model.core.setAdvertPosition((fix.lat * 1e6).roundToInt(), (fix.lon * 1e6).roundToInt()) }
