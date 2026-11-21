@@ -10001,6 +10001,16 @@
         }
       }
     },
+    "The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le GPS de la radio n’a pas encore de position : il lui faut le ciel dégagé. En attendant, elle peut annoncer la position de ce téléphone."
+          }
+        }
+      }
+    },
     "The same on both phones: nobody in between. Compare them aloud, or over another channel.": {
       "localizations": {
         "fr": {

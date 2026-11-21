@@ -278,6 +278,13 @@ struct RadioSettingsView: View {
         }
     }
 
+    /// A radio advertising its position takes this phone's when it has none of its own: without
+    /// GPS, or with its GPS on but no fix yet, indoors (B-user-2). A radio whose GPS has a
+    /// position keeps it: its own fix is better.
+    private func usesPhone(_ r: RadioSettings) -> Bool {
+        r.positionInAdverts && (r.gps != true || (r.latE6 == 0 && r.lonE6 == 0))
+    }
+
     private func privacy(_ r: RadioSettings) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionLabel("Position and telemetry").padding(.top, 10)
@@ -294,7 +301,17 @@ struct RadioSettingsView: View {
                 if r.positionInAdverts {
                     CardDivider()
                     CardRow(title: String(localized: "Position advertised"), subtitle: position(r))
-                    if r.gps != true, let fix = model.myFix {
+                    // Why there is none: the GPS is on but has no fix (it needs open sky).
+                    if r.gps == true && r.latE6 == 0 && r.lonE6 == 0 {
+                        Text("The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position.")
+                            .font(.system(.footnote))
+                            .foregroundStyle(Theme.tx2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 11)
+                    }
+                    if usesPhone(r), let fix = model.myFix {
                         CardDivider()
                         Button {
                             model.radioSet {
@@ -331,6 +348,10 @@ struct RadioSettingsView: View {
                 .foregroundStyle(Theme.tx2)
                 .padding(.horizontal, 4)
         }
+        // The phone's location runs while its position can be given to the radio, as on the map.
+        .onAppear { if usesPhone(r) { model.needsLocation("radio", true) } }
+        .onChange(of: usesPhone(r)) { _, on in model.needsLocation("radio", on) }
+        .onDisappear { model.needsLocation("radio", false) }
         .alert("Show your position to the whole mesh?", isPresented: $confirmingPosition) {
             Button("Show it", role: .destructive) { setPrefs(r, position: true) }
             Button("Cancel", role: .cancel) {}

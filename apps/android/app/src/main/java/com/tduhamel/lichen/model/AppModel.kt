@@ -151,6 +151,8 @@ class AppModel(val app: Application) {
         /** The demo keeps group invitations on: Camille's group arrives as an invitation to
          * accept or decline (§10.1). */
         val groupInvitationDemo: Boolean = false,
+        /** The demo radio's GPS is on but has no fix: no position of its own (B-user-2). */
+        val radioNoFix: Boolean = false,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -766,6 +768,8 @@ class AppModel(val app: Application) {
             if (debug.sosDemo || debug.sosDemo2) net.julienSos()
             if (debug.sosDemo2) net.camilleSos(240uL, 300uL)
             if (debug.marcRepeater) net.marcAsRepeater()
+            // Debug `radioNoFix`: the radio's GPS on, without a fix (indoors).
+            if (debug.radioNoFix) net.gpsWithoutFix()
         }
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")

@@ -646,6 +646,8 @@ final class AppModel {
         // -radioSlow S: the demo radio holds its answers for S seconds of the demo's time (D-9).
         let slow = args.integer(forKey: "radioSlow")
         if slow > 0 { net.holdReplies(seconds: UInt64(slow)) }
+        // -radioNoFix YES: the demo radio's GPS is on but has no fix, no position (B-user-2).
+        if args.bool(forKey: "radioNoFix") { net.gpsWithoutFix() }
         // -demoSpeed N (up to 4): the demo network and the core run N times faster than the wall
         // clock (UI tests). Never outside the demo.
         let speed = min(4, max(1, args.integer(forKey: "demoSpeed")))
