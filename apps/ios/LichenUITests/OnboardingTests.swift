@@ -343,6 +343,19 @@ final class OnboardingTests: LichenUITest {
         XCTAssertEqual(keyButton.label, tr("Verify their key"), "Later verified her")
     }
 
+    /// ON-6, D-10: at an accessibility text size the banner is compact: its title, Compare and
+    /// Later, without the note; still above the messages.
+    func testON6_CompactBannerAtLargeText() {
+        launch(["-open", "Camille", "-quietDemo", "YES",
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        wait(keyButton, Self.camilleTimeout, "no session with Camille")
+        wait(compareBanner("Camille"), 5, "her chat does not ask to compare")
+        XCTAssertTrue(button(tr("Compare")).exists && button(tr("Later")).exists, "not both buttons")
+        XCTAssertFalse(containing(tr("Their key is not verified yet. Compare the numbers with them, in person or on a call.")).exists,
+                       "the note at an accessibility text size")
+        keep("on-compare-banner-large")
+    }
+
     /// ON-7, pasted: Léa's code added by paste is not verified; her conversation starts and a
     /// text reaches her.
     func testON7_AddAContactByPastingTheirCode() {

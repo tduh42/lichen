@@ -327,6 +327,54 @@ extension CardRow where Trailing == EmptyView {
     }
 }
 
+/// A node's MeshCore public key (F-1): its 64 hex digits in groups of 8, as the stock MeshCore
+/// app writes them; a tap copies them ("Copied").
+struct MeshCoreKeyRow: View {
+    let key: Data
+    @State private var copied = false
+
+    /// "1a2b3c4d 5e6f7a8b …": 8 groups of 8 digits, 4 to a line.
+    static func grouped(_ key: Data) -> String {
+        let hex = Array(key.hex)
+        let groups = stride(from: 0, to: hex.count, by: 8).map { String(hex[$0..<min($0 + 8, hex.count)]) }
+        return stride(from: 0, to: groups.count, by: 4)
+            .map { groups[$0..<min($0 + 4, groups.count)].joined(separator: " ") }
+            .joined(separator: "\n")
+    }
+
+    var body: some View {
+        Button {
+            UIPasteboard.general.string = key.hex
+            copied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("MeshCore public key").font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
+                    Text(Self.grouped(key))
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Text(copied ? String(localized: "Copied") : String(localized: "Copy"))
+                    .font(.system(.footnote, weight: .semibold))
+                    .foregroundStyle(copied ? Theme.ok : Theme.tx2)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "MeshCore public key"))
+        .accessibilityValue(copied ? String(localized: "Copied") : key.hex)
+        .accessibilityHint(String(localized: "Copies it"))
+        .accessibilityIdentifier("meshcoreKey")
+    }
+}
+
 /// Rows in a card; put a `CardDivider` between them.
 struct CardList<Content: View>: View {
     @ViewBuilder var content: () -> Content

@@ -643,6 +643,9 @@ final class AppModel {
         if args.bool(forKey: "quietDemo") { net.quiet() }
         // -radioRefuses power: the demo radio refuses transmit power changes (D-4).
         if args.string(forKey: "radioRefuses") == "power" { net.refuseTxPower() }
+        // -radioSlow S: the demo radio holds its answers for S seconds of the demo's time (D-9).
+        let slow = args.integer(forKey: "radioSlow")
+        if slow > 0 { net.holdReplies(seconds: UInt64(slow)) }
         // -demoSpeed N (up to 4): the demo network and the core run N times faster than the wall
         // clock (UI tests). Never outside the demo.
         let speed = min(4, max(1, args.integer(forKey: "demoSpeed")))
