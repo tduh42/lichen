@@ -148,6 +148,18 @@ abstract class UiTest {
         compose.waitForIdle()
     }
 
+    /** The text the clipboard holds now. */
+    fun clipboardText(): String? =
+        context.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()
+
+    /** What a QR code on screen says (zxing). */
+    fun readQr(image: Bitmap): String {
+        val px = IntArray(image.width * image.height)
+        image.getPixels(px, 0, image.width, 0, 0, image.width, image.height)
+        val source = com.google.zxing.RGBLuminanceSource(image.width, image.height, px)
+        return com.google.zxing.qrcode.QRCodeReader().decode(com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))).text
+    }
+
     /** The system's back: closes the sheet or dialog on top, else goes back a screen. */
     fun back() {
         androidx.test.espresso.Espresso.pressBack()

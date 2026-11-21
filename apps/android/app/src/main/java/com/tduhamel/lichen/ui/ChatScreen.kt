@@ -124,6 +124,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -353,12 +354,14 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
                 )
             }
         } else if (contactNode != null && model.asksToCompare(contactNode)) {
-            // Their key, known and not verified: compare, on this phone too (B-user-1).
+            // Their key, known and not verified: compare, on this phone too (B-user-1). At large
+            // text (font scale 1.5 and more) only its title and buttons, so the chat keeps room (D-10).
+            val compact = LocalDensity.current.fontScale >= 1.5f
             Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
                 Banner(
                     BannerKind.WARN,
                     stringResource(R.string.compare_safety_numbers_with, model.title(chat)),
-                    stringResource(R.string.compare_safety_numbers_note),
+                    if (compact) null else stringResource(R.string.compare_safety_numbers_note),
                     stringResource(R.string.compare) to { verifying = ByteArray(0) },
                     stringResource(R.string.later) to { model.compareLaterWith(contactNode) },
                 )

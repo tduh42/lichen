@@ -1,5 +1,22 @@
 package com.tduhamel.lichen.ui
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.outlined.Share
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.foundation.clickable
+import android.content.Intent
+import android.content.ClipData
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -253,6 +270,44 @@ fun CardRow(
             if (subtitle != null) Text(subtitle, fontSize = 13.sp, color = lichen.tx2)
         }
         trailing()
+    }
+}
+
+/** A node's MeshCore public key, in groups of 8 hex digits (F-1). Tapped (or its Copy), its 64
+ * digits go to the clipboard and the row says "Copied"; with [share], Copy and Share buttons (Share
+ * sends the digits to another app). */
+@Composable
+fun MeshCoreKeyRow(key: ByteArray, share: Boolean = false) {
+    val t = lichen
+    val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val hex = key.joinToString("") { "%02x".format(it) }
+    var copied by remember(hex) { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(2_000)
+            copied = false
+        }
+    }
+    fun copy() {
+        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("lichen", hex))) }
+        copied = true
+    }
+    Box(Modifier.clickable(onClickLabel = stringResource(R.string.copy)) { copy() }) {
+        CardRow(
+            stringResource(R.string.meshcore_public_key),
+            if (copied) stringResource(R.string.copied) else hex.chunked(8).joinToString(" "),
+            merge = false,
+        ) {
+            if (share) {
+                IconButton(onClick = { copy() }) { Icon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), tint = t.tx2) }
+                IconButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, hex)
+                    context.startActivity(Intent.createChooser(send, null))
+                }) { Icon(Icons.Outlined.Share, stringResource(R.string.share), tint = t.tx2) }
+            }
+        }
     }
 }
 

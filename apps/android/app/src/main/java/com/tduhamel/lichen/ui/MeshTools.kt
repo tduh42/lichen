@@ -91,7 +91,6 @@ import com.tduhamel.lichen.model.channelQr
 import com.tduhamel.lichen.model.display
 import com.tduhamel.lichen.model.forgetRadio
 import com.tduhamel.lichen.model.heard
-import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.node
 import com.tduhamel.lichen.model.nodePath
 import com.tduhamel.lichen.model.parseChannelQr
@@ -297,7 +296,7 @@ fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () ->
                     CardRow(stringResource(R.string.advertised_position), "%.5f, %.5f".format(n.lat, n.lon))
                 }
                 CardDivider()
-                CardRow(stringResource(R.string.key), key.copyOf(8).hex())
+                MeshCoreKeyRow(key)
             }
         }
         item { SectionLabel(stringResource(R.string.path), Modifier.padding(top = 10.dp)) }

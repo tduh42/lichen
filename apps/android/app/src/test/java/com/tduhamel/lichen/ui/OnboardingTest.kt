@@ -402,6 +402,29 @@ class OnboardingTest : UiTest() {
         assertFalse(has(str(R.string.compare_safety_numbers_with, "Camille")))
     }
 
+    /** D-10: at large text (font scale 1.5 and more), the compare banner is compact: its title
+     * and Compare / Later, without the note; at the usual size, the note too. */
+    @Test
+    @Config(fontScale = 2.0f)
+    fun ON_6_compactCompareBannerAtLargeText() = compareBanner(compact = true)
+
+    @Test
+    @Config(qualifiers = "+fr", fontScale = 1.5f)
+    fun ON_6_compactCompareBannerAtLargeText_fr() = compareBanner(compact = true)
+
+    @Test
+    fun ON_6_compareBannerWithItsNote() = compareBanner(compact = false)
+
+    private fun compareBanner(compact: Boolean) {
+        launch("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        text(R.string.compare_safety_numbers_with, "Camille").assertIsDisplayed()
+        text(R.string.compare).assertIsDisplayed()
+        text(R.string.later).assertIsDisplayed()
+        assertEquals("the note", !compact, has(R.string.compare_safety_numbers_note))
+    }
+
     /** B-user-1: Later puts the banner away, after a restart too; doing neither, it comes back. */
     @Test
     fun ON_6_compareLaterAndAfterARestart() {
