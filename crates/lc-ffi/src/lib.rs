@@ -67,7 +67,10 @@ mod unit_mesh;
 pub use api_backup::{BackupSummary, RestoredBackup};
 pub use api_block::BlockedContact;
 pub use api_import::ImportReport;
-pub use api_mesh::{ChannelCode, NodeInfo, NodeKind, PathHop, TraceInfo, TraceLeg, TraceState};
+pub use api_mesh::{
+    ChannelCode, MeshCoreContact, NodeInfo, NodeKind, PathHop, TraceInfo, TraceLeg, TraceState,
+    meshcore_contact_code, read_meshcore_contact_code,
+};
 pub use api_radio::{RadioSetting, RadioSettings, RadioVar, Telemetry};
 pub use api_radios::{LinkKind, SavedRadio};
 pub use api_requests::{IdentityRequest, RequestLine};
