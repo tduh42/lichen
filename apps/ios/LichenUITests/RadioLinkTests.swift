@@ -382,7 +382,7 @@ final class RadioLinkTests: LichenUITest {
     func testRL10_AdvertCarriesThePosition() {
         openRadioSettings()
         showPositionInAdverts()
-        let use = cardButton(tr("Use this phone's position"))
+        let use = cardButton(tr("Use this phone’s position"))
         wait(use, 10, "this phone's position is not offered")
         reveal(use)
         use.tap()
