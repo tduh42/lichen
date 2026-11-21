@@ -370,6 +370,8 @@ fun VerifySheet(model: AppModel, node: ByteArray, pending: ByteArray?, dismiss: 
         ) {
             Text(stringResource(if (pending == null) R.string.safety_number else R.string.new_key), fontSize = 22.sp, color = t.tx)
             VerifyPanel(model, node, pending, dismiss)
+            // Their radio's MeshCore public key, to copy (F-1).
+            CardList { MeshCoreKeyRow(node) }
         }
     }
 }

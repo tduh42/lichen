@@ -89,6 +89,8 @@ fun PlainInfoSheet(model: AppModel, chat: ChatId, dismiss: () -> Unit, left: () 
                 else -> R.string.plain_channel_explainer
             }
             Banner(BannerKind.WARN, stringResource(R.string.not_lichen_encrypted), stringResource(text))
+            // Their node's MeshCore public key, to copy (F-1).
+            if (channel == null) CardList { MeshCoreKeyRow(chat.hex.unhex()) }
             // A room's login (§15.8).
             if (room) ServerLoginCard(model, chat.hex.unhex(), room = true)
             if (channel != null) {

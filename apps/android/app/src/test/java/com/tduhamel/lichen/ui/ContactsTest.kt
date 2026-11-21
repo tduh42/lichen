@@ -172,6 +172,57 @@ class ContactsTest : UiTest() {
 
     private fun pluralSafe(n: Int) = plural(R.plurals.nodes_known, n, n)
 
+    /** The MeshCore public key row of a contact or node: the key in groups of 8; tapped, its
+     * 64 hex digits on the clipboard and "Copied" (F-1). */
+    private fun copiesKey(key: ByteArray) {
+        val hex = key.joinToString("") { "%02x".format(it) }
+        see(hex.chunked(8).joinToString(" "))
+        tap(R.string.meshcore_public_key)
+        assertEquals(hex, clipboardText())
+        see(R.string.copied)
+    }
+
+    /** CT-2 (F-1): a contact's MeshCore public key, copied from their screen: Camille's (her
+     * key's sheet) and Marc's (his MeshCore chat's details). */
+    @Test
+    fun CT_2_contactsMeshcorePublicKey() = contactKeys()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_2_contactsMeshcorePublicKey_fr() = contactKeys()
+
+    private fun contactKeys() {
+        launch("demo" to true)
+        advanceUntil("Camille's key and Marc's hello", 120) {
+            model.contacts.any { it.name == "Camille" && it.identity != null } && has("Marc")
+        }
+        tap("Camille")
+        tapDesc(R.string.verify_their_key)
+        copiesKey(contact("Camille").key)
+        back()
+        tapDesc(R.string.back)
+        tap("Marc")
+        tapDesc(R.string.about_meshcore_chats)
+        copiesKey(contact("Marc").key)
+    }
+
+    /** CT-3 (F-1): a node's MeshCore public key, copied from its screen (Settings › Nodes). */
+    @Test
+    fun CT_3_nodeMeshcorePublicKey() = nodeKey()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_3_nodeMeshcorePublicKey_fr() = nodeKey()
+
+    private fun nodeKey() {
+        launch("demo" to true)
+        advanceUntil("the radio's nodes") { model.nodes.any { it.name == "hub" } }
+        tab(R.string.tab_settings)
+        tap(R.string.nodes)
+        tap("hub")
+        copiesKey(model.nodes.first { it.name == "hub" }.key)
+    }
+
     /** CT-4: the room server: logged in, its posts read, a post sent; its row in Messages. */
     @Test
     fun CT_4_roomLogInReadPost() = room()

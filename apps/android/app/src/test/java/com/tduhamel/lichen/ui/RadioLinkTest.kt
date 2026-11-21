@@ -2,7 +2,9 @@ package com.tduhamel.lichen.ui
 
 import android.content.res.Configuration
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -19,6 +21,9 @@ import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.LinkKind
 import com.tduhamel.lichen.core.MessageStatus
+import com.tduhamel.lichen.core.NodeKind
+import com.tduhamel.lichen.core.meshcoreContactCode
+import com.tduhamel.lichen.core.readMeshcoreContactCode
 import com.tduhamel.lichen.model.ChatId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +32,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** Area 2 of docs/testing.md: the radio link and the radio's settings. */
 @RunWith(AndroidJUnit4::class)
@@ -282,6 +288,46 @@ class RadioLinkTest : UiTest() {
             Thread.sleep(20)
         }
         compose.waitForIdle()
+    }
+
+    /** RL-5 (F-1): the radio's MeshCore public key, in groups of 8, copied and shared; its
+     * MeshCore code, a QR a stock MeshCore app scans to add this radio. */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun RL_5_meshcorePublicKeyAndCode() = meshcoreKey()
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    @Config(qualifiers = "+fr")
+    fun RL_5_meshcorePublicKeyAndCode_fr() = meshcoreKey()
+
+    private fun meshcoreKey() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings and key") { model.radioSettings?.read == true && model.nodeKey != null }
+        val key = model.nodeKey!!
+        val hex = key.joinToString("") { "%02x".format(it) }
+        // The key, the radio's own, in groups of 8.
+        see(R.string.meshcore_public_key)
+        see(hex.chunked(8).joinToString(" "))
+        // Its code: the QR reads back as the stock app's contact code for this radio.
+        see(R.string.meshcore_code_note)
+        val code = readQr(desc(R.string.meshcore_code).captureToImage().asAndroidBitmap())
+        assertEquals(meshcoreContactCode(model.radioSettings!!.name, key, NodeKind.COMPANION), code)
+        val read = readMeshcoreContactCode(code)
+        assertTrue(read.key.contentEquals(key))
+        assertEquals(NodeKind.COMPANION, read.kind)
+        // Copy: the 64 hex digits on the clipboard, said so.
+        tapDesc(R.string.copy)
+        assertEquals(hex, clipboardText())
+        see(R.string.copied)
+        // Share: the same, to another app.
+        val app = shadowOf(context as android.app.Application)
+        while (app.nextStartedActivity != null) Unit
+        tapDesc(R.string.share)
+        val chooser = app.nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_CHOOSER, chooser?.action)
+        val sent = androidx.core.content.IntentCompat.getParcelableExtra(chooser!!, android.content.Intent.EXTRA_INTENT, android.content.Intent::class.java)
+        assertEquals(hex, sent?.getStringExtra(android.content.Intent.EXTRA_TEXT))
     }
 
     /** RL-6: a setting the radio cannot take: said so, the old value stays. */
