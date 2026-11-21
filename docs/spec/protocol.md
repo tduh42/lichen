@@ -867,6 +867,17 @@ A room server is a MeshCore node (type 3) that keeps the last 32 posts of a room
 - One login, status or binary request is out at a time: the companion forgets the one it waits for when it gets another (`clearPendingReqs`, `MyMesh.cpp` L1588). lichen queues them.
 - **In Messages**: the apps list every conversation that has a message, rooms included, whatever the radio's contact list says (a node it no longer reports, or reports under another type, keeps its row), named after the contact (its nickname first), then the node the radio reported, else "Unknown radio" and the first 3 bytes of its key in hex.
 
+### 15.9 Mentions and replies (ADR-0048)
+
+Observed in the stock app's messages (its sources are closed): a MeshCore text names a person as `@[name]`, the name their radio advertises. A channel post carries it after the firmware's `<sender>: ` prefix, as in `Lucie: @[Marc] see you at the hut`. A mention names a person, not a message: nothing in it identifies what it answers. The stock app keeps a per-channel "self mention" notification setting apart from "new message".
+
+- **The form**: `@[`, a name of one character or more without `]` or a line break, then `]`. A `[` may be part of the name; the first `]` ends it. An `@[` that does not close this way is text.
+- **A reply**: a mention at the very start of the text (after a post's `<sender>: ` prefix) makes it a reply to that person. Anywhere else it is a mention.
+- **What a reply quotes**: in the same conversation, the latest earlier message whose sender has that name, compared exactly: a channel's or a room's post by its `<sender>` prefix, a MeshCore chat's message by the name the node advertises, ours by our radio's name (§15.4). None found: no quote, the mention alone. A reply the user sent from lichen quotes the very message they answered, which the phone keeps (`plain_replies`; not in a backup, where the rule above applies). The quote is resolved when a message is listed, not stored.
+- **Mentions us**: a received message that mentions our radio's current name, compared exactly (case and spaces included). The apps highlight it and notify it even in a muted conversation (the stock app's two settings are separate, the mention on by default).
+- **Shown**: the apps get a MeshCore text cut into spans that cover it: text, links and places (ADR-0034), and mentions, shown as "@name" (ours highlighted). A link inside a mention's name is the mention's.
+- **Written**: Reply on a MeshCore message sends `@[<its sender's name>] ` followed by the text, to the same conversation, with the same limits as any plain text: the mention counts in the 160 bytes, less our name on a channel (§15.3). A name holding `]` or a line break cannot be written in a mention: such a message cannot be answered. A mention typed by hand is one all the same.
+
 ## 16. Mesh tools (ADR-0041)
 
 What lichen shows of the MeshCore network itself, from the companion, as the stock app does. MeshCore facts come from the firmware's sources at v1.18 (`https://github.com/meshcore-dev/MeshCore/blob/81dbae5/…`; `MyMesh.cpp` is `examples/companion_radio/MyMesh.cpp`, `BaseChatMesh.cpp` is `src/helpers/BaseChatMesh.cpp`), with the line of each handler; vectors in `testdata/meshcore/mesh.toml`, written from them by `mesh.py`. Nothing here is lichen-encrypted, and nothing is stored: the radio is the source of truth and is read again at each connection.

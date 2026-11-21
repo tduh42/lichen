@@ -1104,17 +1104,25 @@ final class AppModel {
             if !isMuted(chat) {
                 notifier.message(chat, title: title(of: chat), body: "\(name(of: from)): \(message.display)")
             }
-        case let .plainReceived(chat, label, text):
+        case let .plainReceived(chat, label, text, mentionsUs):
             // A MeshCore message (§15.1): "Marc · MeshCore", or "Lucie · Public" on a channel.
             // Never like a lichen chat's: a node can send plain text under any name, and its
             // notification must not pass for the encrypted conversation (review of
-            // 2026-11-15, SR-30).
-            if !isMuted(chat) {
+            // 2026-11-15, SR-30). One that mentions us notifies even when muted (§15.9).
+            if mentionsUs {
+                // "Lucie mentioned you in Public", even when muted.
+                let who = label ?? self.title(of: chat)
+                let title: String = switch chat {
+                case .channel, .room: String(localized: "\(who) mentioned you in \(self.title(of: chat))")
+                default: String(localized: "\(who) mentioned you")
+                }
+                notifier.message(chat, title: title, body: meshcoreDisplayText(text: text))
+            } else if !isMuted(chat) {
                 let title: String = switch chat {
                 case .channel, .room: [label, self.title(of: chat)].compactMap { $0 }.joined(separator: " · ")
                 default: "\(label ?? self.title(of: chat)) · MeshCore"
                 }
-                notifier.message(chat, title: title, body: text)
+                notifier.message(chat, title: title, body: meshcoreDisplayText(text: text))
             }
             #if DEBUG
             // -sayPlain <text>: answer the first MeshCore direct message.
@@ -1813,20 +1821,45 @@ final class AppModel {
 
     // MARK: replies and reactions (protocol.md §6.2)
 
-    /// Answers `target` with `text` (a text that waits for the radio like any other).
+    /// Answers `target` with `text` (a text that waits for the radio like any other). A
+    /// MeshCore message is answered by naming its sender first, `@[Name] ` (§15.9).
     func reply(_ text: String, to target: StoredMessage) -> String? {
         do {
-            let m = try core.sendReply(chat: target.chat, toMessageId: target.id, text: text,
-                                       sentAt: UInt32(Date().timeIntervalSince1970), nowMs: now())
+            let sentAt = UInt32(Date().timeIntervalSince1970)
+            let m = target.chat.isPlain
+                ? try core.sendPlainReply(messageId: target.id, text: text, sentAt: sentAt, nowMs: now())
+                : try core.sendReply(chat: target.chat, toMessageId: target.id, text: text, sentAt: sentAt, nowMs: now())
             upsert(m)
             conversations = core.conversations()
             pump()
             return nil
+        } catch LichenError.NotReferable where target.chat.isPlain {
+            return String(localized: "Can’t reply to this name.")
         } catch let e as LichenError {
             return e.display
         } catch {
             return String(localized: "Could not send.")
         }
+    }
+
+    /// Whether a MeshCore message can be answered with a mention (§15.9): a text.
+    func plainReplyable(_ m: StoredMessage) -> Bool {
+        guard m.chat.isPlain, case .text = m.message else { return false }
+        return true
+    }
+
+    /// The name a reply to MeshCore message `m` mentions (§15.9): a post's author, ours, or the
+    /// name the node's radio advertises.
+    func plainSender(_ m: StoredMessage) -> String {
+        if let a = m.authorName { return a }
+        if m.outgoing { return nodeName }
+        if case let .mesh(key) = m.chat, let c = contacts.first(where: { $0.key == key }) { return c.nodeName }
+        return title(of: m.chat)
+    }
+
+    /// A MeshCore text cut into spans: text, links, places, mentions (§15.9).
+    func meshSpans(_ text: String) -> [TextSpan] {
+        core.meshcoreSpans(text: text)
     }
 
     // MARK: editing and deleting (protocol.md §6.4)
@@ -2778,7 +2811,8 @@ extension StoredMessage {
 
     /// One line for the conversation list ("Camille: …" in groups and channels).
     @MainActor func preview(_ model: AppModel) -> String {
-        let text = message.display
+        // A MeshCore text's mentions as "@name" (§15.9).
+        let text = chat.isPlain ? meshcoreDisplayText(text: message.display) : message.display
         if let authorName, !outgoing { return "\(authorName): \(text)" }
         if let author, !outgoing, !chat.isPlain { return "\(model.name(of: author)): \(text)" }
         return text

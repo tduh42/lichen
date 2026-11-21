@@ -12,6 +12,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.ui.text.font.FontStyle
 import com.tduhamel.lichen.core.QuoteKind
 import com.tduhamel.lichen.core.TextTarget
+import com.tduhamel.lichen.core.SpanKind
 import com.tduhamel.lichen.core.textLinks
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.MoreVert
@@ -23,12 +24,15 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.tduhamel.lichen.core.ChatRef
 import com.tduhamel.lichen.core.Quote
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
@@ -208,7 +212,7 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
         // The message the draft answers, kept with it (ADR-0034).
         model.replyDraft(chat)?.let { id ->
             val m = if (model.loadUntil(chat, id)) model.chats[chat].orEmpty().firstOrNull { it.id == id } else null
-            if (m != null && m.referable) replyTo = m else model.setReplyDraft(chat, null)
+            if (m != null && (m.referable || model.plainReplyable(m))) replyTo = m else model.setReplyDraft(chat, null)
         }
         replyRestored = true
         // Before marking them read: where the unread messages start.
@@ -768,6 +772,17 @@ private fun MessageBubble(
                     },
                 )
             }
+            // A MeshCore message: answered by naming its sender (§15.9).
+            if (!m.referable && model.plainReplyable(m)) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.reply)) },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.Reply, null) },
+                    onClick = {
+                        menu = false
+                        reply()
+                    },
+                )
+            }
             if (text != null) {
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.copy)) },
@@ -890,7 +905,10 @@ private fun MessageBubble(
             )
         }
         m.quote?.let { q ->
-            QuoteBox(model, q, ChatId.of(m.chat), Modifier.clickable(enabled = q.messageId != null) { q.messageId?.let(openQuote) })
+            QuoteBox(
+                model, q, ChatId.of(m.chat), Modifier.clickable(enabled = q.messageId != null) { q.messageId?.let(openQuote) },
+                name = m.replyToName,
+            )
         }
         if (m.message is Message.Deleted) {
             // Taken back by its author (§6.4): its place stays.
@@ -906,13 +924,27 @@ private fun MessageBubble(
             }
         } else if (!MediaContent(model, m)) {
             val color = if (m.outgoing) t.actFg else t.tx
+            val plain = ChatId.of(m.chat).plain
+            // A MeshCore message that mentions our radio stands out (§15.9).
+            val mentionsYou = stringResource(R.string.mentions_you)
             Text(
-                // Links open in the browser when tapped, places on the map (ADR-0034).
-                if (text != null) linked(model, text, color) else AnnotatedString(m.message.display(res)),
+                // Links open in the browser when tapped, places on the map (ADR-0034); a
+                // MeshCore text's mentions show as "@name" (§15.9).
+                when {
+                    text != null && plain -> meshLinked(model, text, color, if (m.outgoing) t.actFg else t.iroh)
+                    text != null -> linked(model, text, color)
+                    else -> AnnotatedString(m.message.display(res))
+                },
                 fontSize = 16.sp,
                 color = color,
                 modifier = Modifier
-                    .background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp))
+                    .then(
+                        if (m.mentionsUs) Modifier
+                            .border(1.5.dp, t.iroh, RoundedCornerShape(18.dp))
+                            .background(t.irohBg, RoundedCornerShape(18.dp))
+                            .semantics { stateDescription = mentionsYou }
+                        else Modifier.background(if (m.outgoing) t.actBg else t.s2, RoundedCornerShape(18.dp)),
+                    )
                     .longPressOverLinks { menu = true }
                     .padding(horizontal = 14.dp, vertical = 9.dp),
             )
@@ -973,6 +1005,27 @@ private fun linked(model: AppModel, text: String, color: Color): AnnotatedString
     }
 }
 
+/** A MeshCore text (§15.9): its mentions as "@name" in `accent`, without the brackets; its
+ * links and places tappable as in [linked]. */
+@Composable
+private fun meshLinked(model: AppModel, text: String, color: Color, accent: Color): AnnotatedString = remember(text, color, accent) {
+    buildAnnotatedString {
+        val style = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline))
+        for (s in model.meshSpans(text)) {
+            val start = s.start.toInt()
+            val end = s.end.toInt()
+            if (start < 0 || end > text.length || start >= end) continue
+            val piece = text.substring(start, end)
+            when (val kind = s.kind) {
+                is SpanKind.Text -> append(piece)
+                is SpanKind.Mention -> withStyle(SpanStyle(color = accent, fontWeight = FontWeight.SemiBold)) { append("@" + kind.name) }
+                is SpanKind.Web -> withLink(LinkAnnotation.Url(kind.url, style)) { append(piece) }
+                is SpanKind.Place -> withLink(LinkAnnotation.Clickable("place", style) { model.showOnMap(kind.lat, kind.lon) }) { append(piece) }
+            }
+        }
+    }
+}
+
 /**
  * A long press on the text opens the message's menu, on a link too: seen before the links (the
  * initial pass), with its release taken, so that a long press never opens a link (a tap does).
@@ -1004,10 +1057,12 @@ private val ReactionChoices = listOf("👍", "❤️", "😂", "😮", "😢", "
 
 /** What a reply answers (§6.2): its author and the start of it, or that it is not here. */
 @Composable
-private fun QuoteBox(model: AppModel, q: Quote, chat: ChatId, modifier: Modifier = Modifier) {
+private fun QuoteBox(model: AppModel, q: Quote, chat: ChatId, modifier: Modifier = Modifier, name: String? = null) {
     val t = lichen
     val author = when {
         q.outgoing -> stringResource(R.string.you)
+        // A MeshCore reply quotes whom it mentions (§15.9).
+        name != null -> name
         q.author != null -> model.name(q.author!!)
         else -> model.title(chat)
     }
@@ -1219,7 +1274,9 @@ private fun Composer(
     LaunchedEffect(editing?.id) { (editing?.message as? Message.Text)?.let { draft = it.text } }
     // Bytes over a plain chat's limit (§15.2, §15.3); 0 within it.
     val plainMax = if (chat.plain) model.plainTextMax(chat) else 0
-    val plainOver = if (chat.plain) maxOf(0, draft.toByteArray().size - plainMax) else 0
+    // A reply names whom it answers first, `@[Name] ` (§15.9): that counts too.
+    val mentionBytes = replyTo?.takeIf { chat.plain && editing == null }?.let { "@[${model.plainSender(it)}] ".toByteArray().size } ?: 0
+    val plainOver = if (chat.plain) maxOf(0, draft.toByteArray().size + mentionBytes - plainMax) else 0
     var linkAsText by remember(chat) { mutableStateOf(false) }
     var gifData by remember { mutableStateOf<ByteArray?>(null) }
     LaunchedEffect(gifLink?.id) {
@@ -1368,6 +1425,7 @@ private fun Composer(
             val res2 = LocalResources.current
             val who = when {
                 r.outgoing -> stringResource(R.string.replying_to_yourself)
+                r.authorName != null -> stringResource(R.string.replying_to, r.authorName!!)
                 r.author != null -> stringResource(R.string.replying_to, model.name(r.author!!))
                 else -> stringResource(R.string.replying_to, model.title(chat))
             }

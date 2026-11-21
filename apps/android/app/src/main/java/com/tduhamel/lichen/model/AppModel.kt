@@ -43,6 +43,7 @@ import com.tduhamel.lichen.core.MeshCoreLink
 import com.tduhamel.lichen.core.readMeshcoreLink
 import com.tduhamel.lichen.core.ChatPrefs
 import com.tduhamel.lichen.core.StoredMessage
+import com.tduhamel.lichen.core.TextSpan
 import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.LichenBridge
 import com.tduhamel.lichen.core.Message
@@ -1231,12 +1232,22 @@ class AppModel(val app: Application) {
                 // A MeshCore message (§15.1): "Marc · MeshCore", or "Lucie · Public" on a
                 // channel. Never like a lichen chat's: a node can send plain text under any
                 // name, and its notification must not pass for the encrypted conversation
-                // (review of 2026-11-15, SR-30).
+                // (review of 2026-11-15, SR-30). One that mentions us notifies even when muted
+                // (§15.9).
                 val chat = ChatId.of(e.chat)
-                if (!isMuted(chat)) {
-                    val title = if (chat.channel || chat.kind == ChatId.Kind.ROOM) listOfNotNull(e.label, title(chat)).joinToString(" · ")
+                val shared = chat.channel || chat.kind == ChatId.Kind.ROOM
+                // Its mentions as "@name" (§15.9).
+                val body = com.tduhamel.lichen.core.meshcoreDisplayText(e.text)
+                if (e.mentionsUs) {
+                    // "Lucie mentioned you in Public", even when muted.
+                    val who = e.label ?: title(chat)
+                    val title = if (shared) res.getString(R.string.mentioned_you_in, who, title(chat))
+                    else res.getString(R.string.mentioned_you, who)
+                    notify(chat, title, body)
+                } else if (!isMuted(chat)) {
+                    val title = if (shared) listOfNotNull(e.label, title(chat)).joinToString(" · ")
                     else "${e.label ?: title(chat)} · MeshCore"
-                    notify(chat, title, e.text)
+                    notify(chat, title, body)
                 }
                 if (chat.kind == ChatId.Kind.MESH) {
                     debug.sayPlain?.let { say ->
@@ -1712,16 +1723,34 @@ class AppModel(val app: Application) {
 
     // ----- replies and reactions (protocol.md §6.2) -----
 
-    /** Answers `target` with `text` (a text that waits for the radio like any other). */
+    /** Answers `target` with `text` (a text that waits for the radio like any other). A
+     * MeshCore message is answered by naming its sender first, `@[Name] ` (§15.9). */
     fun reply(text: String, target: StoredMessage): String? = try {
         val sentAt = (wallNow() / 1000).toUInt()
-        upsert(core.sendReply(target.chat, target.id, text, sentAt, now()))
+        if (ChatId.of(target.chat).plain) upsert(core.sendPlainReply(target.id, text, sentAt, now()))
+        else upsert(core.sendReply(target.chat, target.id, text, sentAt, now()))
         conversations = core.conversations()
         pump()
         null
+    } catch (e: LichenException.NotReferable) {
+        if (ChatId.of(target.chat).plain) res.getString(R.string.cannot_reply_to_name) else e.display(res)
     } catch (e: LichenException) {
         e.display(res)
     }
+
+    /** Whether a MeshCore message can be answered with a mention (§15.9): a text. */
+    fun plainReplyable(m: StoredMessage): Boolean = ChatId.of(m.chat).plain && m.message is Message.Text
+
+    /** The name a reply to MeshCore message `m` mentions (§15.9): a post's author, ours,
+     * or the name the node's radio advertises. */
+    fun plainSender(m: StoredMessage): String = when {
+        m.authorName != null -> m.authorName!!
+        m.outgoing -> nodeName
+        else -> ChatId.of(m.chat).nodeKey?.let { k -> contacts.firstOrNull { it.key.contentEquals(k) }?.nodeName } ?: title(ChatId.of(m.chat))
+    }
+
+    /** A MeshCore text cut into spans: text, links, places, mentions (§15.9). */
+    fun meshSpans(text: String): List<TextSpan> = runCatching { core.meshcoreSpans(text) }.getOrDefault(emptyList())
 
     // ----- editing and deleting (protocol.md §6.4) -----
 

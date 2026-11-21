@@ -231,6 +231,26 @@
         }
       }
     },
+    "%@ mentioned you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ te mentionne"
+          }
+        }
+      }
+    },
+    "%@ mentioned you in %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ te mentionne dans %2$@"
+          }
+        }
+      }
+    },
     "%@ reacted %@ to “%@”": {
       "localizations": {
         "fr": {
@@ -2677,6 +2697,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Annuler la réponse"
+          }
+        }
+      }
+    },
+    "Can’t reply to this name.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Impossible de répondre à ce nom."
           }
         }
       }
@@ -6007,6 +6037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Les membres sont des contacts avec qui tu as déjà échangé dans lichen ; les personnes à côté de toi peuvent aussi rejoindre le groupe en scannant son QR code. Chaque membre reçoit les clés d'envoi des autres par des sessions chiffrées. Les messages de groupe sont diffusés en inondation et signés."
+          }
+        }
+      }
+    },
+    "Mentions you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Te mentionne"
           }
         }
       }

@@ -199,6 +199,12 @@ pub struct StoredMessage {
     /// everyone (§6.4).
     pub editable: bool,
     pub deletable: bool,
+    /// A MeshCore message that starts with a mention, `@[name]`: a reply to that person
+    /// (§15.9). `quote` is then their latest earlier message in this conversation, when there
+    /// is one (ours: the very message the user answered).
+    pub reply_to_name: Option<String>,
+    /// A MeshCore message from someone else that mentions our radio's name, exactly (§15.9).
+    pub mentions_us: bool,
 }
 
 /// What kind of message a reply answers.
@@ -283,6 +289,8 @@ impl From<store::Message> for StoredMessage {
             edited: false,
             editable: false,
             deletable: false,
+            reply_to_name: None,
+            mentions_us: false,
         }
     }
 }

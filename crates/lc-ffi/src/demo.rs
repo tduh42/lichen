@@ -966,7 +966,10 @@ impl DemoNetwork {
                 110 * SEC,
                 Action::PublicPost {
                     from: lucie,
-                    text: "The fog is lifting, the ridge is clear now.".into(),
+                    // A mention of the demo radio (§15.9). As long as the post it replaced
+                    // (43 bytes): the same airtime keeps every later frame of the demo where
+                    // the scenarios expect it.
+                    text: "Fog is lifting. Coming up, @[ThinkNode M5]?".into(),
                 },
             ),
             (
@@ -980,7 +983,9 @@ impl DemoNetwork {
                 320 * SEC,
                 Action::PublicPost {
                     from: marc,
-                    text: "Molière refuge: 12 beds left tonight, soup at 7 pm.".into(),
+                    // A reply to Lucie's post at 280 s (§15.9), as long as the post it
+                    // replaced (52 bytes), for the same reason.
+                    text: "@[Lucie] Thanks! 12 beds left tonight, soup at 7 pm.".into(),
                 },
             ),
             // Early, before the bots' sessions and groups: the scripted scenarios stay as they

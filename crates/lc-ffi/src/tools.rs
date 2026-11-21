@@ -120,6 +120,79 @@ pub fn text_links(text: String) -> Vec<TextLink> {
     out
 }
 
+/// What a span of a MeshCore text is (§15.9).
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum SpanKind {
+    Text,
+    /// An `http` or `https` address (ADR-0034), opened only when tapped.
+    Web {
+        url: String,
+    },
+    /// Coordinates (WGS 84 degrees), shown on the app's map.
+    Place {
+        lat: f64,
+        lon: f64,
+    },
+    /// A mention, `@[name]`, shown as "@name"; `us`: our radio's name, highlighted.
+    Mention {
+        name: String,
+        us: bool,
+    },
+}
+
+/// A span of a MeshCore text, by UTF-16 offsets (what Swift's `NSRange` and Kotlin's strings
+/// count). The spans cover the whole text, in order.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct TextSpan {
+    pub start: u32,
+    pub end: u32,
+    pub kind: SpanKind,
+}
+
+/// A MeshCore text as one line shows it (§15.9): its mentions as `@name`, without their
+/// brackets. For a conversation's preview and a notification's body.
+#[uniffi::export]
+pub fn meshcore_display_text(text: String) -> String {
+    lc_core::mention::shown(&text)
+}
+
+/// `text` cut into spans (§15.9): mentions, links and places, and the text between; a mention
+/// of `our_name` (exactly) is marked `us`.
+pub(crate) fn meshcore_spans(text: &str, our_name: &str) -> Vec<TextSpan> {
+    let parts = lc_core::mention::spans(text);
+    let mut out = Vec::with_capacity(parts.len());
+    let mut unit = 0u32;
+    let mut chars = text.char_indices().peekable();
+    let mut advance = |to: usize| {
+        while let Some(&(at, c)) = chars.peek() {
+            if at >= to {
+                break;
+            }
+            unit += c.len_utf16() as u32;
+            chars.next();
+        }
+        unit
+    };
+    for p in parts {
+        let start = advance(p.start);
+        let end = advance(p.end);
+        out.push(TextSpan {
+            start,
+            end,
+            kind: match p.piece {
+                lc_core::mention::Piece::Text => SpanKind::Text,
+                lc_core::mention::Piece::Link(url) => SpanKind::Web { url },
+                lc_core::mention::Piece::Place { lat, lon } => SpanKind::Place { lat, lon },
+                lc_core::mention::Piece::Mention(name) => SpanKind::Mention {
+                    us: !our_name.is_empty() && name == our_name,
+                    name,
+                },
+            },
+        });
+    }
+    out
+}
+
 /// `name` fitted to `max_bytes` of UTF-8, its extension kept (ADR-0022): "Very long report
 /// title.pdf" becomes "Very long rep….pdf". A name received from someone else is only a label:
 /// path separators and control characters are dropped, and so are leading dots and spaces, so

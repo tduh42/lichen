@@ -45,6 +45,53 @@ impl LichenCore {
         }
     }
 
+    /// Answers MeshCore message `message_id` (a channel post, a MeshCore chat's message, a
+    /// room's post, §15.9): sends `@[<its sender's name>] ` and `text` to its conversation, as
+    /// `send_plain` does, and keeps that the copy answers it (its `quote` is that message). The
+    /// mention counts in the length (`plain_text_max`). `NotReferable` for a message whose
+    /// sender has no name that a mention can hold; `NotAllowed` outside MeshCore chats.
+    pub fn send_plain_reply(
+        &self,
+        message_id: i64,
+        text: String,
+        sent_at: u32,
+        now_ms: u64,
+    ) -> Result<StoredMessage, LichenError> {
+        let (chat, full) = {
+            let i = self.lock();
+            let st = i.store.as_ref().ok_or(LichenError::Storage)?;
+            let m = st
+                .get(message_id)
+                .map_err(|_| LichenError::Storage)?
+                .ok_or(LichenError::NotReferable)?;
+            if !matches!(m.chat, Chat::Mesh(_) | Chat::Channel(_) | Chat::Room(_)) {
+                return Err(LichenError::NotAllowed);
+            }
+            let name = i.plain_sender(&m).ok_or(LichenError::NotReferable)?;
+            let full =
+                lc_core::mention::reply_text(&name, &text).ok_or(LichenError::NotReferable)?;
+            (ChatRef::from_store(&m.chat), full)
+        };
+        let sent = self.send_plain(chat, full, sent_at, now_ms)?;
+        let i = self.lock();
+        let Some(st) = i.store.as_ref() else {
+            return Ok(sent);
+        };
+        st.set_plain_reply(sent.id, message_id)
+            .map_err(|_| LichenError::Storage)?;
+        Ok(st
+            .get(sent.id)
+            .ok()
+            .flatten()
+            .map_or(sent, |m| i.present(m)))
+    }
+
+    /// A MeshCore text cut into spans (§15.9): mentions (ours marked), links, places and the
+    /// text between, so that the apps parse nothing.
+    pub fn meshcore_spans(&self, text: String) -> Vec<TextSpan> {
+        crate::tools::meshcore_spans(&text, &self.lock().our_name())
+    }
+
     /// Airtime of a plain text of `len` bytes to `chat` (§15.5).
     pub fn estimate_plain(&self, chat: ChatRef, len: u32) -> Result<Estimate, LichenError> {
         let plain = match chat.to_store()? {
@@ -120,6 +167,7 @@ impl LichenCore {
         let mut i = self.lock();
         i.last_now = now_ms;
         i.core.set_node_name(&name, now_ms)?;
+        i.note_radio_name();
         i.persist();
         Ok(())
     }

@@ -44,9 +44,9 @@ fn mc_1_plain_chat_with_marc() {
         key: marc.key.clone(),
     };
     let (label, said) = sim.until_event("Marc's message", 240, |e| match e {
-        LichenEvent::PlainReceived { chat, label, text } if *chat == mesh => {
-            Some((label.clone(), text.clone()))
-        }
+        LichenEvent::PlainReceived {
+            chat, label, text, ..
+        } if *chat == mesh => Some((label.clone(), text.clone())),
         _ => None,
     });
     assert_eq!(label.as_deref(), Some("Marc"));
@@ -374,4 +374,118 @@ fn mc_4_import_the_meshcore_app_history() {
         sim.core.import_meshcore_app(junk.display().to_string()),
         Err(LichenError::NotAnExport)
     );
+}
+
+/// MC-5: mentions and replies on MeshCore (§15.9; user request F-3). Lucie's post that
+/// mentions our radio says so (event and message) and its spans mark the mention as ours;
+/// Marc's reply to her quotes her latest earlier post. Ours to an older post of hers quotes
+/// that very post, sends `@[Lucie] ` first and counts it in the length; a reply in another
+/// chat, or to a name nobody wrote under, quotes nothing.
+#[test]
+fn mc_5_mentions_and_replies() {
+    use lc_ffi::SpanKind;
+    let mut sim = Sim::new(125);
+    let public = public(&mut sim);
+    let post = |sim: &Sim, start: &str| {
+        sim.history(&public)
+            .into_iter()
+            .find(|m| text(&m.message).is_some_and(|t| t.starts_with(start)))
+    };
+    sim.run_for(400_000);
+    let lucie_fog = post(&sim, "Fog is lifting").expect("Lucie's post at 110 s");
+    let lucie_sun = post(&sim, "Sun on the plateau").expect("Lucie's post at 280 s");
+    let marc = post(&sim, "@[Lucie] Thanks!").expect("Marc's reply at 320 s");
+
+    // Lucie mentions our radio, mid-text: not a reply.
+    assert!(lucie_fog.mentions_us);
+    assert_eq!(
+        (lucie_fog.reply_to_name.as_deref(), &lucie_fog.quote),
+        (None, &None)
+    );
+    assert!(sim.events.iter().any(|(_, e)| matches!(e,
+        LichenEvent::PlainReceived { text, mentions_us: true, label: Some(l), .. }
+            if text.starts_with("Fog is lifting") && l == "Lucie")));
+    let spans = sim
+        .core
+        .meshcore_spans(text(&lucie_fog.message).unwrap().to_owned());
+    let ours = spans
+        .iter()
+        .find(|s| matches!(&s.kind, SpanKind::Mention { name, us: true } if name == "ThinkNode M5"))
+        .expect("our radio's mention");
+    let utf16: Vec<u16> = text(&lucie_fog.message).unwrap().encode_utf16().collect();
+    assert_eq!(
+        String::from_utf16(&utf16[ours.start as usize..ours.end as usize]).unwrap(),
+        "@[ThinkNode M5]"
+    );
+    assert!(!sim.events.iter().any(|(_, e)| matches!(e,
+        LichenEvent::PlainReceived { text, mentions_us: true, .. } if text.starts_with("Sun"))));
+
+    // Marc answers Lucie: her latest earlier post, of three.
+    assert_eq!(marc.reply_to_name.as_deref(), Some("Lucie"));
+    assert!(!marc.mentions_us);
+    let q = marc.quote.clone().expect("a quote");
+    assert_eq!(q.message_id, Some(lucie_sun.id));
+    assert_eq!(
+        q.excerpt,
+        "Sun on the plateau, the path to the refuge is dry."
+    );
+    assert!(matches!(
+        &sim.core.meshcore_spans(text(&marc.message).unwrap().to_owned())[0].kind,
+        SpanKind::Mention { name, us: false } if name == "Lucie"
+    ));
+
+    // Ours, to her older post: that very post, the mention sent first.
+    let mine = sim
+        .core
+        .send_plain_reply(lucie_fog.id, "On my way.".into(), sim.unix_s(), sim.now)
+        .unwrap();
+    assert_eq!(text(&mine.message), Some("@[Lucie] On my way."));
+    assert_eq!(mine.reply_to_name.as_deref(), Some("Lucie"));
+    assert_eq!(
+        mine.quote.as_ref().and_then(|q| q.message_id),
+        Some(lucie_fog.id)
+    );
+    sim.run_for(2_000);
+    let again = sim
+        .history(&public)
+        .into_iter()
+        .find(|m| m.id == mine.id)
+        .unwrap();
+    assert_eq!(again.quote.and_then(|q| q.message_id), Some(lucie_fog.id));
+    // The mention counts in the length.
+    let max = sim.core.plain_text_max(public.clone()).unwrap() as usize;
+    let room = max - "@[Lucie] ".len();
+    assert_eq!(
+        sim.core
+            .send_plain_reply(lucie_sun.id, "x".repeat(room + 1), sim.unix_s(), sim.now),
+        Err(LichenError::TooLarge)
+    );
+
+    // Elsewhere, nothing to quote: Lucie never wrote in Marc's chat, nobody as "Nobody".
+    let mesh = ChatRef::Mesh {
+        key: sim.contact("Marc").key,
+    };
+    let other = sim
+        .core
+        .send_plain(
+            mesh,
+            "@[Lucie] said the ridge is clear".into(),
+            sim.unix_s(),
+            sim.now,
+        )
+        .unwrap();
+    assert_eq!(
+        (other.reply_to_name.as_deref(), other.quote.is_none()),
+        (Some("Lucie"), true)
+    );
+    let nobody = sim
+        .core
+        .send_plain(
+            public.clone(),
+            "@[Nobody] hello".into(),
+            sim.unix_s(),
+            sim.now,
+        )
+        .unwrap();
+    assert!(nobody.quote.is_none());
 }
