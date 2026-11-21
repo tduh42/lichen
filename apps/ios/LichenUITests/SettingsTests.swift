@@ -90,6 +90,21 @@ final class SettingsTests: LichenUITest {
         XCTAssertTrue(number.exists, "no version and build next to Version")
     }
 
+    /// ST-6 (B-ios-26, as Android's B-and-25): the radio's frequency and its sub-band in the
+    /// figures of the language: "869,618 MHz" and "869,4–869,65 MHz" in French, with a point in
+    /// English.
+    func testST6_FiguresOfTheLanguage() {
+        launch(["-tab", "settings"])
+        let comma = french
+        let frequency = comma ? "869,618 MHz" : "869.618 MHz"
+        let band = comma ? "869,4–869,65 MHz" : "869.4–869.65 MHz"
+        wait(containing(frequency), 30, "not \(frequency)")
+        reveal(containing(band))
+        XCTAssertTrue(containing(band).exists, "not \(band)")
+        XCTAssertFalse(containing(comma ? "869.618" : "869,618").exists, "the other language's figures")
+        keep("st-figures")
+    }
+
     /// ST-8: the bridge's settings: iroh off and relay only on, kept after a restart; Tor on
     /// starts it, off stops it.
     func testST8_BridgeSettings() {

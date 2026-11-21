@@ -6,6 +6,14 @@ import XCTest
 final class RadioLinkTests: LichenUITest {
     private var connected: String { tr("%@ connected", "ThinkNode M5") }
 
+    /// A decimal as the run's language writes it: "869,618" in French (B-ios-26).
+    private func num(_ text: String) -> String { french ? text.replacingOccurrences(of: ".", with: ",") : text }
+
+    /// A label that starts with this frequency, in the run's language.
+    private func frequencyLabel(_ mhz: String) -> XCUIElement {
+        app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", num(mhz) + " MHz")).firstMatch
+    }
+
     /// RL-1: the demo radio connects; its contacts (people only) and its channel arrive.
     func testRL1_DemoRadioConnects() {
         launch()
@@ -124,8 +132,7 @@ final class RadioLinkTests: LichenUITest {
 
     private func openRadioSettings() {
         launch(["-tab", "settings", "-screen", "radio"])
-        wait(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '869.618 MHz'")).firstMatch, 30,
-             "the radio's parameters are not shown")
+        wait(frequencyLabel("869.618"), 30, "the radio's parameters are not shown")
     }
 
     /// Flips a switch whose label is hidden (the row shows its title).
@@ -141,7 +148,7 @@ final class RadioLinkTests: LichenUITest {
     /// adverts (asked first), the transmit power, a preset.
     func testRL5_RadioSettingsReadChangeReadBack() {
         openRadioSettings()
-        XCTAssertTrue(element("869.618 MHz · 62.5 kHz · SF8 · CR 4/8").exists || containing("869.618 MHz").exists)
+        XCTAssertTrue(containing(num("869.618") + " MHz").exists, "not the radio's frequency, in figures of the language")
         keep("rl-settings")
         // The transmit power, one step down, as the radio reports it.
         let power = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch
@@ -150,7 +157,7 @@ final class RadioLinkTests: LichenUITest {
         app.steppers.firstMatch.buttons.element(boundBy: 0).tap()
         wait(element(tr("%lld dBm", dbm - 1)), 10, "the power did not come back from the radio")
         // The demo's board has a GPS, off.
-        let gps = app.switches[tr("The radio's GPS")]
+        let gps = app.switches[tr("The radio’s GPS")]
         reveal(gps)
         XCTAssertEqual(gps.value as? String, "0")
         flip(gps)
@@ -162,7 +169,7 @@ final class RadioLinkTests: LichenUITest {
         let confirm = app.alerts[tr("Show your position to the whole mesh?")]
         wait(confirm, 5, "no confirmation")
         confirm.buttons[tr("Show it")].tap()
-        wait(element(tr("Every advert shows the radio's position to the whole mesh, unencrypted.")), 10,
+        wait(element(tr("Every advert shows the radio’s position to the whole mesh, unencrypted.")), 10,
              "the radio did not report the new policy")
         // How far adverts are added from: "Up to 1 hop", in the singular.
         let far = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@",
@@ -177,10 +184,10 @@ final class RadioLinkTests: LichenUITest {
         // A preset: USA/Canada, then back.
         reveal(element(tr("Preset")), up: false)
         setPreset(tr("USA/Canada"))
-        wait(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '910.525 MHz'")).firstMatch, 10,
+        wait(frequencyLabel("910.525"), 10,
              "the new preset did not come back from the radio")
         setPreset(tr("EU/UK (narrow)"))
-        wait(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '869.618 MHz'")).firstMatch, 10)
+        wait(frequencyLabel("869.618"), 10)
         reveal(element(tr("Restart the radio")))
     }
 
@@ -223,7 +230,7 @@ final class RadioLinkTests: LichenUITest {
         wait(refused, 5, "a frequency of 100 MHz was not refused")
         keep("rl-refused")
         refused.buttons["OK"].tap()
-        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '869.618 MHz'")).firstMatch.exists,
+        XCTAssertTrue(frequencyLabel("869.618").exists,
                       "the old frequency is gone")
         // A PIN with a leading zero is not six digits for the radio.
         let pin = app.textFields["123456"]
@@ -233,7 +240,7 @@ final class RadioLinkTests: LichenUITest {
         button(tr("Save the PIN")).tap()
         wait(app.alerts[tr("Not changed")], 5, "the PIN 012345 was not refused")
         app.alerts[tr("Not changed")].buttons["OK"].tap()
-        XCTAssertFalse(containing(tr("Saved: used from the radio's next restart. Pair the phone again with it.")).exists,
+        XCTAssertFalse(containing(tr("Saved: used from the radio’s next restart. Pair the phone again with it.")).exists,
                        "a refused PIN is said to be saved")
     }
 
@@ -241,18 +248,18 @@ final class RadioLinkTests: LichenUITest {
     /// said to be read, not shown as zeros or as no radio, until it answers; then its values.
     func testRL5_SettingsBeingRead() {
         launch(["-tab", "settings", "-screen", "radio", "-radioSlow", "40"])
-        wait(containing(tr("Reading the radio's settings…")), 10, "not said to be reading")
-        XCTAssertFalse(containing("0.000 MHz").exists, "zeros shown as the radio's values")
+        wait(containing(tr("Reading the radio’s settings…")), 10, "not said to be reading")
+        XCTAssertFalse(containing(num("0.000") + " MHz").exists, "zeros shown as the radio's values")
         XCTAssertFalse(containing(tr("Connect a radio to see its settings.")).exists, "a connected radio said to be missing")
         keep("rl-reading")
         let power = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch
         wait(power, 60, "the radio's values did not come")
-        XCTAssertTrue(containing("869.618 MHz").exists, "not the radio's frequency")
-        XCTAssertFalse(containing(tr("Reading the radio's settings…")).exists, "still said to be reading")
+        XCTAssertTrue(containing(num("869.618") + " MHz").exists, "not the radio's frequency")
+        XCTAssertFalse(containing(tr("Reading the radio’s settings…")).exists, "still said to be reading")
     }
 
     private static let noFixNote =
-        "The radio's GPS has no fix yet: it needs open sky. Until then, it can advertise this phone's position."
+        "The radio’s GPS has no fix yet: it needs open sky. Until then, it can advertise this phone’s position."
 
     /// Position in adverts on, after its warning, as the radio reports it.
     private func showPositionInAdverts() {
@@ -262,7 +269,7 @@ final class RadioLinkTests: LichenUITest {
         let confirm = app.alerts[tr("Show your position to the whole mesh?")]
         wait(confirm, 5, "no confirmation")
         confirm.buttons[tr("Show it")].tap()
-        wait(element(tr("Every advert shows the radio's position to the whole mesh, unencrypted.")), 10,
+        wait(element(tr("Every advert shows the radio’s position to the whole mesh, unencrypted.")), 10,
              "the radio did not report the new policy")
     }
 
@@ -277,15 +284,14 @@ final class RadioLinkTests: LichenUITest {
     /// no longer offered over the radio's own.
     func testRL5_GpsWithoutFixTakesThePhonesPosition() {
         launch(["-tab", "settings", "-screen", "radio", "-radioNoFix", "YES"])
-        wait(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH '869.618 MHz'")).firstMatch, 30,
-             "the radio's parameters are not shown")
-        let gps = app.switches[tr("The radio's GPS")]
+        wait(frequencyLabel("869.618"), 30, "the radio's parameters are not shown")
+        let gps = app.switches[tr("The radio’s GPS")]
         wait(gps, 10, "the radio's GPS is not reported")
         reveal(gps)
         XCTAssertEqual(gps.value as? String, "1", "the radio's GPS is not on")
         showPositionInAdverts()
         wait(element(tr("None yet")), 10, "a position before any fix")
-        let use = cardButton(tr("Use this phone's position"))
+        let use = cardButton(tr("Use this phone’s position"))
         wait(use, 10, "this phone's position is not offered")
         reveal(use)
         XCTAssertTrue(element(tr(Self.noFixNote)).exists, "nothing says why there is no position")
@@ -301,13 +307,13 @@ final class RadioLinkTests: LichenUITest {
     /// Radio settings itself: the screen asks for the phone's location, no map opened first.
     func testRL5_PhonePositionOfferedWithoutTheMap() {
         openRadioSettings()
-        let gps = app.switches[tr("The radio's GPS")]
+        let gps = app.switches[tr("The radio’s GPS")]
         wait(gps, 10, "the radio's GPS is not reported")
         reveal(gps)
         XCTAssertEqual(gps.value as? String, "0", "the demo's GPS is not off")
         showPositionInAdverts()
         wait(element(tr("None yet")), 10, "a position before it was given one")
-        let use = cardButton(tr("Use this phone's position"))
+        let use = cardButton(tr("Use this phone’s position"))
         wait(use, 10, "this phone's position is not offered without the map")
         XCTAssertFalse(element(tr(Self.noFixNote)).exists, "a fix awaited from a GPS that is off")
         reveal(use)
@@ -344,7 +350,7 @@ final class RadioLinkTests: LichenUITest {
         wait(nearby, 5, "no Nearby")
         XCTAssertTrue(nearby.label.contains(tr("Only radios in direct range hear it.")), nearby.label)
         XCTAssertTrue(mesh.label.contains(tr("Repeaters pass it on to every radio they reach.")), mesh.label)
-        XCTAssertTrue(element(tr("It shows your radio's name, “%@”.", "ThinkNode M5")).exists, "what it carries")
+        XCTAssertTrue(element(tr("It shows your radio’s name, “%@”.", "ThinkNode M5")).exists, "what it carries")
         keep("rl-advert-choice")
         button(tr("Cancel")).tap()
         waitGone(nearby, 5, "the choice stayed")
@@ -386,7 +392,7 @@ final class RadioLinkTests: LichenUITest {
         wait(row, 10, "not back on Settings")
         reveal(row)
         row.tap()
-        wait(element(tr("It shows your radio's name, “%@” and its position.", "ThinkNode M5")), 5,
+        wait(element(tr("It shows your radio’s name, “%@” and its position.", "ThinkNode M5")), 5,
              "the position is not said")
         keep("rl-advert-position")
     }
@@ -440,7 +446,7 @@ final class RadioLinkTests: LichenUITest {
     func testRL7_BatteryAndRadioDetails() {
         openRadioSettings()
         XCTAssertTrue(containing(tr("Battery")).exists, "no battery")
-        XCTAssertTrue(containing("4.01 V").exists, "the radio's battery is not shown")
+        XCTAssertTrue(containing(num("4.01") + " V").exists, "the radio's battery is not shown")
         app.terminate()
         launch(["-lichen.radioDetails", "YES"])
         wait(containing(tr("Airtime left this hour")), 10, "no radio card on Messages")

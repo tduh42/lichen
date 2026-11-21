@@ -92,11 +92,11 @@ struct PlainInfoSheet: View {
     }
 
     private var roomText: String {
-        String(localized: "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore's own encryption to the room: the room and everyone logged in read them.")
+        String(localized: "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore’s own encryption to the room: the room and everyone logged in read them.")
     }
 
     private var directText: String {
-        String(localized: "These messages use MeshCore's own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.")
+        String(localized: "These messages use MeshCore’s own encryption, between your two radios: AES-128 with a short check, no forward secrecy, and the radios see the text. Good for talking with people who use a MeshCore app; use lichen for anything private.")
     }
 
     private var channelText: String {
@@ -104,7 +104,7 @@ struct PlainInfoSheet: View {
         case .publicChannel?:
             String(localized: "Everyone in range with a MeshCore radio reads this channel. Posts are flooded once and never acknowledged.")
         default:
-            String(localized: "Everyone who has this channel's secret reads it. Posts are flooded once and never acknowledged.")
+            String(localized: "Everyone who has this channel’s secret reads it. Posts are flooded once and never acknowledged.")
         }
     }
 }
@@ -132,14 +132,14 @@ struct JoinChannelSheet: View {
                     }
                     .disabled(hasPublic)
                 } footer: {
-                    Text("MeshCore's public channel: everyone in range reads it. It starts muted.")
+                    Text("MeshCore’s public channel: everyone in range reads it. It starts muted.")
                 }
                 Section {
                     Button { scanning = true } label: {
-                        Label("Scan a channel's QR code", systemImage: "qrcode.viewfinder")
+                        Label("Scan a channel’s QR code", systemImage: "qrcode.viewfinder")
                     }
                 } footer: {
-                    Text("From a MeshCore app or from lichen: it holds the channel's name and secret.")
+                    Text("From a MeshCore app or from lichen: it holds the channel’s name and secret.")
                 }
                 Section {
                     TextField("#hiking", text: $tag)

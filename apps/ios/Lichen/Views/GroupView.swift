@@ -218,7 +218,7 @@ struct GroupView: View {
             EmptyView()
         } else if Int(g.keysKnown) >= others {
             Banner(kind: .ok, title: String(localized: "Sender keys up to date"),
-                   message: String(localized: "\(Int(g.keysKnown)) / \(others) members' keys received; a departure rotates them."))
+                   message: String(localized: "\(Int(g.keysKnown)) / \(others) members’ keys received; a departure rotates them."))
         } else {
             Banner(kind: .warn, title: String(localized: "Waiting for sender keys"),
                    message: String(localized: "\(Int(g.keysKnown)) / \(others) received. Messages from the others show once their key arrives."))

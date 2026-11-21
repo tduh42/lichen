@@ -146,7 +146,7 @@ final class LifecycleTests: LichenUITest {
         wait(composer, 10, "the group did not open")
         back()
         // Camille's first message: a request (requests are on outside the demo).
-        let request = containing(tr("Someone using %@'s radio wants to write to you", "Camille"))
+        let request = containing(tr("Someone using %@’s radio wants to write to you", "Camille"))
         wait(request, 90, "no request from Camille")
         keep("lc-before-restart")
         relaunch(["-tcp", radio.address], onboarded: true)

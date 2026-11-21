@@ -10,7 +10,7 @@ struct ReportView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text("What lichen did lately, for its developers: versions, your radio's model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.")
+                Text("What lichen did lately, for its developers: versions, your radio’s model, firmware and settings, and the recent log of the app. No message, key, name or position is in it. Read it, then send it with a few words on what went wrong.")
                     .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
                     .fixedSize(horizontal: false, vertical: true)
