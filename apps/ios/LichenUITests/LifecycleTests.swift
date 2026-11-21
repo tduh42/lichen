@@ -179,4 +179,21 @@ final class LifecycleTests: LichenUITest {
             .matching(NSPredicate(format: "label BEGINSWITH 'Copy: \"Still there?' AND label MATCHES '.*, [0-9]{2}:[0-9]{2}.*'")).count,
                        1, "her answer twice")
     }
+
+    /// LC-6: every conversation with a message has its row, whatever the contact list says:
+    /// a lichen chat (Camille), a MeshCore chat (Marc, filed by the radio as a repeater, so not
+    /// one of the people), a channel (Public), a group (Rando Vercors) and a room server (the
+    /// Refuge board, logged in).
+    func testLC6_EveryConversationListed() {
+        launch(["-roomLogin", "hello", "-marcRepeater", "YES"])
+        for (chat, timeout) in [("Camille", 60.0), ("Marc", 60.0), ("Public", 60.0), ("Refuge board", 60.0), ("Rando Vercors", 120.0)] {
+            wait(row(chat), timeout, "no row for \(chat)")
+        }
+        keep("lc-every-row")
+        button(tr("New message")).tap()
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch, 10)
+        let marcAsPerson = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Marc' AND (label CONTAINS %@ OR label CONTAINS %@)",
+            ", " + tr("lichen") + ",", tr("MeshCore chat · not lichen-encrypted"))).firstMatch
+        XCTAssertFalse(marcAsPerson.exists, "Marc listed with the people")
+    }
 }

@@ -146,4 +146,25 @@ final class MediaTests: LichenUITest {
         XCTAssertGreaterThanOrEqual(shown.count, 2, "no sticker from Camille")
         keep("md-stickers")
     }
+
+    /// MD-6: a GIPHY link written in the composer goes as a GIF, its id a few bytes instead of
+    /// the link: said before Send, then a GIF in the chat, delivered. GIPHY itself (the
+    /// image) needs the Internet: not tested here.
+    func testMD6_GifFromAGiphyLink() {
+        openCamille()
+        composer.tap()
+        composer.typeText("https://giphy.com/gifs/sunset-sunrise-denali-l4KidtNiqsus526M8")
+        wait(containing(tr("Sent as a GIF: a few bytes instead of the link")), 5, "the link is not offered as a GIF")
+        XCTAssertTrue(containing(tr("GIF: %@", "sunset sunrise denali")).exists, "not its title")
+        keep("md-gif-card")
+        button(tr("Send")).tap()
+        let gif = app.scrollViews.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", tr("GIF: %@", "sunset sunrise denali"))).firstMatch
+        wait(gif, 10, "no GIF in the chat")
+        XCTAssertFalse(containing("giphy.com/gifs").exists, "the link went as text")
+        // Delivered: the only message we sent.
+        wait(app.scrollViews.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", tr("Delivered"))).firstMatch,
+             60, "the GIF was not delivered")
+        keep("md-gif-sent")
+    }
 }

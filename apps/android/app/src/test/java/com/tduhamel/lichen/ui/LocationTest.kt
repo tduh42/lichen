@@ -2,6 +2,10 @@ package com.tduhamel.lichen.ui
 
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isPopup
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -26,7 +30,8 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /** Area 8 of docs/testing.md: location, map, Locate and SOS. The JVM has no MapLibre: its map
- * lists the markers' labels where the map would be (MP-4, offline maps, is the emulator's). */
+ * lists the markers' labels where the map would be and reports a camera around them (MP-4's
+ * download itself, over the Internet, is the emulator's). */
 @RunWith(AndroidJUnit4::class)
 class LocationTest : UiTest() {
     private fun count(t: String, substring: Boolean = false) =
@@ -139,6 +144,32 @@ class LocationTest : UiTest() {
         tapDesc(R.string.map_layers)
         tapInDialog(R.string.map_nodes)
         see("hub")
+    }
+
+    /** MP-4: an area of the map to keep offline is offered: Map layers › Download this area,
+     * once the map shows one, with what it is for; no offline map kept yet. (The download itself
+     * is MapLibre's, over the Internet: asked for here, not run.) */
+    @Test
+    fun MP_4_offlineMapsOffered() = offlineOffered()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MP_4_offlineMapsOffered_fr() = offlineOffered()
+
+    private fun offlineOffered() {
+        launch("demo" to true, "tab" to "map")
+        advanceUntil("the nodes on the map", 30) { has("hub") }
+        tapDesc(R.string.map_layers)
+        val download = compose.onNode(hasText(str(R.string.download_area)) and hasAnyAncestor(isPopup()))
+        download.assertIsDisplayed()
+        download.assertIsEnabled()
+        see(R.string.offline_note)
+        assertFalse("no offline map kept yet", has(str(R.string.offline_maps_count, 0, "").substringBefore("("), substring = true))
+        // Asked for: the menu closes, the map stays (the download goes on in MapLibre).
+        download.performClick()
+        compose.waitForIdle()
+        assertFalse(has(R.string.offline_note))
+        assertTrue(has("hub"))
     }
 
     /** MP-5: our SOS: on, sent to the group, stopped. */

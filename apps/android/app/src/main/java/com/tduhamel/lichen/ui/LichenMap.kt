@@ -119,8 +119,18 @@ fun LichenMap(
     onCamera: (LatLngBounds, Double) -> Unit,
 ) {
     // No MapLibre (the JVM UI tests): the markers' labels where the map would be, everything
-    // around it as on a phone.
+    // around it as on a phone; and the camera a phone's map reports once it shows them, around
+    // them (the area Map layers › Download this area keeps, MP-4).
     if (!LichenApplication.mapsReady) {
+        LaunchedEffect(items.size) {
+            if (items.isNotEmpty()) {
+                val pad = 0.01
+                onCamera(
+                    LatLngBounds.from(items.maxOf { it.lat } + pad, items.maxOf { it.lon } + pad, items.minOf { it.lat } - pad, items.minOf { it.lon } - pad),
+                    12.0,
+                )
+            }
+        }
         Column(modifier.background(lichen.s1)) {
             for (item in items) if (item.label.isNotEmpty()) Text(item.label, color = lichen.tx2)
         }

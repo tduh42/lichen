@@ -118,4 +118,59 @@ final class SettingsTests: LichenUITest {
         wait(element(tr("Anonymous, slower")), 10, "Tor did not stop")
         flip(settingsSwitch(tr("iroh (direct P2P)")))
     }
+
+    /// ST-3: a backup made on a phone with a radio (FakeTcpRadio): a text to Marc, a group of
+    /// its own, its radio's contacts; restored on a phone just installed, from its welcome
+    /// screen, with its 24 words: all of it comes back. The Files sheets are stood in for
+    /// (`-saveBackup`, `-restoreFile`), as Android answers its pickers.
+    func testST3_BackupRestored() throws {
+        let radio = try FakeTcpRadio()
+        defer { radio.stop() }
+        let file = "st3-test.lichen-backup"
+        launch(["-tcp", radio.address, "-saveBackup", file], demo: false)
+        wait(row("Marc"), 90, "no message from Marc").tap()
+        send("Leaving at dawn")
+        back()
+        button(tr("New message")).tap()
+        let name = app.textFields[tr("Group name")]
+        for _ in 0..<8 where !(name.exists && name.isHittable) { app.collectionViews.firstMatch.swipeUp() }
+        name.tap()
+        name.typeText("Ridge walk")
+        let create = button(tr("Create group"))
+        if !create.isHittable { reveal(create); pause(1) }
+        create.tap()
+        wait(composer, 10, "the group did not open")
+        back()
+        // Its 24 words, then the backup.
+        tab(.settings)
+        settingsRow(tr("Your identity")).tap()
+        cardButton(tr("Recovery phrase")).tap()
+        wait(app.staticTexts["phrase.24"], 10, "no phrase")
+        let words = (1...24).map { app.staticTexts["phrase.\($0)"].label }
+        button(tr("Close")).tap()
+        back()
+        settingsRow(tr("Export a backup")).tap()
+        wait(containing(tr("Backup ready")), 20, "no backup")
+        button(tr("Save to Files")).tap()
+        wait(containing(tr("Backup saved")), 5, "not saved")
+        button(tr("Done")).tap()
+        // Another phone: the app just installed, on the same radio.
+        relaunch(["-tcp", radio.address, "-freshInstall", "YES", "-restoreFile", file], onboarded: false)
+        button(tr("Restore a backup")).tap()
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Choose the backup file"))).firstMatch.tap()
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", file)).firstMatch, 5, "no backup chosen")
+        let editor = app.textViews.firstMatch
+        editor.tap()
+        editor.typeText(words.joined(separator: " "))
+        wait(containing(tr("%lld / 24 words", 24)), 5, "not 24 words")
+        keep("st-restore")
+        button(tr("Restore")).tap()
+        // All of it: our text to Marc, the group, the radio's contacts.
+        let marc = wait(row("Marc"), 60, "Marc's chat did not come back")
+        XCTAssertTrue(marc.label.contains("Leaving at dawn"), "not our text: \(marc.label)")
+        wait(row("Ridge walk"), 10, "the group did not come back")
+        keep("st-restored")
+        button(tr("New message")).tap()
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch, 30, "the radio's contacts did not come back")
+    }
 }
