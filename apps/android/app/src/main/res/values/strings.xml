@@ -1136,6 +1136,22 @@
     <string name="answer_not_sent">Your answer was not sent.</string>
     <!-- Block and archive (ADR-0034) -->
     <string name="err_blocked">You blocked this contact: unblock them first.</string>
+    <string name="err_bad_signature">This link was changed or made up: its signature doesn’t match.</string>
+    <!-- A MeshCore contact from a link (F-2, ADR-0047) -->
+    <string name="meshcore_link_unreadable">This MeshCore link could not be read.</string>
+    <string name="link_signed">Signed by its radio.</string>
+    <string name="link_unsigned">Not signed: anyone can write such a code.</string>
+    <string name="add_to_radio">Add to the radio</string>
+    <string name="adding_to_radio">Adding to your radio…</string>
+    <string name="added_to_radio">Added to your radio.</string>
+    <string name="already_on_radio">Already on your radio.</string>
+    <string name="open_the_chat">Open the chat</string>
+    <string name="radio_did_not_add">The radio did not add it.</string>
+    <string name="heard_directly">Heard by the sharer’s radio: directly</string>
+    <plurals name="heard_through_repeaters">
+        <item quantity="one">Heard by the sharer’s radio: through %1$d repeater</item>
+        <item quantity="other">Heard by the sharer’s radio: through %1$d repeaters</item>
+    </plurals>
     <string name="archived">Archived</string>
     <string name="archive">Archive</string>
     <string name="unarchive">Unarchive</string>

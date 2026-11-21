@@ -540,6 +540,11 @@ pub(crate) enum Expect {
     DeviceTime,
     /// A radio setting the user changed (§1.1): OK, or ERR when the radio refuses it.
     Setting(crate::radio::RadioSetting),
+    /// `GET_CONTACT_BY_KEY` after importing a link's advert (§16.6): ERR, the radio did not
+    /// take it.
+    LinkImported(PubKey),
+    /// `GET_CONTACT_BY_KEY` after adding a link's node: ERR, the radio refused it.
+    LinkAdded(PubKey),
 }
 
 /// Whether reply `r` answers the command awaited (`expect`), by its type (SR-32). An error
@@ -553,7 +558,7 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
         (Expect::Contacts, R::ContactsStart { .. } | R::Contact(_) | R::EndOfContacts { .. }) => {
             true
         }
-        (Expect::Contact, R::Contact(_)) => true,
+        (Expect::Contact | Expect::LinkImported(_) | Expect::LinkAdded(_), R::Contact(_)) => true,
         (
             Expect::Ok
             | Expect::TxPower(_)
@@ -839,7 +844,7 @@ pub struct Core {
     pub(crate) contacts: HashMap<PubKey, Contact>,
     secrets: HashMap<PubKey, [u8; 32]>,
     peers: HashMap<PubKey, Peer>,
-    commands: VecDeque<(Vec<u8>, Expect)>,
+    pub(crate) commands: VecDeque<(Vec<u8>, Expect)>,
     /// Contact lists asked for again after one stopped short since the last complete one.
     contact_resyncs: u8,
     /// The contact list being read: what `CONTACTS_START` announced, records received.
@@ -2297,6 +2302,9 @@ impl Core {
                     );
                     self.mesh_contact(&record);
                 }
+                if let Some(Expect::LinkImported(k) | Expect::LinkAdded(k)) = expect {
+                    self.link_added(&k);
+                }
                 if expect == Some(Expect::Contacts) {
                     self.contacts_reading.1 = self.contacts_reading.1.saturating_add(1);
                     done = false;
@@ -2341,6 +2349,8 @@ impl Core {
                 Some(Expect::Server) => self.on_server_refused(),
                 Some(Expect::Cli(node)) => self.on_cli_refused(&node),
                 Some(Expect::Setting(s)) => self.radio_refused(s),
+                Some(Expect::LinkImported(key)) => self.link_not_imported(key),
+                Some(Expect::LinkAdded(key)) => self.link_not_added(key),
                 _ => {}
             },
             Response::Sent {

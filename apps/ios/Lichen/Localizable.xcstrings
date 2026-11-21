@@ -2051,6 +2051,36 @@
         }
       }
     },
+    "Add to the radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouter à la radio"
+          }
+        }
+      }
+    },
+    "Added to your radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajouté à ta radio."
+          }
+        }
+      }
+    },
+    "Adding to your radio…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ajout à ta radio…"
+          }
+        }
+      }
+    },
     "Admin": {
       "localizations": {
         "fr": {
@@ -2207,6 +2237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Autorise-le dans les Réglages pour partager ta position."
+          }
+        }
+      }
+    },
+    "Already on your radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Déjà sur ta radio."
           }
         }
       }
@@ -4691,6 +4731,56 @@
         }
       }
     },
+    "Heard by the sharer’s radio: directly": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendu par la radio qui l’a partagé : en direct"
+          }
+        }
+      }
+    },
+    "Heard by the sharer’s radio: through %lld repeaters": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Heard by the sharer’s radio: through %lld repeater"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Heard by the sharer’s radio: through %lld repeaters"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Entendu par la radio qui l’a partagé : via %lld répéteur"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Entendu par la radio qui l’a partagé : via %lld répéteurs"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Heard, not in the radio's contacts": {
       "localizations": {
         "fr": {
@@ -6971,6 +7061,16 @@
         }
       }
     },
+    "Not signed: anyone can write such a code.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Non signé : n’importe qui peut écrire un tel code."
+          }
+        }
+      }
+    },
     "Nothing goes out until your radio is back.": {
       "localizations": {
         "fr": {
@@ -7177,6 +7277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ouvrir"
+          }
+        }
+      }
+    },
+    "Open the chat": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir la discussion"
           }
         }
       }
@@ -9241,6 +9351,16 @@
         }
       }
     },
+    "Signed by its radio.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signé par sa radio."
+          }
+        }
+      }
+    },
     "Signed group messages, flooded": {
       "localizations": {
         "fr": {
@@ -9911,6 +10031,16 @@
         }
       }
     },
+    "The radio did not add it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio ne l’a pas ajouté."
+          }
+        }
+      }
+    },
     "The radio did not take this setting": {
       "localizations": {
         "fr": {
@@ -10251,6 +10381,16 @@
         }
       }
     },
+    "This MeshCore link could not be read.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce lien MeshCore n’a pas pu être lu."
+          }
+        }
+      }
+    },
     "This backup is damaged or incomplete: nothing was restored.": {
       "localizations": {
         "fr": {
@@ -10417,6 +10557,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "C’est ton propre code."
+          }
+        }
+      }
+    },
+    "This link was changed or made up: its signature doesn’t match.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce lien a été modifié ou inventé : sa signature ne correspond pas."
           }
         }
       }

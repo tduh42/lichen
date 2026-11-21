@@ -639,3 +639,113 @@ fn f_1_meshcore_contact_code() {
         Err(LichenError::InvalidSetting)
     );
 }
+
+/// A node's link as the stock app shares it (§15.3), signed with a test key: `meshcore://`
+/// and the hex of its advert.
+fn signed_link(seed: u8, kind: u8, name: &str, position: Option<(i32, i32)>) -> (String, Vec<u8>) {
+    use lc_meshcore::ecdh::{expand_seed, public_key, sign};
+    let prv = expand_seed(&[seed; 32]);
+    let key = public_key(&prv);
+    let ts = 1_793_000_000u32.to_le_bytes();
+    let mut data = vec![kind | 0x80 | if position.is_some() { 0x10 } else { 0 }];
+    if let Some((lat, lon)) = position {
+        data.extend_from_slice(&lat.to_le_bytes());
+        data.extend_from_slice(&lon.to_le_bytes());
+    }
+    data.extend_from_slice(name.as_bytes());
+    let sig = sign(&prv, &[&key, &ts, &data]).unwrap();
+    let mut raw = vec![0x11, 0];
+    raw.extend_from_slice(&key);
+    raw.extend_from_slice(&ts);
+    raw.extend_from_slice(&sig);
+    raw.extend_from_slice(&data);
+    let hex: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+    (format!("meshcore://{hex}"), key.to_vec())
+}
+
+/// CT-12: a MeshCore contact from a link (§15.3, §16.6; user request F-2). A person's signed
+/// link is read, added to the radio and comes among the people; added again, it is already
+/// there. A repeater's, with a position, comes among the nodes. A changed link is refused for
+/// its signature and nothing is sent; a contact code adds a node too, unsigned.
+#[test]
+fn ct_12_add_a_meshcore_contact_from_a_link() {
+    use lc_ffi::{MeshCoreAdd, MeshCoreLink, read_meshcore_link};
+    let mut sim = Sim::new(94);
+    sim.until("the radio's contacts", 10, |c| {
+        find_contact(c, "Camille").is_some() && c.radio_settings().read
+    });
+    let (text, key) = signed_link(50, 1, "Hut radio", None);
+    assert_eq!(
+        read_meshcore_link(text.clone()).unwrap(),
+        MeshCoreLink {
+            name: "Hut radio".into(),
+            key: key.clone(),
+            kind: NodeKind::Companion,
+            lat: None,
+            lon: None,
+            signed: true,
+            hops: 0,
+            path: Vec::new(),
+        }
+    );
+    assert_eq!(
+        sim.core.add_meshcore_contact(text.clone()),
+        Ok(MeshCoreAdd::Sent)
+    );
+    sim.until("Hut radio among the people", 10, |c| {
+        find_contact(c, "Hut radio").is_some_and(|h| h.person)
+    });
+    assert_eq!(find_contact(&sim.core, "Hut radio").unwrap().key, key);
+    assert_eq!(
+        sim.core.add_meshcore_contact(text),
+        Ok(MeshCoreAdd::AlreadyOnTheRadio)
+    );
+
+    // A repeater's, with the position it advertises: a node, not a person.
+    let (text, key) = signed_link(51, 2, "ridge", Some((12_345_678, -98_765_432)));
+    let link = read_meshcore_link(text.clone()).unwrap();
+    assert_eq!(link.kind, NodeKind::Repeater);
+    assert!((link.lat.unwrap() - 12.345_678).abs() < 1e-9);
+    assert!((link.lon.unwrap() + 98.765_432).abs() < 1e-9);
+    assert_eq!(sim.core.add_meshcore_contact(text), Ok(MeshCoreAdd::Sent));
+    sim.until("ridge among the nodes", 10, |c| {
+        c.nodes().iter().any(|n| n.key == key && n.on_radio)
+    });
+    let ridge = node(&sim, "ridge");
+    assert_eq!(ridge.kind, NodeKind::Repeater);
+    assert!((ridge.lat.unwrap() - 12.345_678).abs() < 1e-9);
+    assert!(!find_contact(&sim.core, "ridge").unwrap().person);
+
+    // Changed after it was signed: refused, nothing sent.
+    let (text, key) = signed_link(52, 1, "Lake hut", None);
+    let changed = format!(
+        "{}{}",
+        &text[..text.len() - 1],
+        if text.ends_with('0') { '1' } else { '0' }
+    );
+    assert_eq!(
+        read_meshcore_link(changed.clone()),
+        Err(LichenError::BadSignature)
+    );
+    assert_eq!(
+        sim.core.add_meshcore_contact(changed),
+        Err(LichenError::BadSignature)
+    );
+    assert_eq!(
+        read_meshcore_link("meshcore://11zz".into()),
+        Err(LichenError::BadCode)
+    );
+    sim.run_for(5_000);
+    assert!(!sim.core.nodes().iter().any(|n| n.key == key));
+
+    // A contact code: unsigned, added all the same.
+    let hex: String = [0x43u8; 32].iter().map(|b| format!("{b:02x}")).collect();
+    let code = format!("meshcore://contact/add?name=Lake%20hut&public_key={hex}&type=1");
+    assert!(!read_meshcore_link(code.clone()).unwrap().signed);
+    assert_eq!(sim.core.add_meshcore_contact(code), Ok(MeshCoreAdd::Sent));
+    sim.until("Lake hut among the people", 10, |c| {
+        find_contact(c, "Lake hut").is_some_and(|h| h.person)
+    });
+    // The radio took every one: nothing refused.
+    assert!(sim.core.take_radio_refusals().is_empty());
+}

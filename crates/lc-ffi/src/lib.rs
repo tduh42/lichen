@@ -68,8 +68,9 @@ pub use api_backup::{BackupSummary, RestoredBackup};
 pub use api_block::BlockedContact;
 pub use api_import::ImportReport;
 pub use api_mesh::{
-    ChannelCode, MeshCoreContact, NodeInfo, NodeKind, PathHop, TraceInfo, TraceLeg, TraceState,
-    meshcore_contact_code, read_meshcore_contact_code,
+    ChannelCode, MeshCoreAdd, MeshCoreContact, MeshCoreLink, NodeInfo, NodeKind, PathHop,
+    TraceInfo, TraceLeg, TraceState, meshcore_contact_code, read_meshcore_contact_code,
+    read_meshcore_link,
 };
 pub use api_radio::{RadioSetting, RadioSettings, RadioVar, Telemetry};
 pub use api_radios::{LinkKind, SavedRadio};

@@ -54,6 +54,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.layout.size
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ContactInfo
+import com.tduhamel.lichen.core.MeshCoreAdd
+import com.tduhamel.lichen.core.MeshCoreLink
+import com.tduhamel.lichen.core.NodeKind
+import androidx.compose.material.icons.outlined.SettingsInputAntenna
+import androidx.compose.material.icons.outlined.Verified
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.material.icons.outlined.WarningAmber
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.hex
@@ -71,6 +78,8 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
     var showingMyCode by remember { mutableStateOf(false) }
     // The invitation, and whether it was scanned (only then does it verify the admin).
     var invite by remember { mutableStateOf<Triple<String, InviteInfo, Boolean>?>(null) }
+    // A MeshCore contact link (F-2), with its text: its card, to add it to the radio.
+    var link by remember { mutableStateOf<Pair<String, MeshCoreLink>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // A contact card adds the contact (verified only when scanned in person); a group
     // invitation asks to join (§10.5).
@@ -79,6 +88,18 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         // Our own card or invitation, scanned or pasted back (D-3).
         if (model.isOwnCode(text)) {
             error = res.getString(R.string.own_code)
+            return
+        }
+        // A MeshCore contact link (F-2, ADR-0047): the stock app's signed advert, or a contact
+        // code. Its card first; nothing reaches the radio before "Add to the radio".
+        if (text.trim().lowercase().startsWith("meshcore:")) {
+            val (l, e) = model.readMeshCoreLink(text)
+            if (l != null && model.nodeKey?.contentEquals(l.key) == true) {
+                error = res.getString(R.string.own_code)
+                return
+            }
+            link = l?.let { text to it }
+            error = e
             return
         }
         if (text.trim().startsWith("lichen:1:g:")) {
@@ -116,8 +137,14 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         ) {
             val c = added
             val inv = invite
+            val l = link
             if (inv != null) {
                 JoinPanel(model, inv.first, inv.second, inv.third, done = next ?: back)
+            } else if (l != null) {
+                MeshCoreLinkPanel(model, l.first, l.second, open = { chat ->
+                    if (next == null) model.openChat = chat
+                    (next ?: back)()
+                }, cancel = { link = null }, done = next ?: back)
             } else if (c != null && showingMyCode) {
                 ShowYourCode(model, c.name) {
                     model.openChat = ChatId.contact(c.key)
@@ -159,6 +186,122 @@ fun ContactScreen(model: AppModel, back: () -> Unit, next: (() -> Unit)? = null)
         }
     }
 }
+
+/** A MeshCore contact link, read (F-2, ADR-0047): the node it names, its kind and key, and
+ * whether its own radio signed it; then "Add to the radio", and what the radio did. */
+@Composable
+private fun MeshCoreLinkPanel(
+    model: AppModel,
+    text: String,
+    link: MeshCoreLink,
+    open: (ChatId) -> Unit,
+    /** Back to the scanner, nothing sent. */
+    cancel: () -> Unit,
+    /** Add a contact closes. */
+    done: () -> Unit,
+) {
+    val t = lichen
+    val res = LocalResources.current
+    var step by remember { mutableStateOf(LinkStep.READY) }
+    // `model.linkRefusals` when the link went to the radio: one more is its refusal.
+    var refusalsBefore by remember { mutableStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+    // On the radio: among the people, or under Nodes for a repeater, room server or sensor.
+    val onRadio = model.coreContacts.any { it.key.contentEquals(link.key) } ||
+        model.nodes.any { it.key.contentEquals(link.key) && it.onRadio }
+    LaunchedEffect(onRadio) { if (onRadio && step == LinkStep.ADDING) step = LinkStep.ADDED }
+    val refused = step == LinkStep.ADDING && model.linkRefusals > refusalsBefore
+    fun add() {
+        error = null
+        refusalsBefore = model.linkRefusals
+        val (r, e) = model.addMeshCoreLink(text)
+        when (r) {
+            MeshCoreAdd.SENT -> step = if (onRadio) LinkStep.ADDED else LinkStep.ADDING
+            MeshCoreAdd.ALREADY_ON_THE_RADIO -> step = LinkStep.ALREADY
+            MeshCoreAdd.OWN_RADIO -> error = res.getString(R.string.own_code)
+            null -> error = e
+        }
+    }
+    // Their chat: the MeshCore one, or lichen's once their identity is known.
+    fun openChat() {
+        val lichenUser = model.coreContacts.firstOrNull { it.key.contentEquals(link.key) }?.identity != null
+        open(if (lichenUser) ChatId.contact(link.key) else ChatId.mesh(link.key))
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        CardList {
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Avatar(link.name, link.key, 48.dp)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(link.name, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(nodeKindIcon(link.kind), null, tint = t.tx2, modifier = Modifier.size(16.dp))
+                        Text(nodeKindLabel(res, link.kind), fontSize = 14.sp, color = t.tx2)
+                    }
+                }
+            }
+            CardDivider()
+            MeshCoreKeyRow(link.key)
+            CardDivider()
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                val tint = if (link.signed) t.ok else t.tx2
+                Icon(if (link.signed) Icons.Outlined.Verified else Icons.Outlined.WarningAmber, null, tint = tint, modifier = Modifier.size(18.dp))
+                Text(stringResource(if (link.signed) R.string.link_signed else R.string.link_unsigned), fontSize = 13.sp, color = tint)
+            }
+            // How the advert reached the radio that shared it: signed adverts only (a contact code
+            // says nothing of it).
+            if (link.signed) {
+                CardDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    val hops = link.hops.toInt()
+                    Icon(Icons.Outlined.SettingsInputAntenna, null, tint = t.tx2, modifier = Modifier.size(18.dp))
+                    Text(
+                        if (hops == 0) stringResource(R.string.heard_directly) else pluralStringResource(R.plurals.heard_through_repeaters, hops, hops),
+                        fontSize = 13.sp,
+                        color = t.tx2,
+                    )
+                }
+            }
+        }
+        when {
+            refused -> {
+                Banner(BannerKind.SOS, stringResource(R.string.radio_did_not_add))
+                SecondaryButton(stringResource(R.string.close), onClick = done)
+            }
+            step == LinkStep.READY -> {
+                PrimaryButton(stringResource(R.string.add_to_radio)) { add() }
+                SecondaryButton(stringResource(R.string.cancel), onClick = cancel)
+            }
+            step == LinkStep.ADDING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(Modifier.size(20.dp), color = t.tx, strokeWidth = 2.dp)
+                Text(stringResource(R.string.adding_to_radio), fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx)
+            }
+            else -> {
+                Banner(BannerKind.OK, stringResource(if (step == LinkStep.ADDED) R.string.added_to_radio else R.string.already_on_radio))
+                if (link.kind == NodeKind.COMPANION) {
+                    PrimaryButton(stringResource(R.string.open_the_chat)) { openChat() }
+                    SecondaryButton(stringResource(R.string.close), onClick = done)
+                } else {
+                    PrimaryButton(stringResource(R.string.done), onClick = done)
+                }
+            }
+        }
+        error?.let { Banner(BannerKind.SOS, it) }
+    }
+}
+
+private enum class LinkStep { READY, ADDING, ADDED, ALREADY }
 
 /** A scanned group invitation (§10.5): what it is, then the request to the admin until the
  * group arrives. */
@@ -266,7 +409,8 @@ private fun ScanPanel(found: (String, Boolean) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         QrScanner(
             { found(it, true) },
-            Modifier
+            prefixes = listOf("lichen:", "meshcore://"),
+            modifier = Modifier
                 .fillMaxWidth()
                 .height(300.dp)
                 .clip(CardShape)
@@ -285,7 +429,9 @@ private fun ScanPanel(found: (String, Boolean) -> Unit) {
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors(),
             )
-            TextButton(onClick = { found(pasted, false) }, enabled = pasted.trim().startsWith("lichen:")) {
+            // A lichen code, or a MeshCore contact link (F-2).
+            val code = pasted.trim().lowercase().let { it.startsWith("lichen:") || it.startsWith("meshcore://") }
+            TextButton(onClick = { found(pasted, false) }, enabled = code) {
                 Text(stringResource(R.string.add), fontWeight = FontWeight.SemiBold, color = t.tx)
             }
         }

@@ -103,6 +103,21 @@ pub(crate) struct Mesh {
     traces: HashMap<PubKey, Trace>,
     /// When the radio's battery was last asked for (ADR-0042).
     pub(crate) battery_at: Option<Millis>,
+    /// Nodes imported from a link, with the `ADD_UPDATE_CONTACT` frame that adds them when
+    /// the radio does not take the advert (§16.6).
+    adding: HashMap<PubKey, Vec<u8>>,
+}
+
+/// What adding a node from a link did (§16.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MeshAdd {
+    /// Sent to the radio: the contact comes as any other (`ContactsUpdated`), or the radio's
+    /// refusal as a refused setting ([`crate::radio::RadioSetting::Contact`]).
+    Sent,
+    /// The radio already reported it: nothing sent.
+    AlreadyOnTheRadio,
+    /// The radio itself.
+    OwnRadio,
 }
 
 /// An advertised position: MeshCore leaves both coordinates at 0 when the advert has none.
@@ -205,6 +220,80 @@ impl Core {
     pub(crate) fn mesh_connected(&mut self) {
         self.mesh.seen.clear();
         self.mesh.heard.clear();
+        self.mesh.adding.clear();
+    }
+
+    /// Adds the node of a link to the radio (§16.6, ADR-0047): a signed advert with
+    /// `IMPORT_CONTACT`, then `ADD_UPDATE_CONTACT` if the radio did not take it; a contact
+    /// code with `ADD_UPDATE_CONTACT`. Each is followed by `GET_CONTACT_BY_KEY`. `NoIdentity`
+    /// without a radio.
+    pub fn add_meshcore_contact(
+        &mut self,
+        link: &crate::plain::MeshLink,
+    ) -> Result<MeshAdd, Error> {
+        if !self.online {
+            return Err(Error::NoIdentity);
+        }
+        if self.node == Some(link.key) {
+            return Ok(MeshAdd::OwnRadio);
+        }
+        if self.mesh.seen.contains_key(&link.key) {
+            return Ok(MeshAdd::AlreadyOnTheRadio);
+        }
+        let (lat_e6, lon_e6) = link.position.unwrap_or((0, 0));
+        let mut buf = [0u8; lc_meshcore::FRAME_MAX];
+        let n = Command::AddUpdateContact {
+            key: &link.key,
+            kind: link.kind,
+            name: link.name.as_bytes(),
+            last_advert: link.timestamp,
+            lat_e6,
+            lon_e6,
+        }
+        .encode(&mut buf)
+        .map_err(|_| Error::Invalid)?;
+        let add = buf.get(..n).unwrap_or(&[]).to_vec();
+        let get = Command::GetContactByKey { key: &link.key };
+        match &link.advert {
+            Some(packet) => {
+                let mut frame = [0u8; lc_meshcore::FRAME_MAX];
+                let m = (Command::ImportContact { packet })
+                    .encode(&mut frame)
+                    .map_err(|_| Error::Invalid)?;
+                let import = frame.get(..m).unwrap_or(&[]).to_vec();
+                self.commands.push_back((import, Expect::Ok));
+                self.command(&get, Expect::LinkImported(link.key));
+                self.mesh.adding.insert(link.key, add);
+            }
+            None => {
+                self.commands.push_back((add, Expect::Ok));
+                self.command(&get, Expect::LinkAdded(link.key));
+            }
+        }
+        Ok(MeshAdd::Sent)
+    }
+
+    /// The radio did not take an imported advert (manual add, the hop limit, a full table):
+    /// it is added from the advert's fields (§16.6).
+    pub(crate) fn link_not_imported(&mut self, key: PubKey) {
+        if let Some(add) = self.mesh.adding.remove(&key) {
+            self.commands.push_back((add, Expect::Ok));
+            self.command(
+                &Command::GetContactByKey { key: &key },
+                Expect::LinkAdded(key),
+            );
+        }
+    }
+
+    /// The radio has the node of a link now.
+    pub(crate) fn link_added(&mut self, key: &PubKey) {
+        self.mesh.adding.remove(key);
+    }
+
+    /// The radio did not add the node of a link: refused, as a setting it refuses (§1.1).
+    pub(crate) fn link_not_added(&mut self, key: PubKey) {
+        self.mesh.adding.remove(&key);
+        self.radio_refused(crate::radio::RadioSetting::Contact);
     }
 
     /// The radio is gone: a trace on its way can no longer come back (pushes are lost).

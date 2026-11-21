@@ -37,6 +37,10 @@ import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.core.LichenEvent
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.Radio
+import com.tduhamel.lichen.core.RadioSetting
+import com.tduhamel.lichen.core.MeshCoreAdd
+import com.tduhamel.lichen.core.MeshCoreLink
+import com.tduhamel.lichen.core.readMeshcoreLink
 import com.tduhamel.lichen.core.ChatPrefs
 import com.tduhamel.lichen.core.StoredMessage
 import com.tduhamel.lichen.core.BridgeException
@@ -218,6 +222,8 @@ class AppModel(val app: Application) {
     var radioSettings by mutableStateOf<RadioSettings?>(null)
     /** Why the radio did not take a setting, for a dialog. */
     var radioError by mutableStateOf<String?>(null)
+    /** Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it. */
+    var linkRefusals by mutableStateOf(0)
 
     /** Changes one of the radio's settings (ADR-0032); a refusal shows as [radioError]. */
     fun radioSet(change: () -> Unit) {
@@ -1085,7 +1091,11 @@ class AppModel(val app: Application) {
             LichenEvent.RadioSettings -> {
                 // A setting the radio answered with an error (D-4): said on its settings screen;
                 // the value shown stays the radio's.
-                if (core.takeRadioRefusals().isNotEmpty()) radioError = res.getString(R.string.radio_refused)
+                // A contact added from a link that the radio did not add (§16.6) is said on Add a
+                // contact, not as a setting.
+                val refused = core.takeRadioRefusals()
+                if (RadioSetting.CONTACT in refused) linkRefusals++
+                if (refused.any { it != RadioSetting.CONTACT }) radioError = res.getString(R.string.radio_refused)
                 // Read again after a change (ADR-0032): the header follows the radio's parameters.
                 val r = core.radioSettings()
                 radioSettings = r
@@ -2349,6 +2359,24 @@ class AppModel(val app: Application) {
      * an error to show. */
     /** One of our own codes (our card, an invitation to a group of ours), scanned or pasted back. */
     fun isOwnCode(text: String): Boolean = runCatching { core.ownCode(text.trim()) }.getOrDefault(false)
+
+    /** A MeshCore contact link (F-2, ADR-0047): the signed advert the stock app shares, or a
+     * `meshcore://contact/add?…` code; else why not (changed or made up, unreadable). */
+    fun readMeshCoreLink(text: String): Pair<MeshCoreLink?, String?> = try {
+        readMeshcoreLink(text.trim()) to null
+    } catch (e: LichenException) {
+        null to if (e is LichenException.BadCode) res.getString(R.string.meshcore_link_unreadable) else e.display(res)
+    }
+
+    /** Sends a link's node to the radio (§16.6): it then comes among the contacts or the nodes,
+     * or the radio's refusal bumps [linkRefusals]. */
+    fun addMeshCoreLink(text: String): Pair<MeshCoreAdd?, String?> = try {
+        val r = core.addMeshcoreContact(text.trim())
+        pump()
+        r to null
+    } catch (e: LichenException) {
+        null to if (e is LichenException.NoIdentity) res.getString(R.string.connect_radio_first) else e.display(res)
+    }
 
     fun addCard(text: String, scanned: Boolean): Pair<ContactInfo?, String?> = try {
         val c = core.addContactCard(text.trim(), scanned)

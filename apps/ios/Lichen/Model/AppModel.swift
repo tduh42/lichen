@@ -102,6 +102,8 @@ final class AppModel {
     var radioSettings: RadioSettings?
     /// Why the radio did not take a setting, for an alert.
     var radioError: String?
+    /// Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it.
+    var linkRefusals = 0
 
     /// Changes one of the radio's settings (ADR-0032); a refusal shows as `radioError`. The
     /// settings shown come back from the radio (`radioSettings`).
@@ -931,7 +933,11 @@ final class AppModel {
         case .radioSettings:
             // A setting the radio itself refused (D-4): said, and the value shown stays the
             // radio's.
-            if !core.takeRadioRefusals().isEmpty {
+            // A contact added from a link that the radio did not add (§16.6) is said on Add a
+            // contact, not as a setting.
+            let refused = core.takeRadioRefusals()
+            if refused.contains(.contact) { linkRefusals += 1 }
+            if refused.contains(where: { $0 != .contact }) {
                 radioError = String(localized: "The radio did not take this setting")
             }
             // Read again after a change (ADR-0032): the header follows the radio's parameters.
@@ -2429,6 +2435,32 @@ final class AppModel {
     }
 
     /// Adds the contact of a card: verified when scanned in person, not when pasted (§4.7).
+    /// A MeshCore contact link (F-2, ADR-0047): the signed advert the stock app shares, or a
+    /// `meshcore://contact/add?…` code. `BadSignature` when the advert was changed or made up.
+    func readMeshCoreLink(_ text: String) -> Result<MeshCoreLink, LichenError> {
+        do {
+            return .success(try readMeshcoreLink(text: text.trimmingCharacters(in: .whitespacesAndNewlines)))
+        } catch let e as LichenError {
+            return .failure(e)
+        } catch {
+            return .failure(.BadCode)
+        }
+    }
+
+    /// Sends a link's node to the radio (§16.6): it then comes among the contacts or the nodes,
+    /// or the radio's refusal bumps `linkRefusals`. `NoIdentity` without a radio.
+    func addMeshCoreLink(_ text: String) -> Result<MeshCoreAdd, LichenError> {
+        do {
+            let r = try core.addMeshcoreContact(text: text.trimmingCharacters(in: .whitespacesAndNewlines))
+            pump()
+            return .success(r)
+        } catch let e as LichenError {
+            return .failure(e)
+        } catch {
+            return .failure(.BadCode)
+        }
+    }
+
     func addCard(_ text: String, scanned: Bool) -> Result<ContactInfo, LichenError> {
         do {
             let c = try core.addContactCard(card: text, scanned: scanned)
@@ -2876,6 +2908,7 @@ extension LichenError {
         case .BackupDamaged: return String(localized: "This backup is damaged or incomplete: nothing was restored.")
         case .NoPath: return String(localized: "No repeater on the way: the radio hears it directly, or does not know a path yet.")
         case .Blocked: return String(localized: "You blocked this contact: unblock them first.")
+        case .BadSignature: return String(localized: "This link was changed or made up: its signature doesn’t match.")
         }
     }
 }

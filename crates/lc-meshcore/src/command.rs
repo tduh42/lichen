@@ -31,6 +31,21 @@ pub enum Command<'a> {
     GetContacts { since: Option<u32> },
     /// `[30] key` → `CONTACT` or `ERR 2`.
     GetContactByKey { key: &'a [u8; 32] },
+    /// `[18] packet` (a node's advert, more than 97 bytes) → `OK` when it reads as an ADVERT,
+    /// else `ERR 6`. The radio then handles it as if heard by flood, silently: the contact is
+    /// added only when the radio would add it by itself (§16.6).
+    ImportContact { packet: &'a [u8] },
+    /// `[9] key ‖ type ‖ flags 0 ‖ out_path_len 0xFF (no path) ‖ out_path (64, zero) ‖ name (32,
+    /// NUL-padded) ‖ last_advert u32 ‖ lat i32 ‖ lon i32` → `OK`, or `ERR 3` when the table is
+    /// full; a contact with that key is updated (§16.6). The name is at most 31 bytes.
+    AddUpdateContact {
+        key: &'a [u8; 32],
+        kind: u8,
+        name: &'a [u8],
+        last_advert: u32,
+        lat_e6: i32,
+        lon_e6: i32,
+    },
     /// `[5]` → `CURR_TIME`.
     GetDeviceTime,
     /// `[6] time u32` → `OK`, or `ERR 6` if the clock would go back.
@@ -147,6 +162,13 @@ pub const TEXT_MAX: usize = 160;
 /// Longest channel name in `SET_CHANNEL` (32 bytes, NUL-terminated).
 pub const CHANNEL_NAME_MAX: usize = 31;
 
+/// Longest contact name in `ADD_UPDATE_CONTACT` (32 bytes, NUL-terminated).
+pub const CONTACT_NAME_MAX: usize = 31;
+
+/// Smallest packet `IMPORT_CONTACT` takes (`len > 2 + 32 + 64`, `MyMesh.cpp` L1409, the
+/// command byte included).
+pub const IMPORT_MIN: usize = 98;
+
 /// Longest password a server checks (`BaseChatMesh::sendLogin` keeps 15 bytes).
 pub const PASSWORD_MAX: usize = 15;
 
@@ -216,6 +238,36 @@ impl Command<'_> {
             Command::GetContactByKey { key } => {
                 w.u8(cmd::GET_CONTACT_BY_KEY)?;
                 w.put(key)?;
+            }
+            Command::ImportContact { packet } => {
+                if packet.len() < IMPORT_MIN {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::IMPORT_CONTACT)?;
+                w.put(packet)?;
+            }
+            Command::AddUpdateContact {
+                key,
+                kind,
+                name,
+                last_advert,
+                lat_e6,
+                lon_e6,
+            } => {
+                if name.len() > CONTACT_NAME_MAX {
+                    return Err(EncodeError::Invalid);
+                }
+                w.u8(cmd::ADD_UPDATE_CONTACT)?;
+                w.put(key)?;
+                w.put(&[kind, 0, 0xFF])?;
+                w.put(&[0; crate::path::MAX_PATH_BYTES])?;
+                w.put(name)?;
+                for _ in name.len()..=CONTACT_NAME_MAX {
+                    w.u8(0)?;
+                }
+                w.u32(last_advert)?;
+                w.put(&lat_e6.to_le_bytes())?;
+                w.put(&lon_e6.to_le_bytes())?;
             }
             Command::GetDeviceTime => w.u8(cmd::GET_DEVICE_TIME)?,
             Command::SetDeviceTime { time } => {

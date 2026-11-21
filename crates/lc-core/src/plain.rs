@@ -166,6 +166,102 @@ pub fn parse_contact_code(text: &str) -> Option<(String, PubKey, u8)> {
         .then_some((name, key?, kind?))
 }
 
+/// A MeshCore node read from a link (§15.3): its signed advert, or a contact code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MeshLink {
+    pub name: String,
+    pub key: PubKey,
+    /// [`crate::contact_kind`]: 1 companion, 2 repeater, 3 room server, 4 sensor.
+    pub kind: u8,
+    /// Degrees × 10⁶, when its advert carries one (0, 0 is none).
+    pub position: Option<(i32, i32)>,
+    /// The advert's timestamp, by its node's clock; 0 for a contact code.
+    pub timestamp: u32,
+    /// Hops of the path the advert came by to the radio that shared it; 0 for a contact code.
+    pub hops: u8,
+    /// That path's hashes, one per hop (1 to 3 bytes each); empty for a contact code.
+    pub path: Vec<u8>,
+    /// The advert packet as the link holds it, its path included, which lichen imports
+    /// (§16.6); `None` for a contact code, which nothing signs.
+    pub advert: Option<Vec<u8>>,
+}
+
+impl MeshLink {
+    /// Signed by its node (an advert), rather than written by anyone (a contact code).
+    pub fn signed(&self) -> bool {
+        self.advert.is_some()
+    }
+}
+
+/// Why a link was refused (§15.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinkError {
+    /// Not a MeshCore contact link or code, or not one a MeshCore node writes.
+    NotALink,
+    /// An advert whose signature does not verify: changed after its node signed it, or made
+    /// up.
+    BadSignature,
+}
+
+/// A node from a link the stock app shares (§15.3, ADR-0047): `meshcore://` and the hex of
+/// its signed advert, the signature checked, or a contact code (`meshcore://contact/add?…`).
+pub fn read_meshcore_link(text: &str) -> Result<MeshLink, LinkError> {
+    let text = text.trim();
+    let scheme = "meshcore://";
+    let rest = text
+        .get(..scheme.len())
+        .filter(|s| s.eq_ignore_ascii_case(scheme))
+        .and_then(|_| text.get(scheme.len()..))
+        .ok_or(LinkError::NotALink)?;
+    if rest
+        .get(..12)
+        .is_some_and(|s| s.eq_ignore_ascii_case("contact/add?"))
+    {
+        let (name, key, kind) = parse_contact_code(text).ok_or(LinkError::NotALink)?;
+        return Ok(MeshLink {
+            name,
+            key,
+            kind,
+            position: None,
+            timestamp: 0,
+            hops: 0,
+            path: Vec::new(),
+            advert: None,
+        });
+    }
+    if rest.is_empty() || rest.len() % 2 != 0 || !rest.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(LinkError::NotALink);
+    }
+    let raw: Vec<u8> = (0..rest.len())
+        .step_by(2)
+        .filter_map(|i| u8::from_str_radix(rest.get(i..i + 2)?, 16).ok())
+        .collect();
+    let (shared, advert) =
+        lc_meshcore::advert::decode_shared(&raw).map_err(|_| LinkError::NotALink)?;
+    let name = std::str::from_utf8(advert.name).map_err(|_| LinkError::NotALink)?;
+    if !(crate::contact_kind::CHAT..=crate::contact_kind::SENSOR).contains(&advert.kind)
+        || name.is_empty()
+        || name.contains('\0')
+    {
+        return Err(LinkError::NotALink);
+    }
+    if !advert.verify() {
+        return Err(LinkError::BadSignature);
+    }
+    // Imported as it is, its path included: the radio keeps it as the advert's path, as when
+    // the stock app imports one (ADR-0047).
+    Ok(MeshLink {
+        name: name.to_owned(),
+        key: *advert.key,
+        kind: advert.kind,
+        position: advert.position.filter(|&p| p != (0, 0)),
+        timestamp: advert.timestamp,
+        hops: shared.path.hops(),
+        path: shared.path.bytes().to_vec(),
+        advert: Some(raw),
+    })
+}
+
 /// Decodes a query value: `+` is a space, `%XX` a byte; `None` for a bad escape or text
 /// that is not UTF-8.
 fn query_value(v: &str) -> Option<String> {

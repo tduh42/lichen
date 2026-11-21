@@ -1150,6 +1150,23 @@
     <string name="answer_not_sent">Ta réponse n’a pas été envoyée.</string>
     <!-- Block and archive (ADR-0034) -->
     <string name="err_blocked">Tu as bloqué ce contact : débloque-le d’abord.</string>
+    <string name="err_bad_signature">Ce lien a été modifié ou inventé : sa signature ne correspond pas.</string>
+    <!-- A MeshCore contact from a link (F-2, ADR-0047) -->
+    <string name="meshcore_link_unreadable">Ce lien MeshCore n’a pas pu être lu.</string>
+    <string name="link_signed">Signé par sa radio.</string>
+    <string name="link_unsigned">Non signé : n’importe qui peut écrire un tel code.</string>
+    <string name="add_to_radio">Ajouter à la radio</string>
+    <string name="adding_to_radio">Ajout à ta radio…</string>
+    <string name="added_to_radio">Ajouté à ta radio.</string>
+    <string name="already_on_radio">Déjà sur ta radio.</string>
+    <string name="open_the_chat">Ouvrir la discussion</string>
+    <string name="radio_did_not_add">La radio ne l’a pas ajouté.</string>
+    <string name="heard_directly">Entendu par la radio qui l’a partagé : en direct</string>
+    <plurals name="heard_through_repeaters">
+        <item quantity="one">Entendu par la radio qui l’a partagé : via %1$d répéteur</item>
+        <item quantity="many">Entendu par la radio qui l’a partagé : via %1$d répéteurs</item>
+        <item quantity="other">Entendu par la radio qui l’a partagé : via %1$d répéteurs</item>
+    </plurals>
     <string name="archived">Archivées</string>
     <string name="archive">Archiver</string>
     <string name="unarchive">Désarchiver</string>

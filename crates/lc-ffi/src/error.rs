@@ -65,6 +65,9 @@ pub enum LichenError {
     NoPath,
     /// The user blocked this contact (ADR-0034): unblock it first.
     Blocked,
+    /// A MeshCore contact link whose signature does not verify: it was changed after its node
+    /// signed it, or made up (§15.3).
+    BadSignature,
 }
 
 impl std::fmt::Display for LichenError {

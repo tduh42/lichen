@@ -94,6 +94,8 @@ pub enum RadioSetting {
     Name,
     /// Another board setting.
     Other,
+    /// A contact added from a link (§16.6): the radio did not add it.
+    Contact,
 }
 
 /// Refusals kept until the app reads them.

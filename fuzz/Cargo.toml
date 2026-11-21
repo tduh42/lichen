@@ -159,3 +159,10 @@ path = "fuzz_targets/backup_open.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "advert_decode"
+path = "fuzz_targets/advert_decode.rs"
+test = false
+doc = false
+bench = false
