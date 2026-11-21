@@ -65,6 +65,9 @@ fi
 step "licences the apps show (assets/licences/licences.json)"
 python3 -I scripts/licences.py --check
 
+step "the tests docs/testing.md names (Covered by)"
+python3 -I scripts/testing-coverage.py --check
+
 if [ "${CHECK_SKIP_FUZZ:-0}" != "1" ] && [ -f fuzz/Cargo.toml ]; then
   step "fuzz smoke run (${FUZZ_SECS:-30} s per target)"
   scripts/fuzz.sh "${FUZZ_SECS:-30}"

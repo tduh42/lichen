@@ -1,3 +1,4 @@
+import SQLite3
 import XCTest
 
 /// MeshCore chats and channels (docs/testing.md §5), with the demo's stock-app users: Marc, who
@@ -63,5 +64,76 @@ final class MeshCoreTests: LichenUITest {
              10, "the joined channel did not open")
         back()
         wait(row("Ridge"), 5, "no row for the joined channel")
+    }
+
+    /// The MeshCore app's export ("export app database", its schema 29): Marc both ways a week
+    /// ago and a post on Public, as Android's MC-4 and QA-core's build it. `me` and `marc` are
+    /// the radios' keys, hex. Returns its path.
+    private func meshcoreExport(me: String, marc: String) throws -> String {
+        let at = Int64(Date().timeIntervalSince1970) - 7 * 86_400
+        let path = NSTemporaryDirectory() + "meshcore-test-export.db"
+        try? FileManager.default.removeItem(atPath: path)
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        for sql in [
+            #"CREATE TABLE "contact_messages" ("id" INTEGER PRIMARY KEY, "status" TEXT NOT NULL, "to" TEXT NOT NULL, "from" TEXT NOT NULL, "txt_type" INTEGER NOT NULL, "sender_timestamp" INTEGER NOT NULL, "text" TEXT NOT NULL, "timestamp" INTEGER NOT NULL, "snr" REAL NULL)"#,
+            #"CREATE TABLE "channel_messages" ("id" INTEGER PRIMARY KEY, "channel_secret" BLOB NULL, "from" TEXT NULL, "txt_type" INTEGER NOT NULL, "sender_timestamp" INTEGER NOT NULL, "text" TEXT NOT NULL, "timestamp" INTEGER NOT NULL, "snr" REAL NULL)"#,
+            #"CREATE TABLE "contacts" ("id" INTEGER PRIMARY KEY, "public_key" BLOB NOT NULL, "adv_name" TEXT NOT NULL, "custom_name" TEXT NULL)"#,
+            #"INSERT INTO contact_messages (status, "to", "from", txt_type, sender_timestamp, text, timestamp) VALUES ('received', '\#(me)', '\#(marc)', 0, \#(at), 'Are you coming up this weekend?', \#(at * 1000))"#,
+            #"INSERT INTO contact_messages (status, "to", "from", txt_type, sender_timestamp, text, timestamp) VALUES ('delivered', '\#(marc)', '\#(me)', 0, \#(at + 60), 'Saturday, with a friend.', \#((at + 60) * 1000))"#,
+            // Public's secret, 8b3387e9c5cdea6ac9e5edbaa115cd72.
+            #"INSERT INTO channel_messages (channel_secret, "from", txt_type, sender_timestamp, text, timestamp) VALUES (X'8B3387E9C5CDEA6AC9E5EDBAA115CD72', NULL, 0, \#(at + 120), 'Lucie: Snow above 1800 m', \#((at + 120) * 1000))"#,
+            #"INSERT INTO contacts (public_key, adv_name, custom_name) VALUES (X'\#(marc)', 'Marc', NULL)"#,
+        ] {
+            XCTAssertEqual(sqlite3_exec(db, sql, nil, nil, nil), SQLITE_OK, sql)
+        }
+        return path
+    }
+
+    /// MC-4: the MeshCore app's history comes in once, older than what lichen got; a second
+    /// import adds nothing. Its export is built here with this demo's keys (read in the app),
+    /// and handed over with `-importFile`, the Files picker's stand-in.
+    func testMC4_ImportTheMeshCoreHistory() throws {
+        // The keys the export names: our radio's (Radio settings) and Marc's (his chat's info).
+        launch(["-quietDemo", "YES", "-tab", "settings", "-screen", "radio"])
+        reveal(meshcoreKey)
+        let myKey = try XCTUnwrap(meshcoreKey.value as? String)
+        tab(.messages)
+        wait(row("Marc"), 60, "no message from Marc").tap()
+        button(tr("MeshCore · not lichen-encrypted")).tap()
+        reveal(meshcoreKey)
+        let marcKey = try XCTUnwrap(meshcoreKey.value as? String)
+        let path = try meshcoreExport(me: myKey, marc: marcKey)
+        // The same demo again (its keys are fixed), the export to import.
+        relaunch(["-quietDemo", "YES", "-importFile", path], demo: true)
+        wait(row("Marc"), 60, "no message from Marc")
+        tab(.settings)
+        let history = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Import from the MeshCore app"))).firstMatch
+        reveal(history)
+        history.tap()
+        let alert = wait(app.alerts[tr("Import")], 10, "no import")
+        let imported = tr("%lld direct messages and %lld channel posts imported.", 2, 1)
+        XCTAssertTrue(alert.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", imported)).firstMatch.exists,
+                      "not \(imported): \(alert.debugDescription)")
+        keep("mc-import")
+        alert.buttons["OK"].tap()
+        // Again: nothing more, said so.
+        history.tap()
+        let again = wait(app.alerts[tr("Import")], 10, "no second import")
+        let none = tr("%lld direct messages and %lld channel posts imported.", 0, 0) + " " + tr("%lld were already here.", 3)
+        XCTAssertTrue(again.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", none)).firstMatch.exists,
+                      "not \(none): \(again.debugDescription)")
+        again.buttons["OK"].tap()
+        // Marc's chat: the two older messages first, his hello still the last; each once.
+        tab(.messages)
+        row("Marc").tap()
+        let older = wait(textOf("Are you coming up this weekend?"), 10, "his older message is not there")
+        let ours = wait(textOf("Saturday, with a friend."), 5, "our older answer is not there")
+        let hello = wait(textOf(marc), 5, "his hello is gone")
+        XCTAssertLessThan(older.frame.minY, ours.frame.minY)
+        XCTAssertLessThan(ours.frame.minY, hello.frame.minY, "the history after his hello")
+        XCTAssertEqual(bubbles("Are you coming up this weekend?"), 1, "imported twice")
+        keep("mc-imported")
     }
 }

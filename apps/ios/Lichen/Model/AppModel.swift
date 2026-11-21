@@ -953,10 +953,12 @@ final class AppModel {
                 openRequest = .room(key: room.key)
                 debugOpened = true
             }
-            // -roomLogin <password>: log in to the radio's room servers once, remembered (§15.8).
+            // -roomLogin <password>: log in to the radio's room servers once, remembered (§15.8):
+            // once the radio lists them (its first contacts may come before the room servers).
             if !debugRoomLogin, let password = UserDefaults.standard.string(forKey: "roomLogin") {
-                debugRoomLogin = true
-                for room in nodes where room.kind == .roomServer {
+                let rooms = nodes.filter { $0.kind == .roomServer }
+                if !rooms.isEmpty { debugRoomLogin = true }
+                for room in rooms {
                     _ = serverLogin(room.key, password: password, remember: true)
                 }
             }

@@ -72,7 +72,19 @@ struct BackupExportSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .card(padding: 16)
         if !saved {
-            Button("Save to Files") { saving = true }
+            Button("Save to Files") {
+                #if DEBUG
+                // -saveBackup <name>: saved as `name` in this app's temporary folder, as if put in
+                // Files (UI tests; -restoreFile picks it there).
+                if let name = UserDefaults.standard.string(forKey: "saveBackup") {
+                    let to = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+                    try? FileManager.default.removeItem(at: to)
+                    saved = (try? FileManager.default.moveItem(at: url, to: to)) != nil
+                    return
+                }
+                #endif
+                saving = true
+            }
                 .buttonStyle(.primary)
                 .fileMover(isPresented: $saving, file: url) { result in
                     if case .success = result { saved = true }
@@ -102,6 +114,7 @@ struct RestoreBackupSheet: View {
         text.split(whereSeparator: { $0.isWhitespace || $0 == "," }).map(String.init)
     }
 
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -111,7 +124,17 @@ struct RestoreBackupSheet: View {
                         .foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
                     CardList {
-                        Button { picking = true } label: {
+                        Button {
+                            #if DEBUG
+                            // -restoreFile <name>: this backup of the app's temporary folder (where
+                            // -saveBackup puts one), as if picked in Files (UI tests).
+                            if let name = UserDefaults.standard.string(forKey: "restoreFile") {
+                                file = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+                                return
+                            }
+                            #endif
+                            picking = true
+                        } label: {
                             CardRow(title: file?.lastPathComponent ?? String(localized: "Choose the backup file"),
                                     subtitle: file == nil ? String(localized: "From Files, iCloud Drive or a USB drive") : nil) {
                                 Image(systemName: file == nil ? "doc.badge.plus" : "checkmark.circle.fill")

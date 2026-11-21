@@ -180,7 +180,16 @@ struct SettingsView: View {
                         // History from the official MeshCore app (ADR-0033).
                         SectionLabel("History").padding(.top, 10)
                         CardList {
-                            Button { importing = true } label: {
+                            Button {
+                                #if DEBUG
+                                // -importFile <path>: this export, as if picked in Files (UI tests).
+                                if let path = UserDefaults.standard.string(forKey: "importFile") {
+                                    importResult = model.importMeshCore(from: URL(fileURLWithPath: path))
+                                    return
+                                }
+                                #endif
+                                importing = true
+                            } label: {
                                 CardRow(title: String(localized: "Import from the MeshCore app"),
                                         subtitle: String(localized: "The database it exports: your direct messages and channel posts join your MeshCore chats.")) {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
