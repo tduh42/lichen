@@ -6,6 +6,7 @@ import XCTest
 final class AccessibilityAuditTests: XCTestCase {
     override func setUp() {
         continueAfterFailure = true
+        FreshSimulator.prepareOnce(self)
     }
 
     /// The demo as the other UI tests run it: 20 s sooner, 4 times faster, as just installed,
@@ -45,6 +46,30 @@ final class AccessibilityAuditTests: XCTestCase {
         let navigationBar = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame : .null
         let tabBar = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame : .null
         let statusBar = CGRect(x: 0, y: 0, width: app.frame.width, height: 54)
+        // The notification permission over the app makes the audit fail ("Invalid target app",
+        // -902): answered first, and again if it shows while the audit runs. On a slow machine
+        // (CI) it shows after the first launch has stopped looking for it.
+        answerPermission()
+        do {
+            try performAudit(app, screen, squeezedBelow: squeezedBelow, navigationBar, tabBar, statusBar)
+        } catch let error as NSError where error.code == -902 && answerPermission(wait: 5) {
+            sleep(1)
+            try performAudit(app, screen, squeezedBelow: squeezedBelow, navigationBar, tabBar, statusBar)
+        }
+    }
+
+    /// Taps Allow on the notification permission if it shows within `wait` seconds.
+    @discardableResult
+    private func answerPermission(wait: TimeInterval = 0) -> Bool {
+        let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons
+            .matching(NSPredicate(format: "label IN %@", ["Allow", "Autoriser"])).firstMatch
+        guard wait > 0 ? allow.waitForExistence(timeout: wait) : allow.exists else { return false }
+        allow.tap()
+        return true
+    }
+
+    private func performAudit(_ app: XCUIApplication, _ screen: String, squeezedBelow: CGFloat?,
+                              _ navigationBar: CGRect, _ tabBar: CGRect, _ statusBar: CGRect) throws {
         try app.performAccessibilityAudit(for: .all) { issue in
             guard let element = issue.element else { return true }
             let frame = element.frame

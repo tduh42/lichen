@@ -31,13 +31,30 @@ final class LifecycleTests: LichenUITest {
         wait(app.buttons[action], 5, "no \(action)", file: file, line: line).tap()
     }
 
-    /// Waits for a notification about `chat`, taps it: its conversation opens.
+    /// Waits for a notification about `chat`, taps it: its conversation opens. Tapped where it
+    /// shows as soon as it does: on a slow runner (CI) the demo's notifications come in a burst,
+    /// each banner up 2 or 3 s, and a tap that first checks it is not covered (XCTest's) comes
+    /// after it went, or fails on the next one over it. One that lands on the next banner opens
+    /// another chat: back, and the next notification about `chat`.
     private func openFromNotification(_ chat: String, _ timeout: TimeInterval, file: StaticString = #filePath, line: UInt = #line) {
         let b = banner(chat)
-        XCTAssertTrue(b.waitForExistence(timeout: timeout), "no notification for \(chat)", file: file, line: line)
-        b.tap()
-        inChat(chat, file: file, line: line)
-        keep("lc-notification-" + chat.lowercased().replacingOccurrences(of: " ", with: "-"))
+        let title = app.navigationBars.firstMatch.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", chat)).firstMatch
+        let until = Date().addingTimeInterval(timeout)
+        var seen = false
+        while Date() < until, b.waitForExistence(timeout: until.timeIntervalSinceNow) {
+            seen = true
+            let at = b.frame
+            springboard.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: at.midX, dy: at.midY)).tap()
+            if title.waitForExistence(timeout: 8) {
+                keep("lc-notification-" + chat.lowercased().replacingOccurrences(of: " ", with: "-"))
+                return
+            }
+            // Another chat opened: back to the list.
+            if composer.exists { back() }
+            pause(1)
+        }
+        XCTFail(seen ? "no notification for \(chat) opened its chat" : "no notification for \(chat)", file: file, line: line)
     }
 
     /// LC-1: a notification opens its conversation, for each kind (one launch each: at speed 4
@@ -152,11 +169,15 @@ final class LifecycleTests: LichenUITest {
         relaunch(["-tcp", radio.address], onboarded: true)
         // At once, before the radio answers: the conversations, the pin, the group, the request.
         let marc = wait(row("Marc"), 10, "Marc's chat is gone")
-        XCTAssertTrue(marc.label.contains("Two of us tonight"), "our answer is gone: \(marc.label)")
         let group = wait(row("Ridge walk"), 5, "the group is gone")
         XCTAssertLessThan(marc.frame.minY, group.frame.minY, "Marc's chat is no longer pinned on top")
         XCTAssertTrue(request.exists, "Camille's request is gone")
         keep("lc-after-restart")
+        // Our answer, in his chat: his row shows his reply to it once that has come (on a slow
+        // machine, before the restart).
+        marc.tap()
+        wait(message("Two of us tonight"), 10, "our answer is gone")
+        back()
         // The radio's contacts too, once it answers.
         button(tr("New message")).tap()
         wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Marc'")).firstMatch, 30, "Marc is not a contact")
@@ -174,9 +195,10 @@ final class LifecycleTests: LichenUITest {
         waitText("Copy: \"Still there?\"", 60)
         pause(5)
         XCTAssertEqual(bubbles("Still there?"), 1, "our text twice")
-        // Her bubble (its label ends with its time; its text, exposed alone, does not).
+        // Her bubble (its label ends with its time, "0:43" or "21:05"; its text, exposed alone,
+        // does not).
         XCTAssertEqual(app.scrollViews.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH 'Copy: \"Still there?' AND label MATCHES '.*, [0-9]{2}:[0-9]{2}.*'")).count,
+            .matching(NSPredicate(format: "label BEGINSWITH 'Copy: \"Still there?' AND label MATCHES '.*, [0-9]{1,2}:[0-9]{2}.*'")).count,
                        1, "her answer twice")
     }
 

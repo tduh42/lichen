@@ -37,6 +37,9 @@ struct ChatView: View {
     /// The view stays on the last message while the content grows (photos, stickers and GIFs
     /// laid out after the first pass): from opening at the end until the user scrolls away.
     @State private var pinned = false
+    /// The whole conversation fits on the screen; nil until the scroll view is laid out (and
+    /// before iOS 18).
+    @State private var fits: Bool?
     /// Blocking the other side, to confirm (ADR-0034).
     @State private var blocking = false
     /// Chat info › Media, files and voice (ADR-0034).
@@ -126,11 +129,24 @@ struct ChatView: View {
                 // An empty conversation laid out once does not lay out the rows of its first
                 // message (only its day separator showed, iOS 27): built again once it has one.
                 .id(messages.isEmpty)
-                .modifier(FollowBottom(pinned: $pinned) { proxy.scrollTo(Self.bottom, anchor: .bottom) })
+                .modifier(FollowBottom(pinned: $pinned, fits: $fits) { proxy.scrollTo(Self.bottom, anchor: .bottom) })
                 .overlay(alignment: .bottom) {
                     if unseen > 0 {
                         Button {
-                            withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                            // The reading position moved to the last message, animated: a redraw
+                            // while the view scrolls re-applies it, where with only a scroll it
+                            // re-applied the old one and put the view back on the page read
+                            // before (B-ios-28). Then exactly to the end, once the rows on the way
+                            // have their real heights.
+                            if let last = messages.last?.id, fits != true {
+                                withAnimation { bottomVisible = last }
+                                Task {
+                                    try? await Task.sleep(for: .milliseconds(600))
+                                    proxy.scrollTo(Self.bottom, anchor: .bottom)
+                                }
+                            } else {
+                                withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                            }
                             unseen = 0
                         } label: {
                             Label(String(localized: "\(unseen) new messages"), systemImage: "arrow.down")
@@ -149,6 +165,9 @@ struct ChatView: View {
                 .task(id: chat) {
                     pinned = highlight == nil && dividerBefore == nil
                     await Task.yield()
+                    // Whether it fits first (see scrollToStart): its first layout, half a second
+                    // at most.
+                    for _ in 0..<10 where fits == nil { try? await Task.sleep(for: .milliseconds(50)) }
                     scrollToStart(proxy)
                     try? await Task.sleep(for: .milliseconds(250))
                     scrollToStart(proxy)
@@ -201,11 +220,12 @@ struct ChatView: View {
                     }
                     highlight = id
                     Task {
+                        // On the screen already when all of it fits (see scrollToStart).
                         try? await Task.sleep(for: .milliseconds(100))
-                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        if fits != true { withAnimation { proxy.scrollTo(id, anchor: .center) } }
                         // Once the rows around it have their real heights.
                         try? await Task.sleep(for: .milliseconds(400))
-                        withAnimation { proxy.scrollTo(id, anchor: .center) }
+                        if fits != true { withAnimation { proxy.scrollTo(id, anchor: .center) } }
                         try? await Task.sleep(for: .seconds(2))
                         withAnimation { if highlight == id { highlight = nil } }
                     }
@@ -370,6 +390,11 @@ struct ChatView: View {
     /// Opens on a message from a search, on the first unread one, else at the end. Not at the
     /// end, the reading position is that message: a new one then shows the pill.
     private func scrollToStart(_ proxy: ScrollViewProxy) {
+        // All of it on the screen: shown whole from its end by the bottom anchor, nothing to
+        // scroll to. Scrolled to one of its messages, a conversation shorter than the screen
+        // got an offset past its content (B-ios-27: Marc's one message, opened from a search,
+        // went blank at the next redraw: offset -688 for 236 pt of content in 592 pt).
+        guard fits != true else { return }
         if let h = highlight {
             proxy.scrollTo(h, anchor: .center)
             bottomVisible = h
@@ -2740,18 +2765,24 @@ private struct SelectableText: UIViewRepresentable {
 /// opening only.
 private struct FollowBottom: ViewModifier {
     @Binding var pinned: Bool
+    /// The whole content fits in the scroll view.
+    @Binding var fits: Bool?
     let toBottom: () -> Void
 
     private struct Geometry: Equatable {
         var content: CGFloat
+        var container: CGFloat
         var visibleEnd: CGFloat
     }
 
     func body(content: Content) -> some View {
         if #available(iOS 18, *) {
             content.onScrollGeometryChange(for: Geometry.self) {
-                Geometry(content: $0.contentSize.height, visibleEnd: $0.visibleRect.maxY)
+                Geometry(content: $0.contentSize.height, container: $0.containerSize.height, visibleEnd: $0.visibleRect.maxY)
             } action: { old, new in
+                // Set only when it changes: each change redraws the chat, which would disturb a
+                // scroll under way.
+                if new.content > 0, fits != (new.content <= new.container) { fits = new.content <= new.container }
                 if new.content != old.content {
                     if pinned { toBottom() }
                 } else {

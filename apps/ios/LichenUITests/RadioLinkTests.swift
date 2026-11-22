@@ -48,7 +48,10 @@ final class RadioLinkTests: LichenUITest {
     /// RL-2: the radio drops (Messages says so), a text written meanwhile waits, and goes
     /// once, when the radio is back.
     func testRL2_RadioDropsAndComesBack() {
-        launch(["-offline", "22", "-online", "45", "-quietDemo", "YES"])
+        // Off from 22 s to 120 s of the demo's time: 25 s of the wall clock's at 4 times its
+        // pace, room for a slow launch and the checks below (from 22 s to 45 s, CI's radio was
+        // back before them).
+        launch(["-offline", "22", "-online", "120", "-quietDemo", "YES"])
         openChat("Camille")
         let written = tr("Written while my radio is off")
         let text = waitText(written, 40)
@@ -416,11 +419,14 @@ final class RadioLinkTests: LichenUITest {
     /// D-8: with `-demoSpeed 4` the demo runs four times faster: Camille's first message, about
     /// 18 s into the demo, comes in under 10 s.
     func testRL1_TheDemoRunsFasterWithDemoSpeed() {
-        let start = Date()
         launch(["-quietDemo", "YES"], speed: 4)
-        wait(row("Camille"), 30, "no message from Camille")
+        // Timed from the app up, not from the launch (12 s on CI): Marc writes 25 s into the
+        // demo (45 s, 20 skipped), about 6 s at 4 times the wall clock's pace; at its pace,
+        // 25 s less the launch's own few seconds.
+        let start = Date()
+        wait(row("Marc"), 40, "no message from Marc")
         let took = Date().timeIntervalSince(start)
-        XCTAssertLessThan(took, 10, "Camille's first message after \(Int(took)) s")
+        XCTAssertLessThan(took, 14, "Marc's message after \(Int(took)) s")
     }
 
     /// F-1: the radio's MeshCore public key (64 hex digits, in groups of 8), copied whole; its

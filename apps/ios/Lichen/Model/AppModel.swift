@@ -657,6 +657,10 @@ final class AppModel {
         // -radioSlow S: the demo radio holds its answers for S seconds of the demo's time (D-9).
         let slow = args.integer(forKey: "radioSlow")
         if slow > 0 { net.holdReplies(seconds: UInt64(slow)) }
+        // -answerAfter S: Camille and Julien answer a text S seconds after it reaches them, not 4
+        // (UI tests: room to block Camille before her answer is written, CT-10).
+        let answerAfter = args.integer(forKey: "answerAfter")
+        if answerAfter > 0 { net.answerAfter(seconds: UInt64(answerAfter)) }
         // -radioNoFix YES: the demo radio's GPS is on but has no fix, no position (B-user-2).
         if args.bool(forKey: "radioNoFix") { net.gpsWithoutFix() }
         // -demoSpeed N (up to 4): the demo network and the core run N times faster than the wall
