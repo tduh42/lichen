@@ -1783,7 +1783,7 @@
   },
   {
    "name": "form_urlencoded",
-   "version": "1.2.2",
+   "version": "1.2.3",
    "licence": "MIT OR Apache-2.0",
    "url": "https://github.com/servo/rust-url",
    "texts": [
@@ -5456,7 +5456,7 @@
   },
   {
    "name": "url",
-   "version": "2.5.8",
+   "version": "2.5.9",
    "licence": "MIT OR Apache-2.0",
    "url": "https://github.com/servo/rust-url",
    "texts": [
