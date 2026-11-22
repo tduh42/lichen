@@ -241,16 +241,18 @@ impl LichenCore {
         sf: u8,
         cr: u8,
     ) -> Result<(), LichenError> {
-        Ok(self.lock().core.set_radio_params(freq_khz, bw_hz, sf, cr)?)
+        self.lock()
+            .radio_change(|c| c.set_radio_params(freq_khz, bw_hz, sf, cr))
     }
 
     pub fn set_tx_power(&self, dbm: i8) -> Result<(), LichenError> {
-        Ok(self.lock().core.set_tx_power(dbm)?)
+        self.lock().radio_change(|c| c.set_tx_power(dbm))
     }
 
     /// The position adverts carry when `position_in_adverts` is on.
     pub fn set_advert_position(&self, lat_e6: i32, lon_e6: i32) -> Result<(), LichenError> {
-        Ok(self.lock().core.set_advert_position(lat_e6, lon_e6)?)
+        self.lock()
+            .radio_change(|c| c.set_advert_position(lat_e6, lon_e6))
     }
 
     /// Manual add, telemetry, position in adverts, extra ACKs, all at once. The app asks the
@@ -265,20 +267,19 @@ impl LichenCore {
         if telemetry.base > 2 || telemetry.location > 2 || telemetry.environment > 2 {
             return Err(LichenError::InvalidSetting);
         }
-        Ok(self.lock().core.set_other_params(OtherParams {
+        let other = OtherParams {
             manual_add,
             telemetry: telemetry.environment << 4 | telemetry.location << 2 | telemetry.base,
             advert_loc_policy: u8::from(position_in_adverts),
             multi_acks,
-        })?)
+        };
+        self.lock().radio_change(|c| c.set_other_params(other))
     }
 
     /// The board's GPS on or off (when it has one).
     pub fn set_gps(&self, on: bool) -> Result<(), LichenError> {
-        Ok(self
-            .lock()
-            .core
-            .set_radio_var("gps", if on { "1" } else { "0" })?)
+        self.lock()
+            .radio_change(|c| c.set_radio_var("gps", if on { "1" } else { "0" }))
     }
 
     /// Seconds between GPS fixes (0..=86,400).
@@ -286,20 +287,19 @@ impl LichenCore {
         if seconds > 86_400 {
             return Err(LichenError::InvalidSetting);
         }
-        Ok(self
-            .lock()
-            .core
-            .set_radio_var("gps_interval", &seconds.to_string())?)
+        let value = seconds.to_string();
+        self.lock()
+            .radio_change(|c| c.set_radio_var("gps_interval", &value))
     }
 
     /// Which advert types become contacts by themselves (with manual add), and from how far.
     pub fn set_autoadd(&self, mask: u8, max_hops: u8) -> Result<(), LichenError> {
-        Ok(self.lock().core.set_autoadd(mask, max_hops)?)
+        self.lock().radio_change(|c| c.set_autoadd(mask, max_hops))
     }
 
     /// The Bluetooth PIN, from the next boot: 0 for the default, else six digits.
     pub fn set_ble_pin(&self, pin: u32) -> Result<(), LichenError> {
-        Ok(self.lock().core.set_device_pin(pin)?)
+        self.lock().radio_change(|c| c.set_device_pin(pin))
     }
 
     /// Restarts the radio; the connection drops and comes back.

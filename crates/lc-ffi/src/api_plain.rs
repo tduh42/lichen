@@ -166,7 +166,7 @@ impl LichenCore {
     pub fn set_mesh_name(&self, name: String, now_ms: u64) -> Result<(), LichenError> {
         let mut i = self.lock();
         i.last_now = now_ms;
-        i.core.set_node_name(&name, now_ms)?;
+        i.radio_change(|c| c.set_node_name(&name, now_ms))?;
         i.note_radio_name();
         i.persist();
         Ok(())
