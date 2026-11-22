@@ -115,6 +115,40 @@ impl Sim {
         s
     }
 
+    /// A radio on before the app reaches it, as one over TCP is (iOS's FakeTcpRadio, `lichen
+    /// bridge`): the demo runs `connect_ms` with its script `skip_s` seconds sooner, read every
+    /// 40 ms by nobody, so what its companion pushes meanwhile is lost; then the app, just
+    /// installed (introductions as requests and groups asking, as outside the demo; its
+    /// history in folder `name`), connects.
+    pub fn radio_first(seed: u8, name: &str, skip_s: u64, connect_ms: u64) -> Self {
+        let demo = DemoNetwork::new();
+        demo.skip_ahead(skip_s);
+        let mut t = 0;
+        while t < connect_ms {
+            let _ = demo.read(t);
+            t += 40;
+        }
+        let dir = TempDir::new(name);
+        let core = new_core(seed, seed.wrapping_add(100), Some(&dir));
+        let wall0 = unix_now_ms();
+        core.set_clock(wall0 + connect_ms, connect_ms);
+        core.connect(connect_ms);
+        Self {
+            demo,
+            core,
+            now: connect_ms,
+            wall0,
+            events: Vec::new(),
+            seed,
+            dir: Some(dir),
+            radio_off: false,
+            requests: true,
+            ask_groups: true,
+            gps: false,
+            restarts: 0,
+        }
+    }
+
     fn build(seed: u8, dir: Option<TempDir>, demo: Arc<DemoNetwork>, requests: bool) -> Self {
         let core = new_core(seed, seed.wrapping_add(100), dir.as_ref());
         core.set_group_consent(false);

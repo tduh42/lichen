@@ -6,12 +6,16 @@ import Network
 /// from the app, '>' len frame to it). The app reaches it through its real TCP link
 /// (`-tcp 127.0.0.1:port`), as a radio it pairs with and saves: not the demo mode, so what the
 /// app stores is kept across launches (LC-4). The simulation runs on the wall clock, its script
-/// 20 s sooner. As Android's FakeTcpRadio.
+/// 20 s sooner, from the app's first connection: however long the simulator takes to start the
+/// app, the script meets it at the same time (B-ios-31: started with the test, a fresh install
+/// that took 11.5 s or more to connect missed Camille's first handshake, pushed to nobody, and
+/// her retry fell on Marc's only message at the hub). Otherwise as Android's FakeTcpRadio.
 final class FakeTcpRadio {
     private let demo = DemoNetwork()
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fake-tcp-radio")
-    private let started = DispatchTime.now()
+    /// When the app first connected: the simulation's time 0. Nothing runs before.
+    private var started: DispatchTime?
     private var connection: NWConnection?
     private var input = Data()
     private var timer: DispatchSourceTimer?
@@ -51,11 +55,13 @@ final class FakeTcpRadio {
     }
 
     private func now() -> UInt64 {
-        (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
+        guard let started else { return 0 }
+        return (DispatchTime.now().uptimeNanoseconds - started.uptimeNanoseconds) / 1_000_000
     }
 
     /// One app at a time: a new connection replaces the old one (the app restarted).
     private func accept(_ c: NWConnection) {
+        if started == nil { started = .now() }
         connection?.cancel()
         connection = c
         input = Data()
@@ -90,6 +96,7 @@ final class FakeTcpRadio {
 
     /// The radio's frames to the app: '>', a little-endian length, the frame.
     private func flush() {
+        guard started != nil else { return }
         let frames = demo.read(nowMs: now())
         guard let c = connection, !frames.isEmpty else { return }
         var out = Data()
