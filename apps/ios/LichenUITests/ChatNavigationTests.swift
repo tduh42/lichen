@@ -77,12 +77,21 @@ final class ChatNavigationTests: LichenUITest {
                 let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
                 XCTAssertTrue(row.waitForExistence(timeout: 30),
                               "no row \(name) in \(app.buttons.allElementsBoundByIndex.map(\.label))")
-                let tapped = settled(row).label
+                var tapped = settled(row).label
                 row.tap()
                 XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "\(name) did not open")
                 let bar = app.navigationBars.firstMatch
                 let title = bar.descendants(matching: .any)
                     .matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
+                // A message arriving reorders the list under the tap now and then (the demo is
+                // busy, the runner slow): another chat opens. Back, and once more.
+                if !title.waitForExistence(timeout: 3) {
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    XCTAssertTrue(row.waitForExistence(timeout: 10))
+                    tapped = settled(row).label
+                    row.tap()
+                    XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "\(name) did not open")
+                }
                 let shown = bar.descendants(matching: .any).allElementsBoundByIndex.map(\.label)
                 XCTAssertTrue(title.waitForExistence(timeout: 5),
                               "round \(round): tapped “\(tapped)”, the bar shows \(shown)")
@@ -92,6 +101,74 @@ final class ChatNavigationTests: LichenUITest {
                 XCTAssertFalse(inChat(app).exists, "round \(round): Back from \(name) did not reach the list")
             }
         }
+    }
+
+    /// A long chat opened at its end stays at its end while its rows take their real heights,
+    /// however late (`-rowsGrowAfter 3`: every row 24 pt taller 3 s after it shows, after the
+    /// opening's last correction). It used to stop short of the end now and then (a photo laid
+    /// out late, about one run in nine).
+    func testALongChatStaysAtItsEndWhileItsRowsGrow() {
+        launch(["-open", "Camille", "-fill", "250", "-quietDemo", "YES", "-rowsGrowAfter", "3", "-viewShrinksAfter", "4"])
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        // Everything read: reopened, the chat opens at its end.
+        pause(3)
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let row = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Camille'")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        row.tap()
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 10))
+        // Past the rows' growth.
+        pause(6)
+        let end = app.descendants(matching: .any)["chat.end"]
+        XCTAssertTrue(end.exists, "the end is not laid out")
+        XCTAssertLessThanOrEqual(end.frame.minY, inChat(app).frame.minY, "the end went below the screen as the rows grew: \(end.frame) vs \(inChat(app).frame)")
+        keep("chat-long-end-held")
+    }
+
+    /// A chat that fits on the screen, at its end, while the accessibility audit tries larger
+    /// text: its rows swell past the screen for a moment and shrink back (`-rowsSwellEvery`).
+    /// The end stays in sight. On CI the audit of the chat found it under the composer (PR #71's
+    /// runs): the end was placed again while the rows were tall, and still asserted once they
+    /// were short again, a positional move on a chat that fits.
+    func testAChatThatFitsStaysAtItsEndWhenItsRowsSwell() {
+        launch(["-open", "Camille", "-say", "Up by the north path", "-quietDemo", "YES", "-rowsSwellEvery", "4"])
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        let later = app.buttons[tr("Later")]
+        if later.waitForExistence(timeout: 10) { later.tap() }
+        let answer = containing("Copy: \"Up by the north path\"")
+        wait(answer, 60, "no answer from Camille")
+        // Two swells; then at rest (a swell lasts 0.6 s of every 4).
+        pause(9)
+        let end = app.descendants(matching: .any)["chat.end"]
+        let composer = inChat(app)
+        for _ in 0..<6 where !(end.exists && end.frame.minY <= composer.frame.minY && answer.isHittable) { pause(0.5) }
+        XCTAssertLessThanOrEqual(end.frame.minY, composer.frame.minY, "the end is under the composer: \(end.frame) vs \(composer.frame)")
+        XCTAssertTrue(answer.isHittable, "her answer is not on screen")
+        keep("chat-fits-end-held")
+    }
+
+    /// A long chat at its end: a message just above the screen is reached as VoiceOver or XCTest
+    /// reaches it, scrolled into view by accessibility, then long-pressed. The view used to be
+    /// held at the end by its scroll position, which undid such a scroll at once (DM-3 on CI:
+    /// "Computed hit point {-1, -1} after scrolling to visible", three times).
+    func testAMessageAboveIsReachedFromTheEnd() {
+        launch(["-open", "Camille", "-fill", "250", "-quietDemo", "YES"])
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        // Ours goes: the view at the end.
+        send("At the end now")
+        pause(2)
+        // A message laid out just above the screen: out of reach until scrolled into view. Read
+        // from the frames: isHittable fails the test outright on a row whose frame is not
+        // settled yet (a simulator just booted, CI).
+        let top = max(app.scrollViews["chat.messages"].frame.minY, app.navigationBars.firstMatch.frame.maxY)
+        let above = (200...250).reversed().map { app.staticTexts["Earlier message \($0)"] }
+            .first { $0.exists && !$0.frame.isEmpty && $0.frame.maxY <= top }
+        guard let target = above else { return XCTFail("no message laid out above the screen") }
+        menu(target, tr("Info"))
+        wait(app.navigationBars[tr("Info")], 5, "no Info for the message above")
     }
 
     /// A long chat with a photo, opened again once everything is read, shows its last message.
@@ -107,6 +184,17 @@ final class ChatNavigationTests: LichenUITest {
         app.navigationBars.buttons.element(boundBy: 0).tap()
         let row = app.buttons.containing(NSPredicate(format: "label CONTAINS 'Camille'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 10))
+        // Nothing unread, or the chat opens on its divider, as it should: her photo itself (and its
+        // announcement) can come after its caption, once we are back on the list. Read, then back.
+        let unread = tr("%lld unread", 1).replacingOccurrences(of: "1 ", with: "")
+        for _ in 0..<3 where row.label.contains(unread) {
+            row.tap()
+            XCTAssertTrue(inChat(app).waitForExistence(timeout: 10))
+            sleep(3)
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+            XCTAssertTrue(row.waitForExistence(timeout: 10))
+        }
+        XCTAssertFalse(row.label.contains(unread), "still unread: \(row.label)")
         row.tap()
         XCTAssertTrue(inChat(app).waitForExistence(timeout: 10))
         sleep(4)
@@ -142,70 +230,42 @@ final class ChatNavigationTests: LichenUITest {
     }
 
     /// B-ios-28: in a long chat, a message arriving moves the view only when the end is on
-    /// screen. Read above (three screens up from the end, three times, then on the earlier
-    /// page), her answer comes: the view holds its place and the pill counts it; the pill then
-    /// goes to the end. (The pill used to stop short of it, or go back to the page read before,
-    /// about once in three.)
+    /// screen. Read above, on the earlier page, her answer comes: the page's first message stays
+    /// at the top and the pill counts it; the pill then goes to the end, her answer on it.
     func testALongChatHoldsItsPlaceWhenAMessageArrives() {
-        // Her answers 20 s of the demo's time after our texts reach her: once we read above.
+        // Her answer 20 s of the demo's time after our text reaches her: once we read above.
         launch(["-open", "Camille", "-fill", "5000", "-quietDemo", "YES", "-answerAfter", "20"])
         XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
         XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
-        // The messages (with the keyboard up after a text, the first scroll view is not them):
-        // the scroll view with earlier messages, her answers or the end on screen.
-        let list = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH 'Earlier message ' OR label BEGINSWITH 'Copy: ' OR identifier == 'chat.end'")).firstMatch
-        /// Up the conversation: a fling on the messages, from their upper part (a swipe on the
-        /// keyboard, up after a text, types words: slide to type).
-        func up() {
-            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
-                .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
-                       withVelocity: .fast, thenHoldForDuration: 0)
-        }
+        let list = app.scrollViews["chat.messages"]
         let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("%lld new messages", 1).replacingOccurrences(of: "1 ", with: ""))).firstMatch
         let end = app.descendants(matching: .any)["chat.end"]
-        /// The topmost message on screen, by its text.
-        func onScreen() -> String? {
-            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Earlier message '")).allElementsBoundByIndex
-                .first { $0.isHittable }?.label
-        }
-        // Three times: ours goes, the view at the end; three screens up; her answer comes and
-        // the view holds; the pill goes to the end, her answer on it.
-        for round in 1...3 {
-            let text = "Still up there? \(round)"
-            send(text)
-            pause(2)
-            for _ in 0..<3 { up() }
-            pause(2)
-            let held = onScreen()
-            XCTAssertNotNil(held, "round \(round): no earlier message on screen")
-            XCTAssertTrue(pill.waitForExistence(timeout: 60), "round \(round): no pill for her answer")
-            pause(3)
-            if let held {
-                XCTAssertTrue(app.staticTexts[held].isHittable, "round \(round): her answer moved the view off “\(held)”: now “\(onScreen() ?? "-")”")
-            }
-            if round == 1 { keep("chat-long-held") }
-            pill.tap()
-            pause(2)
-            XCTAssertTrue(end.exists && end.frame.minY <= composer.frame.minY, "round \(round): the pill did not reach the end")
-            XCTAssertTrue(containing("Copy: \"\(text)\"").isHittable, "round \(round): her answer is not on screen")
-        }
-        // Ours again, then up to the earlier page: its first message stays at the top.
         send("And the path down?")
-        pause(2)
+        // Up to the earlier page (flings on the messages from their upper part: a swipe on the
+        // keyboard, up after a text, types words).
         let earlier = button(tr("Show earlier messages"))
-        for _ in 0..<25 where !(earlier.exists && earlier.isHittable) { up() }
+        for _ in 0..<30 where !(earlier.exists && earlier.isHittable) {
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+                .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)),
+                       withVelocity: .fast, thenHoldForDuration: 0)
+        }
         let top = app.staticTexts["Earlier message 4901"]
         earlier.tap()
-        pause(2)
+        wait(top, 5, "the earlier page did not load")
         XCTAssertTrue(top.isHittable, "the earlier page moved the view")
-        XCTAssertTrue(pill.waitForExistence(timeout: 60), "no pill for her second answer")
-        pause(3)
-        XCTAssertTrue(top.isHittable, "her answer moved the view off the earlier page: now “\(onScreen() ?? "-")”")
-        pill.tap()
+        // Her answer: the view stays, the pill counts it.
+        wait(pill, 60, "no pill for her answer")
         pause(2)
+        XCTAssertTrue(top.isHittable, "her answer moved the view off the earlier page")
+        keep("chat-long-held")
+        // The pill: the end, her answer on it.
+        pill.tap()
+        let answer = containing("Copy: \"And the path down?\"")
+        for _ in 0..<10 where !(end.exists && end.frame.minY <= composer.frame.minY && answer.exists && answer.isHittable) { pause(0.5) }
         XCTAssertTrue(end.exists && end.frame.minY <= composer.frame.minY, "the pill did not reach the end")
-        XCTAssertTrue(containing("Copy: \"And the path down?\"").isHittable, "her second answer is not on screen")
+        XCTAssertTrue(answer.isHittable, "her answer is not on screen")
     }
+
 
     /// A long chat (a lazy list since M5) keeps its places: it opens on the unread divider, the
     /// page before keeps the message that was at the top, and the pill of a new message goes

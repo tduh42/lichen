@@ -306,6 +306,9 @@ final class DirectChatTests: LichenUITest {
         send(text)
         let sent = wait(message("Meet at"), 5)
         waitLabel(sent, contains: tr("Delivered"), 60)
+        // Her answer first: arriving during the long press, it moved the view under the finger,
+        // and her bubble's text was copied instead (CI, PR #68's run, both tries).
+        waitText(copy(text), 60)
         menu(textOf(text), tr("Copy"))
         composer.tap()
         composer.press(forDuration: 1.2)

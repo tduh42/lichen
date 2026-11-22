@@ -16,17 +16,27 @@ struct ChatView: View {
     /// What a MeshCore chat is (§15.6).
     @State private var plainInfo = false
     @Environment(\.dismiss) private var dismissChat
-    /// Where the view is, and the one thing that moves it (B-ios-28): the message held at
-    /// `anchor`, or `Self.end` at the bottom when the view is at the end. The divider, a searched
-    /// or quoted message, an earlier page and the pill each set it; the scroll view writes it
-    /// back as the user scrolls; a message arriving leaves it alone unless the end is on screen.
-    /// Nothing else scrolls (no `ScrollViewProxy`): two owners re-applied each other's stale
-    /// places, and the view jumped up near the top of the loaded page.
+    /// The one thing that moves the view (B-ios-28): the message to hold at `anchor`, or
+    /// `Self.end` at the bottom. The divider, a searched or quoted message, an earlier page, the
+    /// pill and our own text each set it (`place`); nothing else scrolls (no `ScrollViewProxy`):
+    /// two owners re-applied each other's stale places, and the view jumped up near the top of
+    /// the loaded page. Once a move has settled it is let go (nil, iOS 18): held, the binding
+    /// undid every scroll that did not come through it, VoiceOver's and XCTest's included (DM-3
+    /// on CI). At the end, `followsEnd` keeps it there.
     @State private var position: Int64?
     @State private var anchor: UnitPoint = .bottom
     /// The end of the conversation is on screen (the scroll geometry, iOS 18; before it, the
-    /// position): a new message follows only then.
+    /// position): the view follows the end only then (new messages, rows that take their real
+    /// height late).
     @State private var atEnd = false
+    /// The view follows the end (iOS 18): the latest move went there, or a scroll came to rest
+    /// there, and nothing has taken the end off the screen since (another move, the user's
+    /// scroll, VoiceOver's or XCTest's). The bottom anchor then keeps the end in sight as the
+    /// content or the view changes height (a row laid out late, the compare banner going, the
+    /// keyboard), in the same layout, as the held position did; let go, the position no longer
+    /// did, and the end slid under the composer (CI's audit of the chat, PR #71's run). Never
+    /// set from the geometry alone: following whatever it said looped (`BottomAnchor`).
+    @State private var followsEnd = false
     /// The latest move: each new one, or the user's scroll, ends the re-assertions of the one
     /// before (see `place`).
     @State private var move = 0
@@ -130,17 +140,29 @@ struct ChatView: View {
                 .padding(.vertical, 12)
             }
             .scrollPosition(id: $position, anchor: anchor)
-            .modifier(BottomAnchor(following: position == Self.end || fits == true))
+            .accessibilityIdentifier("chat.messages")
+            .modifier(BottomAnchor(following: followsEnd || position == Self.end || fits == true))
             .modifier(ScrollPhase(scrolling: $userScrolling) { phase in
-                // The user's scroll: no move of ours re-asserts itself over it; let go at the
-                // end, the end is held again.
-                if phase == .interacting { move += 1 }
-                if phase == .idle, atEnd, position != Self.end, fits != true { toEnd() }
+                // The user's scroll: no move of ours re-asserts itself over it, and the end is
+                // followed again only if it comes to rest there.
+                if phase == .interacting {
+                    move += 1
+                    followsEnd = false
+                }
+                if phase == .idle, atEnd { followsEnd = true }
             })
             // An empty conversation laid out once does not lay out the rows of its first
             // message (only its day separator showed, iOS 27): built again once it has one.
             .id(messages.isEmpty)
-            .modifier(ScrollFacts(fits: $fits, atEnd: $atEnd))
+            #if DEBUG
+            .modifier(LateShrink())
+            #endif
+            .modifier(ScrollFacts(fits: $fits, atEnd: $atEnd) {
+                // Grown with the end on screen (a message, a row laid out late): the end held
+                // again, the position let go once settled (iOS 18; before it, the position holds).
+                // Only for a chat already longer than the screen (`ScrollFacts`).
+                if Self.releases, position != Self.end, !userScrolling, fits != true { place(Self.end, .bottom) }
+            })
             .overlay(alignment: .bottom) {
                 if unseen > 0 {
                     Button {
@@ -180,8 +202,12 @@ struct ChatView: View {
             // page was asked from).
             .onChange(of: messages.last?.id) { old, new in
                 guard let old, let new, new != old else { return }
-                if isAtEnd(old) || messages.last?.outgoing == true {
+                if messages.last?.outgoing == true {
                     toEnd(animated: true)
+                    unseen = 0
+                } else if isAtEnd(old) {
+                    // Near: no re-assertion, the position let go as soon as it is there.
+                    toEnd(animated: true, near: true)
                     unseen = 0
                 } else {
                     unseen += 1
@@ -196,17 +222,15 @@ struct ChatView: View {
                 showEarlier()
             }
             #endif
-            // At the end again (the user scrolled there): the pill has nothing left to count, and
-            // the end is held, so that photos laid out late do not push it off the screen.
+            // At the end again (the user scrolled there): the pill has nothing left to count; a
+            // growth from now on holds the end again (`ScrollFacts`).
             .onChange(of: atEnd) {
-                guard atEnd else { return }
-                unseen = 0
-                if position != Self.end, fits != true, !userScrolling { toEnd() }
-            }
-            // A chat that fitted on the screen (all of it, its end included, shown by the bottom
-            // anchor) and just outgrew it: its end held from now on.
-            .onChange(of: fits) { old, new in
-                if old == true, new == false { toEnd() }
+                if atEnd {
+                    unseen = 0
+                } else if position == nil {
+                    // Taken off the screen by a scroll that is not ours (VoiceOver, XCTest).
+                    followsEnd = false
+                }
             }
             // A quote tapped: its original, loading earlier pages if needed.
             .onChange(of: jumpTo) {
@@ -387,20 +411,40 @@ struct ChatView: View {
     /// asserted twice more as they take their real ones, unless a newer move or the user's
     /// scroll took over. (The binding only scrolls when its value changes: through nil, for a
     /// frame, in which nothing moves the view: see `BottomAnchor`.)
-    private func place(_ id: Int64, _ at: UnitPoint, animated: Bool = false) {
+    private func place(_ id: Int64, _ at: UnitPoint, animated: Bool = false, near: Bool = false) {
         move += 1
         let mine = move
+        followsEnd = id == Self.end
         set(id, at, animated: animated)
         Task {
-            for wait in [350, 350] {
+            for wait in near ? [] : [350, 350] {
                 try? await Task.sleep(for: .milliseconds(wait))
                 guard move == mine else { return }
+                // A chat that fits again (rows that were taller for a moment) takes no
+                // positional move (B-ios-27): the bottom anchor shows its end.
+                if id == Self.end, fits == true {
+                    position = nil
+                    return
+                }
                 position = nil
                 try? await Task.sleep(for: .milliseconds(20))
                 guard move == mine else { return }
                 set(id, at, animated: false)
             }
+            // Settled: let go (see `position`); the end, if it is there, followed from now on.
+            try? await Task.sleep(for: .milliseconds(near ? 450 : 300))
+            if Self.releases, move == mine {
+                position = nil
+                if id == Self.end { followsEnd = atEnd }
+            }
         }
+    }
+
+    /// Whether a settled move lets the position go: iOS 18, where the scroll geometry says
+    /// whether the end is on screen. Before it, the position is what says so, and is kept.
+    private static var releases: Bool {
+        if #available(iOS 18, *) { return true }
+        return false
     }
 
     private func set(_ id: Int64, _ at: UnitPoint, animated: Bool) {
@@ -413,11 +457,12 @@ struct ChatView: View {
     }
 
     /// The end of the conversation at the bottom.
-    private func toEnd(animated: Bool = false) {
+    private func toEnd(animated: Bool = false, near: Bool = false) {
         atEnd = true
+        followsEnd = true
         // A chat that fits shows whole from its end (the bottom anchor): no positional move
         // (B-ios-27).
-        if fits != true { place(Self.end, .bottom, animated: animated) }
+        if fits != true { place(Self.end, .bottom, animated: animated, near: near) }
     }
 
     /// Whether the end was on screen before the message after `last` came: the geometry on
@@ -961,6 +1006,9 @@ private struct MessageView: View {
         .padding(4)
         .background(RoundedRectangle(cornerRadius: 22).fill(highlighted ? Theme.warnBg : .clear))
         .padding(-4)
+        #if DEBUG
+        .modifier(LateGrowth())
+        #endif
         .sheet(isPresented: $selecting) {
             if case let .text(_, text) = message.message { SelectTextSheet(text: text) }
         }
@@ -2800,9 +2848,11 @@ private struct SelectableText: UIViewRepresentable {
 }
 
 /// The bottom anchor (iOS 18): where the view opens and how short content aligns, and, only
-/// while the view follows the end, how it moves as the content grows (photos laid out late keep
-/// the end in sight). Holding a message, nothing but `position` moves it. Before iOS 18, the
-/// bottom anchor for all three.
+/// while the view follows the end (`followsEnd`, a move to the end, a chat that fits), how it
+/// moves as the content or the view changes height. Away from the end, nothing but `position`
+/// moves the view. Following the end whenever the geometry said it was on screen looped: the
+/// anchor moved the view, the geometry changed its mind, and the app never went idle. Before
+/// iOS 18, the bottom anchor for all three.
 private struct BottomAnchor: ViewModifier {
     let following: Bool
 
@@ -2843,6 +2893,11 @@ private struct ScrollPhase: ViewModifier {
 private struct ScrollFacts: ViewModifier {
     @Binding var fits: Bool?
     @Binding var atEnd: Bool
+    /// The content grew while its end was on screen, and it was already longer than the screen.
+    /// A chat that fits takes no positional move (B-ios-27), even while its rows are taller for
+    /// a moment (the accessibility audit's larger text): placed then, the end was asserted again
+    /// once they had shrunk back, and went under the composer (CI's audit of the chat, PR #71).
+    var grew: () -> Void = {}
 
     private struct Geometry: Equatable {
         var content: CGFloat
@@ -2854,14 +2909,74 @@ private struct ScrollFacts: ViewModifier {
         if #available(iOS 18, *) {
             content.onScrollGeometryChange(for: Geometry.self) {
                 Geometry(content: $0.contentSize.height, container: $0.containerSize.height, visibleEnd: $0.visibleRect.maxY)
-            } action: { _, new in
+            } action: { old, new in
                 guard new.content > 0 else { return }
                 if fits != (new.content <= new.container) { fits = new.content <= new.container }
                 let end = new.visibleEnd >= new.content - 32
                 if atEnd != end { atEnd = end }
+                if old.content > old.container, new.content > old.content, old.visibleEnd >= old.content - 32 { grew() }
             }
         } else {
             content
         }
     }
 }
+
+#if DEBUG
+/// -viewShrinksAfter S: the messages' view loses 25 pt at its bottom S seconds after it shows,
+/// as a bar below it taking its place late would (UI tests: a chat at its end stays there).
+private struct LateShrink: ViewModifier {
+    @State private var shrunk = false
+    private static let after = UserDefaults.standard.double(forKey: "viewShrinksAfter")
+
+    func body(content: Content) -> some View {
+        if Self.after > 0 {
+            content
+                .padding(.bottom, shrunk ? 25 : 0)
+                .task {
+                    try? await Task.sleep(for: .seconds(Self.after))
+                    shrunk = true
+                }
+        } else {
+            content
+        }
+    }
+}
+
+/// -rowsGrowAfter S: every message row grows 24 pt S seconds after it appears, as a photo or a
+/// reaction taking its real height late would (UI tests: a chat opened at its end stays there).
+private struct LateGrowth: ViewModifier {
+    @State private var grown = false
+    @State private var swollen = false
+    private static let after = UserDefaults.standard.double(forKey: "rowsGrowAfter")
+    /// -rowsSwellEvery S: every S seconds, every message row is 150 pt taller for 0.6 s, as
+    /// rows are while the accessibility audit tries larger text (UI tests: a chat at its end,
+    /// one that fits, stays there).
+    private static let every = UserDefaults.standard.double(forKey: "rowsSwellEvery")
+
+    func body(content: Content) -> some View {
+        if Self.after > 0 || Self.every > 0 {
+            content
+                .padding(.bottom, (grown ? 24 : 0) + (swollen ? 150 : 0))
+                .task {
+                    guard Self.after > 0 else { return }
+                    try? await Task.sleep(for: .seconds(Self.after))
+                    grown = true
+                }
+                .task {
+                    guard Self.every > 0 else { return }
+                    // On the wall clock's multiples of S, so that every row swells at once.
+                    while !Task.isCancelled {
+                        let now = Date().timeIntervalSince1970
+                        try? await Task.sleep(for: .seconds(Self.every - now.truncatingRemainder(dividingBy: Self.every)))
+                        swollen = true
+                        try? await Task.sleep(for: .milliseconds(600))
+                        swollen = false
+                    }
+                }
+        } else {
+            content
+        }
+    }
+}
+#endif
