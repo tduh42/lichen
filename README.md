@@ -17,20 +17,20 @@ Encrypted messaging on top of the **stock MeshCore** network: long fragmented me
 
 On both apps; the spec and the decisions say exactly how each works.
 
-- **Chats:** long texts, and an outbox that takes them while the radio is away and survives a restart (§6.1); replies, reactions, edits and deletes for everyone, forwarding, disappearing messages (§6.2–6.5); stickers and GIFs; tappable links, and places that open on the map; drafts; reply or mark as read from a notification; search; pin, mute, archive and block (ADR-0034). Someone you never met who writes first arrives as a request, to accept, block or delete (ADR-0046).
+- **Chats:** long texts, and an outbox that takes them while the radio is away and survives a restart (§6.1); replies, reactions, edits and deletes for everyone, forwarding, disappearing messages (§6.2–6.5); stickers and GIFs; tappable links, and places that open on the map; drafts; reply or mark as read from a notification; search; pin, mute, archive and block (ADR-0034). New conversation puts its actions (a new group, a channel to join, a contact to add) and the channels first and the people last, filtered by lichen or MeshCore; typing a `#tag` there joins that channel. Someone you never met who writes first arrives as a request, to accept, block or delete (ADR-0046).
 - **Groups** of up to 32: invitation by QR code, posts signed and flooded twice, lost posts asked back from their author or the admin, voice notes of up to 6 s, the admin's role handed over; newcomers cannot read what came before (§10, ADR-0038 to ADR-0040).
 - **Media and files:** voice (Codec2), photos (AVIF thumbnails) and files up to 8 KB over LoRa, their airtime shown first; full photos and files up to 64 MiB over the Internet (iroh or Tor) when both phones have it (§13, §14).
 - **Location and SOS:** position sharing, exact or on a grid of 100 m to 10 km; map areas kept for offline use; an SOS to your groups and to the people you share with; Locate, which finds someone in SOS without GPS from their radio's signal (§11, §12).
-- **MeshCore:** plain chats with people on the stock apps, channels (Public, hashtags, QR codes), room servers, repeaters (status, neighbours, console), the nodes heard and their map layer, traces, the radio's settings, several saved radios, and the history of the official MeshCore app (§15, §16).
+- **MeshCore:** plain chats with people on the stock apps, their mentions and replies read and written as the stock app does (§15.9); channels (Public, hashtags, QR codes); contacts added from the stock app's links and codes, and your radio's own code to share; room servers, repeaters (status, neighbours, console), the nodes heard and their map layer, traces; adverts sent nearby or across the mesh; the radio's settings, each change saying on its row whether the radio saved it, kept its old value, refused it or did not answer, and the phone's position for the adverts when the radio's GPS has no fix; several saved radios; and the history of the official MeshCore app (§15, §16).
 - **On the phone:** an identity kept in the Keychain or Keystore and backed up as 24 words; the history in an encrypted database (SQLCipher); an encrypted backup file those words open; an app lock; a problem report with nothing personal in it (ADR-0036, ADR-0037, ADR-0045). Fragments and airtime stay out of the way unless Settings › Show radio details is on.
 
 ## Status
 
-Experimental: version 0.9.0, protocol version 2 (older builds cannot talk to it).
+Experimental: version 0.10 (every merge is a numbered release, 0.10.1, 0.10.2…; Settings › About shows yours), protocol version 2 (older builds cannot talk to it).
 
 - **Not audited by a third party.** An internal review of 2026-11-15 and an independent second read of its fixes on 2026-11-17: every finding, its reproduction, its fix and what stays open are in [`docs/security-review-2026-11-15.md`](docs/security-review-2026-11-15.md). Read [`SECURITY.md`](SECURITY.md) before relying on lichen.
-- **On real radios**, texts, voice notes, photos, a file and the outbox have been tested between two radios on one desk: an iPhone over Bluetooth, the command line over USB, and the Android app in the emulator through `lichen bridge`. There has been no long-range field test yet, and the Android app has not run on a phone.
-- Everything else, room servers, repeaters and traces included, runs on the fake network (`lc-core`'s tests, a simulated companion) and on the apps' demo network.
+- **On real radios**, texts, voice notes, photos, a file and the outbox have been tested between two radios on one desk: an iPhone over Bluetooth, the command line over USB, and the Android app in the emulator through `lichen bridge`. Since then the iPhone app has run over Bluetooth with a ThinkNode M5 on a real mesh: its contacts, channels and settings. There has been no long-range field test yet, and the Android app has not run on a phone.
+- Everything else, room servers, repeaters and traces included, runs on the fake network (`lc-core`'s tests, a simulated companion) and on the apps' demo network, where every user-facing flow is tested on both apps: [Tests](#tests).
 
 ## Install
 
@@ -215,6 +215,16 @@ scripts/check.sh                                               # all checks (fmt
 cargo run --release -p lc-cli -- sim --repeaters 3 --loss 10   # a transfer on the fake network
 cargo run --release -p lc-cli -- info /dev/cu.usbmodem2141101  # a real companion over USB
 ```
+
+### Tests
+
+Every user-facing flow is a numbered scenario in [`docs/testing.md`](docs/testing.md): what it must do, and the tests that show it. Each scenario has a test, or a note saying why it has none. They run on the demo network, at the lowest layer that shows the flow:
+
+- **Core:** `cargo test`, in `scripts/check.sh`, including the scenarios in `crates/lc-ffi/tests/`, which drive the API as the apps do.
+- **Android:** Compose UI tests of the whole app on the JVM (Robolectric), no emulator: `scripts/build-android-core.sh`, then `cd apps/android && ./gradlew testDebugUnitTest`.
+- **iOS:** XCUITests on a simulator: `scripts/ui-tests-ios.sh` (`--lang fr` for French, `--only <Class>` for one area).
+
+CI runs all three on every pull request; the iOS tests only when it changes something the iOS app or its tests use, shared out over five macOS runners, with a French pass. A bug fixed comes with a test that failed before the fix.
 
 ### iOS app
 
