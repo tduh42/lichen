@@ -10,12 +10,13 @@ use super::*;
 /// How many lines the core keeps; the oldest go first.
 pub(crate) const DIAG_LINES: usize = 300;
 
-/// One line of the core's log: when (the app's clock, ms), a fixed word, and a number with its
-/// unit.
+/// One line of the core's log: when (the app's clock, ms), a fixed word, the kind of radio
+/// setting it is about (a fixed word too), and a number with its unit.
 #[derive(Clone, Copy, Debug)]
 struct DiagLine {
     at_ms: u64,
     what: &'static str,
+    kind: Option<&'static str>,
     value: Option<(i64, &'static str)>,
 }
 
@@ -39,10 +40,29 @@ impl Diag {
         what: &'static str,
         value: Option<(i64, &'static str)>,
     ) {
+        self.push(DiagLine {
+            at_ms,
+            what,
+            kind: None,
+            value,
+        });
+    }
+
+    /// Notes `what` about a radio setting of kind `s`, shown as "what: kind" (B-user-6).
+    fn note_setting(&mut self, at_ms: u64, what: &'static str, s: lc_core::radio::RadioSetting) {
+        self.push(DiagLine {
+            at_ms,
+            what,
+            kind: Some(setting_word(s)),
+            value: None,
+        });
+    }
+
+    fn push(&mut self, line: DiagLine) {
         if self.lines.len() >= DIAG_LINES {
             self.lines.pop_front();
         }
-        self.lines.push_back(DiagLine { at_ms, what, value });
+        self.lines.push_back(line);
     }
 
     /// A frame from the companion: counted, and an error answer noted with its code.
@@ -81,6 +101,12 @@ impl Diag {
         }
     }
 
+    /// A setting asked of the radio, by its kind only, never its value (B-user-6): with the
+    /// outcome lines, which name their kind too, a setting that never got one shows.
+    pub(crate) fn radio_asked(&mut self, at_ms: u64, s: lc_core::radio::RadioSetting) {
+        self.note_setting(at_ms, "radio setting asked", s);
+    }
+
     /// An event of the core, by its kind; a reception with its SNR. Progress is left out (one
     /// per fragment).
     pub(crate) fn event(&mut self, at_ms: u64, e: &Event) {
@@ -88,12 +114,15 @@ impl Diag {
         let (what, value): (&'static str, _) = match e {
             Event::Progress { .. } => return,
             Event::RadioSettings => ("radio settings read", None),
-            Event::RadioOutcome(o) => match o.outcome {
-                lc_core::radio::SettingOutcome::Saved => ("radio setting saved", None),
-                lc_core::radio::SettingOutcome::NotKept => ("radio setting not kept", None),
-                lc_core::radio::SettingOutcome::Refused => ("radio setting refused", None),
-                lc_core::radio::SettingOutcome::NoAnswer => ("radio setting unanswered", None),
-            },
+            Event::RadioOutcome(o) => {
+                let what = match o.outcome {
+                    lc_core::radio::SettingOutcome::Saved => "radio setting saved",
+                    lc_core::radio::SettingOutcome::NotKept => "radio setting not kept",
+                    lc_core::radio::SettingOutcome::Refused => "radio setting refused",
+                    lc_core::radio::SettingOutcome::NoAnswer => "radio setting unanswered",
+                };
+                return self.note_setting(at_ms, what, o.setting);
+            }
             Event::Connected { .. } => ("radio session started", None),
             Event::ContactsUpdated => ("contacts updated", None),
             Event::IdentityLearned { changed: false, .. } => ("identity learned", None),
@@ -138,6 +167,24 @@ impl Diag {
             _ => ("other event", None),
         };
         self.note(at_ms, what, value);
+    }
+}
+
+/// A kind of radio setting, in the report's words.
+fn setting_word(s: lc_core::radio::RadioSetting) -> &'static str {
+    use lc_core::radio::RadioSetting as S;
+    match s {
+        S::Params => "LoRa parameters",
+        S::TxPower => "transmit power",
+        S::AdvertPosition => "advert position",
+        S::Preferences => "preferences",
+        S::Gps => "GPS",
+        S::GpsInterval => "GPS interval",
+        S::Autoadd => "auto-add",
+        S::Pin => "Bluetooth PIN",
+        S::Name => "name",
+        S::Other => "other",
+        S::Contact => "contact",
     }
 }
 
@@ -283,11 +330,12 @@ impl LichenCore {
             }
         ));
         line(format!(
-            "Counts:    contacts {}, groups {}, channels {}, texts waiting {}",
+            "Counts:    contacts {}, groups {}, channels {}, texts waiting {}, radio settings waiting {}",
             i.core.contacts().filter(|c| c.is_person()).count(),
             i.core.groups().count(),
             i.core.channels().len(),
             i.outbox.len(),
+            i.core.radio_pending().len(),
         ));
         for s in &app.settings {
             line(format!("Setting:   {}", m(s)));
@@ -295,10 +343,15 @@ impl LichenCore {
         line(String::new());
         line("Core log".into());
         for l in &i.diag.lines {
+            let kind = l.kind.map_or(String::new(), |k| format!(": {k}"));
             let value = l
                 .value
                 .map_or(String::new(), |(n, unit)| format!(", {n} {unit}"));
-            line(format!("{}  {}{value}", clock(l.at_ms, offset), l.what));
+            line(format!(
+                "{}  {}{kind}{value}",
+                clock(l.at_ms, offset),
+                l.what
+            ));
         }
         line(String::new());
         line("App log".into());
@@ -310,6 +363,21 @@ impl LichenCore {
 }
 
 impl Inner {
+    /// Asks the radio for a setting through `change`: each setting it asks is noted in the
+    /// report's log, by its kind (B-user-6).
+    pub(crate) fn radio_change(
+        &mut self,
+        change: impl FnOnce(&mut Core) -> Result<(), lc_core::core::Error>,
+    ) -> Result<(), LichenError> {
+        let before = self.core.radio_pending().len();
+        change(&mut self.core)?;
+        let now = self.last_now;
+        for s in self.core.radio_pending().into_iter().skip(before) {
+            self.diag.radio_asked(now, s);
+        }
+        Ok(())
+    }
+
     /// The names a report must not show: contacts (and the names given them here), groups and
     /// their members, invitations, channels, the radio's, and the app's `extra`; longest first,
     /// so that a name inside another is not half masked.
@@ -552,6 +620,82 @@ mod tests {
 
     fn hex(b: &[u8]) -> String {
         b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    /// A radio setting asked is noted by its kind, never its value, and the report says how
+    /// many still wait for the radio (B-user-6: a setting stuck in the queue left no trace).
+    #[test]
+    fn a_report_names_the_radio_settings_asked() {
+        let demo = DemoNetwork::new();
+        let core = LichenCore::new("report-test".into(), vec![6; 32], vec![106; 32], None).unwrap();
+        core.set_clock(1_793_000_000_000, 0);
+        core.connect(0);
+        let run = |from: u64, to: u64| {
+            for now in (from..to).step_by(100) {
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while core.poll_event().is_some() {}
+            }
+        };
+        let report = |now: u64| {
+            let app = ReportApp {
+                app_version: "0.9.0 (1)".into(),
+                platform: "iOS 26.1".into(),
+                device: "iPhone17,3".into(),
+                link: "TCP".into(),
+                settings: vec![],
+                log: vec![],
+                private_words: vec![],
+            };
+            core.problem_report(app, now)
+        };
+        run(0, 10_000);
+        assert!(
+            core.radio_settings().read,
+            "the radio's settings were not read"
+        );
+        assert!(report(10_000).contains("radio settings waiting 0"));
+        // The radio holds its answers: a transmit power and the preferences wait.
+        demo.hold_replies(60);
+        core.set_tx_power(17).unwrap();
+        let telemetry = Telemetry {
+            base: 2,
+            location: 0,
+            environment: 0,
+        };
+        core.set_radio_preferences(true, telemetry, false, 0)
+            .unwrap();
+        run(10_000, 12_000);
+        let waiting = report(12_000);
+        assert!(
+            waiting.contains("radio setting asked: transmit power"),
+            "{waiting}"
+        );
+        assert!(
+            waiting.contains("radio setting asked: preferences"),
+            "{waiting}"
+        );
+        assert!(waiting.contains("radio settings waiting 2"), "{waiting}");
+        assert!(
+            !waiting.contains("17 dBm"),
+            "the value asked for: {waiting}"
+        );
+        // Answered: saved, nothing waits.
+        demo.hold_replies(0);
+        run(12_000, 20_000);
+        let done = report(20_000);
+        // Each outcome names its kind too.
+        assert!(
+            done.contains("radio setting saved: transmit power"),
+            "{done}"
+        );
+        assert!(done.contains("radio setting saved: preferences"), "{done}");
+        assert!(done.contains("radio settings waiting 0"), "{done}");
     }
 
     /// A report after messages, a group, positions and names on the demo network carries none
