@@ -93,7 +93,10 @@ final class MediaTests: LichenUITest {
         XCTAssertTrue(containing("≈").exists, "the voice note's cost is not said")
         keep("md-voice-review")
         listen.tap()
-        wait(button(tr("Stop")), 5, "it does not play").tap()
+        // It plays (Stop), to its end: the note lasts 4 s, and a Stop tapped as it ended was no
+        // longer there (CI); the audio takes a while to start on a simulator just booted.
+        wait(button(tr("Stop")), 15, "it does not play")
+        wait(listen, 15, "it did not play to its end")
         button(tr("Send")).tap()
         let notes = app.buttons.matching(NSPredicate(format: "label == %@", tr("Play the voice message")))
         wait(notes.firstMatch, 10, "our voice note is not in the chat")
@@ -102,7 +105,7 @@ final class MediaTests: LichenUITest {
         while notes.count < 2 && Date() < deadline { pause(2) }
         XCTAssertGreaterThanOrEqual(notes.count, 2, "no voice note from Camille")
         notes.element(boundBy: notes.count - 1).tap()
-        wait(button(tr("Stop")), 5, "hers does not play")
+        wait(button(tr("Stop")), 15, "hers does not play")
         keep("md-voice-sent")
     }
 
