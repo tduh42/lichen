@@ -94,7 +94,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 
 | Id | Scenario | Expected | Flags | Covered by |
 |----|----------|----------|-------|------------|
-| MC-1 | Plain chat with a stock MeshCore user | Marc's message arrives; the answer reaches him; badge "MeshCore" | `-open Marc -sayPlain …` | FFI mc_1_plain_chat_with_marc<br>iOS MeshCoreTests.testMC1_PlainChatWithAStockUser<br>Android MeshCoreTest.MC_1_plainChatWithMarc (+fr dark)<br>· real radio: with a stock MeshCore app user |
+| MC-1 | Plain chat with a stock MeshCore user | Marc's message arrives; the answer reaches him; badge "MeshCore" | `-open Marc -sayPlain …` | FFI mc_1_marcs_message_on_a_radio_reached_over_tcp, mc_1_plain_chat_with_marc<br>iOS MeshCoreTests.testMC1_PlainChatWithAStockUser<br>Android MeshCoreTest.MC_1_plainChatWithMarc (+fr dark)<br>· real radio: with a stock MeshCore app user |
 | MC-2 | Public channel: read and post | Posts with their authors; a post goes out | `-open Public` | FFI mc_2_public_channel_read_and_post<br>iOS MeshCoreTests.testMC2_PublicChannelReadAndPost<br>Android MeshCoreTest.MC_2_publicChannelReadAndPost (+fr)<br>· real radio: a Public post |
 | MC-3 | Channel QR: show and join | The code shows after the warning; scanning one joins the channel | | FFI mc_3_channel_qr_show_and_join<br>iOS MeshCoreTests.testMC3_ChannelCodeShowAndJoin<br>Android MeshCoreTest.MC_3_channelQrShowAndJoin (+fr) |
 | MC-4 | Import the MeshCore app's history | Messages imported once; a second import adds nothing | | FFI mc_4_import_the_meshcore_app_history<br>iOS MeshCoreTests.testMC4_ImportTheMeshCoreHistory<br>Android MeshCoreTest.MC_4_importTheMeshCoreHistory (+fr) |
