@@ -202,6 +202,9 @@ struct Demo {
     hold_until: u64,
     /// The last advert the radio was asked for: flooded or not (tests, B-user-4).
     last_advert: Option<bool>,
+    /// How long Camille and Julien take to answer a text, once it reaches them (simulated
+    /// ms; debug `answerAfter`).
+    answer_after: u64,
     /// How much faster than the wall clock the app runs the demo (debug `demoSpeed`, 1 to 4):
     /// the bots' clocks follow the wall clock, not the simulated time.
     speed: u64,
@@ -294,6 +297,8 @@ impl std::fmt::Debug for DemoNetwork {
 }
 
 const SEC: u64 = 1_000;
+/// How long Camille and Julien take to answer a text, once it reaches them (simulated ms).
+const ANSWER_AFTER: u64 = 4 * SEC;
 
 /// Julien's first post, not before (demo time): after Camille's photo transfer.
 const JULIEN_POSTS_FROM: u64 = 210 * SEC;
@@ -653,7 +658,7 @@ impl Demo {
                             .flatten();
                         if let (Some(id), true) = (app_identity, name == "Camille") {
                             self.pending.push((
-                                now + 8 * SEC,
+                                now + self.answer_after + 4 * SEC,
                                 Action::React {
                                     from: bot,
                                     target: lc_core::content::message_ref(&id, &content.encode()),
@@ -667,7 +672,7 @@ impl Demo {
                             format!("Got it, two hops away: \"{text}\"")
                         };
                         self.pending.push((
-                            now + 4 * SEC,
+                            now + self.answer_after,
                             Action::Dm {
                                 from: bot,
                                 text: reply,
@@ -1028,6 +1033,7 @@ impl DemoNetwork {
                 refuse_power: false,
                 hold_until: 0,
                 last_advert: None,
+                answer_after: ANSWER_AFTER,
                 answers: Vec::new(),
                 camille_full: None,
                 camille_has_full: Vec::new(),
@@ -1213,6 +1219,17 @@ impl DemoNetwork {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.hold_until = seconds * SEC;
+    }
+
+    /// Camille and Julien answer a text `seconds` after it reaches them (demo time) instead of
+    /// 4 (debug `answerAfter`, UI tests): room for what the user does before the answer is
+    /// written, however slow the machine (CT-10 blocks Camille first). Call right after `new`.
+    pub fn answer_after(&self, seconds: u64) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.answer_after = seconds * SEC;
     }
 
     /// The radio's GPS is on but has no fix (debug `radioNoFix`, B-user-2): indoors, it
@@ -1612,6 +1629,60 @@ mod skip {
                 "answered after {answered} ms (sent at {at} ms)"
             );
             assert_eq!(posts, 0, "a group or a channel post in a quiet demo");
+        }
+    }
+
+    /// `answerAfter 20` (with `quietDemo`): Camille answers a text 20 s after it reaches her,
+    /// not 4.
+    #[test]
+    fn answer_after_delays_her_answer() {
+        for (after, from, to) in [(None, 0, 15_000), (Some(20), 20_000, 35_000)] {
+            let demo = DemoNetwork::new();
+            demo.skip_ahead(20);
+            demo.quiet();
+            if let Some(s) = after {
+                demo.answer_after(s);
+            }
+            let core = LichenCore::new("t".into(), vec![13; 32], vec![113; 32], None).unwrap();
+            core.set_group_consent(false);
+            core.set_request_consent(false);
+            core.connect(0);
+            let (mut sent, mut answered) = (None, None);
+            for step in 0..(120 * 10) {
+                let now = step * 100;
+                for f in demo.read(now) {
+                    core.on_companion_frame(f, now);
+                }
+                core.tick(now);
+                while let Some(f) = core.poll_companion(now) {
+                    demo.write(f, now);
+                }
+                while let Some(e) = core.poll_event() {
+                    if let LichenEvent::Received {
+                        message: Message::Text { text, .. },
+                        ..
+                    } = e
+                        && text.starts_with("Copy: \"Later\"")
+                    {
+                        answered = answered.or(sent.map(|s| now - s));
+                    }
+                }
+                if sent.is_none()
+                    && now >= 30_000
+                    && let Some(c) = core
+                        .contacts()
+                        .into_iter()
+                        .find(|c| c.name == "Camille" && c.identity.is_some())
+                {
+                    core.send_text(c.key, "Later".into(), 1, now).unwrap();
+                    sent = Some(now);
+                }
+            }
+            let answered = answered.expect("no answer");
+            assert!(
+                (from..to).contains(&answered),
+                "answered after {answered} ms with answerAfter {after:?}"
+            );
         }
     }
 

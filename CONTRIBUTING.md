@@ -5,7 +5,7 @@ lichen is a personal project, maintained in spare time. Issues and pull requests
 ## How a change lands
 
 - One branch and one pull request per topic. `main` only takes a pull request, once CI has passed.
-- CI (`.github/workflows/check.yml`) runs what `scripts/check.sh` runs (one version, `rustfmt`, `clippy -D warnings`, the tests, the `no_std` build, `cargo deny`), then the Android core, lint, unit tests and APK. Run `scripts/check.sh` before pushing.
+- CI (`.github/workflows/check.yml`) runs what `scripts/check.sh` runs (one version, `rustfmt`, `clippy -D warnings`, the tests, the `no_std` build, `cargo deny`), then the Android core, lint, unit tests and APK, and, on pull requests only, the iOS UI tests on five runners, a share of the test classes each (`scripts/ui-tests-ios.sh --shard K/5`, `docs/testing.md`), summed up by the check `iOS`. Run `scripts/check.sh` before pushing.
 - Pull requests are squash-merged: the description becomes the commit message, so it says what changed and why, and how it was tested.
 - Every merge to `main` that passes CI is a release: CI tags it `vMAJOR.MINOR.N` and publishes the APK with the merged pull requests as notes.
 

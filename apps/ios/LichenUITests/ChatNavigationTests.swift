@@ -77,7 +77,7 @@ final class ChatNavigationTests: LichenUITest {
                 let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
                 XCTAssertTrue(row.waitForExistence(timeout: 30),
                               "no row \(name) in \(app.buttons.allElementsBoundByIndex.map(\.label))")
-                let tapped = row.label
+                let tapped = settled(row).label
                 row.tap()
                 XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "\(name) did not open")
                 let bar = app.navigationBars.firstMatch

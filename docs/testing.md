@@ -6,7 +6,7 @@ layer that can show it:
 - **FFI**: `crates/lc-ffi/tests/scenarios_*.rs`, the API on the demo network, as the apps call it
   (runs in the Rust CI job).
 - **iOS**: XCUITests in `apps/ios/LichenUITests/`, on the demo network (`scripts/ui-tests-ios.sh`,
-  on a Mac; not in CI yet).
+  on a Mac, and on every pull request: CI check `iOS`, the classes shared out over five runners).
 - **Android**: Compose UI tests in `apps/android/app/src/test/` (Robolectric) or `androidTest/`
   (CI job `android`).
 

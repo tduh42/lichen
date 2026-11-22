@@ -249,11 +249,14 @@ final class ContactsTests: LichenUITest {
     /// unblocked there, her answers come again at once (D-11: her phone's retry of the one
     /// written while blocked is acknowledged and dropped, so it moves on).
     func testCT10_BlockAndUnblock() {
-        // At the wall clock's pace: the block must come before her answer (B-ios-8).
-        launch(["-open", "Camille", "-quietDemo", "YES"], speed: 1)
+        // At the wall clock's pace, and she answers 20 s after our text reaches her: the block
+        // comes before she writes her answer, however slow the machine (B-ios-8). An answer
+        // she wrote before the block is not hers "while blocked": it comes after the unblock
+        // (ADR-0034, by her own timestamp), as it did on CI when the block took 8 s.
+        launch(["-open", "Camille", "-quietDemo", "YES", "-answerAfter", "20"], speed: 1)
         wait(keyButton, Self.camilleTimeout, "no session with Camille")
         send("Are you still at the refuge?")
-        // Blocked before her answer comes (about 5 s after it reaches her).
+        // Blocked before she writes her answer.
         button(tr("More")).tap()
         button(tr("Block")).tap()
         let confirm = app.buttons.matching(NSPredicate(format: "label == %@", tr("Block"))).element(boundBy: 0)
@@ -340,8 +343,15 @@ final class ContactsTests: LichenUITest {
     private func pasteLink(_ text: String, radioUp: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         wait(app.navigationBars[tr("Add a contact")], 10, "no contact screen", file: file, line: line)
         if radioUp { wait(element(tr("Your contact code")), 20, "the radio is not up", file: file, line: line) }
-        app.buttons[tr("Scan")].tap()
-        let field = wait(app.textFields["pasteCode"], 5, "no paste field", file: file, line: line)
+        // Tapped again if it did not switch: on a slow machine (CI) the segmented control can
+        // lose a tap on a sheet just shown (the thumb lifts, then settles back on My code).
+        let scan = app.buttons[tr("Scan")]
+        let pasteField = app.textFields["pasteCode"]
+        for _ in 0..<3 where !pasteField.exists {
+            scan.tap()
+            _ = pasteField.waitForExistence(timeout: 3)
+        }
+        let field = wait(pasteField, 2, "no paste field", file: file, line: line)
         field.tap()
         field.typeText(text)
         button(tr("Add")).tap()

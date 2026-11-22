@@ -239,6 +239,9 @@ final class DirectChatTests: LichenUITest {
         fromMarc.tap()
         wait(composer, 10, "the result did not open its chat")
         wait(app.navigationBars.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Marc'")).firstMatch, 5)
+        // Still there once its highlight has gone, 2.6 s after it opened (B-ios-27: this chat
+        // of one message went blank then).
+        pause(4)
         XCTAssertTrue(message("Hi! Marc from the refuge").isHittable, "not on the result")
     }
 

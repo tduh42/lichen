@@ -7,7 +7,10 @@ import XCTest
 /// The run's environment (`xcodebuild` passes `TEST_RUNNER_<NAME>` to the runner as `<NAME>`;
 /// `scripts/ui-tests-ios.sh` sets them):
 /// - `LICHEN_LANG=fr`: the app in French, else English;
-/// - `LICHEN_DARK=1`: the app in dark mode, else light.
+/// - `LICHEN_DARK=1`: the app in dark mode, else light;
+/// - `LICHEN_FRESH_SIMULATOR=1`: the simulator has just had its first boot (`--warm`, CI): the
+///   notification permission is answered and the keyboard shown once before the first test
+///   (`FreshSimulator`).
 ///
 /// Every launch brings the demo's script 20 s sooner (`-demoSkip 20`) and runs it 4 times
 /// faster than the wall clock (`-demoSpeed 4`): Camille's first message comes about 5 s in.
@@ -24,6 +27,7 @@ class LichenUITest: XCTestCase {
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+        FreshSimulator.prepareOnce(self)
         // The notification permission, asked once per install, whenever it shows.
         addUIInterruptionMonitor(withDescription: "permission") { alert in
             let allow = alert.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Autoriser", "OK"])).firstMatch
@@ -287,11 +291,38 @@ class LichenUITest: XCTestCase {
 
     /// Types `text` in the composer and sends it.
     func send(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
-        composer.tap()
+        focus(composer, file: file, line: line)
         composer.typeText(text)
         let send = button(tr("Send"))
         wait(send, 5, "no Send button", file: file, line: line)
         send.tap()
+    }
+
+    /// `element`, once it stays where it is (0.7 s apart, 7 s at most): a list the demo is still
+    /// reordering moves a row from under a tap, which then opens another.
+    @discardableResult
+    func settled(_ element: XCUIElement) -> XCUIElement {
+        var at = element.frame
+        for _ in 0..<10 {
+            pause(0.7)
+            if element.frame == at { break }
+            at = element.frame
+        }
+        return element
+    }
+
+    /// Taps `field` until it has the keyboard, up to three times, 10 s each: on a slow runner
+    /// (CI) a tap made while the app is busy can be lost, and typing then finds no focus.
+    func focus(_ field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<3 {
+            field.tap()
+            let until = Date().addingTimeInterval(10)
+            while Date() < until {
+                if (field.value(forKey: "hasKeyboardFocus") as? Bool) == true { return }
+                pause(0.5)
+            }
+        }
+        XCTFail("no keyboard for \(field)", file: file, line: line)
     }
 
     /// The message that starts with `text` (a text bubble reads as one element: its text, then
@@ -346,5 +377,54 @@ class LichenUITest: XCTestCase {
         shot.name = (french ? "fr-" : "en-") + (Self.dark ? "dark-" : "") + name
         shot.lifetime = .keepAlways
         add(shot)
+    }
+}
+
+/// What a simulator just booted (`LICHEN_FRESH_SIMULATOR=1`, CI) does slowly the first time,
+/// done once per run before the first test, from a launch of its own:
+/// - the notification permission, asked once per install at the app's first launch past the
+///   welcome screens: there it shows 2 to 6 min after that launch (the system holds it back
+///   while the device settles), much later than `launch()` looks for it, and stays until
+///   answered: over the app it keeps banners away, makes the accessibility audit fail ("Invalid
+///   target app") and the app's termination too;
+/// - the keyboard's first showing (with its tip about sliding to type), which kept the app busy
+///   for 26 s after a tap on the composer: typing then found no focus.
+/// On a Mac both were done long ago (`launch()` looks for the permission 3 s, once).
+/// Once per run: a test that runs past its time allowance restarts the test runner, and a
+/// flag in memory would have it all done again (6 min waiting for a permission already
+/// answered, past the next test's allowance, and so on): a file in the runner's temporary
+/// folder says it was done. The test it runs in gets the longest allowance (15 min).
+enum FreshSimulator {
+    private static var prepared = false
+    private static let marker = FileManager.default.temporaryDirectory.appendingPathComponent("lichen-fresh-simulator-prepared")
+
+    static func prepareOnce(_ test: XCTestCase) {
+        guard !prepared else { return }
+        prepared = true
+        guard ProcessInfo.processInfo.environment["LICHEN_FRESH_SIMULATOR"] == "1",
+              !FileManager.default.fileExists(atPath: marker.path) else { return }
+        FileManager.default.createFile(atPath: marker.path, contents: nil)
+        test.executionTimeAllowance = 900
+        let app = XCUIApplication()
+        app.launchArguments = ["-demo", "YES", "-onboarded", "YES", "-freshInstall", "YES", "-noBanners", "YES"]
+        app.launch()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Autoriser"])).firstMatch
+        if allow.waitForExistence(timeout: 360) { allow.tap() }
+        // The keyboard, in Messages' search field.
+        let search = app.buttons["magnifyingglass"]
+        if search.waitForExistence(timeout: 20) {
+            search.tap()
+            let field = app.textFields.firstMatch
+            if field.waitForExistence(timeout: 20) {
+                field.tap()
+                if app.keyboards.firstMatch.waitForExistence(timeout: 60) {
+                    let tip = app.buttons.matching(NSPredicate(format: "label IN %@", ["Continue", "Continuer"])).firstMatch
+                    if tip.waitForExistence(timeout: 5) { tip.tap() }
+                    field.typeText("a")
+                }
+            }
+        }
+        app.terminate()
     }
 }

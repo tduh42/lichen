@@ -106,7 +106,9 @@ final class GroupTests: LichenUITest {
     /// GR-4: declined, the card goes and no group comes.
     func testGR4_InvitationDeclined() {
         launch(["-groupInvitationDemo", "YES"])
-        let card = wait(containing(tr("%@ invites you to “%@”", "Camille", group)), 60, "no invitation")
+        // 60 s into the demo, 15 s at 4 times the wall clock's pace; on a runner short of CPU
+        // (CI) the demo's busy start runs slower than the wall clock: it came after 108 s.
+        let card = wait(containing(tr("%@ invites you to “%@”", "Camille", group)), 180, "no invitation")
         button(tr("Decline")).tap()
         waitGone(card, 10, "the card stayed")
         pause(10)
@@ -119,7 +121,10 @@ final class GroupTests: LichenUITest {
         wait(composer, 90, "the group did not open")
         send("On my way to the col")
         waitLabel(message("On my way to the col"), contains: tr("Sent"), 60)
-        let answer = waitText("Seen. I'll keep a seat for you by the stove.", 90)
+        // In the hub's busy first minutes a post can be lost and come back through the group's
+        // digest (§10.6); on a runner short of CPU (CI) those minutes run slower than the wall
+        // clock.
+        let answer = waitText("Seen. I'll keep a seat for you by the stove.", 240)
         XCTAssertTrue(answer.label.contains("Camille") || containing("Camille").exists, "her post is not under her name")
         XCTAssertLessThan(message("On my way to the col").frame.minY, answer.frame.minY, "her answer above our post")
         keep("gr-posts")

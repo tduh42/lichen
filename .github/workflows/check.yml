@@ -1,7 +1,9 @@
 # Every pull request and every push to main: the same checks as scripts/check.sh, plus the
-# Android build; main only takes a pull request once both pass. Linux runners only; the iOS
-# build stays local for now. A push to main that passes both jobs publishes its APK as the
-# release "latest".
+# Android build; the iOS UI tests on pull requests only (main gets the tree its pull request
+# tested, and a run there would hold the macOS runners the next pull request needs). Main only
+# takes a pull request once the required checks pass (branch protection; "iOS" sums up the iOS
+# shards). A push to main that passes the Rust and Android jobs publishes its APK as a numbered
+# release; it also builds the iOS core once, for the Rust cache the iOS shards start from.
 # Actions are pinned by commit; the tag is in the comment.
 name: check
 
@@ -102,6 +104,94 @@ jobs:
           name: lichen-apk
           path: dist/
           if-no-files-found: error
+
+  ios-shards:
+    name: iOS (UI tests on the demo network, ${{ matrix.shard }})
+    if: github.event_name == 'pull_request'
+    # Xcode 27 (public preview image): the app is built with Xcode 27.2, as on the Mac.
+    runs-on: xcode-27
+    # A runner's expected 35 min (2026-11-22): the build 5 to 9 min with the Rust cache, the
+    # simulator's first boot 2 to 3 min, xcodebuild's start 3 to 4 min, the share 18 to 21 min
+    # (scripts/ui-tests-ios.sh's times), the French pass in the fifth's. Without the cache the
+    # core takes 15 to 20 min more, so the limit leaves room for that.
+    timeout-minutes: 75
+    # docs/testing.md: every scenario the iOS suite covers, in English, its test classes shared
+    # out over five runners of one simulator each (scripts/ui-tests-ios.sh --shard; the free plan
+    # runs five macOS jobs at once). Clones of the simulator on one runner (3 CPUs, 7 GB) ran each
+    # about three times slower than a Mac's simulator: three ran no test in 70 min, two ran two
+    # thirds of the suite in 77 min.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1/5, 2/5, 3/5, 4/5, 5/5]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # rust-toolchain.toml names the toolchain; the simulator build needs its target only.
+      - run: rustup show && rustup target add aarch64-apple-ios-sim
+      # Restored from main's, which the job ios-cache writes: a pull request reads its base
+      # branch's caches, not another pull request's. Not saved here, so that pull requests do not
+      # fill the repository's 10 GB with copies of it.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: ios-sim
+          save-if: false
+      - run: brew install xcodegen && xcodebuild -version && xcrun simctl list runtimes
+      # The core for the simulator, the app and its tests, for the iPhone on the newest runtime
+      # (iOS 27.2, the SDK's; the image also has 27.0 and 27.1). The simulator boots after it:
+      # booted during a build without the cache, it made the core take 31 to 55 min instead of
+      # 17 to 25 (run 44993272942).
+      - name: Build
+        run: scripts/ui-tests-ios.sh --build-only
+      # The simulator at the end of its first boot first: one that had not finished it stalled
+      # loading accessibility, and the test runner gave up before any test ran.
+      - name: UI tests in English
+        run: scripts/ui-tests-ios.sh --no-build --shard ${{ matrix.shard }} --warm
+      # A French pass of the conversation list and of the strings checks, on the last runner
+      # (counted in its share: scripts/ui-tests-ios.sh).
+      - name: UI tests in French
+        if: matrix.shard == '5/5'
+        run: scripts/ui-tests-ios.sh --no-build --lang fr --only ChatNavigationTests --only StringsTests
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-ui-tests-${{ strategy.job-index }}
+          path: local/ui-tests/
+          retention-days: 7
+
+  # The Rust cache the iOS shards start from, written on main since they do not run there: the
+  # simulator's core, built once per push to main on one runner.
+  ios-cache:
+    name: iOS core for the cache
+    if: github.event_name != 'pull_request'
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup show && rustup target add aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: ios-sim
+      # What the shards' build runs first (scripts/ui-tests-ios.sh).
+      - run: scripts/build-ios-core.sh --sim
+
+  # The one check branch protection requires of the iOS tests: every shard passed.
+  ios:
+    name: iOS
+    needs: ios-shards
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every shard passed
+        env:
+          SHARDS: ${{ needs.ios-shards.result }}
+        run: |
+          echo "The iOS shards: $SHARDS"
+          test "$SHARDS" = success
 
   publish:
     name: Publish the APK (a numbered release)

@@ -54,9 +54,15 @@ final class SettingsTests: LichenUITest {
         wait(containing(tr("Backup ready")), 20, "no backup")
         keep("st-backup")
         button(tr("Save to Files")).tap()
-        // The system's sheet to save it.
+        // The system's sheet to save it. On a simulator just booted (CI) the first one can open
+        // blank and close, the backup's sheet with it: the backup made again, saved again.
         let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["Cancel", "Annuler"])).firstMatch
-        wait(cancel, 10, "no sheet to save it").tap()
+        if !cancel.waitForExistence(timeout: 15) && !button(tr("Save to Files")).exists {
+            settingsRow(tr("Export a backup")).tap()
+            wait(containing(tr("Backup ready")), 20, "no backup the second time")
+            button(tr("Save to Files")).tap()
+        }
+        wait(cancel, 15, "no sheet to save it").tap()
     }
 
     /// ST-4: the problem report, built and shown before it is sent: versions and settings, and
@@ -182,9 +188,13 @@ final class SettingsTests: LichenUITest {
         button(tr("Restore")).tap()
         // All of it: our text to Marc, the group, the radio's contacts.
         let marc = wait(row("Marc"), 60, "Marc's chat did not come back")
-        XCTAssertTrue(marc.label.contains("Leaving at dawn"), "not our text: \(marc.label)")
         wait(row("Ridge walk"), 10, "the group did not come back")
         keep("st-restored")
+        // Our text, in his chat: his row shows his reply to it once that has come (on a slow
+        // machine, before the backup).
+        marc.tap()
+        wait(message("Leaving at dawn"), 10, "not our text")
+        back()
         button(tr("New message")).tap()
         wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch, 30, "the radio's contacts did not come back")
     }
