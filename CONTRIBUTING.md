@@ -5,7 +5,7 @@ lichen is a personal project, maintained in spare time. Issues and pull requests
 ## How a change lands
 
 - One branch and one pull request per topic. `main` only takes a pull request, once CI has passed.
-- CI (`.github/workflows/check.yml`) runs what `scripts/check.sh` runs (one version, `rustfmt`, `clippy -D warnings`, the tests, the `no_std` build, `cargo deny`), then the Android core, lint, unit tests and APK, and, on pull requests only, the iOS UI tests on five runners, a share of the test classes each (`scripts/ui-tests-ios.sh --shard K/5`, `docs/testing.md`), summed up by the check `iOS`. Run `scripts/check.sh` before pushing.
+- CI (`.github/workflows/check.yml`) runs what `scripts/check.sh` runs (one version, `rustfmt`, `clippy -D warnings`, the tests, the `no_std` build, `cargo deny`), then the Android core, lint, unit tests and APK, and, on pull requests only, the iOS UI tests on five runners, a share of the test classes each (`scripts/ui-tests-ios.sh --shard K/5`, `docs/testing.md`), summed up by the check `iOS`. The iOS UI tests run only when the pull request changes something the iOS app or its tests use (`scripts/ios-paths.py`: `crates/`, `apps/ios/`, `assets/`, `config/`, `testdata/`, the iOS scripts, the Cargo and toolchain files, `.github/workflows/`; in doubt, they run); otherwise `iOS` passes without them, so that an Android-only or docs-only pull request does not hold the five macOS runners the others need. Run `scripts/check.sh` before pushing.
 - Pull requests are squash-merged: the description becomes the commit message, so it says what changed and why, and how it was tested.
 - Every merge to `main` that passes CI is a release: CI tags it `vMAJOR.MINOR.N` and publishes the APK with the merged pull requests as notes.
 

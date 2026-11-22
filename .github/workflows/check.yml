@@ -1,6 +1,8 @@
 # Every pull request and every push to main: the same checks as scripts/check.sh, plus the
 # Android build; the iOS UI tests on pull requests only (main gets the tree its pull request
-# tested, and a run there would hold the macOS runners the next pull request needs). Main only
+# tested, and a run there would hold the macOS runners the next pull request needs), and only on
+# those that change something the iOS app or its tests use (job ios-paths: an Android-only or
+# docs-only pull request would hold the five macOS runners about 45 min for nothing). Main only
 # takes a pull request once the required checks pass (branch protection; "iOS" sums up the iOS
 # shards). A push to main that passes the Rust and Android jobs publishes its APK as a numbered
 # release; it also builds the iOS core once, for the Rust cache the iOS shards start from.
@@ -105,9 +107,39 @@ jobs:
           path: dist/
           if-no-files-found: error
 
+  # Whether the pull request changes something the iOS app or its tests use (scripts/ios-paths.py:
+  # the Rust core and its build inputs, apps/ios/, assets/, config/, testdata/, the iOS scripts,
+  # the workflows). In doubt (the changes cannot be listed), yes: a needless run costs time, a
+  # missed one lets a broken app in.
+  ios-paths:
+    name: iOS paths (do the iOS UI tests need to run?)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.paths.outputs.ios }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the merge base of the pull request and its base branch
+      - id: paths
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The pull request's own changes, since it left its base branch; a file moved out of an
+          # iOS path counts by its old path too (--no-renames).
+          if files=$(git diff --name-only --no-renames "$BASE...$HEAD"); then
+            printf '%s\n' "$files" | python3 -I scripts/ios-paths.py >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::The pull request's changes could not be listed: the iOS shards run."
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+          fi
+
   ios-shards:
     name: iOS (UI tests on the demo network, ${{ matrix.shard }})
-    if: github.event_name == 'pull_request'
+    needs: ios-paths
+    if: github.event_name == 'pull_request' && needs.ios-paths.outputs.ios == 'true'
     # Xcode 27 (public preview image): the app is built with Xcode 27.2, as on the Mac.
     runs-on: xcode-27
     # A runner's expected 35 min (2026-11-22): the build 5 to 9 min with the Rust cache, the
@@ -178,19 +210,28 @@ jobs:
       # What the shards' build runs first (scripts/ui-tests-ios.sh).
       - run: scripts/build-ios-core.sh --sim
 
-  # The one check branch protection requires of the iOS tests: every shard passed.
+  # The one check branch protection requires of the iOS tests: every shard passed, or the pull
+  # request changes nothing the iOS app or its tests use (ios-paths said so, and the shards were
+  # skipped for that reason). Anything else fails: the shards failed, were cancelled, or were
+  # skipped because ios-paths itself did not succeed.
   ios:
     name: iOS
-    needs: ios-shards
+    needs: [ios-paths, ios-shards]
     if: always() && github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Every shard passed
+      - name: Every shard passed, or none was needed
         env:
+          PATHS: ${{ needs.ios-paths.result }}
+          NEEDED: ${{ needs.ios-paths.outputs.ios }}
           SHARDS: ${{ needs.ios-shards.result }}
         run: |
-          echo "The iOS shards: $SHARDS"
+          echo "iOS paths: $PATHS (ios=$NEEDED); the iOS shards: $SHARDS"
+          if [ "$PATHS" = success ] && [ "$NEEDED" = false ] && [ "$SHARDS" = skipped ]; then
+            echo "Nothing the iOS app or its tests use changed: the iOS shards were not needed."
+            exit 0
+          fi
           test "$SHARDS" = success
 
   publish:
