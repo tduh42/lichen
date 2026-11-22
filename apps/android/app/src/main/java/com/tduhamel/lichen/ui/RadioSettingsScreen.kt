@@ -92,7 +92,7 @@ private val INTERVALS = listOf(60u, 300u, 900u, 3_600u)
 @Composable
 fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
     val t = lichen
-    LaunchedEffect(Unit) { model.core.refreshRadio() }
+    LaunchedEffect(Unit) { model.refreshRadio() }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
@@ -540,7 +540,7 @@ private fun BluetoothSection(model: AppModel) {
             title = { Text(stringResource(R.string.restart_radio_confirm_title)) },
             text = { Text(stringResource(R.string.restart_radio_confirm)) },
             confirmButton = {
-                TextButton(onClick = { confirmingReboot = false; model.core.rebootRadio() }) {
+                TextButton(onClick = { confirmingReboot = false; model.rebootRadio() }) {
                     Text(stringResource(R.string.restart), color = t.sos)
                 }
             },

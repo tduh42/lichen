@@ -2176,10 +2176,12 @@ impl Core {
 
     /// When [`Core::tick`] or [`Core::poll_companion`] should be called next.
     pub fn next_wakeup(&self) -> Option<Millis> {
-        let mut t: Option<Millis> = None;
-        if !self.commands.is_empty() {
-            t = Some(self.awaiting.map_or(0, |(_, d)| d));
-        }
+        // The command waited for: the end of its wait, when the next goes and an unanswered one
+        // is said so, even with nothing queued behind it (B-user-6). Else one to send now.
+        let mut t: Option<Millis> = match self.awaiting {
+            Some((_, d)) => Some(d),
+            None => (!self.commands.is_empty()).then_some(0),
+        };
         // Offline: only the commands of a reconnection (§6.1).
         if !self.online {
             return t;
@@ -4143,6 +4145,33 @@ mod tests {
         assert!(core.poll_companion(now).is_some());
         now += COMMAND_TIMEOUT_MS;
         assert!(core.poll_companion(now).is_none(), "twice at most");
+    }
+
+    /// The last command sent, unanswered, with nothing queued behind it (B-user-6): the app is
+    /// woken at the end of its wait, and a silent radio's setting is said unanswered then, not
+    /// whenever something else wakes the app (minutes on a quiet mesh).
+    #[test]
+    fn the_last_command_s_wait_wakes_the_app() {
+        let mut core = Core::new(Config::new("t", [1; 32], [2; 32]));
+        core.online = true;
+        assert_eq!(core.next_wakeup(), None, "nothing to do");
+        core.set_device_pin(123_456).unwrap();
+        assert_eq!(core.next_wakeup(), Some(0), "a command to send");
+        assert!(core.poll_companion(100).is_some());
+        assert_eq!(
+            core.next_wakeup(),
+            Some(100 + COMMAND_TIMEOUT_MS),
+            "its answer's deadline"
+        );
+        assert!(core.poll_companion(100 + COMMAND_TIMEOUT_MS).is_none());
+        assert_eq!(
+            core.take_radio_outcomes(),
+            [crate::radio::RadioOutcome {
+                setting: crate::radio::RadioSetting::Pin,
+                outcome: crate::radio::SettingOutcome::NoAnswer,
+            }]
+        );
+        assert_eq!(core.next_wakeup(), None, "nothing waits any more");
     }
 
     /// A contact list whose end comes although records were lost on the way (a companion whose

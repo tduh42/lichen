@@ -441,6 +441,25 @@ final class RadioLinkTests: LichenUITest {
         waitGone(saved, 15, "still said after its time")
     }
 
+    /// RL-11, B-user-6: on a radio that says nothing of its own, as on a quiet mesh, a setting
+    /// goes out at once and is said saved in seconds. It used to wait in the core's queue until
+    /// something else woke the app: the row's spinner stayed for minutes.
+    func testRL11_ASettingGoesOutOnAQuietRadio() throws {
+        let radio = try FakeTcpRadio(quiet: true)
+        defer { radio.stop() }
+        launch(["-tcp", radio.address, "-tab", "settings", "-screen", "radio", "-radioSavedFor", "8"], demo: false)
+        wait(frequencyLabel("869.618"), 60, "the radio's parameters are not shown")
+        let gps = app.switches[tr("The radio’s GPS")]
+        wait(gps, 10, "the radio's board settings are not shown")
+        reveal(gps)
+        XCTAssertEqual(gps.value as? String, "0")
+        // The connection's reads over, nothing more comes from the radio.
+        pause(3)
+        flip(gps)
+        wait(containing(tr("Saved on the radio")), 6, "the setting waited for something else to wake the app")
+        XCTAssertEqual(gps.value as? String, "1")
+    }
+
     /// RL-11, B-user-5: a radio that answers OK and keeps its old value
     /// (`-radioIgnores preferences`): the position switch and a telemetry choice each say so on
     /// their row, and show the radio's value again; it stays said.

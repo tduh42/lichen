@@ -141,11 +141,26 @@ final class AppModel {
                 asked(&r)
                 radioAsked = r
             }
+            // The core only queues the command: sent now, not when something else wakes the
+            // app (B-user-6).
+            pump()
         } catch let e as LichenError {
             radioError = e.display
         } catch {
             radioError = error.localizedDescription
         }
+    }
+
+    /// Reads the radio's battery and storage again (Radio settings opened).
+    func refreshRadio() {
+        core.refreshRadio()
+        pump()
+    }
+
+    /// Restarts the radio: the connection drops and comes back.
+    func rebootRadio() {
+        core.rebootRadio()
+        pump()
     }
 
     /// A row's outcome, read: it goes.
@@ -177,6 +192,8 @@ final class AppModel {
         do {
             try core.setDisappearing(chat: chat, seconds: seconds)
             timers[chat] = seconds
+            // A lichen conversation is sent the timer (B-user-6).
+            pump()
             return nil
         } catch let e as LichenError {
             return e.display

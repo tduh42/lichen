@@ -12,6 +12,9 @@ import Network
 /// her retry fell on Marc's only message at the hub). Otherwise as Android's FakeTcpRadio.
 final class FakeTcpRadio {
     private let demo = DemoNetwork()
+    /// Says nothing of its own (B-user-6): its answers to the app, never a push (a message
+    /// heard, an advert), as a radio on a quiet mesh, so nothing else wakes the app.
+    private let quiet: Bool
     private let listener: NWListener
     private let queue = DispatchQueue(label: "fake-tcp-radio")
     /// When the app first connected: the simulation's time 0. Nothing runs before.
@@ -24,7 +27,8 @@ final class FakeTcpRadio {
     /// "127.0.0.1:port", as the app's `-tcp` takes it.
     var address: String { "127.0.0.1:\(port)" }
 
-    init() throws {
+    init(quiet: Bool = false) throws {
+        self.quiet = quiet
         demo.skipAhead(seconds: 20)
         let parameters = NWParameters.tcp
         parameters.requiredInterfaceType = .loopback
@@ -97,7 +101,8 @@ final class FakeTcpRadio {
     /// The radio's frames to the app: '>', a little-endian length, the frame.
     private func flush() {
         guard started != nil else { return }
-        let frames = demo.read(nowMs: now())
+        // Pushes are 0x80 and up (lc-meshcore `codes::resp`).
+        let frames = demo.read(nowMs: now()).filter { !quiet || ($0.first ?? 0) < 0x80 }
         guard let c = connection, !frames.isEmpty else { return }
         var out = Data()
         for f in frames {

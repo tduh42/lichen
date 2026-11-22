@@ -85,7 +85,7 @@ struct RadioSettingsView: View {
         .navigationTitle("Radio settings")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            model.core.refreshRadio()
+            model.refreshRadio()
             load()
         }
         .onChange(of: model.radioSettings) { load() }
@@ -516,7 +516,7 @@ struct RadioSettingsView: View {
             }
         }
         .alert("Restart the radio?", isPresented: $confirmingReboot) {
-            Button("Restart", role: .destructive) { model.core.rebootRadio() }
+            Button("Restart", role: .destructive) { model.rebootRadio() }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The connection drops and comes back in a few seconds.")
