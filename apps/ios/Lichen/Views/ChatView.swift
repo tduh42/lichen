@@ -16,12 +16,24 @@ struct ChatView: View {
     /// What a MeshCore chat is (§15.6).
     @State private var plainInfo = false
     @Environment(\.dismiss) private var dismissChat
-    /// The bottom-most message on screen: new ones follow only when it is the last one.
-    @State private var bottomVisible: Int64?
+    /// Where the view is, and the one thing that moves it (B-ios-28): the message held at
+    /// `anchor`, or `Self.end` at the bottom when the view is at the end. The divider, a searched
+    /// or quoted message, an earlier page and the pill each set it; the scroll view writes it
+    /// back as the user scrolls; a message arriving leaves it alone unless the end is on screen.
+    /// Nothing else scrolls (no `ScrollViewProxy`): two owners re-applied each other's stale
+    /// places, and the view jumped up near the top of the loaded page.
+    @State private var position: Int64?
+    @State private var anchor: UnitPoint = .bottom
+    /// The end of the conversation is on screen (the scroll geometry, iOS 18; before it, the
+    /// position): a new message follows only then.
+    @State private var atEnd = false
+    /// The latest move: each new one, or the user's scroll, ends the re-assertions of the one
+    /// before (see `place`).
+    @State private var move = 0
+    /// The user is scrolling (iOS 18).
+    @State private var userScrolling = false
     /// Messages that arrived while reading above.
     @State private var unseen = 0
-    /// The message to keep at the top while an earlier page comes in.
-    @State private var keepAt: Int64?
     /// The first message that was unread when the chat opened, and how many were: the divider
     /// stays there until the chat is left.
     @State private var dividerBefore: Int64?
@@ -34,9 +46,6 @@ struct ChatView: View {
     @State private var editing: StoredMessage?
     /// A quoted original to go to.
     @State private var jumpTo: Int64?
-    /// The view stays on the last message while the content grows (photos, stickers and GIFs
-    /// laid out after the first pass): from opening at the end until the user scrolls away.
-    @State private var pinned = false
     /// The whole conversation fits on the screen; nil until the scroll view is laid out (and
     /// before iOS 18).
     @State private var fits: Bool?
@@ -66,169 +75,153 @@ struct ChatView: View {
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    // Lazy: only the rows on screen are built, so a long history (many earlier
-                    // pages, a search result or a quote thousands of messages back) opens and
-                    // scrolls at once (docs/measurements.md, 2026-11-17). The view opens at the
-                    // end (`defaultScrollAnchor`), and stays there while photos and stickers take
-                    // their real height (FollowBottom); a jump lands again once the rows around
-                    // it have theirs.
-                    LazyVStack(spacing: 10) {
-                        if let e = model.historyError[chat] {
-                            Banner(kind: .warn, title: e, action: (String(localized: "Retry"), { model.load(chat) }))
-                        }
-                        if model.olderAvailable[chat] == true {
-                            Button("Show earlier messages") { showEarlier() }
-                            .font(.system(.subheadline, weight: .semibold))
-                            .frame(minHeight: 44)
-                        }
-                        sessionLine
-                        ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
-                            // A separator when the day changes: "Today", "Yesterday", the date.
-                            if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
-                                DaySeparator(date: m.date)
-                            }
-                            if m.id == dividerBefore {
-                                UnreadDivider(count: unreadAtOpen)
-                            }
-                            if case .notice = m.message {
-                                NoticeLine(message: m.message).id(m.id)
-                            } else if case let .announce(_, mediaId, _, _, _, _, _) = m.message,
-                                      model.preview(for: mediaId, in: chat) != nil {
-                                // Shown inside its LoRa preview's card: only its place here.
-                                Color.clear.frame(height: 0).id(m.id)
-                            } else {
-                                MessageView(message: m, isGroup: isGroup || isChannel || isRoom, error: $error, highlighted: highlight == m.id,
-                                            reply: { replyTo = m; editing = nil },
-                                            edit: {
-                                                editing = m
-                                                replyTo = nil
-                                                if case let .text(_, text) = m.message { draft = text }
-                                            },
-                                            openQuote: { jumpTo = $0 })
-                                    .id(m.id)
-                            }
-                        }
-                        if let failed = lastFailure {
-                            FailureBanner(message: failed) { error = model.retry(failed) }
-                                .padding(.top, 4)
-                        }
-                        Color.clear.frame(height: 1)
-                            .accessibilityElement()
-                            .accessibilityLabel("End of conversation")
-                            .accessibilityIdentifier("chat.end")
-                            .id(Self.bottom)
+            ScrollView {
+                // Lazy: only the rows on screen are built, so a long history (many earlier
+                // pages, a search result or a quote thousands of messages back) opens and
+                // scrolls at once (docs/measurements.md, 2026-11-17). Where it is: `position`.
+                LazyVStack(spacing: 10) {
+                    if let e = model.historyError[chat] {
+                        Banner(kind: .warn, title: e, action: (String(localized: "Retry"), { model.load(chat) }))
                     }
-                    .scrollTargetLayout()
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                }
-                .scrollPosition(id: $bottomVisible, anchor: .bottom)
-                .defaultScrollAnchor(.bottom)
-                // An empty conversation laid out once does not lay out the rows of its first
-                // message (only its day separator showed, iOS 27): built again once it has one.
-                .id(messages.isEmpty)
-                .modifier(FollowBottom(pinned: $pinned, fits: $fits) { proxy.scrollTo(Self.bottom, anchor: .bottom) })
-                .overlay(alignment: .bottom) {
-                    if unseen > 0 {
-                        Button {
-                            // The reading position moved to the last message, animated: a redraw
-                            // while the view scrolls re-applies it, where with only a scroll it
-                            // re-applied the old one and put the view back on the page read
-                            // before (B-ios-28). Then exactly to the end, once the rows on the way
-                            // have their real heights.
-                            if let last = messages.last?.id, fits != true {
-                                withAnimation { bottomVisible = last }
-                                Task {
-                                    try? await Task.sleep(for: .milliseconds(600))
-                                    proxy.scrollTo(Self.bottom, anchor: .bottom)
-                                }
-                            } else {
-                                withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-                            }
-                            unseen = 0
-                        } label: {
-                            Label(String(localized: "\(unseen) new messages"), systemImage: "arrow.down")
-                                .font(.system(.subheadline, weight: .semibold))
-                                .padding(.horizontal, 16)
-                                .frame(minHeight: 44)
-                                .background(Theme.actBg, in: Capsule())
-                                .foregroundStyle(Theme.actFg)
+                    if model.olderAvailable[chat] == true {
+                        Button("Show earlier messages") { showEarlier() }
+                        .font(.system(.subheadline, weight: .semibold))
+                        .frame(minHeight: 44)
+                    }
+                    sessionLine
+                    ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
+                        // A separator when the day changes: "Today", "Yesterday", the date.
+                        if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
+                            DaySeparator(date: m.date)
                         }
-                        .padding(.bottom, 10)
+                        if m.id == dividerBefore {
+                            UnreadDivider(count: unreadAtOpen)
+                        }
+                        if case .notice = m.message {
+                            NoticeLine(message: m.message).id(m.id)
+                        } else if case let .announce(_, mediaId, _, _, _, _, _) = m.message,
+                                  model.preview(for: mediaId, in: chat) != nil {
+                            // Shown inside its LoRa preview's card: only its place here.
+                            Color.clear.frame(height: 0).id(m.id)
+                        } else {
+                            MessageView(message: m, isGroup: isGroup || isChannel || isRoom, error: $error, highlighted: highlight == m.id,
+                                        reply: { replyTo = m; editing = nil },
+                                        edit: {
+                                            editing = m
+                                            replyTo = nil
+                                            if case let .text(_, text) = m.message { draft = text }
+                                        },
+                                        openQuote: { jumpTo = $0 })
+                                .id(m.id)
+                        }
                     }
-                }
-                // Opens on the latest messages, once the history is loaded (onAppear) and again
-                // once images are laid out; later ones scroll into view.
-                // On a message from a search, or on the unread divider, else at the end.
-                .task(id: chat) {
-                    pinned = highlight == nil && dividerBefore == nil
-                    await Task.yield()
-                    // Whether it fits first (see scrollToStart): its first layout, half a second
-                    // at most.
-                    for _ in 0..<10 where fits == nil { try? await Task.sleep(for: .milliseconds(50)) }
-                    scrollToStart(proxy)
-                    try? await Task.sleep(for: .milliseconds(250))
-                    scrollToStart(proxy)
-                    // Far back, the first scroll lands on estimated heights: once more.
-                    try? await Task.sleep(for: .milliseconds(350))
-                    if highlight != nil || dividerBefore != nil { scrollToStart(proxy) }
-                    if highlight != nil {
-                        try? await Task.sleep(for: .seconds(2))
-                        withAnimation { highlight = nil }
+                    if let failed = lastFailure {
+                        FailureBanner(message: failed) { error = model.retry(failed) }
+                            .padding(.top, 4)
                     }
+                    Color.clear.frame(height: 1)
+                        .accessibilityElement()
+                        .accessibilityLabel("End of conversation")
+                        .accessibilityIdentifier("chat.end")
+                        .id(Self.end)
                 }
-                // A new last message: follow it when we were at the bottom or sent it; else count
-                // it in the pill. Older pages, loaded at the top, move nothing.
-                .onChange(of: messages.last?.id) { old, new in
-                    guard let new, new != old else { return }
-                    let wasAtBottom = bottomVisible == nil || bottomVisible == old
-                    if wasAtBottom || messages.last?.outgoing == true {
-                        withAnimation { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                .scrollTargetLayout()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+            }
+            .scrollPosition(id: $position, anchor: anchor)
+            .modifier(BottomAnchor(following: position == Self.end || fits == true))
+            .modifier(ScrollPhase(scrolling: $userScrolling) { phase in
+                // The user's scroll: no move of ours re-asserts itself over it; let go at the
+                // end, the end is held again.
+                if phase == .interacting { move += 1 }
+                if phase == .idle, atEnd, position != Self.end, fits != true { toEnd() }
+            })
+            // An empty conversation laid out once does not lay out the rows of its first
+            // message (only its day separator showed, iOS 27): built again once it has one.
+            .id(messages.isEmpty)
+            .modifier(ScrollFacts(fits: $fits, atEnd: $atEnd))
+            .overlay(alignment: .bottom) {
+                if unseen > 0 {
+                    Button {
+                        toEnd(animated: true)
                         unseen = 0
-                    } else {
-                        unseen += 1
+                    } label: {
+                        Label(String(localized: "\(unseen) new messages"), systemImage: "arrow.down")
+                            .font(.system(.subheadline, weight: .semibold))
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 44)
+                            .background(Theme.actBg, in: Capsule())
+                            .foregroundStyle(Theme.actFg)
                     }
-                    model.markRead(chat)
+                    .padding(.bottom, 10)
                 }
-                // Stay on the message that was at the top, once the earlier page is laid out.
-                .onChange(of: messages.first?.id) {
-                    if let keep = keepAt {
-                        proxy.scrollTo(keep, anchor: .top)
-                        keepAt = nil
-                    }
-                }
-                #if DEBUG
-                // -earlier YES: the earlier page at once, as the button does (paging checks).
-                .task(id: chat) {
-                    guard UserDefaults.standard.bool(forKey: "earlier") else { return }
+            }
+            // Opens on a message from a search, on the unread divider, else at the end, once
+            // the history is loaded (onAppear) and laid out once (whether it fits).
+            .task(id: chat) {
+                // Nothing of the chat shown before (`-open` shows a MeshCore chat, then the
+                // lichen one once the identity is known).
+                position = nil
+                anchor = .bottom
+                atEnd = false
+                await Task.yield()
+                // The history and its first layout, half a second at most: an empty view fits.
+                for _ in 0..<10 where fits == nil || messages.isEmpty { try? await Task.sleep(for: .milliseconds(50)) }
+                openingPlace()
+                if highlight != nil {
                     try? await Task.sleep(for: .seconds(2))
-                    showEarlier()
+                    withAnimation { highlight = nil }
                 }
-                #endif
-                .onChange(of: bottomVisible) {
-                    if bottomVisible == messages.last?.id { unseen = 0 }
+            }
+            // A new last message: followed when the end is on screen or we sent it; else counted
+            // in the pill, the view where it is. The history's first load is no new message;
+            // older pages, loaded at the top, move nothing (the position holds the message the
+            // page was asked from).
+            .onChange(of: messages.last?.id) { old, new in
+                guard let old, let new, new != old else { return }
+                if isAtEnd(old) || messages.last?.outgoing == true {
+                    toEnd(animated: true)
+                    unseen = 0
+                } else {
+                    unseen += 1
                 }
-                // A quote tapped: its original, loading earlier pages if needed.
-                .onChange(of: jumpTo) {
-                    guard let id = jumpTo else { return }
-                    jumpTo = nil
-                    guard model.loadUntil(chat, id) else {
-                        error = String(localized: "This message is no longer on this phone.")
-                        return
-                    }
-                    highlight = id
-                    Task {
-                        // On the screen already when all of it fits (see scrollToStart).
-                        try? await Task.sleep(for: .milliseconds(100))
-                        if fits != true { withAnimation { proxy.scrollTo(id, anchor: .center) } }
-                        // Once the rows around it have their real heights.
-                        try? await Task.sleep(for: .milliseconds(400))
-                        if fits != true { withAnimation { proxy.scrollTo(id, anchor: .center) } }
-                        try? await Task.sleep(for: .seconds(2))
-                        withAnimation { if highlight == id { highlight = nil } }
-                    }
+                model.markRead(chat)
+            }
+            #if DEBUG
+            // -earlier YES: the earlier page at once, as the button does (paging checks).
+            .task(id: chat) {
+                guard UserDefaults.standard.bool(forKey: "earlier") else { return }
+                try? await Task.sleep(for: .seconds(2))
+                showEarlier()
+            }
+            #endif
+            // At the end again (the user scrolled there): the pill has nothing left to count, and
+            // the end is held, so that photos laid out late do not push it off the screen.
+            .onChange(of: atEnd) {
+                guard atEnd else { return }
+                unseen = 0
+                if position != Self.end, fits != true, !userScrolling { toEnd() }
+            }
+            // A chat that fitted on the screen (all of it, its end included, shown by the bottom
+            // anchor) and just outgrew it: its end held from now on.
+            .onChange(of: fits) { old, new in
+                if old == true, new == false { toEnd() }
+            }
+            // A quote tapped: its original, loading earlier pages if needed.
+            .onChange(of: jumpTo) {
+                guard let id = jumpTo else { return }
+                jumpTo = nil
+                guard model.loadUntil(chat, id) else {
+                    error = String(localized: "This message is no longer on this phone.")
+                    return
+                }
+                highlight = id
+                // On the screen already when all of it fits (see openingPlace).
+                if fits != true { place(id, .center, animated: true) }
+                Task {
+                    try? await Task.sleep(for: .seconds(2))
+                    withAnimation { if highlight == id { highlight = nil } }
                 }
             }
             if let node = chatKey, model.isBlocked(node) {
@@ -379,31 +372,77 @@ struct ChatView: View {
 
     private var messages: [StoredMessage] { model.chats[chat] ?? [] }
 
+    /// The page before the first message: that message held at the top while the page comes in
+    /// above it (the button is at the top).
     private func showEarlier() {
-        keepAt = messages.first?.id
+        if let first = messages.first?.id, fits != true { place(first, .top) }
         model.loadOlder(chat)
     }
 
-    /// The end of the conversation, to scroll to.
-    private static let bottom = "bottom"
+    /// The end of the conversation, as a position.
+    private static let end = Int64.max
 
-    /// Opens on a message from a search, on the first unread one, else at the end. Not at the
-    /// end, the reading position is that message: a new one then shows the pill.
-    private func scrollToStart(_ proxy: ScrollViewProxy) {
-        // All of it on the screen: shown whole from its end by the bottom anchor, nothing to
-        // scroll to. Scrolled to one of its messages, a conversation shorter than the screen
-        // got an offset past its content (B-ios-27: Marc's one message, opened from a search,
-        // went blank at the next redraw: offset -688 for 236 pt of content in 592 pt).
-        guard fits != true else { return }
-        if let h = highlight {
-            proxy.scrollTo(h, anchor: .center)
-            bottomVisible = h
-        } else if let d = dividerBefore {
-            // The first unread message near the top, its divider just above it.
-            proxy.scrollTo(d, anchor: UnitPoint(x: 0.5, y: 0.12))
-            bottomVisible = d
+    /// Moves the view: `id` held at `at`. The only place that scrolls (see `position`). The
+    /// first move lands on the rows' estimated heights (far back, or far down to the end): it is
+    /// asserted twice more as they take their real ones, unless a newer move or the user's
+    /// scroll took over. (The binding only scrolls when its value changes: through nil, for a
+    /// frame, in which nothing moves the view: see `BottomAnchor`.)
+    private func place(_ id: Int64, _ at: UnitPoint, animated: Bool = false) {
+        move += 1
+        let mine = move
+        set(id, at, animated: animated)
+        Task {
+            for wait in [350, 350] {
+                try? await Task.sleep(for: .milliseconds(wait))
+                guard move == mine else { return }
+                position = nil
+                try? await Task.sleep(for: .milliseconds(20))
+                guard move == mine else { return }
+                set(id, at, animated: false)
+            }
+        }
+    }
+
+    private func set(_ id: Int64, _ at: UnitPoint, animated: Bool) {
+        if animated {
+            withAnimation { anchor = at; position = id }
         } else {
-            proxy.scrollTo(Self.bottom, anchor: .bottom)
+            anchor = at
+            position = id
+        }
+    }
+
+    /// The end of the conversation at the bottom.
+    private func toEnd(animated: Bool = false) {
+        atEnd = true
+        // A chat that fits shows whole from its end (the bottom anchor): no positional move
+        // (B-ios-27).
+        if fits != true { place(Self.end, .bottom, animated: animated) }
+    }
+
+    /// Whether the end was on screen before the message after `last` came: the geometry on
+    /// iOS 18; before it, the position (the end, or that message, at the bottom).
+    private func isAtEnd(_ last: Int64) -> Bool {
+        if #available(iOS 18, *) { return atEnd }
+        return anchor == .bottom && (position == Self.end || position == last)
+    }
+
+    /// Where the chat opens: on a message from a search, on the first unread one (its divider
+    /// just above it, near the top), else at the end. Not at the end, a new message shows the
+    /// pill.
+    private func openingPlace() {
+        // All of it on the screen: shown whole from its end by the bottom anchor, nothing to
+        // move. Scrolled to one of its messages, a conversation shorter than the screen got an
+        // offset past its content (B-ios-27: Marc's one message, opened from a search, went
+        // blank at the next redraw: offset -688 for 236 pt of content in 592 pt).
+        if fits == true {
+            atEnd = true
+        } else if let h = highlight {
+            place(h, .center)
+        } else if let d = dividerBefore {
+            place(d, UnitPoint(x: 0.5, y: 0.12))
+        } else {
+            toEnd()
         }
     }
 
@@ -2760,14 +2799,50 @@ private struct SelectableText: UIViewRepresentable {
     }
 }
 
-/// Keeps a scroll view on its last row while its content grows, as long as `pinned`; a scroll
-/// by the user decides `pinned` again: at the end, or not. Before iOS 18, the scrolls at
-/// opening only.
-private struct FollowBottom: ViewModifier {
-    @Binding var pinned: Bool
-    /// The whole content fits in the scroll view.
+/// The bottom anchor (iOS 18): where the view opens and how short content aligns, and, only
+/// while the view follows the end, how it moves as the content grows (photos laid out late keep
+/// the end in sight). Holding a message, nothing but `position` moves it. Before iOS 18, the
+/// bottom anchor for all three.
+private struct BottomAnchor: ViewModifier {
+    let following: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .alignment)
+                .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
+        } else {
+            content.defaultScrollAnchor(.bottom)
+        }
+    }
+}
+
+/// The user's scrolling (iOS 18; before it, nothing): `scrolling` while a finger moves the view
+/// or it decelerates, and each phase change.
+private struct ScrollPhase: ViewModifier {
+    enum Phase { case idle, interacting, other }
+    @Binding var scrolling: Bool
+    let changed: (Phase) -> Void
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18, *) {
+            content.onScrollPhaseChange { _, new in
+                scrolling = new == .interacting || new == .decelerating
+                changed(new == .idle ? .idle : new == .interacting ? .interacting : .other)
+            }
+        } else {
+            content
+        }
+    }
+}
+
+/// What the scroll geometry says (iOS 18; before it, nothing): whether the whole content fits
+/// in the view, and whether its end is on screen (within 32 pt). Read only: it moves nothing.
+/// Each set only when it changes: a change redraws the chat.
+private struct ScrollFacts: ViewModifier {
     @Binding var fits: Bool?
-    let toBottom: () -> Void
+    @Binding var atEnd: Bool
 
     private struct Geometry: Equatable {
         var content: CGFloat
@@ -2779,15 +2854,11 @@ private struct FollowBottom: ViewModifier {
         if #available(iOS 18, *) {
             content.onScrollGeometryChange(for: Geometry.self) {
                 Geometry(content: $0.contentSize.height, container: $0.containerSize.height, visibleEnd: $0.visibleRect.maxY)
-            } action: { old, new in
-                // Set only when it changes: each change redraws the chat, which would disturb a
-                // scroll under way.
-                if new.content > 0, fits != (new.content <= new.container) { fits = new.content <= new.container }
-                if new.content != old.content {
-                    if pinned { toBottom() }
-                } else {
-                    pinned = new.visibleEnd >= new.content - 32
-                }
+            } action: { _, new in
+                guard new.content > 0 else { return }
+                if fits != (new.content <= new.container) { fits = new.content <= new.container }
+                let end = new.visibleEnd >= new.content - 32
+                if atEnd != end { atEnd = end }
             }
         } else {
             content

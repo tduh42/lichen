@@ -72,10 +72,11 @@ k, n = (int(x) for x in sys.argv[1].split("/"))
 if not 1 <= k <= n:
     sys.exit("--shard: K from 1 to N")
 times = {"ContactsTests": 733, "RadioLinkTests": 723, "LifecycleTests": 691, "DirectChatTests": 670,
-         "OnboardingTests": 599, "GroupTests": 567, "ChatNavigationTests": 343, "SettingsTests": 339,
+         "OnboardingTests": 599, "GroupTests": 567, "ChatNavigationTests": 670, "SettingsTests": 339,
          "MeshCoreTests": 333, "MediaTests": 302, "LocationTests": 252, "AccessibilityAuditTests": 218,
          "StringsTests": 1, "LongChatTests": 1}
-french = 380  # the French pass: ChatNavigationTests and StringsTests, with its own start
+french = 710  # the French pass: ChatNavigationTests and StringsTests, with its own start
+# (ChatNavigationTests: 343 s measured, and about 325 for its two B-ios-28 tests, estimated)
 found = sorted(m for f in pathlib.Path(sys.argv[2]).glob("*.swift")
                for m in re.findall(r"^(?:final )?class (\w+Tests)\b", f.read_text(), re.M))
 shares = [[0, []] for _ in range(n)]
