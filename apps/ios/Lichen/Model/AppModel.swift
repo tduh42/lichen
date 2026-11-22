@@ -105,16 +105,52 @@ final class AppModel {
     /// Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it.
     var linkRefusals = 0
 
-    /// Changes one of the radio's settings (ADR-0032); a refusal shows as `radioError`. The
-    /// settings shown come back from the radio (`radioSettings`).
-    func radioSet(_ change: () throws -> Void) {
+    /// A radio setting row's state: waiting for the radio (`outcome` nil), or what became of
+    /// the setting changed from it (B-user-5).
+    struct RadioRowState: Equatable {
+        var outcome: SettingOutcome?
+        var at: Date
+    }
+    /// Each radio setting row the user changed, by its key.
+    var radioRows: [String: RadioRowState] = [:]
+    /// The radio's settings with the values asked for while they wait, else nil: the screen
+    /// shows these until the radio's come back (B-user-5).
+    var radioAsked: RadioSettings?
+    /// The row each kind of setting was last changed from.
+    @ObservationIgnored private var radioRowOf: [RadioSetting: String] = [:]
+    /// How long "Saved on the radio" stays on its row: 2 s; debug `-radioSavedFor S` for the UI
+    /// tests on a busy machine, whose screen reads can take longer.
+    @ObservationIgnored var radioSavedSeconds: Double = {
+        #if DEBUG
+        let s = UserDefaults.standard.double(forKey: "radioSavedFor")
+        if s > 0 { return s }
+        #endif
+        return 2
+    }()
+
+    /// Changes one of the radio's settings (ADR-0032) from `row`: the row waits, showing the
+    /// value `asked` for, until the radio's outcome (B-user-5). One that cannot be sent (out of
+    /// range, no radio) shows as `radioError`. The settings shown come back from the radio.
+    func radioSet(_ setting: RadioSetting, row: String, asked: (inout RadioSettings) -> Void,
+                  _ change: () throws -> Void) {
         do {
             try change()
+            radioRowOf[setting] = row
+            radioRows[row] = RadioRowState(outcome: nil, at: Date())
+            if var r = radioAsked ?? radioSettings {
+                asked(&r)
+                radioAsked = r
+            }
         } catch let e as LichenError {
             radioError = e.display
         } catch {
             radioError = error.localizedDescription
         }
+    }
+
+    /// A row's outcome, read: it goes.
+    func clearRadioRow(_ row: String) {
+        if radioRows[row]?.outcome != nil { radioRows[row] = nil }
     }
     /// The radio's MeshCore channels (§15.3).
     var channels: [MeshChannel] = []
@@ -654,6 +690,8 @@ final class AppModel {
         if args.bool(forKey: "quietDemo") { net.quiet() }
         // -radioRefuses power: the demo radio refuses transmit power changes (D-4).
         if args.string(forKey: "radioRefuses") == "power" { net.refuseTxPower() }
+        // -radioIgnores <kind>: the demo radio answers OK and keeps its old value (B-user-5).
+        if let kind = args.string(forKey: "radioIgnores") { net.ignoreSettings(kind: kind) }
         // -radioSlow S: the demo radio holds its answers for S seconds of the demo's time (D-9).
         let slow = args.integer(forKey: "radioSlow")
         if slow > 0 { net.holdReplies(seconds: UInt64(slow)) }
@@ -944,16 +982,18 @@ final class AppModel {
             #endif
         case let .identityConflict(node, identity):
             conflicts[node] = identity
-        case .radioSettings:
-            // A setting the radio itself refused (D-4): said, and the value shown stays the
-            // radio's.
-            // A contact added from a link that the radio did not add (§16.6) is said on Add a
-            // contact, not as a setting.
-            let refused = core.takeRadioRefusals()
-            if refused.contains(.contact) { linkRefusals += 1 }
-            if refused.contains(where: { $0 != .contact }) {
-                radioError = String(localized: "The radio did not take this setting")
+        case let .radioOutcome(outcome):
+            // What became of a setting (B-user-5): said on its row. A contact added from a link
+            // that the radio did not add (§16.6) is said on Add a contact.
+            if outcome.setting == .contact {
+                if outcome.outcome == .refused { linkRefusals += 1 }
+            } else if let row = radioRowOf[outcome.setting] {
+                radioRows[row] = RadioRowState(outcome: outcome.outcome, at: Date())
             }
+            // Nothing waits any more: the radio's own values.
+            if core.radioPending().isEmpty { radioAsked = nil }
+            radioSettings = core.radioSettings()
+        case .radioSettings:
             // Read again after a change (ADR-0032): the header follows the radio's parameters.
             let r = core.radioSettings()
             radioSettings = r

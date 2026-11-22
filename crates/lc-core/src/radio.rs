@@ -98,21 +98,192 @@ pub enum RadioSetting {
     Contact,
 }
 
-/// Refusals kept until the app reads them.
-const REFUSALS_MAX: usize = 16;
+/// What became of a setting sent to the radio (§1.1, B-user-5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SettingOutcome {
+    /// OK, and the radio reports the value asked for.
+    Saved,
+    /// OK, but the radio still reports another value: it kept its own.
+    NotKept,
+    /// ERR.
+    Refused,
+    /// No answer in time, or the radio went away.
+    NoAnswer,
+}
 
-impl Core {
-    /// The settings the radio refused since the last call, oldest first (§1.1): each one's
-    /// value stays the radio's (`RadioSettings` follows), the app says it was not changed.
-    pub fn take_radio_refusals(&mut self) -> Vec<RadioSetting> {
-        std::mem::take(&mut self.radio_refusals)
+/// A setting's outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RadioOutcome {
+    pub setting: RadioSetting,
+    pub outcome: SettingOutcome,
+}
+
+/// The value a setting asked for, to compare with what the radio reports back (§1.1).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Asked {
+    Params {
+        freq_khz: u32,
+        bw_hz: u32,
+        sf: u8,
+        cr: u8,
+    },
+    TxPower(i8),
+    AdvertPosition(i32, i32),
+    Preferences(OtherParams),
+    /// A board setting and its value.
+    Var(String, String),
+    Autoadd(u8, u8),
+    Name(String),
+    /// Nothing reports it back (the Bluetooth PIN).
+    Unread,
+}
+
+/// Which read tells what the radio kept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReadBack {
+    SelfInfo,
+    Vars,
+    Autoadd,
+    None,
+}
+
+impl Asked {
+    fn read_back(&self) -> ReadBack {
+        match self {
+            Asked::Params { .. }
+            | Asked::TxPower(_)
+            | Asked::AdvertPosition(..)
+            | Asked::Preferences(_)
+            | Asked::Name(_) => ReadBack::SelfInfo,
+            Asked::Var(..) => ReadBack::Vars,
+            Asked::Autoadd(..) => ReadBack::Autoadd,
+            Asked::Unread => ReadBack::None,
+        }
     }
 
-    pub(crate) fn radio_refused(&mut self, setting: RadioSetting) {
-        if self.radio_refusals.len() < REFUSALS_MAX {
-            self.radio_refusals.push(setting);
+    /// Whether the radio's settings hold the value asked for, field by field.
+    fn kept(&self, r: &RadioSettings) -> bool {
+        match self {
+            Asked::Params {
+                freq_khz,
+                bw_hz,
+                sf,
+                cr,
+            } => (r.freq_khz, r.bw_hz, r.sf, r.cr) == (*freq_khz, *bw_hz, *sf, *cr),
+            Asked::TxPower(dbm) => r.tx_dbm == *dbm,
+            Asked::AdvertPosition(lat, lon) => (r.lat_e6, r.lon_e6) == (*lat, *lon),
+            Asked::Preferences(o) => {
+                r.other.manual_add == o.manual_add
+                    && r.other.telemetry == o.telemetry
+                    && r.other.advert_loc_policy == o.advert_loc_policy
+                    && r.other.multi_acks == o.multi_acks
+            }
+            Asked::Var(name, value) => r.var(name) == Some(value.as_str()),
+            Asked::Autoadd(mask, hops) => r.autoadd == Some((*mask, *hops)),
+            Asked::Name(name) => r.name == *name,
+            Asked::Unread => true,
         }
+    }
+}
+
+/// A setting sent, waiting for its outcome.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PendingSetting {
+    setting: RadioSetting,
+    asked: Asked,
+    /// The radio answered OK: the read-back decides.
+    answered: bool,
+}
+
+/// Outcomes kept until the app reads them.
+const OUTCOMES_MAX: usize = 16;
+
+impl Core {
+    /// What became of the settings sent since the last call, oldest first (§1.1): an
+    /// `Event::RadioOutcome` goes with each. The settings shown stay the radio's.
+    pub fn take_radio_outcomes(&mut self) -> Vec<RadioOutcome> {
+        std::mem::take(&mut self.radio_outcomes)
+    }
+
+    /// The settings sent that wait for their outcome, oldest first.
+    pub fn radio_pending(&self) -> Vec<RadioSetting> {
+        self.radio_pending.iter().map(|p| p.setting).collect()
+    }
+
+    pub(crate) fn radio_outcome(&mut self, setting: RadioSetting, outcome: SettingOutcome) {
+        let o = RadioOutcome { setting, outcome };
+        if self.radio_outcomes.len() < OUTCOMES_MAX {
+            self.radio_outcomes.push(o);
+        }
+        self.events.push_back(Event::RadioOutcome(o));
         self.events.push_back(Event::RadioSettings);
+    }
+
+    /// The setting's own command was answered (or not): OK waits for the read-back (one with
+    /// nothing to read back is saved), ERR is a refusal, nothing is no answer.
+    pub(crate) fn setting_answered(
+        &mut self,
+        setting: RadioSetting,
+        outcome: Option<SettingOutcome>,
+    ) {
+        let Some(at) = self
+            .radio_pending
+            .iter()
+            .position(|p| p.setting == setting && !p.answered)
+        else {
+            if let Some(o) = outcome {
+                // Not one we track (a contact from a link, §16.6): said as it is.
+                self.radio_outcome(setting, o);
+            }
+            return;
+        };
+        match outcome {
+            None => {
+                let unread = self
+                    .radio_pending
+                    .get(at)
+                    .is_some_and(|p| p.asked.read_back() == ReadBack::None);
+                if unread {
+                    self.radio_pending.remove(at);
+                    self.radio_outcome(setting, SettingOutcome::Saved);
+                } else if let Some(p) = self.radio_pending.get_mut(at) {
+                    p.answered = true;
+                }
+            }
+            Some(o) => {
+                self.radio_pending.remove(at);
+                self.radio_outcome(setting, o);
+            }
+        }
+    }
+
+    /// A read came back: the settings it tells about, answered OK, are saved or not kept.
+    pub(crate) fn settings_read(&mut self, read: ReadBack) {
+        let (done, rest): (Vec<PendingSetting>, Vec<PendingSetting>) =
+            std::mem::take(&mut self.radio_pending)
+                .into_iter()
+                .partition(|p| p.answered && p.asked.read_back() == read);
+        self.radio_pending = rest;
+        for p in done {
+            let o = if p.asked.kept(&self.settings) {
+                SettingOutcome::Saved
+            } else {
+                SettingOutcome::NotKept
+            };
+            self.radio_outcome(p.setting, o);
+        }
+    }
+
+    /// A read went unanswered, or the radio went away (`None`: everything waiting).
+    pub(crate) fn settings_unread(&mut self, read: Option<ReadBack>) {
+        let (lost, rest): (Vec<PendingSetting>, Vec<PendingSetting>) =
+            std::mem::take(&mut self.radio_pending)
+                .into_iter()
+                .partition(|p| read.is_none_or(|r| p.answered && p.asked.read_back() == r));
+        self.radio_pending = rest;
+        for p in lost {
+            self.radio_outcome(p.setting, SettingOutcome::NoAnswer);
+        }
     }
 
     /// What the radio reported of its settings.
@@ -182,6 +353,12 @@ impl Core {
                 repeat: self.settings.repeat,
             },
             RadioSetting::Params,
+            Asked::Params {
+                freq_khz,
+                bw_hz,
+                sf,
+                cr,
+            },
         )
     }
 
@@ -190,7 +367,11 @@ impl Core {
         if dbm < -9 || dbm > self.settings.max_tx_dbm {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetRadioTxPower { dbm }, RadioSetting::TxPower)
+        self.radio_set(
+            &Command::SetRadioTxPower { dbm },
+            RadioSetting::TxPower,
+            Asked::TxPower(dbm),
+        )
     }
 
     /// The position adverts carry when the policy allows it.
@@ -203,6 +384,7 @@ impl Core {
         self.radio_set(
             &Command::SetAdvertLatLon { lat_e6, lon_e6 },
             RadioSetting::AdvertPosition,
+            Asked::AdvertPosition(lat_e6, lon_e6),
         )
     }
 
@@ -214,7 +396,11 @@ impl Core {
         if other.advert_loc_policy > 1 || other.telemetry > 0x3F || !modes_ok {
             return Err(Error::Invalid);
         }
-        self.radio_set(&Command::SetOtherParams(other), RadioSetting::Preferences)
+        self.radio_set(
+            &Command::SetOtherParams(other),
+            RadioSetting::Preferences,
+            Asked::Preferences(other),
+        )
     }
 
     /// A board setting the radio listed (`gps`: `"1"` / `"0"`, `gps_interval`: seconds).
@@ -227,7 +413,11 @@ impl Core {
             "gps_interval" => RadioSetting::GpsInterval,
             _ => RadioSetting::Other,
         };
-        self.radio_set(&Command::SetCustomVar { name, value }, setting)
+        self.radio_set(
+            &Command::SetCustomVar { name, value },
+            setting,
+            Asked::Var(name.to_owned(), value.to_owned()),
+        )
     }
 
     /// Which advert types become contacts by themselves (with manual add), and from how far.
@@ -235,6 +425,7 @@ impl Core {
         self.radio_set(
             &Command::SetAutoaddConfig { mask, max_hops },
             RadioSetting::Autoadd,
+            Asked::Autoadd(mask, max_hops),
         )
     }
 
@@ -243,6 +434,14 @@ impl Core {
         if pin != 0 && !(100_000..=999_999).contains(&pin) {
             return Err(Error::Invalid);
         }
+        if !self.online {
+            return Err(Error::NoIdentity);
+        }
+        self.radio_pending.push(PendingSetting {
+            setting: RadioSetting::Pin,
+            asked: Asked::Unread,
+            answered: false,
+        });
         self.command(
             &Command::SetDevicePin { pin },
             Expect::Setting(RadioSetting::Pin),
@@ -255,11 +454,22 @@ impl Core {
         self.command(&Command::Reboot, Expect::Ok);
     }
 
-    /// Sends a setting, then reads everything again: the settings shown are the radio's.
-    fn radio_set(&mut self, cmd: &Command<'_>, setting: RadioSetting) -> Result<(), Error> {
+    /// Sends a setting, then reads everything again: the settings shown are the radio's, and
+    /// the read-back tells whether it kept the value `asked` (§1.1).
+    fn radio_set(
+        &mut self,
+        cmd: &Command<'_>,
+        setting: RadioSetting,
+        asked: Asked,
+    ) -> Result<(), Error> {
         if !self.online {
             return Err(Error::NoIdentity);
         }
+        self.radio_pending.push(PendingSetting {
+            setting,
+            asked,
+            answered: false,
+        });
         self.command(cmd, Expect::Setting(setting));
         let name = self.app_name.clone();
         self.command(
@@ -284,11 +494,39 @@ impl Core {
     pub(crate) fn radio_vars(&mut self, text: &[u8]) {
         self.settings.vars = parse_vars(text);
         self.events.push_back(Event::RadioSettings);
+        self.settings_read(ReadBack::Vars);
     }
 
     pub(crate) fn radio_autoadd(&mut self, mask: u8, max_hops: u8) {
         self.settings.autoadd = Some((mask, max_hops));
         self.events.push_back(Event::RadioSettings);
+        self.settings_read(ReadBack::Autoadd);
+    }
+
+    /// Our node's new name (§15.4): sent, then read back with the rest (§1.1).
+    pub(crate) fn rename_radio(&mut self, name: &str) {
+        self.radio_pending.push(PendingSetting {
+            setting: RadioSetting::Name,
+            asked: Asked::Name(name.to_owned()),
+            answered: false,
+        });
+        self.command(
+            &Command::SetAdvertName {
+                name: name.as_bytes(),
+            },
+            Expect::Setting(RadioSetting::Name),
+        );
+    }
+
+    /// The read-back after a rename (queued after its advert).
+    pub(crate) fn read_back_name(&mut self) {
+        let app = self.app_name.clone();
+        self.command(
+            &Command::AppStart {
+                name: app.as_bytes(),
+            },
+            Expect::SelfInfo,
+        );
     }
 
     pub(crate) fn radio_battery(

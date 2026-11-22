@@ -51,6 +51,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.RadioSettings
+import com.tduhamel.lichen.core.RadioSetting
+import com.tduhamel.lichen.core.SettingOutcome
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import kotlinx.coroutines.delay
 import com.tduhamel.lichen.core.Telemetry
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.bandwidth
@@ -106,19 +113,21 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
             }
             return@Column
         }
+        // While a setting waits for the radio, the value asked for (B-user-5).
+        val shown = model.radioAsked ?: r
         LazyColumn(
             Modifier.weight(1f).windowInsetsPadding(WindowInsets.navigationBars),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { DeviceSection(model, r) }
-            item { MeshCoreCode(model, r) }
-            item { LoraSection(model, r) }
-            item { PowerSection(model, r) }
-            if (r.gps != null) item { GpsSection(model, r) }
-            item { PrivacySection(model, r) }
-            if (r.autoaddMask != null) item { ContactsSection(model, r) }
-            item { DeliverySection(model, r) }
+            item { DeviceSection(model, shown) }
+            item { MeshCoreCode(model, shown) }
+            item { LoraSection(model, shown) }
+            item { PowerSection(model, shown) }
+            if (shown.gps != null) item { GpsSection(model, shown) }
+            item { PrivacySection(model, shown) }
+            if (shown.autoaddMask != null) item { ContactsSection(model, shown) }
+            item { DeliverySection(model, shown) }
             item { BluetoothSection(model) }
         }
     }
@@ -235,6 +244,7 @@ private fun LoraSection(model: AppModel, r: RadioSettings) {
                     Text(if (enabled) "✓" else "", color = t.tx2)
                 }
             }
+            RowStatus(model, "lora")
         }
         Text(stringResource(R.string.lora_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
     }
@@ -246,7 +256,9 @@ private fun LoraSection(model: AppModel, r: RadioSettings) {
             confirmButton = {
                 TextButton(onClick = {
                     confirming = false
-                    model.radioSet { model.core.setRadioParams(chosen.freqKhz, chosen.bwHz, chosen.sf, chosen.cr) }
+                    model.radioSet(RadioSetting.PARAMS, "lora", { it.copy(freqKhz = chosen.freqKhz, bwHz = chosen.bwHz, sf = chosen.sf, cr = chosen.cr) }) {
+                        model.core.setRadioParams(chosen.freqKhz, chosen.bwHz, chosen.sf, chosen.cr)
+                    }
                 }) { Text(stringResource(R.string.apply), color = t.sos) }
             },
             dismissButton = { TextButton(onClick = { confirming = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
@@ -261,8 +273,11 @@ private fun PowerSection(model: AppModel, r: RadioSettings) {
         SectionLabel(stringResource(R.string.transmit_power), Modifier.padding(top = 10.dp))
         CardList {
             CardRow("${r.txDbm} dBm", stringResource(R.string.transmit_power_note, r.maxTxDbm.toInt())) {
-                Stepper(r.txDbm.toInt(), -9..r.maxTxDbm.toInt()) { v -> model.radioSet { model.core.setTxPower(v.toByte()) } }
+                Stepper(r.txDbm.toInt(), -9..r.maxTxDbm.toInt()) { v ->
+                    model.radioSet(RadioSetting.TX_POWER, "power", { it.copy(txDbm = v.toByte()) }) { model.core.setTxPower(v.toByte()) }
+                }
             }
+            RowStatus(model, "power")
         }
     }
 }
@@ -273,17 +288,19 @@ private fun GpsSection(model: AppModel, r: RadioSettings) {
         SectionLabel(stringResource(R.string.gps), Modifier.padding(top = 10.dp))
         CardList {
             CardRow(stringResource(R.string.radio_gps), stringResource(R.string.radio_gps_note)) {
-                LichenSwitch(r.gps == true, { on -> model.radioSet { model.core.setGps(on) } })
+                LichenSwitch(r.gps == true, { on -> model.radioSet(RadioSetting.GPS, "gps", { it.copy(gps = on) }) { model.core.setGps(on) } })
             }
+            RowStatus(model, "gps")
             if (r.gps == true) {
                 CardDivider()
                 CardRow(stringResource(R.string.gps_every)) {
                     // The radio's own value: one it refuses is not shown (D-4).
                     val label = r.gpsIntervalS?.let { minutes(it) } ?: stringResource(R.string.not_set)
                     Choice(label, INTERVALS.map { minutes(it) to it }) { s ->
-                        model.radioSet { model.core.setGpsInterval(s) }
+                        model.radioSet(RadioSetting.GPS_INTERVAL, "gps_interval", { it.copy(gpsIntervalS = s) }) { model.core.setGpsInterval(s) }
                     }
                 }
+                RowStatus(model, "gps_interval")
             }
         }
     }
@@ -295,11 +312,15 @@ private fun minutes(s: UInt): String =
 
 private fun AppModel.setPrefs(
     r: RadioSettings,
+    row: String,
     manualAdd: Boolean = r.manualAdd,
     telemetry: Telemetry = r.telemetry,
     position: Boolean = r.positionInAdverts,
     multiAcks: UByte = r.multiAcks,
-) = radioSet { core.setRadioPreferences(manualAdd, telemetry, position, multiAcks) }
+) = radioSet(
+    RadioSetting.PREFERENCES, row,
+    { it.copy(manualAdd = manualAdd, telemetry = telemetry, positionInAdverts = position, multiAcks = multiAcks) },
+) { core.setRadioPreferences(manualAdd, telemetry, position, multiAcks) }
 
 @Composable
 private fun PrivacySection(model: AppModel, r: RadioSettings) {
@@ -323,8 +344,9 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
                 stringResource(R.string.position_in_adverts),
                 stringResource(if (r.positionInAdverts) R.string.position_in_adverts_on else R.string.position_in_adverts_off),
             ) {
-                LichenSwitch(r.positionInAdverts, { on -> if (on) confirmingPosition = true else model.setPrefs(r, position = false) })
+                LichenSwitch(r.positionInAdverts, { on -> if (on) confirmingPosition = true else model.setPrefs(r, "position", position = false) })
             }
+            RowStatus(model, "position")
             if (r.positionInAdverts) {
                 CardDivider()
                 val pos = if (r.latE6 == 0 && r.lonE6 == 0) stringResource(R.string.none_yet)
@@ -344,24 +366,32 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
                 if (usesPhone && fix != null) {
                     CardDivider()
                     Box(Modifier.clickable {
-                        model.radioSet { model.core.setAdvertPosition((fix.lat * 1e6).roundToInt(), (fix.lon * 1e6).roundToInt()) }
+                        val lat = (fix.lat * 1e6).roundToInt()
+                        val lon = (fix.lon * 1e6).roundToInt()
+                        model.radioSet(RadioSetting.ADVERT_POSITION, "advert_position", { it.copy(latE6 = lat, lonE6 = lon) }) {
+                            model.core.setAdvertPosition(lat, lon)
+                        }
                     }) {
                         CardRow(stringResource(R.string.use_phone_position), merge = false)
                     }
+                    RowStatus(model, "advert_position")
                 }
             }
             CardDivider()
             TelemetryRow(stringResource(R.string.telemetry_base), r.telemetry.base) { v ->
-                model.setPrefs(r, telemetry = r.telemetry.copy(base = v))
+                model.setPrefs(r, "telemetry_base", telemetry = r.telemetry.copy(base = v))
             }
+            RowStatus(model, "telemetry_base")
             CardDivider()
             TelemetryRow(stringResource(R.string.telemetry_location), r.telemetry.location) { v ->
-                if (v.toInt() == 0) model.setPrefs(r, telemetry = r.telemetry.copy(location = v)) else confirmingTelemetry = v
+                if (v.toInt() == 0) model.setPrefs(r, "telemetry_location", telemetry = r.telemetry.copy(location = v)) else confirmingTelemetry = v
             }
+            RowStatus(model, "telemetry_location")
             CardDivider()
             TelemetryRow(stringResource(R.string.telemetry_environment), r.telemetry.environment) { v ->
-                model.setPrefs(r, telemetry = r.telemetry.copy(environment = v))
+                model.setPrefs(r, "telemetry_environment", telemetry = r.telemetry.copy(environment = v))
             }
+            RowStatus(model, "telemetry_environment")
         }
         Text(stringResource(R.string.telemetry_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp))
     }
@@ -371,7 +401,7 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
             title = { Text(stringResource(R.string.position_confirm_title)) },
             text = { Text(stringResource(R.string.position_confirm)) },
             confirmButton = {
-                TextButton(onClick = { confirmingPosition = false; model.setPrefs(r, position = true) }) {
+                TextButton(onClick = { confirmingPosition = false; model.setPrefs(r, "position", position = true) }) {
                     Text(stringResource(R.string.show_it), color = t.sos)
                 }
             },
@@ -387,7 +417,7 @@ private fun PrivacySection(model: AppModel, r: RadioSettings) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmingTelemetry = null
-                    model.setPrefs(r, telemetry = r.telemetry.copy(location = v))
+                    model.setPrefs(r, "telemetry_location", telemetry = r.telemetry.copy(location = v))
                 }) { Text(stringResource(R.string.allow), color = t.sos) }
             },
             dismissButton = { TextButton(onClick = { confirmingTelemetry = null }) { Text(stringResource(R.string.cancel), color = t.tx) } },
@@ -409,8 +439,8 @@ private fun ContactsSection(model: AppModel, r: RadioSettings) {
     val mask = r.autoaddMask ?: 0u
     val hops = r.autoaddMaxHops ?: 0u
     fun setMask(bit: Int, on: Boolean) {
-        val m = if (on) mask.toInt() or bit else mask.toInt() and bit.inv()
-        model.radioSet { model.core.setAutoadd(m.toUByte(), hops) }
+        val m = (if (on) mask.toInt() or bit else mask.toInt() and bit.inv()).toUByte()
+        model.radioSet(RadioSetting.AUTOADD, "autoadd_$bit", { it.copy(autoaddMask = m, autoaddMaxHops = hops) }) { model.core.setAutoadd(m, hops) }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionLabel(stringResource(R.string.new_contacts), Modifier.padding(top = 10.dp))
@@ -419,8 +449,9 @@ private fun ContactsSection(model: AppModel, r: RadioSettings) {
                 stringResource(R.string.add_every_radio),
                 stringResource(if (r.manualAdd) R.string.add_every_radio_off else R.string.add_every_radio_on),
             ) {
-                LichenSwitch(!r.manualAdd, { on -> model.setPrefs(r, manualAdd = !on) })
+                LichenSwitch(!r.manualAdd, { on -> model.setPrefs(r, "manual_add", manualAdd = !on) })
             }
+            RowStatus(model, "manual_add")
             if (r.manualAdd) {
                 listOf(
                     0x02 to R.string.kind_companions,
@@ -430,17 +461,20 @@ private fun ContactsSection(model: AppModel, r: RadioSettings) {
                 ).forEach { (bit, label) ->
                     CardDivider()
                     CardRow(stringResource(label)) { LichenSwitch(mask.toInt() and bit != 0, { setMask(bit, it) }) }
+                    RowStatus(model, "autoadd_$bit")
                 }
             }
             CardDivider()
             CardRow(stringResource(R.string.replace_oldest)) { LichenSwitch(mask.toInt() and 0x01 != 0, { setMask(0x01, it) }) }
+            RowStatus(model, "autoadd_1")
             CardDivider()
             CardRow(stringResource(R.string.from_how_far)) {
                 val choices = (listOf(0, 1, 2, 3, 4, 6) + hops.toInt()).distinct().sorted()
                 Choice(hopLabel(hops.toInt()), choices.map { hopLabel(it) to it.toUByte() }) { h ->
-                    model.radioSet { model.core.setAutoadd(mask, h) }
+                    model.radioSet(RadioSetting.AUTOADD, "autoadd_hops", { it.copy(autoaddMaxHops = h) }) { model.core.setAutoadd(mask, h) }
                 }
             }
+            RowStatus(model, "autoadd_hops")
         }
     }
 }
@@ -459,8 +493,9 @@ private fun DeliverySection(model: AppModel, r: RadioSettings) {
         SectionLabel(stringResource(R.string.delivery), Modifier.padding(top = 10.dp))
         CardList {
             CardRow(stringResource(R.string.extra_acks, r.multiAcks.toInt()), stringResource(R.string.extra_acks_note)) {
-                Stepper(r.multiAcks.toInt(), 0..2) { v -> model.setPrefs(r, multiAcks = v.toUByte()) }
+                Stepper(r.multiAcks.toInt(), 0..2) { v -> model.setPrefs(r, "multi_acks", multiAcks = v.toUByte()) }
             }
+            RowStatus(model, "multi_acks")
         }
     }
 }
@@ -487,11 +522,12 @@ private fun BluetoothSection(model: AppModel) {
             }
             CardDivider()
             Box(Modifier.clickable(enabled = valid) {
-                model.radioSet { model.core.setBlePin(pin.toUIntOrNull() ?: 0u) }
+                model.radioSet(RadioSetting.PIN, "pin", { it }) { model.core.setBlePin(pin.toUIntOrNull() ?: 0u) }
                 saved = model.radioError == null
             }) {
                 CardRow(stringResource(R.string.save_pin), merge = false)
             }
+            RowStatus(model, "pin")
             CardDivider()
             Box(Modifier.clickable { confirmingReboot = true }) {
                 CardRow(stringResource(R.string.restart_radio), merge = false)
@@ -511,6 +547,47 @@ private fun BluetoothSection(model: AppModel) {
             dismissButton = { TextButton(onClick = { confirmingReboot = false }) { Text(stringResource(R.string.cancel), color = t.tx) } },
             containerColor = t.s1,
         )
+    }
+}
+
+/**
+ * What became of the setting changed from [row] (B-user-5): a spinner while the radio has not
+ * answered, then "Saved on the radio" for 2 s, or why the value shown is still the radio's
+ * (kept, refused, unanswered) until the next change.
+ */
+@Composable
+private fun RowStatus(model: AppModel, row: String) {
+    val state = model.radioRows[row] ?: return
+    val t = lichen
+    val outcome = state.outcome
+    if (outcome == SettingOutcome.SAVED) LaunchedEffect(state) {
+        delay(2_000)
+        model.clearRadioRow(row)
+    }
+    val waiting = stringResource(R.string.radio_waiting)
+    Row(
+        Modifier.padding(start = 16.dp, end = 16.dp, bottom = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        when (outcome) {
+            null -> CircularProgressIndicator(
+                Modifier.size(16.dp).semantics { contentDescription = waiting }, color = t.tx2, strokeWidth = 2.dp,
+            )
+            SettingOutcome.SAVED -> {
+                Icon(Icons.Filled.Check, null, tint = t.ok, modifier = Modifier.size(16.dp))
+                Text(stringResource(R.string.radio_saved), fontSize = 13.sp, color = t.tx)
+            }
+            else -> {
+                Icon(Icons.Outlined.Info, null, tint = t.warn, modifier = Modifier.size(16.dp))
+                val why = when (outcome) {
+                    SettingOutcome.NOT_KEPT -> R.string.radio_not_kept
+                    SettingOutcome.REFUSED -> R.string.radio_refused
+                    else -> R.string.radio_no_answer
+                }
+                Text(stringResource(why), fontSize = 13.sp, color = t.tx)
+            }
+        }
     }
 }
 

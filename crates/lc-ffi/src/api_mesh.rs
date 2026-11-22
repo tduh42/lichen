@@ -257,7 +257,7 @@ impl From<&lc_core::MeshLink> for MeshCoreLink {
 pub enum MeshCoreAdd {
     /// Sent to the radio. The contact then comes as any other (`ContactsUpdated`: among the
     /// people for a companion, the nodes for the others), or the radio's refusal comes as a
-    /// refused setting, `RadioSetting::Contact` (`take_radio_refusals`).
+    /// refused setting: a `RadioOutcome` for `RadioSetting::Contact`, `Refused`.
     Sent,
     /// The radio already has it: nothing was sent; open its chat.
     AlreadyOnTheRadio,

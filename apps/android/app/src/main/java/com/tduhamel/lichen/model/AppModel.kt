@@ -43,6 +43,7 @@ import com.tduhamel.lichen.core.MeshCoreLink
 import com.tduhamel.lichen.core.readMeshcoreLink
 import com.tduhamel.lichen.core.ChatPrefs
 import com.tduhamel.lichen.core.StoredMessage
+import com.tduhamel.lichen.core.SettingOutcome
 import com.tduhamel.lichen.core.TextSpan
 import com.tduhamel.lichen.core.BridgeException
 import com.tduhamel.lichen.core.LichenBridge
@@ -158,6 +159,13 @@ class AppModel(val app: Application) {
         val groupInvitationDemo: Boolean = false,
         /** The demo radio's GPS is on but has no fix: no position of its own (B-user-2). */
         val radioNoFix: Boolean = false,
+        /** The demo radio answers OK to one kind of setting and keeps its old value
+         * (`preferences`, `power`, `params`, `position`, `gps`, `autoadd`, `name`; B-user-5). */
+        val radioIgnores: String? = null,
+        /** `power`: the demo radio answers ERR to transmit power changes (D-4). */
+        val radioRefuses: String? = null,
+        /** The demo radio holds its answers for this many seconds of the demo's time (D-9). */
+        val radioSlow: Int = 0,
     )
 
     /** Why our identity cannot be used: [IdentityProblemScreen] shows instead of the app. */
@@ -221,18 +229,39 @@ class AppModel(val app: Application) {
     var savedRadios by mutableStateOf(listOf<SavedRadio>())
     /** What the radio reported of its settings (protocol §1.1), read again after each change. */
     var radioSettings by mutableStateOf<RadioSettings?>(null)
-    /** Why the radio did not take a setting, for a dialog. */
+    /** Why a setting could not be sent (out of range, no radio), for a dialog. */
     var radioError by mutableStateOf<String?>(null)
+    /** Each radio setting row the user changed: waiting (outcome null) or what became of it,
+     * and when (B-user-5). */
+    var radioRows by mutableStateOf(mapOf<String, RadioRowState>())
+    /** The radio's settings with the values asked for while they wait, else null: the screen
+     * shows these until the radio's come back (B-user-5). */
+    var radioAsked by mutableStateOf<RadioSettings?>(null)
+    /** The row each kind of setting was last changed from. */
+    private val radioRowOf = mutableMapOf<RadioSetting, String>()
+
+    /** A radio setting row's state: waiting for the radio, or its outcome since [atMs]. */
+    data class RadioRowState(val outcome: SettingOutcome?, val atMs: Long)
     /** Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it. */
     var linkRefusals by mutableStateOf(0)
 
-    /** Changes one of the radio's settings (ADR-0032); a refusal shows as [radioError]. */
-    fun radioSet(change: () -> Unit) {
+    /** Changes one of the radio's settings (ADR-0032) from [row]: the row waits, showing the
+     * value [asked] for, until the radio's outcome (B-user-5). One that cannot be sent shows as
+     * [radioError]. */
+    fun radioSet(setting: RadioSetting, row: String, asked: (RadioSettings) -> RadioSettings, change: () -> Unit) {
         try {
             change()
+            radioRowOf[setting] = row
+            radioRows = radioRows + (row to RadioRowState(null, wallNow()))
+            (radioAsked ?: radioSettings)?.let { radioAsked = asked(it) }
         } catch (e: LichenException) {
             radioError = e.display(app.resources)
         }
+    }
+
+    /** A row's outcome, read: it goes. */
+    fun clearRadioRow(row: String) {
+        if (radioRows[row]?.outcome != null) radioRows = radioRows - row
     }
     var groups by mutableStateOf(listOf<GroupInfo>())
 
@@ -777,6 +806,11 @@ class AppModel(val app: Application) {
             if (debug.marcRepeater) net.marcAsRepeater()
             // Debug `radioNoFix`: the radio's GPS on, without a fix (indoors).
             if (debug.radioNoFix) net.gpsWithoutFix()
+            // Debug `radioIgnores`, `radioRefuses`, `radioSlow`: a radio that keeps its old value,
+            // refuses the power, answers late (B-user-5, D-4, D-9).
+            debug.radioIgnores?.let { net.ignoreSettings(it) }
+            if (debug.radioRefuses == "power") net.refuseTxPower()
+            if (debug.radioSlow > 0) net.holdReplies(debug.radioSlow.toULong())
         }
         isDemo = true
         radioState = RadioState.Connected("ThinkNode M5")
@@ -1090,14 +1124,20 @@ class AppModel(val app: Application) {
                 }
             }
             is LichenEvent.IdentityConflict -> conflicts = conflicts + (e.node.hex() to e.identity)
+            is LichenEvent.RadioOutcome -> {
+                // What became of a setting (B-user-5): said on its row. A contact added from a
+                // link that the radio did not add (§16.6) is said on Add a contact.
+                val o = e.outcome
+                if (o.setting == RadioSetting.CONTACT) {
+                    if (o.outcome == SettingOutcome.REFUSED) linkRefusals++
+                } else {
+                    radioRowOf[o.setting]?.let { row -> radioRows = radioRows + (row to RadioRowState(o.outcome, wallNow())) }
+                }
+                // Nothing waits any more: the radio's own values.
+                if (core.radioPending().isEmpty()) radioAsked = null
+                radioSettings = core.radioSettings()
+            }
             LichenEvent.RadioSettings -> {
-                // A setting the radio answered with an error (D-4): said on its settings screen;
-                // the value shown stays the radio's.
-                // A contact added from a link that the radio did not add (§16.6) is said on Add a
-                // contact, not as a setting.
-                val refused = core.takeRadioRefusals()
-                if (RadioSetting.CONTACT in refused) linkRefusals++
-                if (refused.any { it != RadioSetting.CONTACT }) radioError = res.getString(R.string.radio_refused)
                 // Read again after a change (ADR-0032): the header follows the radio's parameters.
                 val r = core.radioSettings()
                 radioSettings = r

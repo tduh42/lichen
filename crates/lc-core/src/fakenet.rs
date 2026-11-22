@@ -84,6 +84,13 @@ pub struct FakeSettings {
     /// `Some` for a board with a GPS: whether it is on.
     pub gps: Option<bool>,
     pub autoadd: (u8, u8),
+    /// A command code the companion answers with ERR 6 (§1.1: a setting it refuses).
+    pub refuse: Option<u8>,
+    /// A command code it answers OK without applying it (§1.1: the read-back still shows
+    /// the old value, B-user-5).
+    pub ignore: Option<u8>,
+    /// A command code it never answers.
+    pub silent: Option<u8>,
 }
 
 /// One simulated node.
@@ -1515,6 +1522,16 @@ impl Net {
         };
         let (key, prv, name) = (node.key, node.prv, node.name.clone());
         let (tx_dbm, noise, last_rx) = (node.tx_dbm, node.noise_dbm, node.last_rx);
+        let s = &node.settings;
+        if s.refuse == Some(code) {
+            return vec![vec![resp::ERR, 6]];
+        }
+        if s.ignore == Some(code) {
+            return vec![vec![resp::OK]];
+        }
+        if s.silent == Some(code) {
+            return vec![];
+        }
         match code {
             cmd::APP_START => {
                 let s = self

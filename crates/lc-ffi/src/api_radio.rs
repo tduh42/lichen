@@ -131,6 +131,47 @@ pub enum RadioSetting {
     Contact,
 }
 
+/// What became of a setting sent to the radio (§1.1, B-user-5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SettingOutcome {
+    /// The radio took it and reports the value asked for: "Saved on the radio".
+    Saved,
+    /// The radio answered, but still reports its old value: it kept it.
+    NotKept,
+    /// The radio refused it.
+    Refused,
+    /// The radio did not answer in time, or went away.
+    NoAnswer,
+}
+
+impl From<lc_core::radio::SettingOutcome> for SettingOutcome {
+    fn from(o: lc_core::radio::SettingOutcome) -> Self {
+        use lc_core::radio::SettingOutcome as O;
+        match o {
+            O::Saved => Self::Saved,
+            O::NotKept => Self::NotKept,
+            O::Refused => Self::Refused,
+            O::NoAnswer => Self::NoAnswer,
+        }
+    }
+}
+
+/// A setting's outcome.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Record)]
+pub struct RadioOutcome {
+    pub setting: RadioSetting,
+    pub outcome: SettingOutcome,
+}
+
+impl From<lc_core::radio::RadioOutcome> for RadioOutcome {
+    fn from(o: lc_core::radio::RadioOutcome) -> Self {
+        Self {
+            setting: o.setting.into(),
+            outcome: o.outcome.into(),
+        }
+    }
+}
+
 impl From<lc_core::radio::RadioSetting> for RadioSetting {
     fn from(s: lc_core::radio::RadioSetting) -> Self {
         use lc_core::radio::RadioSetting as S;
@@ -152,13 +193,24 @@ impl From<lc_core::radio::RadioSetting> for RadioSetting {
 
 #[uniffi::export]
 impl LichenCore {
-    /// The settings the radio itself refused (it answered ERR) since the last call, oldest
-    /// first: a `RadioSettings` event follows each, the value shown stays the radio's, and the
-    /// app says the setting was not changed (§1.1, QA bug B-ios-10).
-    pub fn take_radio_refusals(&self) -> Vec<RadioSetting> {
+    /// What became of the settings sent since the last call, oldest first (§1.1, B-user-5):
+    /// saved, not kept, refused or unanswered. A `RadioOutcome` event comes with each; the
+    /// settings shown stay the radio's.
+    pub fn take_radio_outcomes(&self) -> Vec<RadioOutcome> {
         self.lock()
             .core
-            .take_radio_refusals()
+            .take_radio_outcomes()
+            .into_iter()
+            .map(RadioOutcome::from)
+            .collect()
+    }
+
+    /// The settings sent that wait for their outcome, oldest first: the apps show the value
+    /// asked for, with a spinner, until it comes.
+    pub fn radio_pending(&self) -> Vec<RadioSetting> {
+        self.lock()
+            .core
+            .radio_pending()
             .into_iter()
             .map(RadioSetting::from)
             .collect()

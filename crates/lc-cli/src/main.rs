@@ -490,6 +490,7 @@ fn describe(core: &Core, e: &Event) -> String {
         Event::RequestAccepted { node, .. } => {
             format!("{}: request accepted", name_of(core, node))
         }
+        Event::RadioOutcome(o) => format!("radio setting {:?}: {:?}", o.setting, o.outcome),
     }
 }
 

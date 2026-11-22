@@ -224,6 +224,9 @@ class MainActivity : FragmentActivity() {
             autoFull = e.getBoolean("autoFull"),
             marcRepeater = e.getBoolean("marcRepeater"),
             radioNoFix = e.getBoolean("radioNoFix"),
+            radioIgnores = e.getString("radioIgnores"),
+            radioRefuses = e.getString("radioRefuses"),
+            radioSlow = e.getInt("radioSlow"),
             // Screenshots and tests skip the welcome screens unless asked for them.
             onboarding = when {
                 e.containsKey("onboarding") -> e.getBoolean("onboarding")

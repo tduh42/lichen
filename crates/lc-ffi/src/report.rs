@@ -88,6 +88,12 @@ impl Diag {
         let (what, value): (&'static str, _) = match e {
             Event::Progress { .. } => return,
             Event::RadioSettings => ("radio settings read", None),
+            Event::RadioOutcome(o) => match o.outcome {
+                lc_core::radio::SettingOutcome::Saved => ("radio setting saved", None),
+                lc_core::radio::SettingOutcome::NotKept => ("radio setting not kept", None),
+                lc_core::radio::SettingOutcome::Refused => ("radio setting refused", None),
+                lc_core::radio::SettingOutcome::NoAnswer => ("radio setting unanswered", None),
+            },
             Event::Connected { .. } => ("radio session started", None),
             Event::ContactsUpdated => ("contacts updated", None),
             Event::IdentityLearned { changed: false, .. } => ("identity learned", None),

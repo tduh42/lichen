@@ -21,7 +21,7 @@ found gets a test that fails before its fix, at the lowest layer that shows it.
 
 Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`).
 
-**Coverage:** 82 of 84 scenarios have at least one automated test (FFI 74, iOS 80, Android 80, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
+**Coverage:** 83 of 85 scenarios have at least one automated test (FFI 75, iOS 81, Android 81, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
 
 ## 1. Onboarding and identity
 
@@ -49,6 +49,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 | RL-8 | Radio clock set at connection | The radio's time follows the phone's | | lc-core tests/radio.rs: connecting_sets_the_radios_clock |
 | RL-9 | Contact list read whole / cut short | All contacts, asked again when records are missing | | lc-core src/core.rs: a_contact_list_cut_short_still_counts, records_lost_before_the_end_are_asked_for_again<br>· real radio: every contact of a real companion |
 | RL-10 | Send an advert | A choice, nearby or the whole mesh, each saying what it reaches; what it carries (the name, the position when advertised); the time and reach once the radio answered; not sent without a radio | | iOS RadioLinkTests: testRL10_SendAnAdvert, testRL10_AdvertCarriesThePosition<br>Android RadioLinkTest.RL_10_sendAnAdvert (+fr) |
+| RL-11 | Each radio setting says what happened | On its row: the value asked with a spinner while it waits; then "Saved on the radio", or the radio kept its old value, refused it, or did not answer, the radio's value shown | `-screen radio -radioIgnores preferences`, `-radioRefuses power`, `-radioSlow 20` | FFI rl_11_each_setting_says_what_happened<br>iOS RadioLinkTests: testRL11_ASettingSavedOnTheRadio, testRL11_ASettingTheRadioDoesNotKeep<br>Android RadioLinkTest: RL_11_eachSettingSaysWhatHappened (+fr), RL_11_aSettingTheRadioDoesNotKeep (+fr) |
 
 ## 3. Contacts, nodes, rooms, repeaters, requests, blocks
 

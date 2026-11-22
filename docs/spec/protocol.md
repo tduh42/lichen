@@ -53,7 +53,12 @@ The settings lichen reads and sets on the companion, as firmware v1.18 parses th
 
 Commands go one at a time, each answered within 5 s or given up. `APP_START` not answered in time is sent again, after the commands waiting, until `SELF_INFO` comes: a late `SELF_INFO` answers nothing any more and is dropped, and without it the node, its settings and the connection itself are unknown. Until then the settings are marked not read, and the apps say they are being read rather than show zeros (QA of 2026-11-20, B-ios-15).
 
-A setting lichen checks and sends may still be refused by the radio (`ERR`: a board without a GPS, a firmware that does not take it): the app is told which one, and the value it shows stays the radio's, read again after every setting (QA of 2026-11-19, B-ios-10).
+Every setting lichen checks and sends has an outcome, shown on its row, and the value shown is the radio's, read again after every setting (QA of 2026-11-19, B-ios-10; 2026-11-22, B-user-5):
+- **pending** from the command until its outcome: the app shows the value asked for, with a spinner;
+- **saved**: `OK`, and the read that follows reports the value asked for. Each field asked is compared: frequency, bandwidth, SF and CR; the transmit power; the advert's position; manual add, each telemetry mode, the position policy and extra ACKs (`SELF_INFO`); the board setting (`GET_CUSTOM_VARS`); the auto-add mask and hops (`GET_AUTOADD_CONFIG`); the name (`SELF_INFO`, read again after `SET_ADVERT_NAME`). The Bluetooth PIN, which nothing reports, is saved on `OK`;
+- **not kept**: `OK`, but the read still reports another value. The radio kept its own (a firmware that answers without applying it, a GPS fix over the advert's position);
+- **refused**: `ERR` (a board without a GPS, a firmware that does not take it);
+- **no answer**: nothing within the command's 5 s, the read that should follow unanswered, or the radio gone first.
 
 **Our advert, asked for by the user** (Settings › Send an advert): zero-hop ("Nearby") or flooded ("Whole mesh"), the user's choice, told what it reaches and what it carries (the name; the position when position in adverts is on and the radio has one). The app is told the radio's answer: sent (`OK`), or not sent (`ERR`, no answer within 5 s, the radio gone before it answered, or no radio at all); it says which, never "sent" on the tap alone (QA of 2026-11-21, B-user-4, D-14).
 

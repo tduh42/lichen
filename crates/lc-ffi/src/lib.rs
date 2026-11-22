@@ -72,7 +72,9 @@ pub use api_mesh::{
     TraceInfo, TraceLeg, TraceState, meshcore_contact_code, read_meshcore_contact_code,
     read_meshcore_link,
 };
-pub use api_radio::{RadioSetting, RadioSettings, RadioVar, Telemetry};
+pub use api_radio::{
+    RadioOutcome, RadioSetting, RadioSettings, RadioVar, SettingOutcome, Telemetry,
+};
 pub use api_radios::{LinkKind, SavedRadio};
 pub use api_requests::{IdentityRequest, RequestLine};
 pub use api_server::{ConsoleEntry, NeighbourInfo, ServerInfo, ServerLogin, ServerStats};

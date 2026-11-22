@@ -238,6 +238,8 @@ pub struct Outbound {
 pub enum Event {
     /// The radio's settings changed, or were read again (§1.1, [`Core::radio_settings`]).
     RadioSettings,
+    /// What became of a setting sent to the radio (§1.1, [`Core::take_radio_outcomes`]).
+    RadioOutcome(crate::radio::RadioOutcome),
     /// The companion answered `APP_START`.
     Connected {
         key: PubKey,
@@ -863,8 +865,10 @@ pub struct Core {
     contact_read: ContactRead,
     /// The radio's clock is still to be set for this connection, once ours is known (§1).
     radio_time_owed: bool,
-    /// Settings the radio refused since the app last asked (§1.1).
-    pub(crate) radio_refusals: Vec<crate::radio::RadioSetting>,
+    /// Settings sent that wait for their outcome (§1.1).
+    pub(crate) radio_pending: Vec<crate::radio::PendingSetting>,
+    /// Outcomes of settings since the app last asked (§1.1).
+    pub(crate) radio_outcomes: Vec<crate::radio::RadioOutcome>,
     awaiting: Option<(Expect, Millis)>,
     /// Plain MeshCore text (§15).
     pub(crate) plain: crate::plain::Plain,
@@ -998,7 +1002,8 @@ impl Core {
             contacts_reading: (None, 0),
             contact_read: ContactRead::default(),
             radio_time_owed: false,
-            radio_refusals: Vec::new(),
+            radio_pending: Vec::new(),
+            radio_outcomes: Vec::new(),
             awaiting: None,
             plain: crate::plain::Plain::default(),
             events: VecDeque::new(),
@@ -1498,6 +1503,8 @@ impl Core {
         }
         self.commands.clear();
         self.awaiting = None;
+        // The settings sent: no answer now (§1.1).
+        self.settings_unread(None);
         self.plain_disconnected();
         self.mesh_disconnected();
         self.servers_disconnected();
@@ -2016,6 +2023,18 @@ impl Core {
             if expect == Expect::Contacts {
                 self.contacts_cut_short(now);
             }
+            // A setting, or the read that tells what the radio kept, unanswered (§1.1).
+            match expect {
+                Expect::Setting(s) => {
+                    self.setting_answered(s, Some(crate::radio::SettingOutcome::NoAnswer));
+                }
+                Expect::SelfInfo if self.online => {
+                    self.settings_unread(Some(crate::radio::ReadBack::SelfInfo));
+                }
+                Expect::CustomVars => self.settings_unread(Some(crate::radio::ReadBack::Vars)),
+                Expect::Autoadd => self.settings_unread(Some(crate::radio::ReadBack::Autoadd)),
+                _ => {}
+            }
             // Our advert, unanswered: not sent, as far as we can tell (§1.1).
             if let Expect::Advert(flood) = expect {
                 self.events.push_back(Event::Advert { flood, sent: false });
@@ -2286,6 +2305,8 @@ impl Core {
                 self.settings.lat_e6 = si.lat_e6;
                 self.settings.lon_e6 = si.lon_e6;
                 self.settings.other = si.other;
+                // What the settings sent became (§1.1).
+                self.settings_read(crate::radio::ReadBack::SelfInfo);
                 if !again {
                     // A radio switched off may have lost its clock (the ThinkNode M5 has no
                     // backup cell): ours sets it, now or as soon as we know the time.
@@ -2363,6 +2384,7 @@ impl Core {
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
             Response::Ok => match expect {
                 Some(Expect::TxPower(dbm)) => self.search_power_applied(dbm),
+                Some(Expect::Setting(s)) => self.setting_answered(s, None),
                 Some(Expect::Advert(flood)) => {
                     self.events.push_back(Event::Advert { flood, sent: true });
                 }
@@ -2384,7 +2406,9 @@ impl Core {
                 Some(Expect::Trace(tag)) => self.on_trace_refused(tag),
                 Some(Expect::Server) => self.on_server_refused(),
                 Some(Expect::Cli(node)) => self.on_cli_refused(&node),
-                Some(Expect::Setting(s)) => self.radio_refused(s),
+                Some(Expect::Setting(s)) => {
+                    self.setting_answered(s, Some(crate::radio::SettingOutcome::Refused));
+                }
                 Some(Expect::LinkImported(key)) => self.link_not_imported(key),
                 Some(Expect::LinkAdded(key)) => self.link_not_added(key),
                 Some(Expect::Advert(flood)) => {

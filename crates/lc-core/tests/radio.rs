@@ -145,3 +145,136 @@ fn connecting_sets_the_radios_clock() {
         "a later clock is kept"
     );
 }
+
+// ----- what became of a setting (§1.1, B-user-5) -------------------------------------------
+
+use lc_core::radio::{RadioOutcome, RadioSetting, SettingOutcome};
+use lc_meshcore::codes::cmd;
+
+fn outcomes(net: &mut Net, a: usize) -> Vec<RadioOutcome> {
+    net.with_core(a, |c, _| c.take_radio_outcomes()).unwrap()
+}
+
+fn pending(net: &Net, a: usize) -> Vec<RadioSetting> {
+    net.with_core_ref(a, |c| c.radio_pending()).unwrap()
+}
+
+fn outcome(setting: RadioSetting, outcome: SettingOutcome) -> RadioOutcome {
+    RadioOutcome { setting, outcome }
+}
+
+fn telemetry_on() -> OtherParams {
+    OtherParams {
+        telemetry: 2,
+        ..OtherParams::default()
+    }
+}
+
+/// Kept: OK, and the read-back has the value asked for. Pending until then.
+#[test]
+fn a_setting_the_radio_keeps_is_saved() {
+    let (mut net, a) = connected(Some(false));
+    net.with_core(a, |c, _| c.set_other_params(telemetry_on()))
+        .unwrap()
+        .unwrap();
+    assert_eq!(pending(&net, a), [RadioSetting::Preferences]);
+    assert!(outcomes(&mut net, a).is_empty());
+    net.run_until(net.now + 3_000, |_| false);
+    assert!(pending(&net, a).is_empty());
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::Preferences, SettingOutcome::Saved)]
+    );
+    assert!(drain(&mut net, a).contains(&Event::RadioOutcome(outcome(
+        RadioSetting::Preferences,
+        SettingOutcome::Saved
+    ))));
+    assert!(outcomes(&mut net, a).is_empty(), "told once");
+    // A board setting, read back with the board's list; the auto-add with its own read.
+    net.with_core(a, |c, _| c.set_radio_var("gps", "1"))
+        .unwrap()
+        .unwrap();
+    net.with_core(a, |c, _| c.set_autoadd(0x06, 2))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 5_000, |_| false);
+    assert_eq!(
+        outcomes(&mut net, a),
+        [
+            outcome(RadioSetting::Gps, SettingOutcome::Saved),
+            outcome(RadioSetting::Autoadd, SettingOutcome::Saved)
+        ]
+    );
+}
+
+/// OK, but the read-back still shows the old value: not kept, and the settings shown are the
+/// radio's (what the user saw as "nothing happens", B-user-5).
+#[test]
+fn a_setting_answered_but_not_kept() {
+    let (mut net, a) = connected(Some(false));
+    net.nodes[a].settings.ignore = Some(cmd::SET_OTHER_PARAMS);
+    net.with_core(a, |c, _| c.set_other_params(telemetry_on()))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 3_000, |_| false);
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::Preferences, SettingOutcome::NotKept)]
+    );
+    let r = net
+        .with_core_ref(a, |c| c.radio_settings().clone())
+        .unwrap();
+    assert_eq!(r.other, OtherParams::default());
+    // The name too, read back after a rename.
+    net.nodes[a].settings.ignore = Some(cmd::SET_ADVERT_NAME);
+    net.with_core(a, |c, now| c.set_node_name("alice 2", now))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 3_000, |_| false);
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::Name, SettingOutcome::NotKept)]
+    );
+    assert_eq!(
+        net.with_core_ref(a, |c| c.node_name().to_owned()).unwrap(),
+        "alice"
+    );
+}
+
+/// ERR: refused. Nothing: no answer, once the command's wait is over.
+#[test]
+fn a_setting_refused_or_unanswered() {
+    let (mut net, a) = connected(Some(false));
+    net.nodes[a].settings.refuse = Some(cmd::SET_RADIO_TX_POWER);
+    net.with_core(a, |c, _| c.set_tx_power(10))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 3_000, |_| false);
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::TxPower, SettingOutcome::Refused)]
+    );
+    net.nodes[a].settings.silent = Some(cmd::SET_CUSTOM_VAR);
+    net.with_core(a, |c, _| c.set_radio_var("gps", "1"))
+        .unwrap()
+        .unwrap();
+    net.run_until(net.now + 3_000, |_| false);
+    assert_eq!(pending(&net, a), [RadioSetting::Gps], "still waiting");
+    net.run_until(net.now + 5_000, |_| false);
+    assert!(pending(&net, a).is_empty());
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::Gps, SettingOutcome::NoAnswer)]
+    );
+    // The radio gone: what waited has no answer.
+    net.nodes[a].settings.silent = None;
+    net.with_core(a, |c, _| c.set_other_params(telemetry_on()))
+        .unwrap()
+        .unwrap();
+    net.disconnect(a);
+    net.run_until(net.now + 1_000, |_| false);
+    assert_eq!(
+        outcomes(&mut net, a),
+        [outcome(RadioSetting::Preferences, SettingOutcome::NoAnswer)]
+    );
+}

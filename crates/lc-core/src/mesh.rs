@@ -112,7 +112,7 @@ pub(crate) struct Mesh {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MeshAdd {
     /// Sent to the radio: the contact comes as any other (`ContactsUpdated`), or the radio's
-    /// refusal as a refused setting ([`crate::radio::RadioSetting::Contact`]).
+    /// refusal as a refused setting ([`crate::radio::RadioSetting::Contact`], outcome `Refused`).
     Sent,
     /// The radio already reported it: nothing sent.
     AlreadyOnTheRadio,
@@ -293,7 +293,10 @@ impl Core {
     /// The radio did not add the node of a link: refused, as a setting it refuses (§1.1).
     pub(crate) fn link_not_added(&mut self, key: PubKey) {
         self.mesh.adding.remove(&key);
-        self.radio_refused(crate::radio::RadioSetting::Contact);
+        self.radio_outcome(
+            crate::radio::RadioSetting::Contact,
+            crate::radio::SettingOutcome::Refused,
+        );
     }
 
     /// The radio is gone: a trace on its way can no longer come back (pushes are lost).
