@@ -130,7 +130,14 @@ fun RootScreen(model: AppModel) {
                     pair = { nav.navigate("pairing") },
                     addContact = { nav.navigate("contact") },
                     search = { nav.navigate("search-messages") },
+                    newGroup = { nav.navigate("new-group") },
                 )
+            }
+            // New conversation › New group (F-4): once created, its chat replaces this screen.
+            composable("new-group") {
+                NewGroupScreen(model, back = { nav.popBackStack() }) {
+                    nav.navigate("chat/${it.route}") { popUpTo("messages") }
+                }
             }
             composable("search-messages") {
                 SearchMessagesScreen(model, back = { nav.popBackStack() }) { chat, id ->

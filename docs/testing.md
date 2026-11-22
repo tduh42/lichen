@@ -23,7 +23,7 @@ found gets a test that fails before its fix, at the lowest layer that shows it.
 
 Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`).
 
-**Coverage:** 83 of 85 scenarios have at least one automated test (FFI 75, iOS 81, Android 81, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
+**Coverage:** 84 of 86 scenarios have at least one automated test (FFI 75, iOS 82, Android 82, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
 
 ## 1. Onboarding and identity
 
@@ -69,6 +69,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 | CT-10 | Block and unblock a contact | Their messages stop and come back; Settings › Blocked lists them | | FFI ct_10_block_and_unblock_a_contact, ct_10_our_text_on_the_air_at_the_block<br>iOS ContactsTests.testCT10_BlockAndUnblock<br>Android ContactsTest.CT_10_blockAndUnblock (+fr) |
 | CT-11 | A contact the radio files as a non-person | Their conversation stays in Messages under their name | `-marcRepeater YES` | FFI ct_11_a_person_the_radio_files_as_a_repeater<br>iOS ContactsTests.testCT11_PersonFiledAsARepeaterKeepsTheirRow<br>Android ContactsTest.CT_11_contactFiledAsNonPerson |
 | CT-12 | Add a MeshCore contact from a link (paste, scan) | The stock app's signed link or a contact code adds the node to the radio: a person among Contacts, a repeater or room among the nodes; one already there opens its chat; a changed link is refused | | FFI ct_12_add_a_meshcore_contact_from_a_link<br>iOS ContactsTests: testCT12_AddAMeshCoreContactFromASignedLink, testCT12_AChangedLinkIsRefused, testCT12_AContactCodeIsAddedUnsigned, testCT12_ALinkWithNoRadio<br>Android ContactsTest: CT_12_addFromASignedLink (+fr), CT_12_changedLinkRefused (+fr), CT_12_contactCodeAddedUnsigned (+fr), CT_12_linkWithNoRadio |
+| CT-13 | New conversation when the radio knows many people | New group, Join a channel, Add a contact and the channels (Public first) are on the first screen, the people last; the search finds people, channels and groups; `#tag` joins that hashtag channel and opens it (the channel itself once followed); the people filter (All, lichen, MeshCore, with counts) shows only those; New group is its own screen (name, lichen contacts with a search, Create) | `-manyContacts 200` | iOS ContactsTests: testCT13_NewConversationWithManyPeople, testCT13_HashtagJoinsAndOpens, testCT13_NewGroupScreen<br>Android ContactsTest: CT_13_newConversationWithManyPeople (+fr, fr dark, dark), CT_13_hashtagJoinsAndOpens (+fr), CT_13_newGroupScreen (+fr) |
 
 ## 4. Direct lichen chats
 

@@ -2251,6 +2251,16 @@
         }
       }
     },
+    "All (%lld)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tous (%lld)"
+          }
+        }
+      }
+    },
     "Allow": {
       "localizations": {
         "fr": {
@@ -5221,6 +5231,16 @@
         }
       }
     },
+    "Join %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rejoindre %@"
+          }
+        }
+      }
+    },
     "Join %@?": {
       "localizations": {
         "fr": {
@@ -6091,6 +6111,16 @@
         }
       }
     },
+    "MeshCore (%lld)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MeshCore (%lld)"
+          }
+        }
+      }
+    },
     "MeshCore channel": {
       "localizations": {
         "fr": {
@@ -6897,6 +6927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Personne n’est bloqué."
+          }
+        }
+      }
+    },
+    "Nobody matches.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Personne ne correspond."
           }
         }
       }
@@ -8131,16 +8171,6 @@
         }
       }
     },
-    "Radios your node has heard. With someone who has lichen, the chat is end-to-end encrypted; with someone who only has a MeshCore app, it is a MeshCore chat, readable by the radios.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les radios que ton nœud a entendues. Avec quelqu’un qui a lichen, la discussion est chiffrée de bout en bout ; avec quelqu’un qui n’a qu’une appli MeshCore, c’est une discussion MeshCore, lisible par les radios."
-          }
-        }
-      }
-    },
     "React": {
       "localizations": {
         "fr": {
@@ -8857,6 +8887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rechercher dans les messages"
+          }
+        }
+      }
+    },
+    "Search people, channels and groups": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher des personnes, canaux et groupes"
           }
         }
       }
@@ -12437,6 +12477,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "lichen"
+          }
+        }
+      }
+    },
+    "lichen (%lld)": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "lichen (%lld)"
+          }
+        }
+      }
+    },
+    "lichen chats are end-to-end encrypted; MeshCore chats can be read by the radios.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les discussions lichen sont chiffrées de bout en bout ; les discussions MeshCore sont lisibles par les radios."
           }
         }
       }

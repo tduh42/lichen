@@ -1,6 +1,9 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasScrollAction
@@ -567,5 +570,144 @@ class ContactsTest : UiTest() {
 
         /** A contact code (mesh.toml, the F-1 vectors): unsigned. */
         const val CONTACT_CODE = "meshcore://contact/add?name=Example+Contact&public_key=9cd8fcf22a47333b591d96a2b848b73f457b1bb1a3ea2453a885f9e5787765b1&type=1"
+    }
+
+    // CT-13: New conversation when the radio knows many people (F-4, `manyContacts`).
+
+    /** The New conversation sheet's list. */
+    private val sheet get() = hasScrollAction() and hasAnyDescendant(hasText(str(R.string.contacts)))
+
+    /** That text in the sheet's list (not in Messages behind it). */
+    private fun inSheet(t: String) = compose.onAllNodes(hasText(t) and hasAnyAncestor(sheet), useUnmergedTree = true)
+
+    private fun shownInSheet(t: String) = inSheet(t).fetchSemanticsNodes().isNotEmpty()
+
+    /** The screen as it is, the sheet on top, saved as `<en|fr>[-dark]-name.png` in the folder
+     * `LICHEN_SHOTS` names, when it is set (screenshots for review). */
+    private fun shot(name: String) {
+        val dir = System.getenv("LICHEN_SHOTS") ?: return
+        val config = context.resources.configuration
+        val look = config.locales[0].language + if (config.isNightModeActive) "-dark" else ""
+        // The sheet's own window when it is open (a dialog: capturing its node gives the
+        // activity's pixels under Robolectric), else the activity's.
+        val dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog()?.takeIf { it.isShowing }
+        val image = dialog?.window?.decorView?.let { view ->
+            android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+                .also { view.draw(android.graphics.Canvas(it)) }
+        } ?: compose.onAllNodes(isRoot()).onFirst().captureToImage().asAndroidBitmap()
+        java.io.File(dir).mkdirs()
+        java.io.FileOutputStream(java.io.File(dir, "$look-$name.png")).use {
+            image.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+    }
+
+    /** The demo radio with 200 more MeshCore people, and Camille's identity known. */
+    private fun launchMany() {
+        launch("demo" to true, "manyContacts" to 200)
+        advanceUntil("the 200 people", 60) { model.contacts.count { it.name.startsWith("Radio ") } == 200 }
+        advanceUntil("Camille's identity", 120) { model.contacts.any { it.name == "Camille" && it.identity != null } }
+    }
+
+    /** CT-13: with 200 people, the actions and the channels come first, on the first screen;
+     * the filter shows MeshCore people only, then lichen people only. */
+    @Test
+    fun CT_13_newConversationWithManyPeople() = manyPeople()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_13_newConversationWithManyPeople_fr() = manyPeople()
+
+    @Test
+    @Config(qualifiers = "+night")
+    fun CT_13_newConversationWithManyPeople_dark() = manyPeople()
+
+    @Test
+    @Config(qualifiers = "+fr-night")
+    fun CT_13_newConversationWithManyPeople_frDark() = manyPeople()
+
+    private fun manyPeople() {
+        launchMany()
+        tapDesc(R.string.new_message)
+        // Its title, then, on the first screen, without scrolling: the actions and Public.
+        text(R.string.new_conversation).assertIsDisplayed()
+        for (t in listOf(str(R.string.new_group), str(R.string.join_a_channel), str(R.string.add_contact), "Public")) {
+            inSheet(t).onFirst().assertIsDisplayed()
+        }
+        shot("new-conversation")
+        val lichen = model.contacts.count { it.identity != null }
+        see(str(R.string.people_all, model.contacts.size))
+        // MeshCore people only.
+        tap(str(R.string.people_meshcore, model.contacts.size - lichen))
+        inSheet("Radio 001").onFirst().assertIsDisplayed()
+        shot("new-conversation-meshcore")
+        assertFalse("Camille among the MeshCore people", shownInSheet("Camille"))
+        // lichen people only.
+        tap(str(R.string.people_lichen, lichen))
+        inSheet("Camille").onFirst().assertIsDisplayed()
+        assertFalse("a MeshCore person among the lichen ones", shownInSheet("Radio 001"))
+    }
+
+    /** CT-13: `#tag` typed: "Join #tag" joins the hashtag channel and opens it; typed again, the
+     * row is that channel. */
+    @Test
+    fun CT_13_hashtagJoinsAndOpens() = hashtagJoins()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_13_hashtagJoinsAndOpens_fr() = hashtagJoins()
+
+    private fun hashtagJoins() {
+        launch("demo" to true)
+        // The radio's channels read (joining needs them): Public listed.
+        advanceUntil("the radio's channels") { model.channels.isNotEmpty() }
+        tapDesc(R.string.new_message)
+        inSheet("Public").onFirst().assertIsDisplayed()
+        // Not a hashtag (a space): no row to join.
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("#two words")
+        assertFalse(has(R.string.join_tag_channel, "#two"))
+        assertFalse(has(R.string.join_tag_channel, "#two words"))
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextReplacement("#Ridge")
+        tap(R.string.join_tag_channel, "#ridge")
+        advanceUntil("the channel joined", 10) { model.channels.any { it.name == "#ridge" } }
+        advanceUntil("its chat", 10) { has(R.string.message_placeholder) }
+        see("#ridge")
+        tapDesc(R.string.back)
+        tapDesc(R.string.new_message)
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("#ridge")
+        assertFalse("offered to join it again", has(R.string.join_tag_channel, "#ridge"))
+        // Once: on top, not again under the channels.
+        assertEquals(1, inSheet("#ridge").fetchSemanticsNodes().size)
+        shot("new-conversation-hashtag")
+        assertEquals(1, model.channels.count { it.name == "#ridge" })
+    }
+
+    /** CT-13: New group is its own screen: a name, a lichen contact picked from its search,
+     * Create; the group's chat opens with them in it. */
+    @Test
+    fun CT_13_newGroupScreen() = newGroupScreen()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_13_newGroupScreen_fr() = newGroupScreen()
+
+    private fun newGroupScreen() {
+        launchMany()
+        tapDesc(R.string.new_message)
+        tap(R.string.new_group)
+        // Its own screen: the sheet is gone.
+        assertFalse(has(str(R.string.people_all, model.contacts.size)))
+        compose.onNode(hasSetTextAction() and hasText(str(R.string.group_name))).performTextInput("Summit team")
+        // MeshCore people cannot be members: only lichen ones are listed.
+        assertFalse(has("Radio 001"))
+        compose.onNode(hasSetTextAction() and hasText(str(R.string.search_contacts))).performTextInput("Cam")
+        assertFalse(has("Julien"))
+        tap("Camille")
+        shot("new-group")
+        tap(R.string.create_group)
+        val g = model.groups.single { it.name == "Summit team" }
+        assertEquals(2, g.members.size)
+        assertTrue(g.members.any { it.name == "Camille" })
+        text(R.string.message_placeholder).assertIsDisplayed()
+        text("Summit team").assertIsDisplayed()
     }
 }

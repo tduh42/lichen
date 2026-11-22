@@ -159,6 +159,8 @@ class AppModel(val app: Application) {
         val groupInvitationDemo: Boolean = false,
         /** The demo radio's GPS is on but has no fix: no position of its own (B-user-2). */
         val radioNoFix: Boolean = false,
+        /** The demo radio also knows that many people with the stock MeshCore app (F-4). */
+        val manyContacts: Int = 0,
         /** The demo radio answers OK to one kind of setting and keeps its old value
          * (`preferences`, `power`, `params`, `position`, `gps`, `autoadd`, `name`; B-user-5). */
         val radioIgnores: String? = null,
@@ -806,6 +808,8 @@ class AppModel(val app: Application) {
             if (debug.marcRepeater) net.marcAsRepeater()
             // Debug `radioNoFix`: the radio's GPS on, without a fix (indoors).
             if (debug.radioNoFix) net.gpsWithoutFix()
+            // Debug `manyContacts`: that many more people with the stock MeshCore app (F-4).
+            if (debug.manyContacts > 0) net.manyContacts(debug.manyContacts.toUInt())
             // Debug `radioIgnores`, `radioRefuses`, `radioSlow`: a radio that keeps its old value,
             // refuses the power, answers late (B-user-5, D-4, D-9).
             debug.radioIgnores?.let { net.ignoreSettings(it) }

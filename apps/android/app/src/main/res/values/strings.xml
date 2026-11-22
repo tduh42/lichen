@@ -12,6 +12,7 @@
     <!-- Conversations -->
     <string name="new_short">New</string>
     <string name="new_message">New message</string>
+    <string name="new_conversation">New conversation</string>
     <plurals name="members_count">
         <item quantity="one">%1$d member</item>
         <item quantity="other">%1$d members</item>
@@ -818,7 +819,14 @@
     <string name="meshcore_not_lichen">MeshCore · not lichen-encrypted</string>
     <string name="meshcore_channel_not_lichen">MeshCore channel · not lichen-encrypted</string>
     <string name="meshcore_contact">MeshCore chat · not lichen-encrypted · %1$s</string>
-    <string name="contacts_meshcore_note">With someone who has lichen, the chat is end-to-end encrypted; with someone who only has a MeshCore app, it is a MeshCore chat, readable by the radios.</string>
+    <string name="contacts_meshcore_note">lichen chats are end-to-end encrypted; MeshCore chats can be read by the radios.</string>
+    <!-- New conversation (F-4) -->
+    <string name="search_new_chat">Search people, channels and groups</string>
+    <string name="join_tag_channel">Join %1$s</string>
+    <string name="people_all">All (%1$d)</string>
+    <string name="people_lichen">lichen (%1$d)</string>
+    <string name="people_meshcore">MeshCore (%1$d)</string>
+    <string name="nobody_matches">Nobody matches.</string>
     <string name="channel_kind_public">MeshCore channel · public</string>
     <string name="channel_kind_hashtag">MeshCore channel · hashtag</string>
     <string name="channel_kind_private">MeshCore channel · private</string>

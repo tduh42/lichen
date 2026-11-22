@@ -55,8 +55,9 @@ class GroupTest : UiTest() {
     private fun create() {
         launch("demo" to true)
         contact("Camille")
+        // New message › New group: its own screen (F-4).
         tapDesc(R.string.new_message)
-        scrollTo(hasSetTextAction() and hasText(str(R.string.group_name)))
+        tap(R.string.new_group)
         compose.onNode(hasSetTextAction() and hasText(str(R.string.group_name))).performTextInput("  Ridge walk  ")
         tap(R.string.create_group)
         // Its chat opens; the name trimmed.

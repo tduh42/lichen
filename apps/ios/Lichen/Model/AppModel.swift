@@ -701,6 +701,9 @@ final class AppModel {
         if answerAfter > 0 { net.answerAfter(seconds: UInt64(answerAfter)) }
         // -radioNoFix YES: the demo radio's GPS is on but has no fix, no position (B-user-2).
         if args.bool(forKey: "radioNoFix") { net.gpsWithoutFix() }
+        // -manyContacts N: the demo radio also knows N people with the stock MeshCore app (F-4).
+        let many = args.integer(forKey: "manyContacts")
+        if many > 0 { net.manyContacts(count: UInt32(many)) }
         // -demoSpeed N (up to 4): the demo network and the core run N times faster than the wall
         // clock (UI tests). Never outside the demo.
         let speed = min(4, max(1, args.integer(forKey: "demoSpeed")))

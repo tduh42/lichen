@@ -1258,6 +1258,34 @@ impl DemoNetwork {
         d.answer_after = seconds * SEC;
     }
 
+    /// The radio also knows `count` people with the stock MeshCore app, heard over the months
+    /// (debug `manyContacts`, F-4): a long list of people in New conversation. They are
+    /// records in its contact table only, outside the simulation, named "Radio 001" and so
+    /// on; their 1-byte hashes stay clear of the simulated nodes', so nothing on the air is
+    /// taken for theirs. At most 300 (the radio's table holds 350). Call right after `new`.
+    pub fn many_contacts(&self, count: u32) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let app = d.app;
+        let taken: Vec<u8> = (0..d.net.nodes.len()).map(|i| d.net.key(i)[0]).collect();
+        let (mut added, mut n) = (0u32, 0u32);
+        while added < count.min(300) {
+            n = n.wrapping_add(1);
+            let mut seed = [0xF4; 32];
+            seed[..4].copy_from_slice(&n.to_le_bytes());
+            let key = lc_meshcore::ecdh::public_key(&lc_meshcore::ecdh::expand_seed(&seed));
+            if key[0] == 0 || key[0] == 0xFF || taken.contains(&key[0]) {
+                continue;
+            }
+            added += 1;
+            let name = format!("Radio {added:03}");
+            d.net
+                .know_other(app, key, &name, lc_core::contact_kind::CHAT);
+        }
+    }
+
     /// The radio's GPS is on but has no fix (debug `radioNoFix`, B-user-2): indoors, it
     /// reports no position (0, 0) until the app gives its adverts one. Call right after `new`.
     pub fn gps_without_fix(&self) {
@@ -1541,6 +1569,51 @@ mod tests {
 mod skip {
     use super::*;
     use crate::{LichenCore, LichenEvent, Message};
+
+    /// `manyContacts 200` (F-4): the radio lists 200 more people, all MeshCore, each with a key
+    /// of its own; Camille's first message still comes.
+    #[test]
+    fn many_contacts_fill_the_radio() {
+        let demo = DemoNetwork::new();
+        demo.skip_ahead(20);
+        demo.quiet();
+        demo.many_contacts(200);
+        let core = LichenCore::new("t".into(), vec![13; 32], vec![113; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        let mut camille = false;
+        for step in 0..(60 * 10) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::Received {
+                    message: Message::Text { text, .. },
+                    ..
+                } = e
+                    && text.starts_with("Hi! I'm at the refuge")
+                {
+                    camille = true;
+                }
+            }
+        }
+        let radios: Vec<_> = core
+            .contacts()
+            .into_iter()
+            .filter(|c| c.name.starts_with("Radio "))
+            .collect();
+        assert_eq!(radios.len(), 200);
+        assert!(radios.iter().all(|c| c.person && c.identity.is_none()));
+        let keys: std::collections::HashSet<_> = radios.iter().map(|c| c.key.clone()).collect();
+        assert_eq!(keys.len(), 200, "two people share a key");
+        assert!(camille, "Camille's first message did not come");
+    }
 
     /// Brought sooner, the script's events keep their order and never pass the radio's start.
     #[test]

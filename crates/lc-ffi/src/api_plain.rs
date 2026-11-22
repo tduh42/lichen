@@ -185,3 +185,31 @@ impl Inner {
             .unwrap_or_default()
     }
 }
+
+/// The hashtag channel a search names (`#hiking`, `#Hiking`): its name as the radio keeps it,
+/// `#hiking`, or `None` when it is not a hashtag (§15.3: letters, digits and `-`). The apps'
+/// New conversation offers to join it (F-4).
+#[uniffi::export]
+pub fn hashtag_channel_name(tag: String) -> Option<String> {
+    lc_core::plain::hashtag(&tag).map(|(name, _)| name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hashtag_channel_name;
+
+    #[test]
+    fn hashtag_names_as_the_radio_keeps_them() {
+        assert_eq!(
+            hashtag_channel_name("#Hiking".into()).as_deref(),
+            Some("#hiking")
+        );
+        assert_eq!(
+            hashtag_channel_name(" ridge-2 ".into()).as_deref(),
+            Some("#ridge-2")
+        );
+        for bad in ["#", "", "#two words", "#été", "#a_b"] {
+            assert_eq!(hashtag_channel_name(bad.into()), None, "{bad}");
+        }
+    }
+}

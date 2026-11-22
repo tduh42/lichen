@@ -5,6 +5,14 @@ struct ConversationsView: View {
     @Environment(AppModel.self) private var model
     @State private var composing = false
     @State private var addingContact = false
+    /// New conversation › Add a contact: opened once that sheet is down.
+    @State private var addAfterCompose = false
+    /// The conversation New conversation chose: opened once that sheet is down, so that a
+    /// sheet dismissed with its New group screen pushed never overlaps the push (F-4).
+    @State private var openAfterCompose: ChatID?
+    /// New conversation › New group: its screen, pushed here once that sheet is down.
+    @State private var groupAfterCompose = false
+    @State private var creatingGroup = false
     @State private var path: [ChatID] = []
     @State private var deleting: Row?
     @State private var renaming: Data?
@@ -78,6 +86,13 @@ struct ConversationsView: View {
             // One view per conversation: a path that switches chats (a notification, a debug
             // retarget) starts the new one afresh, with its own history, draft and state.
             .navigationDestination(for: ChatID.self) { ChatView(chat: $0).id($0) }
+            // New group (F-4): once created, its chat replaces the screen.
+            .navigationDestination(isPresented: $creatingGroup) {
+                NewGroupView { chat in
+                    creatingGroup = false
+                    path = [chat]
+                }
+            }
             .sheet(isPresented: $searching) {
                 SearchMessagesView { chat, id in
                     searching = false
@@ -112,11 +127,24 @@ struct ConversationsView: View {
                 }
                 #endif
             }
-            .sheet(isPresented: $composing) {
-                NewChatSheet { chat in
-                    composing = false
+            .sheet(isPresented: $composing, onDismiss: {
+                if let chat = openAfterCompose {
+                    openAfterCompose = nil
                     path.append(chat)
                 }
+                if addAfterCompose {
+                    addAfterCompose = false
+                    addingContact = true
+                }
+                if groupAfterCompose {
+                    groupAfterCompose = false
+                    creatingGroup = true
+                }
+            }) {
+                NewChatSheet(open: { chat in
+                    openAfterCompose = chat
+                    composing = false
+                }, addContact: { addAfterCompose = true }, newGroup: { groupAfterCompose = true })
             }
             .sheet(isPresented: $addingContact) { NavigationStack { AddContactView() } }
             .sheet(isPresented: Binding(get: { model.showPairing }, set: { model.showPairing = $0 })) {

@@ -1,25 +1,16 @@
 package com.tduhamel.lichen.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Add
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.Tag
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -30,18 +21,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.ChannelKind
-import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.unhex
@@ -190,34 +178,4 @@ fun JoinChannelSheet(model: AppModel, dismiss: () -> Unit, open: (ChatId) -> Uni
         }
     }
     if (scanning) ScanChannelSheet(model, { scanning = false }) { dismiss(); open(it) }
-}
-
-/** The radio's channels in the new-conversation sheet, and the way to join one. */
-@Composable
-fun ChannelRows(channels: List<MeshChannel>, open: (ChatId) -> Unit, join: () -> Unit) {
-    val t = lichen
-    for (c in channels) {
-        Row(
-            Modifier.fillMaxWidth().clickable { open(ChatId.channel(c.id)) }.padding(vertical = 8.dp, horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Icon(
-                if (c.kind == ChannelKind.PUBLIC_CHANNEL) Icons.Outlined.Language else Icons.Outlined.Tag, null,
-                tint = t.tx2, modifier = Modifier.size(40.dp).background(t.s2, CircleShape).padding(9.dp),
-            )
-            Column {
-                Text(c.name, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx)
-                Text(channelKindLabel(LocalResources.current, c.kind), fontSize = 13.sp, color = t.tx2)
-            }
-        }
-    }
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = join).padding(vertical = 10.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Icon(Icons.Outlined.Add, null, tint = t.tx, modifier = Modifier.size(40.dp).padding(8.dp))
-        Text(stringResource(R.string.join_a_channel), fontSize = 16.sp, color = t.tx)
-    }
 }

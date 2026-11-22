@@ -160,15 +160,7 @@ final class SettingsTests: LichenUITest {
         wait(row("Marc"), 90, "no message from Marc").tap()
         send("Leaving at dawn")
         back()
-        button(tr("New message")).tap()
-        let name = app.textFields[tr("Group name")]
-        for _ in 0..<8 where !(name.exists && name.isHittable) { app.collectionViews.firstMatch.swipeUp() }
-        name.tap()
-        name.typeText("Ridge walk")
-        let create = button(tr("Create group"))
-        if !create.isHittable { reveal(create); pause(1) }
-        create.tap()
-        wait(composer, 10, "the group did not open")
+        createGroup("Ridge walk")
         back()
         // Its 24 words, then the backup.
         tab(.settings)
