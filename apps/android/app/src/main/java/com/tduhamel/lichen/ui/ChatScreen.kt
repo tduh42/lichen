@@ -56,6 +56,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
@@ -283,11 +285,17 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
     LaunchedEffect(fullAsked) {
         if (opened && fullAsked > 0 && atBottom) list.animateScrollToItem(rows - 1)
     }
-    // A message from a search: once the earlier pages holding it are in the list.
+    // A message from a search or a tapped quote: once the earlier pages holding it are in the
+    // list, two rows under the top for context; in a short view (the keyboard up), where those
+    // rows would push it out of sight, at the top itself (B-ios-29).
     LaunchedEffect(highlight, messages.size) {
         val h = highlight ?: return@LaunchedEffect
         if (messages.none { it.id == h }) return@LaunchedEffect
-        list.scrollToItem(maxOf(0, rowOf(model, chat, h, dividerBefore) - 2))
+        val row = rowOf(model, chat, h, dividerBefore)
+        list.scrollToItem(maxOf(0, row - 2))
+        val info = list.layoutInfo
+        val item = info.visibleItemsInfo.firstOrNull { it.index == row }
+        if (item == null || item.offset + item.size > info.viewportEndOffset) list.scrollToItem(row)
     }
     LaunchedEffect(highlight) {
         if (highlight != null) {
@@ -359,8 +367,9 @@ fun ChatScreen(model: AppModel, chat: ChatId, back: () -> Unit, details: () -> U
             }
         } else if (contactNode != null && model.asksToCompare(contactNode)) {
             // Their key, known and not verified: compare, on this phone too (B-user-1). At large
-            // text (font scale 1.5 and more) only its title and buttons, so the chat keeps room (D-10).
-            val compact = LocalDensity.current.fontScale >= 1.5f
+            // text (font scale 1.5 and more), and while the keyboard is up (B-ios-29's rule, on
+            // both apps), only its title and buttons, so the chat keeps room (D-10).
+            val compact = LocalDensity.current.fontScale >= 1.5f || imeUp()
             Box(Modifier.padding(horizontal = 14.dp).padding(top = 8.dp)) {
                 Banner(
                     BannerKind.WARN,
@@ -679,6 +688,11 @@ private fun FailureBanner(model: AppModel, m: StoredMessage, resend: () -> Unit)
         FailReason.EXPIRED -> Banner(BannerKind.WARN, stringResource(R.string.expired), stringResource(R.string.expired_note), action)
     }
 }
+
+/** The soft keyboard is up (its insets, as the system gives them to the window). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun imeUp(): Boolean = WindowInsets.isImeVisible
 
 /** "3 unread messages", before the first one that was unread when the chat opened. */
 @Composable

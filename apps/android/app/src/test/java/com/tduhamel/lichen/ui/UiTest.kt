@@ -86,6 +86,21 @@ abstract class UiTest {
         compose.waitForIdle()
     }
 
+    /** The soft keyboard up, [heightDp] tall, or down (0), as the system tells the window (its
+     * IME insets): Robolectric shows none by itself. The composer then rises above it and the
+     * screens see it up, as on a phone. */
+    fun keyboard(heightDp: Int) {
+        scenario!!.onActivity { a ->
+            val px = (heightDp * a.resources.displayMetrics.density).toInt()
+            val insets = androidx.core.view.WindowInsetsCompat.Builder()
+                .setInsets(androidx.core.view.WindowInsetsCompat.Type.ime(), androidx.core.graphics.Insets.of(0, 0, 0, px))
+                .setVisible(androidx.core.view.WindowInsetsCompat.Type.ime(), px > 0)
+                .build()
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(a.window.decorView, insets)
+        }
+        compose.waitForIdle()
+    }
+
     /** The process is killed and started again: the activity goes, a new model reads what
      * was saved (identity, database, preferences), and the app starts with these extras. */
     fun restart(vararg extras: Pair<String, Any>) {
