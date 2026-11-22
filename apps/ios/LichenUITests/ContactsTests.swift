@@ -442,4 +442,99 @@ final class ContactsTests: LichenUITest {
         button(tr("Add to the radio")).tap()
         wait(element(tr("Connect your radio first")), 5, "not told to connect the radio")
     }
+
+    // MARK: CT-13, New conversation when the radio knows many people (F-4)
+
+    /// Any of the elements `query` finds can be tapped: on screen, not behind the sheet.
+    private func anyHittable(_ query: XCUIElementQuery) -> Bool {
+        query.allElementsBoundByIndex.contains { $0.exists && $0.isHittable }
+    }
+
+    /// The people filter's segment for `key` ("All (%lld)"), whatever its count.
+    private func segment(_ key: String) -> XCUIElement {
+        let prefix = String(tr(key, 0).dropLast(2))
+        return app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
+    }
+
+    /// CT-13: with 200 more people on the radio, the three actions and Public are reachable
+    /// without scrolling; the filter shows the MeshCore people only, then the lichen ones only.
+    func testCT13_NewConversationWithManyPeople() {
+        launch(["-manyContacts", "200", "-quietDemo", "YES"])
+        // Camille's identity known (her first message): one lichen person.
+        wait(row("Camille"), Self.camilleTimeout, "no Camille")
+        button(tr("New message")).tap()
+        wait(app.navigationBars[tr("New conversation")], 5, "no New conversation")
+        for label in [tr("New group"), tr("Join a channel"), tr("Add a contact")] {
+            XCTAssertTrue(anyHittable(app.buttons.matching(NSPredicate(format: "label == %@", label))),
+                          "\(label) not reachable without scrolling")
+        }
+        XCTAssertTrue(anyHittable(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Public'"))),
+                      "Public not reachable without scrolling")
+        keep("ct-new-conversation-many")
+        segment("MeshCore (%lld)").tap()
+        wait(contact("Radio 001"), 5, "no MeshCore person under MeshCore")
+        XCTAssertFalse(contact("Camille").exists, "Camille among the MeshCore people")
+        keep("ct-new-conversation-meshcore")
+        segment("lichen (%lld)").tap()
+        wait(contact("Camille"), 5, "no Camille under lichen")
+        XCTAssertFalse(contact("Radio 001").exists, "a MeshCore person among the lichen ones")
+    }
+
+    /// CT-13: `#tag` in the search: "Join #tag" joins the hashtag channel and opens it; typed
+    /// again, the row is that channel. Not a hashtag: no such row.
+    func testCT13_HashtagJoinsAndOpens() {
+        launch(["-quietDemo", "YES"])
+        wait(element(tr("%@ connected", "ThinkNode M5")), 20, "no radio")
+        button(tr("New message")).tap()
+        // The radio's channels read (joining needs them): Public listed.
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Public'")).firstMatch, 20, "no channels")
+        var search = wait(app.searchFields.firstMatch, 5, "no search field")
+        search.tap()
+        search.typeText("#two words")
+        pause(1)
+        XCTAssertFalse(button(tr("Join %@", "#two")).exists, "a row to join a tag with a space")
+        // Erased, then a tag.
+        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "#two words".count))
+        search.typeText("#Ridge")
+        wait(button(tr("Join %@", "#ridge")), 5, "no row to join #ridge").tap()
+        wait(app.navigationBars.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH '#ridge'")).firstMatch,
+             10, "the channel did not open")
+        back()
+        button(tr("New message")).tap()
+        search = wait(app.searchFields.firstMatch, 5, "no search field")
+        search.tap()
+        search.typeText("#ridge")
+        let ridge = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '#ridge'"))
+        wait(ridge.firstMatch, 5, "the channel is not the row")
+        XCTAssertFalse(button(tr("Join %@", "#ridge")).exists, "offered to join it again")
+        // Once: on top, not again under the channels (Messages behind the sheet aside).
+        XCTAssertEqual(ridge.allElementsBoundByIndex.filter { $0.isHittable }.count, 1, "the channel shown twice")
+        keep("ct-new-conversation-hashtag")
+    }
+
+    /// CT-13: New group is its own screen: a name, a lichen contact found by its search,
+    /// Create; the group's chat opens, two members in it.
+    func testCT13_NewGroupScreen() {
+        launch(["-manyContacts", "200", "-quietDemo", "YES"])
+        wait(row("Camille"), Self.camilleTimeout, "no Camille")
+        button(tr("New message")).tap()
+        wait(button(tr("New group")), 5, "no New group").tap()
+        wait(app.navigationBars[tr("New group")], 5, "New group is not a screen of its own")
+        // Only lichen people can be members.
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Radio 001'")).firstMatch.exists,
+                       "a MeshCore person offered as a member")
+        let field = app.textFields[tr("Group name")]
+        field.tap()
+        field.typeText("Summit team")
+        let search = wait(app.searchFields.firstMatch, 5, "no search field")
+        search.tap()
+        search.typeText("Cam")
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch, 5, "Camille not found").tap()
+        keep("ct-new-group")
+        button(tr("Create group")).tap()
+        wait(composer, 10, "the group did not open")
+        wait(app.navigationBars.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Summit team'")).firstMatch,
+             5, "not the group's chat")
+        XCTAssertTrue(containing(tr("%lld members", 2)).exists, "not two members")
+    }
 }

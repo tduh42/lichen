@@ -5,23 +5,6 @@ import XCTest
 final class GroupTests: LichenUITest {
     private let group = "Rando Vercors"
 
-    /// A group of our own, alone in it, from New message › New group; its chat opens.
-    private func createGroup(_ name: String) {
-        button(tr("New message")).tap()
-        // New group is the list's last section: scrolled to.
-        let field = app.textFields[tr("Group name")]
-        for _ in 0..<8 where !(field.exists && field.isHittable) { app.collectionViews.firstMatch.swipeUp() }
-        wait(field, 5, "no group name field")
-        field.tap()
-        field.typeText(name)
-        let create = button(tr("Create group"))
-        // Scrolled to, then still: a tap while the list still moves only stops it.
-        if !create.isHittable { reveal(create); pause(1) }
-        create.tap()
-        if !composer.waitForExistence(timeout: 5), create.exists, create.isHittable { create.tap() }
-        wait(composer, 10, "the group did not open")
-    }
-
     /// The group's details (its info button).
     private func details() {
         button(tr("Group details")).tap()

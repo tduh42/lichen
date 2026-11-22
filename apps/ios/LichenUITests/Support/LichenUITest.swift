@@ -225,6 +225,22 @@ class LichenUITest: XCTestCase {
 
     // MARK: Doing
 
+    /// A group of our own from Messages › New message › New group, its own screen (F-4): named,
+    /// with the lichen contacts `members` ticked (alone in it without), created; its chat opens.
+    func createGroup(_ name: String, members: [String] = [], file: StaticString = #filePath, line: UInt = #line) {
+        button(tr("New message")).tap()
+        wait(button(tr("New group")), 5, "no New group", file: file, line: line).tap()
+        let field = wait(app.textFields[tr("Group name")], 5, "no group name field", file: file, line: line)
+        field.tap()
+        field.typeText(name)
+        for m in members {
+            wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", m)).firstMatch, 5,
+                 "no \(m) to add", file: file, line: line).tap()
+        }
+        button(tr("Create group")).tap()
+        wait(composer, 10, "the group did not open", file: file, line: line)
+    }
+
     /// Opens the conversation `name` from Messages.
     func openChat(_ name: String, _ timeout: TimeInterval = camilleTimeout, file: StaticString = #filePath, line: UInt = #line) {
         let r = wait(row(name), timeout, "no row \(name) in \(app.buttons.allElementsBoundByIndex.map(\.label))", file: file, line: line)

@@ -115,6 +115,7 @@ fun ConversationsScreen(
     pair: () -> Unit,
     addContact: () -> Unit,
     search: () -> Unit,
+    newGroup: () -> Unit = {},
 ) {
     val t = lichen
     val res = LocalResources.current
@@ -257,10 +258,22 @@ fun ConversationsScreen(
     }
 
     if (composing) {
-        NewChatSheet(model, dismiss = { composing = false }, open = {
-            composing = false
-            open(it)
-        })
+        NewChatSheet(
+            model,
+            dismiss = { composing = false },
+            open = {
+                composing = false
+                open(it)
+            },
+            newGroup = {
+                composing = false
+                newGroup()
+            },
+            addContact = {
+                composing = false
+                addContact()
+            },
+        )
     }
     renaming?.let { row -> RenameDialog(model, row.key) { renaming = null } }
     deleting?.let { row ->

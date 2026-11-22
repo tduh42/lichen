@@ -72,6 +72,7 @@ pub use api_mesh::{
     TraceInfo, TraceLeg, TraceState, meshcore_contact_code, read_meshcore_contact_code,
     read_meshcore_link,
 };
+pub use api_plain::hashtag_channel_name;
 pub use api_radio::{
     RadioOutcome, RadioSetting, RadioSettings, RadioVar, SettingOutcome, Telemetry,
 };

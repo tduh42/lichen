@@ -224,6 +224,7 @@ class MainActivity : FragmentActivity() {
             autoFull = e.getBoolean("autoFull"),
             marcRepeater = e.getBoolean("marcRepeater"),
             radioNoFix = e.getBoolean("radioNoFix"),
+            manyContacts = e.getInt("manyContacts"),
             radioIgnores = e.getString("radioIgnores"),
             radioRefuses = e.getString("radioRefuses"),
             radioSlow = e.getInt("radioSlow"),

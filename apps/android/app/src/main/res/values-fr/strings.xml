@@ -10,6 +10,7 @@
     <!-- Conversations -->
     <string name="new_short">Nouveau</string>
     <string name="new_message">Nouveau message</string>
+    <string name="new_conversation">Nouvelle conversation</string>
     <plurals name="members_count">
         <item quantity="one">%1$d membre</item>
         <item quantity="many">%1$d membres</item>
@@ -828,7 +829,14 @@
     <string name="meshcore_not_lichen">MeshCore · pas chiffré par lichen</string>
     <string name="meshcore_channel_not_lichen">Canal MeshCore · pas chiffré par lichen</string>
     <string name="meshcore_contact">Discussion MeshCore · pas chiffrée par lichen · %1$s</string>
-    <string name="contacts_meshcore_note">Avec quelqu’un qui a lichen, la discussion est chiffrée de bout en bout ; avec quelqu’un qui n’a qu’une appli MeshCore, c’est une discussion MeshCore, lisible par les radios.</string>
+    <string name="contacts_meshcore_note">Les discussions lichen sont chiffrées de bout en bout ; les discussions MeshCore sont lisibles par les radios.</string>
+    <!-- New conversation (F-4) -->
+    <string name="search_new_chat">Chercher des personnes, canaux et groupes</string>
+    <string name="join_tag_channel">Rejoindre %1$s</string>
+    <string name="people_all">Tous (%1$d)</string>
+    <string name="people_lichen">lichen (%1$d)</string>
+    <string name="people_meshcore">MeshCore (%1$d)</string>
+    <string name="nobody_matches">Personne ne correspond.</string>
     <string name="channel_kind_public">Canal MeshCore · public</string>
     <string name="channel_kind_hashtag">Canal MeshCore · hashtag</string>
     <string name="channel_kind_private">Canal MeshCore · privé</string>
