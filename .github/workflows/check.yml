@@ -160,22 +160,49 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Spotlight off: it indexed the build and the results while the tests ran.
+      - run: sudo mdutil -a -i off || true
+      # The core for the simulator (its static library and Swift bindings) as main's last build
+      # of it left it, when nothing it is built from has changed since: the job ios-cache saves
+      # it under the hash of its inputs (the Rust workspace, the files it compiles in, the
+      # toolchain, its build script, Xcode). Otherwise the shard builds it (5 to 13 min with the
+      # Rust cache).
+      - id: core
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/ios/LichenCore.xcframework
+            apps/ios/Generated
+          key: ios-core-sim-${{ env.DEVELOPER_DIR }}-${{ hashFiles('crates/**', 'config/**', 'testdata/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/build-ios-core.sh') }}
       # rust-toolchain.toml names the toolchain; the simulator build needs its target only.
-      - run: rustup show && rustup target add aarch64-apple-ios-sim
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: rustup show && rustup target add aarch64-apple-ios-sim
       # Restored from main's, which the job ios-cache writes: a pull request reads its base
       # branch's caches, not another pull request's. Not saved here, so that pull requests do not
       # fill the repository's 10 GB with copies of it.
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - if: steps.core.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ios-sim
           save-if: false
       - run: brew install xcodegen && xcodebuild -version && xcrun simctl list runtimes
-      # The core for the simulator, the app and its tests, for the iPhone on the newest runtime
-      # (iOS 27.2, the SDK's; the image also has 27.0 and 27.1). The simulator boots after it:
-      # booted during a build without the cache, it made the core take 31 to 55 min instead of
-      # 17 to 25 (run 44993272942).
+      # The core for the simulator unless restored, the app and its tests, for the iPhone on the
+      # newest runtime (iOS 27.2, the SDK's; the image also has 27.0 and 27.1). The simulator
+      # boots after it, alone: its first boot beside a build slowed both. Beside the core built
+      # without the Rust cache, 31 to 55 min instead of 17 to 25 (run 44993272942); beside the
+      # app's build, that build took 8 to 19 min instead of 2, and the shard gained nothing
+      # (runs 45041396513 and 45047997948).
       - name: Build
-        run: scripts/ui-tests-ios.sh --build-only
+        run: scripts/ui-tests-ios.sh --build-only ${{ steps.core.outputs.cache-hit == 'true' && '--core-cached' || '' }}
+      # Kept for this pull request's next runs when it was built here (tens of MB; the Rust cache
+      # is not: its gigabytes would fill the repository's 10 GB).
+      - if: steps.core.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/ios/LichenCore.xcframework
+            apps/ios/Generated
+          key: ${{ steps.core.outputs.cache-primary-key }}
       # The simulator at the end of its first boot first: one that had not finished it stalled
       # loading accessibility, and the test runner gave up before any test ran.
       - name: UI tests in English
@@ -192,8 +219,9 @@ jobs:
           path: local/ui-tests/
           retention-days: 7
 
-  # The Rust cache the iOS shards start from, written on main since they do not run there: the
-  # simulator's core, built once per push to main on one runner.
+  # What the iOS shards start from, written on main since they do not run there: the simulator's
+  # core, and the Rust cache to build it when a pull request changes it; built on one runner when
+  # a push to main changes what the core is built from.
   ios-cache:
     name: iOS core for the cache
     if: github.event_name != 'pull_request'
@@ -203,12 +231,24 @@ jobs:
       DEVELOPER_DIR: /Applications/Xcode_27.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: rustup show && rustup target add aarch64-apple-ios-sim
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # The core under the same key as the shards read it (ios-shards): saved at the end of the
+      # job when it was not there.
+      - id: core
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            apps/ios/LichenCore.xcframework
+            apps/ios/Generated
+          key: ios-core-sim-${{ env.DEVELOPER_DIR }}-${{ hashFiles('crates/**', 'config/**', 'testdata/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'scripts/build-ios-core.sh') }}
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: rustup show && rustup target add aarch64-apple-ios-sim
+      - if: steps.core.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: ios-sim
       # What the shards' build runs first (scripts/ui-tests-ios.sh).
-      - run: scripts/build-ios-core.sh --sim
+      - if: steps.core.outputs.cache-hit != 'true'
+        run: scripts/build-ios-core.sh --sim
 
   # The one check branch protection requires of the iOS tests: every shard passed, or the pull
   # request changes nothing the iOS app or its tests use (ios-paths said so, and the shards were
