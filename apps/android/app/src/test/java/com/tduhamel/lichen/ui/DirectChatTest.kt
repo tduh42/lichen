@@ -5,10 +5,12 @@ import android.app.Application
 import android.app.NotificationManager
 import android.content.Intent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
@@ -21,6 +23,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.Message
@@ -161,6 +164,54 @@ class DirectChatTest : UiTest() {
         compose.onAllNodesWithText(first).onFirst().assertIsDisplayed()
     }
 
+    /** DM-4 (B-ios-29 on iOS): in French, the compare banner up and the keyboard taking its
+     * room, a tapped quote still shows its original. The screen is the room the app has on a
+     * Pixel 8 with the keyboard up (the emulator: the keyboard takes 312 dp of 914, the status
+     * bar 52, leaving 525). */
+    @Test
+    @Config(qualifiers = "+fr-h525dp")
+    fun DM_4_quoteOriginalWithTheKeyboardUp_fr() {
+        assertEquals(525, context.resources.configuration.screenHeightDp)
+        openCamille()
+        val chat = camille()
+        see(str(R.string.compare_safety_numbers_with, "Camille"))
+        longPress(first)
+        tapInDialog(R.string.reply)
+        write("Great, see you there")
+        advanceUntil("our reply delivered", 60) { ours(chat, "Great, see you there").singleOrNull()?.status == MessageStatus.Delivered }
+        // Her message scrolled up out of sight, the quote in our reply; tapped, her message.
+        assertEquals("her message still in sight: ${shown()}", 0, originals())
+        compose.onAllNodesWithText("I'm at the refuge", substring = true).onLast().performClick()
+        withScreen(1)
+        assertEquals("her message not brought into sight: ${shown()}", 1, originals())
+    }
+
+    /** Her first message's own bubble wholly in the list's view, on the left (the quote in our
+     * reply, on the right, says the same words). */
+    private fun originals(): Int {
+        val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+        return compose.onAllNodesWithText(first, useUnmergedTree = true).fetchSemanticsNodes().count {
+            val b = it.boundsInRoot
+            b.left < list.left + list.width * 0.15f && b.top >= list.top && b.bottom <= list.bottom
+        }
+    }
+
+    /** DM-3 (B-ios-29 on iOS): in French, the compare banner up and the keyboard taking its
+     * room, our long text's bubble is there to press: its menu opens. */
+    @Test
+    @Config(qualifiers = "+fr-h525dp")
+    fun DM_3_longTextMenuWithTheKeyboardUp_fr() {
+        openCamille()
+        val chat = camille()
+        see(str(R.string.compare_safety_numbers_with, "Camille"))
+        val long = (1..10).joinToString(" ") { "Line $it of the route: ridge, then the refuge, water at the spring." }
+        write(long)
+        advanceUntil("the long text on its way", 30) { ours(chat, long).isNotEmpty() }
+        advance(2)
+        longPress(long)
+        see(R.string.message_info)
+    }
+
     /** DM-5: a reaction added, changed, removed. */
     @Test
     fun DM_5_reactChangeRemove() {
@@ -293,6 +344,90 @@ class DirectChatTest : UiTest() {
         compose.waitForIdle()
         text(first).assertIsDisplayed()
         text(R.string.message_placeholder).assertIsDisplayed()
+    }
+
+    private val marc = "Hi! Marc from the refuge. Are you on lichen? I only have the MeshCore app."
+
+    /** Simulated time for the demo and for the screen's own clocks (Compose's delays) together. */
+    private fun withScreen(seconds: Int) = repeat(seconds) {
+        compose.mainClock.advanceTimeBy(1_000)
+        advance(1)
+    }
+
+    /** Where a message's bubble starts on screen (it must be there). */
+    private fun topOf(t: String): Float =
+        compose.onAllNodesWithText(t, useUnmergedTree = true).onFirst().fetchSemanticsNode().boundsInRoot.top
+
+    /** DM-10 (B-ios-27 on iOS): a chat shorter than the screen, Marc's one message, opened on
+     * its search result: the message stays on screen once its highlight is gone. */
+    @Test
+    fun DM_10_shortChatStaysOnItsResult() = shortResult()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun DM_10_shortChatStaysOnItsResult_fr() = shortResult()
+
+    private fun shortResult() {
+        launch("demo" to true)
+        advanceUntil("Marc's message", 120) { has("Marc from the refuge", substring = true) }
+        tapDesc(R.string.search_messages)
+        compose.onAllNodes(hasSetTextAction()).onFirst().performTextInput("Marc from")
+        advanceUntil("his result", 5) { has("Marc from the refuge", substring = true) }
+        compose.onAllNodesWithText("Marc from the refuge", substring = true).onFirst().performClick()
+        compose.waitForIdle()
+        text(marc).assertIsDisplayed()
+        val top = topOf(marc)
+        // Its highlight goes after 2 s of the screen's clock: the message stays where it was.
+        withScreen(4)
+        text(marc).assertIsDisplayed()
+        assertEquals(top, topOf(marc), 1f)
+    }
+
+    /** DM-12 (B-ios-28 on iOS): a long chat (5,000 messages) opens on its unread divider; a
+     * message arriving while we read above the end moves nothing and counts in the pill; the
+     * pill takes us exactly to the end. */
+    @Test
+    fun DM_12_longChatHoldsItsPlaceWhenAMessageArrives() = holdsItsPlace()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun DM_12_longChatHoldsItsPlaceWhenAMessageArrives_fr() = holdsItsPlace()
+
+    private fun holdsItsPlace() {
+        // Her lichen chat opens once her identity comes, with her first message: a message
+        // arriving while the chat opens.
+        launch("demo" to true, "open" to "Camille", "fill" to 5000)
+        advanceUntil("her chat open on its history", 120) { model.visibleChat?.contactKey != null && messages(model.visibleChat!!).size >= 50 }
+        val chat = camille()
+        advanceUntil("her first message", 60) { messages(chat).any { (it.message as? Message.Text)?.text == first } }
+        advance(1)
+        // Still on the divider (her five unread earlier messages, and her first one if it came
+        // before the chat opened), not jumped up the page.
+        assertTrue("not on the divider: ${shown()}", (5..6).any { has(plural(R.plurals.unread_messages, it, it)) })
+        assertFalse("jumped up the page", has("Earlier message 4950"))
+        // Ours goes to the end.
+        val asked = "Still at the refuge?"
+        write(asked)
+        advance(1)
+        text(asked).assertIsDisplayed()
+        // Reading above the end, her answer arrives: the view holds; the pill counts it.
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Earlier message 4970"))
+        compose.waitForIdle()
+        assertFalse("the end on screen", has(asked))
+        val top = topOf("Earlier message 4970")
+        val answer = "Copy: \"$asked\""
+        advanceUntil("her answer", 180) { messages(chat).any { (it.message as? Message.Text)?.text?.startsWith(answer) == true } }
+        advance(1)
+        assertEquals("the view moved", top, topOf("Earlier message 4970"), 1f)
+        val pill = plural(R.plurals.new_messages, 1, 1)
+        text(pill).assertIsDisplayed()
+        // The pill: exactly at the end, her answer on screen, nothing further to scroll.
+        tap(pill)
+        withScreen(2)
+        text(answer, substring = true).assertIsDisplayed()
+        val range = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertEquals("not at the end", range.maxValue(), range.value(), 1f)
+        assertFalse("the pill stayed", has(pill))
     }
 
     /** DM-11: Info on a delivered message: when, the route, fragments and airtime. */
