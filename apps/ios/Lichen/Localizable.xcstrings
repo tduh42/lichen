@@ -8801,6 +8801,16 @@
         }
       }
     },
+    "Saved on the radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistré sur la radio"
+          }
+        }
+      }
+    },
     "Saved: used from the radio’s next restart. Pair the phone again with it.": {
       "localizations": {
         "fr": {
@@ -10131,6 +10141,16 @@
         }
       }
     },
+    "The radio answered but kept its old value.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio a répondu mais a gardé l’ancienne valeur."
+          }
+        }
+      }
+    },
     "The radio closed the link.": {
       "localizations": {
         "fr": {
@@ -10151,22 +10171,22 @@
         }
       }
     },
+    "The radio did not answer.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio n’a pas répondu."
+          }
+        }
+      }
+    },
     "The radio did not send it.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "La radio ne l’a pas envoyée."
-          }
-        }
-      }
-    },
-    "The radio did not take this setting": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La radio n’a pas pris ce réglage"
           }
         }
       }
@@ -10217,6 +10237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La radio a refusé le traçage."
+          }
+        }
+      }
+    },
+    "The radio refused this setting.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La radio a refusé ce réglage."
           }
         }
       }
@@ -11397,6 +11427,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "En attente de l’ACK"
+          }
+        }
+      }
+    },
+    "Waiting for the radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En attente de la radio"
           }
         }
       }

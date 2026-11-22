@@ -450,7 +450,7 @@ fn pump(
 
 /// RL-6 (B-ios-10): a setting the core lets through but the radio refuses (an interval for a
 /// GPS the board does not have): the app is told which one, once, and the value stays the
-/// radio's; a setting it takes is not reported.
+/// radio's; a setting it takes is saved (B-user-5).
 #[test]
 fn rl_6_a_setting_the_radio_refuses() {
     let radio = lc_meshcore::airtime::LoRaParams::meshcore(8, 62_500, 5).unwrap();
@@ -463,20 +463,27 @@ fn rl_6_a_setting_the_radio_refuses() {
     pump(&mut net, app, &core, wall0, 0, 5_000);
     let before = core.radio_settings();
     assert_eq!(before.gps, None, "no GPS on this board");
-    assert!(core.take_radio_refusals().is_empty());
+    assert!(core.take_radio_outcomes().is_empty());
     core.set_gps_interval(300).unwrap();
+    let refused = lc_ffi::RadioOutcome {
+        setting: lc_ffi::RadioSetting::GpsInterval,
+        outcome: lc_ffi::SettingOutcome::Refused,
+    };
     let events = pump(&mut net, app, &core, wall0, 5_000, 10_000);
-    assert!(events.contains(&LichenEvent::RadioSettings));
-    assert_eq!(
-        core.take_radio_refusals(),
-        [lc_ffi::RadioSetting::GpsInterval]
-    );
-    assert!(core.take_radio_refusals().is_empty(), "told once");
+    assert!(events.contains(&LichenEvent::RadioOutcome { outcome: refused }));
+    assert_eq!(core.take_radio_outcomes(), [refused]);
+    assert!(core.take_radio_outcomes().is_empty(), "told once");
     assert_eq!(core.radio_settings().gps_interval_s, None);
-    // Taken: nothing to say.
+    // Taken: saved.
     core.set_tx_power(before.max_tx_dbm - 1).unwrap();
     pump(&mut net, app, &core, wall0, 10_000, 15_000);
-    assert!(core.take_radio_refusals().is_empty());
+    assert_eq!(
+        core.take_radio_outcomes(),
+        [lc_ffi::RadioOutcome {
+            setting: lc_ffi::RadioSetting::TxPower,
+            outcome: lc_ffi::SettingOutcome::Saved,
+        }]
+    );
     assert_eq!(core.radio_settings().tx_dbm, before.max_tx_dbm - 1);
 }
 
@@ -520,4 +527,77 @@ fn rl_5_a_slow_radio_s_settings() {
     assert!(s.read);
     assert_eq!((s.sf, s.bw_hz, s.cr), (8, 62_500, 5));
     assert!(s.freq_khz > 0 && s.max_tx_dbm > 0, "{s:?}");
+}
+
+/// RL-11 (B-user-5): every setting says what became of it. Pending while it waits; saved
+/// once the radio reports the value asked for; not kept when the radio answers OK and keeps
+/// its old value (`radioIgnores preferences`), the value shown staying the radio's; refused
+/// on ERR (`radioRefuses power`). An outcome comes as an event and in `take_radio_outcomes`,
+/// once.
+#[test]
+fn rl_11_each_setting_says_what_happened() {
+    use lc_ffi::{RadioOutcome, RadioSetting, SettingOutcome};
+    let demo = lc_ffi::DemoNetwork::new();
+    demo.ignore_settings("preferences".into());
+    demo.refuse_tx_power();
+    let mut sim = Sim::on(111, demo, false);
+    connected(&mut sim);
+    sim.until("the radio's settings", 10, |c| {
+        c.radio_settings().autoadd_mask.is_some()
+    });
+    let before = sim.core.radio_settings();
+    let outcome = |setting, outcome| RadioOutcome { setting, outcome };
+    let wait_outcome = |sim: &mut Sim, what: &str| {
+        sim.until_event(what, 10, |e| match e {
+            LichenEvent::RadioOutcome { outcome } => Some(*outcome),
+            _ => None,
+        })
+    };
+
+    // Saved: the auto-add, as asked.
+    sim.core.set_autoadd(0x06, 2).unwrap();
+    assert_eq!(sim.core.radio_pending(), [RadioSetting::Autoadd]);
+    assert_eq!(
+        wait_outcome(&mut sim, "the auto-add's outcome"),
+        outcome(RadioSetting::Autoadd, SettingOutcome::Saved)
+    );
+    assert!(sim.core.radio_pending().is_empty());
+    assert_eq!(sim.core.radio_settings().autoadd_mask, Some(0x06));
+
+    // Not kept: telemetry on, answered OK, the radio's still off.
+    sim.core
+        .set_radio_preferences(
+            before.manual_add,
+            Telemetry {
+                base: 2,
+                location: 0,
+                environment: 0,
+            },
+            before.position_in_adverts,
+            before.multi_acks,
+        )
+        .unwrap();
+    assert_eq!(
+        wait_outcome(&mut sim, "the telemetry's outcome"),
+        outcome(RadioSetting::Preferences, SettingOutcome::NotKept)
+    );
+    assert_eq!(sim.core.radio_settings().telemetry, before.telemetry);
+
+    // Refused: the power.
+    sim.core.set_tx_power(before.tx_dbm - 1).unwrap();
+    assert_eq!(
+        wait_outcome(&mut sim, "the power's outcome"),
+        outcome(RadioSetting::TxPower, SettingOutcome::Refused)
+    );
+    assert_eq!(sim.core.radio_settings().tx_dbm, before.tx_dbm);
+    // Each once, in order, in the list too.
+    assert_eq!(
+        sim.core.take_radio_outcomes(),
+        [
+            outcome(RadioSetting::Autoadd, SettingOutcome::Saved),
+            outcome(RadioSetting::Preferences, SettingOutcome::NotKept),
+            outcome(RadioSetting::TxPower, SettingOutcome::Refused),
+        ]
+    );
+    assert!(sim.core.take_radio_outcomes().is_empty());
 }

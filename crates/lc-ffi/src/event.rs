@@ -55,6 +55,11 @@ pub enum LichenEvent {
     ContactsUpdated,
     /// The radio's settings changed, or were read again: read `radio_settings()`.
     RadioSettings,
+    /// What became of a setting sent to the radio (§1.1, B-user-5); also in
+    /// `take_radio_outcomes()`.
+    RadioOutcome {
+        outcome: crate::RadioOutcome,
+    },
     SessionEstablished {
         peer: Vec<u8>,
     },
@@ -262,6 +267,7 @@ impl LichenEvent {
             },
             Event::ContactsUpdated => Self::ContactsUpdated,
             Event::RadioSettings => Self::RadioSettings,
+            Event::RadioOutcome(o) => Self::RadioOutcome { outcome: o.into() },
             Event::SessionEstablished { peer } => Self::SessionEstablished {
                 peer: peer.to_vec(),
             },

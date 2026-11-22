@@ -276,7 +276,11 @@
     <string name="media">Médias</string>
     <string name="media_never_flooded">Jamais en flood : annonce LoRa, contenu via iroh ou Tor</string>
     <string name="remove_from_group">Retirer du groupe</string>
-    <string name="radio_refused">La radio n’a pas pris ce réglage</string>
+    <string name="radio_refused">La radio a refusé ce réglage.</string>
+    <string name="radio_saved">Enregistré sur la radio</string>
+    <string name="radio_not_kept">La radio a répondu mais a gardé l’ancienne valeur.</string>
+    <string name="radio_no_answer">La radio n’a pas répondu.</string>
+    <string name="radio_waiting">En attente de la radio</string>
     <string name="not_changed">Pas modifié</string>
     <string name="sender_keys_up_to_date">Clés d’envoi à jour</string>
     <string name="sender_keys_received">Clés de %1$d / %2$d membres reçues ; un départ les renouvelle.</string>

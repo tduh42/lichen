@@ -138,6 +138,12 @@ final class RadioLinkTests: LichenUITest {
         wait(frequencyLabel("869.618"), 30, "the radio's parameters are not shown")
     }
 
+    /// Once a setting's row has said it is saved, and that line is gone (B-user-5): the rows
+    /// below it stay still while the test scrolls on.
+    private func settled() {
+        waitGone(containing(tr("Saved on the radio")), 10, "the saved line did not go")
+    }
+
     /// Flips a switch whose label is hidden (the row shows its title).
     private func flip(_ toggle: XCUIElement) {
         let before = toggle.value as? String
@@ -159,12 +165,14 @@ final class RadioLinkTests: LichenUITest {
         let dbm = Int(power.label.split(separator: " ").first ?? "") ?? 0
         app.steppers.firstMatch.buttons.element(boundBy: 0).tap()
         wait(element(tr("%lld dBm", dbm - 1)), 10, "the power did not come back from the radio")
+        settled()
         // The demo's board has a GPS, off.
         let gps = app.switches[tr("The radio’s GPS")]
         reveal(gps)
         XCTAssertEqual(gps.value as? String, "0")
         flip(gps)
         wait(element(tr("A fix every")), 10, "the GPS did not come back on")
+        settled()
         // A position in adverts asks first.
         let position = app.switches[tr("Position in adverts")]
         reveal(position)
@@ -174,6 +182,7 @@ final class RadioLinkTests: LichenUITest {
         confirm.buttons[tr("Show it")].tap()
         wait(element(tr("Every advert shows the radio’s position to the whole mesh, unencrypted.")), 10,
              "the radio did not report the new policy")
+        settled()
         // How far adverts are added from: "Up to 1 hop", in the singular.
         let far = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS %@",
                                                    tr("Any distance"), tr("Direct only"))).firstMatch
@@ -184,6 +193,7 @@ final class RadioLinkTests: LichenUITest {
         button(tr("Up to %lld hops", 1)).tap()
         wait(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("Up to %lld hops", 1))).firstMatch, 10,
              "the hops did not come back from the radio")
+        settled()
         // A preset: USA/Canada, then back.
         reveal(element(tr("Preset")), up: false)
         setPreset(tr("USA/Canada"))
@@ -400,20 +410,66 @@ final class RadioLinkTests: LichenUITest {
         keep("rl-advert-position")
     }
 
-    /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said, and the
-    /// power shown stays the radio's.
+    /// RL-6, D-4: a setting the radio itself refuses (`-radioRefuses power`): said on its row
+    /// (B-user-5), not in an alert, and the power shown stays the radio's.
     func testRL6_TheRadioRefusesASetting() {
         launch(["-tab", "settings", "-screen", "radio", "-radioRefuses", "power"])
         let power = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch
         wait(power, 30, "no transmit power")
         let before = power.label
         app.steppers.firstMatch.buttons.element(boundBy: 0).tap()
-        let refused = app.alerts[tr("Not changed")]
-        wait(refused, 10, "the radio's refusal is not said")
-        XCTAssertTrue(refused.staticTexts[tr("The radio did not take this setting")].exists, "the refusal's words")
+        wait(containing(tr("The radio refused this setting.")), 10, "the radio's refusal is not said")
+        XCTAssertFalse(app.alerts[tr("Not changed")].exists, "said in an alert")
         keep("rl-radio-refused")
-        refused.buttons["OK"].tap()
         XCTAssertEqual(power.label, before, "the power shown is not the radio's")
+    }
+
+    /// RL-11, B-user-5: a setting the radio takes says so on its row, "Saved on the radio", for
+    /// two seconds.
+    func testRL11_ASettingSavedOnTheRadio() {
+        // "Saved" for 8 s instead of 2: a busy machine's screen reads take longer than that.
+        launch(["-tab", "settings", "-screen", "radio", "-radioSavedFor", "8"])
+        wait(frequencyLabel("869.618"), 30, "the radio's parameters are not shown")
+        let gps = app.switches[tr("The radio’s GPS")]
+        reveal(gps)
+        XCTAssertEqual(gps.value as? String, "0")
+        flip(gps)
+        let saved = containing(tr("Saved on the radio"))
+        wait(saved, 10, "not said to be saved")
+        XCTAssertEqual(gps.value as? String, "1")
+        keep("rl-setting-saved")
+        waitGone(saved, 15, "still said after its time")
+    }
+
+    /// RL-11, B-user-5: a radio that answers OK and keeps its old value
+    /// (`-radioIgnores preferences`): the position switch and a telemetry choice each say so on
+    /// their row, and show the radio's value again; it stays said.
+    func testRL11_ASettingTheRadioDoesNotKeep() {
+        launch(["-tab", "settings", "-screen", "radio", "-radioIgnores", "preferences"])
+        let position = app.switches[tr("Position in adverts")]
+        wait(position, 30, "no radio settings")
+        reveal(position)
+        flip(position)
+        let confirm = app.alerts[tr("Show your position to the whole mesh?")]
+        wait(confirm, 5, "no confirmation")
+        confirm.buttons[tr("Show it")].tap()
+        let notKept = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@",
+                                                           tr("The radio answered but kept its old value.")))
+        wait(notKept.firstMatch, 10, "not said to be kept")
+        XCTAssertEqual(position.value as? String, "0", "the switch does not show the radio's value")
+        keep("rl-setting-not-kept")
+        let once = notKept.count
+        // Who may ask for the basics: everyone, not kept either.
+        let telemetry = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("Nobody"))).firstMatch
+        reveal(telemetry)
+        telemetry.tap()
+        wait(button(tr("Everyone")), 5, "no telemetry choices").tap()
+        let deadline = Date().addingTimeInterval(10)
+        while notKept.count <= once && Date() < deadline { pause(0.5) }
+        let twice = notKept.count
+        XCTAssertGreaterThan(twice, once, "the telemetry choice is not said to be kept")
+        pause(3)
+        XCTAssertEqual(notKept.count, twice, "gone before the next change")
     }
 
     /// D-8: with `-demoSpeed 4` the demo runs four times faster: Camille's first message, about

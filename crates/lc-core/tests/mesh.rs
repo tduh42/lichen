@@ -500,7 +500,7 @@ fn a_shared_link_is_imported() {
     );
     assert!(
         m.net
-            .with_core(m.app, |c, _| c.take_radio_refusals())
+            .with_core(m.app, |c, _| c.take_radio_outcomes())
             .unwrap()
             .is_empty()
     );
@@ -569,9 +569,12 @@ fn a_full_radio_refuses_a_link() {
     assert_eq!(on_radio(&m, key), None);
     assert_eq!(
         m.net
-            .with_core(app, |c, _| c.take_radio_refusals())
+            .with_core(app, |c, _| c.take_radio_outcomes())
             .unwrap(),
-        vec![lc_core::radio::RadioSetting::Contact]
+        vec![lc_core::radio::RadioOutcome {
+            setting: lc_core::radio::RadioSetting::Contact,
+            outcome: lc_core::radio::SettingOutcome::Refused,
+        }]
     );
     assert!(!find(&nodes_of(&m), key).on_radio);
 }

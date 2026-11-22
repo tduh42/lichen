@@ -578,14 +578,11 @@ impl Core {
         if name.is_empty() || name.len() > NAME_MAX {
             return Err(Error::TooLarge);
         }
-        self.command(
-            &Command::SetAdvertName {
-                name: name.as_bytes(),
-            },
-            Expect::Setting(crate::radio::RadioSetting::Name),
-        );
+        self.rename_radio(name);
         self.name = name.to_owned();
         self.send_advert(true, now);
+        // Read back: what the radio kept (§1.1).
+        self.read_back_name();
         Ok(())
     }
 

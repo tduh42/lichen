@@ -1210,6 +1210,32 @@ impl DemoNetwork {
         d.refuse_power = true;
     }
 
+    /// The radio answers OK to one kind of setting and keeps its old value (debug
+    /// `radioIgnores <kind>`, B-user-5): `preferences` (manual add, telemetry, position in
+    /// adverts, extra ACKs), `power`, `params`, `position`, `gps` (board settings),
+    /// `autoadd` or `name`. Another word changes nothing. Call right after `new`.
+    pub fn ignore_settings(&self, kind: String) {
+        use lc_meshcore::codes::cmd;
+        let code = match kind.as_str() {
+            "preferences" => cmd::SET_OTHER_PARAMS,
+            "power" => cmd::SET_RADIO_TX_POWER,
+            "params" => cmd::SET_RADIO_PARAMS,
+            "position" => cmd::SET_ADVERT_LATLON,
+            "gps" => cmd::SET_CUSTOM_VAR,
+            "autoadd" => cmd::SET_AUTOADD_CONFIG,
+            "name" => cmd::SET_ADVERT_NAME,
+            _ => return,
+        };
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let app = d.app;
+        if let Some(n) = d.net.nodes.get_mut(app) {
+            n.settings.ignore = Some(code);
+        }
+    }
+
     /// The radio holds its answers for the first `seconds` of the demo's time, then gives them
     /// all at once (debug `radioSlow`, D-9): a busy radio whose settings are not read yet.
     /// Call right after `new`.
@@ -1878,8 +1904,9 @@ mod skip {
                 demo.write(f, now);
             }
             while let Some(e) = core.poll_event() {
-                if matches!(e, LichenEvent::RadioSettings) {
-                    refused.extend(core.take_radio_refusals());
+                if let LichenEvent::RadioOutcome { outcome } = e {
+                    assert_eq!(outcome.outcome, crate::SettingOutcome::Refused);
+                    refused.push(outcome.setting);
                 }
             }
             if before.is_none() && now >= 5_000 {

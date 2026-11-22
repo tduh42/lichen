@@ -747,5 +747,5 @@ fn ct_12_add_a_meshcore_contact_from_a_link() {
         find_contact(c, "Lake hut").is_some_and(|h| h.person)
     });
     // The radio took every one: nothing refused.
-    assert!(sim.core.take_radio_refusals().is_empty());
+    assert!(sim.core.take_radio_outcomes().is_empty());
 }

@@ -22,6 +22,7 @@ import com.tduhamel.lichen.core.FailReason
 import com.tduhamel.lichen.core.LinkKind
 import com.tduhamel.lichen.core.MessageStatus
 import com.tduhamel.lichen.core.NodeKind
+import com.tduhamel.lichen.core.RadioSetting
 import com.tduhamel.lichen.core.meshcoreContactCode
 import com.tduhamel.lichen.core.readMeshcoreContactCode
 import com.tduhamel.lichen.model.AppModel
@@ -339,8 +340,12 @@ class RadioLinkTest : UiTest() {
         see(sentAt(true))
         // Position in adverts on, and a position: the advert says it carries it.
         val r = model.radioSettings!!
-        model.radioSet { model.core.setRadioPreferences(r.manualAdd, r.telemetry, true, r.multiAcks) }
-        model.radioSet { model.core.setAdvertPosition(45_123_450, 5_123_450) }
+        model.radioSet(RadioSetting.PREFERENCES, "position", { it.copy(positionInAdverts = true) }) {
+            model.core.setRadioPreferences(r.manualAdd, r.telemetry, true, r.multiAcks)
+        }
+        model.radioSet(RadioSetting.ADVERT_POSITION, "advert_position", { it.copy(latE6 = 45_123_450, lonE6 = 5_123_450) }) {
+            model.core.setAdvertPosition(45_123_450, 5_123_450)
+        }
         advanceUntil("the position in adverts", 10) { model.radioSettings?.let { it.positionInAdverts && it.latE6 != 0 } == true }
         tap(R.string.send_advert)
         see(str(R.string.advert_carries_position, name))
@@ -506,13 +511,88 @@ class RadioLinkTest : UiTest() {
         // A fix every 5 (or 15) minutes: refused by the radio.
         tap(label(before))
         tapInDialog(label(asked))
+        // Said on its row (B-user-5), not in a dialog.
         waitReal("the radio's refusal") { has(R.string.radio_refused) }
-        text(R.string.not_changed).assertIsDisplayed()
-        tapInDialog(R.string.ok)
+        assertFalse(has(R.string.not_changed))
         // The radio's value, still.
         assertEquals(before, model.radioSettings?.gpsIntervalS)
         see(label(before))
         assertFalse(has(label(asked)))
+    }
+
+    /** RL-11 (B-user-5): each setting says what happened, on its row. A telemetry change: a
+     * spinner while the radio has not answered, then "Saved on the radio", gone after 2 s. With
+     * `radioIgnores preferences`, the position switch and a telemetry choice: the radio kept its
+     * old value, which the controls show again. With `radioRefuses power`: refused. */
+    @Test
+    fun RL_11_eachSettingSaysWhatHappened() = outcomes()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_11_eachSettingSaysWhatHappened_fr() = outcomes()
+
+    /** The telemetry row's current choice (the first of the three, "who may ask for the basics"),
+     * opened, and [to] chosen. */
+    private fun telemetryBase(to: Int) {
+        scrollTo(hasText(str(R.string.telemetry_base)))
+        compose.onAllNodesWithText(str(R.string.nobody)).onFirst().performClick()
+        compose.waitForIdle()
+        tapInDialog(to)
+    }
+
+    private fun outcomes() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        assertEquals(0, model.radioSettings!!.telemetry.base.toInt())
+        // The radio's answer held back a moment: waiting, the value asked for and the spinner.
+        val demo = model.demoNetwork!!
+        demo.holdReplies(100_000uL)
+        telemetryBase(R.string.everyone)
+        advance(1)
+        assertTrue(hasDesc(str(R.string.radio_waiting)))
+        assertEquals(2, model.radioAsked?.telemetry?.base?.toInt())
+        demo.holdReplies(0uL)
+        advanceUntil("saved", 10) { has(R.string.radio_saved) }
+        assertEquals(2, model.radioSettings!!.telemetry.base.toInt())
+        assertEquals(null, model.radioAsked)
+        // Gone after its 2 s (a delay of the screen's own: Compose's clock).
+        compose.mainClock.advanceTimeBy(2_500)
+        compose.waitForIdle()
+        assertFalse(has(R.string.radio_saved))
+    }
+
+    @Test
+    fun RL_11_aSettingTheRadioDoesNotKeep() = notKept()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_11_aSettingTheRadioDoesNotKeep_fr() = notKept()
+
+    private fun notKept() {
+        launch("demo" to true, "screen" to "radio", "radioIgnores" to "preferences", "radioRefuses" to "power")
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        assertFalse(model.radioSettings!!.positionInAdverts)
+        // The position in adverts: asked for, answered, not kept.
+        toggle(R.string.position_in_adverts)
+        tapInDialog(R.string.show_it)
+        advanceUntil("not kept", 10) { has(R.string.radio_not_kept) }
+        assertFalse(model.radioSettings!!.positionInAdverts)
+        assertEquals(null, model.radioAsked)
+        see(R.string.position_in_adverts_off)
+        // A telemetry choice too; the message stays until the next change.
+        telemetryBase(R.string.everyone)
+        advanceUntil("not kept, twice", 10) {
+            compose.onAllNodesWithText(str(R.string.radio_not_kept)).fetchSemanticsNodes().size == 2
+        }
+        advance(3)
+        assertTrue(has(R.string.radio_not_kept))
+        assertEquals(0, model.radioSettings!!.telemetry.base.toInt())
+        // The power: refused, on its row.
+        if (!has(str(R.string.transmit_power))) scrollTo(hasText(str(R.string.transmit_power)))
+        compose.onAllNodesWithText("−").onFirst().performClick()
+        compose.waitForIdle()
+        advanceUntil("refused", 10) { has(R.string.radio_refused) }
+        assertFalse(has(R.string.not_changed))
     }
 
     /** RL-7: the radio's battery in its settings; Show radio details puts the radio card on

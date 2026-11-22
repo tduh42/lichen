@@ -54,7 +54,9 @@ struct RadioSettingsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
-                if let r = model.radioSettings, r.read, model.isConnected {
+                if let radio = model.radioSettings, radio.read, model.isConnected {
+                    // While a setting waits for the radio, the value asked for (B-user-5).
+                    let r = model.radioAsked ?? radio
                     device(r)
                     lora(r)
                     power(r)
@@ -213,6 +215,7 @@ struct RadioSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(chosen.map { $0 == (r.freqKhz, r.bwHz, r.sf, r.cr) } ?? true)
+                RadioRowStatus(row: "lora")
             }
             Text("A radio on other settings no longer hears the radios of its mesh: choose your region’s preset, or the values your local community uses.")
                 .font(.footnote)
@@ -222,7 +225,9 @@ struct RadioSettingsView: View {
         .alert("Change the LoRa settings?", isPresented: $confirmingParams) {
             Button("Apply", role: .destructive) {
                 guard let (f, b, s, c) = chosen else { return }
-                model.radioSet { try model.core.setRadioParams(freqKhz: f, bwHz: b, sf: s, cr: c) }
+                model.radioSet(.params, row: "lora", asked: { $0.freqKhz = f; $0.bwHz = b; $0.sf = s; $0.cr = c }) {
+                    try model.core.setRadioParams(freqKhz: f, bwHz: b, sf: s, cr: c)
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -238,10 +243,15 @@ struct RadioSettingsView: View {
                         subtitle: String(localized: "Up to \(Int(r.maxTxDbm)) dBm on this radio. Less reaches less far and saves its battery.")) {
                     Stepper("Transmit power",
                             value: Binding(get: { Int(r.txDbm) },
-                                           set: { v in model.radioSet { try model.core.setTxPower(dbm: Int8(v)) } }),
+                                           set: { v in
+                                               model.radioSet(.txPower, row: "power", asked: { $0.txDbm = Int8(v) }) {
+                                                   try model.core.setTxPower(dbm: Int8(v))
+                                               }
+                                           }),
                             in: -9...Int(r.maxTxDbm))
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "power")
             }
         }
     }
@@ -254,9 +264,12 @@ struct RadioSettingsView: View {
                         subtitle: String(localized: "Keeps the radio’s position current. It draws power.")) {
                     Toggle("The radio’s GPS",
                            isOn: Binding(get: { r.gps == true },
-                                         set: { on in model.radioSet { try model.core.setGps(on: on) } }))
+                                         set: { on in
+                                             model.radioSet(.gps, row: "gps", asked: { $0.gps = on }) { try model.core.setGps(on: on) }
+                                         }))
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "gps")
                 if r.gps == true {
                     CardDivider()
                     CardRow(title: String(localized: "A fix every")) {
@@ -264,7 +277,11 @@ struct RadioSettingsView: View {
                                selection: Binding(get: { gpsInterval },
                                                   set: { s in
                                                       gpsInterval = s
-                                                      if let s { model.radioSet { try model.core.setGpsInterval(seconds: s) } }
+                                                      if let s {
+                                                          model.radioSet(.gpsInterval, row: "gps_interval", asked: { $0.gpsIntervalS = s }) {
+                                                              try model.core.setGpsInterval(seconds: s)
+                                                          }
+                                                      }
                                                   })) {
                             Text("Not set").tag(UInt32?.none)
                             ForEach(Self.intervals, id: \.self) { s in
@@ -273,6 +290,7 @@ struct RadioSettingsView: View {
                         }
                         .labelsHidden()
                     }
+                    RadioRowStatus(row: "gps_interval")
                 }
             }
         }
@@ -295,9 +313,10 @@ struct RadioSettingsView: View {
                             : String(localized: "Off: adverts carry no position.")) {
                     Toggle("Position in adverts",
                            isOn: Binding(get: { r.positionInAdverts },
-                                         set: { on in if on { confirmingPosition = true } else { setPrefs(r, position: false) } }))
+                                         set: { on in if on { confirmingPosition = true } else { setPrefs(r, row: "position", position: false) } }))
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "position")
                 if r.positionInAdverts {
                     CardDivider()
                     CardRow(title: String(localized: "Position advertised"), subtitle: position(r))
@@ -314,8 +333,10 @@ struct RadioSettingsView: View {
                     if usesPhone(r), let fix = model.myFix {
                         CardDivider()
                         Button {
-                            model.radioSet {
-                                try model.core.setAdvertPosition(latE6: Int32((fix.lat * 1e6).rounded()), lonE6: Int32((fix.lon * 1e6).rounded()))
+                            let lat = Int32((fix.lat * 1e6).rounded())
+                            let lon = Int32((fix.lon * 1e6).rounded())
+                            model.radioSet(.advertPosition, row: "advert_position", asked: { $0.latE6 = lat; $0.lonE6 = lon }) {
+                                try model.core.setAdvertPosition(latE6: lat, lonE6: lon)
                             }
                         } label: {
                             CardRow(title: String(localized: "Use this phone’s position")) {
@@ -324,24 +345,28 @@ struct RadioSettingsView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        RadioRowStatus(row: "advert_position")
                     }
                 }
                 CardDivider()
                 telemetryRow(String(localized: "Telemetry: battery and status"), r.telemetry.base) { v in
-                    setPrefs(r, telemetry: Telemetry(base: v, location: r.telemetry.location, environment: r.telemetry.environment))
+                    setPrefs(r, row: "telemetry_base", telemetry: Telemetry(base: v, location: r.telemetry.location, environment: r.telemetry.environment))
                 }
+                RadioRowStatus(row: "telemetry_base")
                 CardDivider()
                 telemetryRow(String(localized: "Telemetry: position"), r.telemetry.location) { v in
                     if v == 0 {
-                        setPrefs(r, telemetry: Telemetry(base: r.telemetry.base, location: 0, environment: r.telemetry.environment))
+                        setPrefs(r, row: "telemetry_location", telemetry: Telemetry(base: r.telemetry.base, location: 0, environment: r.telemetry.environment))
                     } else {
                         confirmingTelemetry = v
                     }
                 }
+                RadioRowStatus(row: "telemetry_location")
                 CardDivider()
                 telemetryRow(String(localized: "Telemetry: sensors"), r.telemetry.environment) { v in
-                    setPrefs(r, telemetry: Telemetry(base: r.telemetry.base, location: r.telemetry.location, environment: v))
+                    setPrefs(r, row: "telemetry_environment", telemetry: Telemetry(base: r.telemetry.base, location: r.telemetry.location, environment: v))
                 }
+                RadioRowStatus(row: "telemetry_environment")
             }
             Text("Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen’s own positions always travel encrypted, only to the people you choose.")
                 .font(.footnote)
@@ -353,7 +378,7 @@ struct RadioSettingsView: View {
         .onChange(of: usesPhone(r)) { _, on in model.needsLocation("radio", on) }
         .onDisappear { model.needsLocation("radio", false) }
         .alert("Show your position to the whole mesh?", isPresented: $confirmingPosition) {
-            Button("Show it", role: .destructive) { setPrefs(r, position: true) }
+            Button("Show it", role: .destructive) { setPrefs(r, row: "position", position: true) }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Every advert of your radio will carry its position, unencrypted: anyone with a MeshCore app nearby sees where it is.")
@@ -361,7 +386,7 @@ struct RadioSettingsView: View {
         .alert("Give your position by telemetry?", isPresented: Binding(get: { confirmingTelemetry != nil }, set: { if !$0 { confirmingTelemetry = nil } })) {
             Button("Allow", role: .destructive) {
                 if let v = confirmingTelemetry {
-                    setPrefs(r, telemetry: Telemetry(base: r.telemetry.base, location: v, environment: r.telemetry.environment))
+                    setPrefs(r, row: "telemetry_location", telemetry: Telemetry(base: r.telemetry.base, location: v, environment: r.telemetry.environment))
                 }
                 confirmingTelemetry = nil
             }
@@ -386,7 +411,10 @@ struct RadioSettingsView: View {
         let mask = r.autoaddMask ?? 0
         let hops = r.autoaddMaxHops ?? 0
         let setMask: (UInt8, Bool) -> Void = { bit, on in
-            model.radioSet { try model.core.setAutoadd(mask: on ? mask | bit : mask & ~bit, maxHops: hops) }
+            let m = on ? mask | bit : mask & ~bit
+            model.radioSet(.autoadd, row: "autoadd_\(bit)", asked: { $0.autoaddMask = m; $0.autoaddMaxHops = hops }) {
+                try model.core.setAutoadd(mask: m, maxHops: hops)
+            }
         }
         return VStack(alignment: .leading, spacing: 8) {
             SectionLabel("New contacts").padding(.top, 10)
@@ -395,9 +423,10 @@ struct RadioSettingsView: View {
                         subtitle: r.manualAdd ? String(localized: "Only the kinds below become contacts by themselves.")
                                               : String(localized: "Every advert heard becomes a contact.")) {
                     Toggle("Add every radio heard",
-                           isOn: Binding(get: { !r.manualAdd }, set: { on in setPrefs(r, manualAdd: !on) }))
+                           isOn: Binding(get: { !r.manualAdd }, set: { on in setPrefs(r, row: "manual_add", manualAdd: !on) }))
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "manual_add")
                 if r.manualAdd {
                     ForEach([(UInt8(0x02), String(localized: "People (companions)")),
                              (UInt8(0x04), String(localized: "Repeaters")),
@@ -408,6 +437,7 @@ struct RadioSettingsView: View {
                             Toggle(title, isOn: Binding(get: { mask & bit != 0 }, set: { setMask(bit, $0) }))
                                 .labelsHidden()
                         }
+                        RadioRowStatus(row: "autoadd_\(bit)")
                     }
                 }
                 CardDivider()
@@ -416,15 +446,21 @@ struct RadioSettingsView: View {
                            isOn: Binding(get: { mask & 0x01 != 0 }, set: { setMask(0x01, $0) }))
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "autoadd_1")
                 CardDivider()
                 CardRow(title: String(localized: "From how far")) {
                     Picker("From how far",
                            selection: Binding(get: { hops },
-                                              set: { h in model.radioSet { try model.core.setAutoadd(mask: mask, maxHops: h) } })) {
+                                              set: { h in
+                                                  model.radioSet(.autoadd, row: "autoadd_hops", asked: { $0.autoaddMaxHops = h }) {
+                                                      try model.core.setAutoadd(mask: mask, maxHops: h)
+                                                  }
+                                              })) {
                         ForEach(hopChoices(hops), id: \.self) { Text(hopLabel($0)).tag($0) }
                     }
                     .labelsHidden()
                 }
+                RadioRowStatus(row: "autoadd_hops")
             }
         }
     }
@@ -436,10 +472,11 @@ struct RadioSettingsView: View {
                 CardRow(title: String(localized: "Extra acknowledgements: \(Int(r.multiAcks))"),
                         subtitle: String(localized: "Sends each acknowledgement again: more reliable, more airtime.")) {
                     Stepper("Extra acknowledgements",
-                            value: Binding(get: { Int(r.multiAcks) }, set: { setPrefs(r, multiAcks: UInt8($0)) }),
+                            value: Binding(get: { Int(r.multiAcks) }, set: { setPrefs(r, row: "multi_acks", multiAcks: UInt8($0)) }),
                             in: 0...2)
                         .labelsHidden()
                 }
+                RadioRowStatus(row: "multi_acks")
             }
         }
     }
@@ -459,7 +496,7 @@ struct RadioSettingsView: View {
                 CardDivider()
                 Button {
                     let pin = UInt32(pinText) ?? 0
-                    model.radioSet { try model.core.setBlePin(pin: pin) }
+                    model.radioSet(.pin, row: "pin", asked: { _ in }) { try model.core.setBlePin(pin: pin) }
                     pinSaved = model.radioError == nil
                 } label: {
                     CardRow(title: String(localized: "Save the PIN"))
@@ -467,6 +504,7 @@ struct RadioSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!(pinText.isEmpty || (pinText.count == 6 && pinText.allSatisfy(\.isNumber))))
+                RadioRowStatus(row: "pin")
                 CardDivider()
                 Button { confirmingReboot = true } label: {
                     CardRow(title: String(localized: "Restart the radio")) {
@@ -495,13 +533,20 @@ struct RadioSettingsView: View {
         return (UInt32((f * 1000).rounded()), bwHz, sf, cr)
     }
 
-    private func setPrefs(_ r: RadioSettings, manualAdd: Bool? = nil, telemetry: Telemetry? = nil,
+    private func setPrefs(_ r: RadioSettings, row: String, manualAdd: Bool? = nil, telemetry: Telemetry? = nil,
                           position: Bool? = nil, multiAcks: UInt8? = nil) {
-        model.radioSet {
-            try model.core.setRadioPreferences(manualAdd: manualAdd ?? r.manualAdd,
-                                               telemetry: telemetry ?? r.telemetry,
-                                               positionInAdverts: position ?? r.positionInAdverts,
-                                               multiAcks: multiAcks ?? r.multiAcks)
+        let manualAdd = manualAdd ?? r.manualAdd
+        let telemetry = telemetry ?? r.telemetry
+        let position = position ?? r.positionInAdverts
+        let multiAcks = multiAcks ?? r.multiAcks
+        model.radioSet(.preferences, row: row, asked: {
+            $0.manualAdd = manualAdd
+            $0.telemetry = telemetry
+            $0.positionInAdverts = position
+            $0.multiAcks = multiAcks
+        }) {
+            try model.core.setRadioPreferences(manualAdd: manualAdd, telemetry: telemetry,
+                                               positionInAdverts: position, multiAcks: multiAcks)
         }
     }
 
@@ -537,6 +582,53 @@ struct RadioSettingsView: View {
         case 0: String(localized: "Any distance")
         case 1: String(localized: "Direct only")
         default: String(localized: "Up to \(Int(h) - 1) hops")
+        }
+    }
+}
+
+/// What became of the setting changed from `row` (B-user-5): a spinner while the radio has not
+/// answered, then "Saved on the radio" for 2 s, or why the value shown is still the radio's
+/// (kept, refused, unanswered) until the next change.
+struct RadioRowStatus: View {
+    let row: String
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if let state = model.radioRows[row] {
+            HStack(spacing: 8) {
+                switch state.outcome {
+                case nil:
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Waiting for the radio")
+                case .saved?:
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.ok).accessibilityHidden(true)
+                    Text("Saved on the radio")
+                case let outcome?:
+                    Image(systemName: "info.circle").foregroundStyle(Theme.warn).accessibilityHidden(true)
+                    Text(Self.why(outcome))
+                }
+            }
+            .font(.system(.footnote))
+            .foregroundStyle(Theme.tx)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 11)
+            .accessibilityElement(children: .combine)
+            .task(id: state) {
+                guard state.outcome == .saved else { return }
+                try? await Task.sleep(for: .seconds(model.radioSavedSeconds))
+                model.clearRadioRow(row)
+            }
+        }
+    }
+
+    private static func why(_ outcome: SettingOutcome) -> String {
+        switch outcome {
+        case .notKept: String(localized: "The radio answered but kept its old value.")
+        case .refused: String(localized: "The radio refused this setting.")
+        case .noAnswer, .saved: String(localized: "The radio did not answer.")
         }
     }
 }
