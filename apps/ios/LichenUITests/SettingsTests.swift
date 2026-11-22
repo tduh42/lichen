@@ -17,9 +17,17 @@ final class SettingsTests: LichenUITest {
         return toggle
     }
 
-    /// Flips a switch (its knob, at its trailing end).
+    /// Flips a switch (its knob, at its trailing end), and taps again if its value has not
+    /// changed within 3 s: a slow runner drops a tap now and then (ST-8 on CI, run
+    /// 45004362565: "Relay only" never came on, and the restart that followed found it off).
     private func flip(_ toggle: XCUIElement) {
-        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let before = toggle.value as? String
+        for _ in 0..<3 {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+            let deadline = Date().addingTimeInterval(3)
+            while (toggle.value as? String) == before && Date() < deadline { pause(0.3) }
+            if (toggle.value as? String) != before { return }
+        }
     }
 
     /// ST-1: a privacy setting (GIFs loaded from GIPHY by themselves) applied, and kept after a

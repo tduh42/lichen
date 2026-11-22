@@ -118,6 +118,95 @@ final class ChatNavigationTests: LichenUITest {
         XCTAssertLessThanOrEqual(end.frame.minY, composer.frame.minY, "end below the screen: \(end.frame) vs \(composer.frame)")
     }
 
+    /// B-ios-28: a long chat opens on its unread divider, and her message arriving just after
+    /// leaves it there, with the pill. It used to jump up near the top of the loaded page: at
+    /// the wall clock's pace her message lands after the opening's last scroll. Then the pill
+    /// goes to the end.
+    func testALongChatStaysOnItsDividerWhenAMessageArrives() {
+        launch(["-open", "Camille", "-fill", "5000", "-quietDemo", "YES"], speed: 1)
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        let divider = app.staticTexts.matching(NSPredicate(format: "label ENDSWITH %@", tr("%lld unread messages", 5).replacingOccurrences(of: "5 ", with: ""))).firstMatch
+        XCTAssertTrue(divider.waitForExistence(timeout: 30), "no unread divider")
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("%lld new messages", 1).replacingOccurrences(of: "1 ", with: ""))).firstMatch
+        XCTAssertTrue(pill.waitForExistence(timeout: 60), "no pill for her message")
+        pause(4)
+        let shown = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Earlier message '")).allElementsBoundByIndex
+            .first { $0.isHittable }?.label ?? "-"
+        XCTAssertTrue(divider.isHittable, "her message moved the view off the divider: now on “\(shown)”")
+        keep("chat-long-divider-held")
+        pill.tap()
+        pause(2)
+        let end = app.descendants(matching: .any)["chat.end"]
+        XCTAssertTrue(end.exists && end.frame.minY <= composer.frame.minY, "the pill did not reach the end")
+    }
+
+    /// B-ios-28: in a long chat, a message arriving moves the view only when the end is on
+    /// screen. Read above (three screens up from the end, three times, then on the earlier
+    /// page), her answer comes: the view holds its place and the pill counts it; the pill then
+    /// goes to the end. (The pill used to stop short of it, or go back to the page read before,
+    /// about once in three.)
+    func testALongChatHoldsItsPlaceWhenAMessageArrives() {
+        // Her answers 20 s of the demo's time after our texts reach her: once we read above.
+        launch(["-open", "Camille", "-fill", "5000", "-quietDemo", "YES", "-answerAfter", "20"])
+        XCTAssertTrue(inChat(app).waitForExistence(timeout: 60))
+        XCTAssertTrue(encrypted(app).waitForExistence(timeout: 90), "no session with Camille")
+        // The messages (with the keyboard up after a text, the first scroll view is not them):
+        // the scroll view with earlier messages, her answers or the end on screen.
+        let list = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH 'Earlier message ' OR label BEGINSWITH 'Copy: ' OR identifier == 'chat.end'")).firstMatch
+        /// Up the conversation: a fling on the messages, from their upper part (a swipe on the
+        /// keyboard, up after a text, types words: slide to type).
+        func up() {
+            list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+                .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+                       withVelocity: .fast, thenHoldForDuration: 0)
+        }
+        let pill = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", tr("%lld new messages", 1).replacingOccurrences(of: "1 ", with: ""))).firstMatch
+        let end = app.descendants(matching: .any)["chat.end"]
+        /// The topmost message on screen, by its text.
+        func onScreen() -> String? {
+            app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Earlier message '")).allElementsBoundByIndex
+                .first { $0.isHittable }?.label
+        }
+        // Three times: ours goes, the view at the end; three screens up; her answer comes and
+        // the view holds; the pill goes to the end, her answer on it.
+        for round in 1...3 {
+            let text = "Still up there? \(round)"
+            send(text)
+            pause(2)
+            for _ in 0..<3 { up() }
+            pause(2)
+            let held = onScreen()
+            XCTAssertNotNil(held, "round \(round): no earlier message on screen")
+            XCTAssertTrue(pill.waitForExistence(timeout: 60), "round \(round): no pill for her answer")
+            pause(3)
+            if let held {
+                XCTAssertTrue(app.staticTexts[held].isHittable, "round \(round): her answer moved the view off “\(held)”: now “\(onScreen() ?? "-")”")
+            }
+            if round == 1 { keep("chat-long-held") }
+            pill.tap()
+            pause(2)
+            XCTAssertTrue(end.exists && end.frame.minY <= composer.frame.minY, "round \(round): the pill did not reach the end")
+            XCTAssertTrue(containing("Copy: \"\(text)\"").isHittable, "round \(round): her answer is not on screen")
+        }
+        // Ours again, then up to the earlier page: its first message stays at the top.
+        send("And the path down?")
+        pause(2)
+        let earlier = button(tr("Show earlier messages"))
+        for _ in 0..<25 where !(earlier.exists && earlier.isHittable) { up() }
+        let top = app.staticTexts["Earlier message 4901"]
+        earlier.tap()
+        pause(2)
+        XCTAssertTrue(top.isHittable, "the earlier page moved the view")
+        XCTAssertTrue(pill.waitForExistence(timeout: 60), "no pill for her second answer")
+        pause(3)
+        XCTAssertTrue(top.isHittable, "her answer moved the view off the earlier page: now “\(onScreen() ?? "-")”")
+        pill.tap()
+        pause(2)
+        XCTAssertTrue(end.exists && end.frame.minY <= composer.frame.minY, "the pill did not reach the end")
+        XCTAssertTrue(containing("Copy: \"And the path down?\"").isHittable, "her second answer is not on screen")
+    }
+
     /// A long chat (a lazy list since M5) keeps its places: it opens on the unread divider, the
     /// page before keeps the message that was at the top, and the pill of a new message goes
     /// down to it.
