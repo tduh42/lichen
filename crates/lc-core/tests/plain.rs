@@ -127,3 +127,47 @@ fn messages_wait_in_the_companion() {
     assert_eq!(texts, ["Tu es là ?", "Météo : orage vers 16 h"]);
     assert!(net.nodes[app].inbox.is_empty());
 }
+
+/// Someone with a stock client sends a direct message again until it is confirmed, as stock
+/// clients do (§15): `attempt` + 1 after the timeout `SENT` gave plus 2 s, the third and last
+/// attempt flooded. The repeater misses the first two here: the third arrives, once.
+#[test]
+fn a_stock_client_sends_again_until_confirmed() {
+    use lc_meshcore::air::{Packet, PayloadType};
+    let (mut net, app, marc) = pair(4);
+    let (r, from) = (1, net.key(marc)[0]);
+    net.deaf = Some(Box::new(move |to, frame| {
+        // A TXT_MSG's payload: destination and source hashes, MAC, ts, then the attempt.
+        Packet::decode(frame).is_ok_and(|p| {
+            to == r
+                && p.ptype == PayloadType::TxtMsg
+                && p.payload.get(1) == Some(&from)
+                && p.payload.get(8).is_some_and(|f| f & 3 < 2)
+        })
+    }));
+    net.send_plain_text(marc, app, "Tu me reçois ?", 1_793_000_000);
+    let mut ev = Vec::new();
+    net.run_until(net.now + 2 * MIN, |n| {
+        ev.extend(n.take_events(app));
+        false
+    });
+    let got = plain(&ev);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].text, "Tu me reçois ?");
+    assert_eq!(got[0].hops, Some(1), "the last attempt floods");
+}
+
+/// A direct message confirmed at once is sent once.
+#[test]
+fn a_confirmed_stock_message_is_sent_once() {
+    let (mut net, app, marc) = pair(5);
+    let before = net.nodes[marc].tx_frames;
+    net.send_plain_text(marc, app, "Une fois", 1_793_000_000);
+    let mut ev = Vec::new();
+    net.run_until(net.now + 2 * MIN, |n| {
+        ev.extend(n.take_events(app));
+        false
+    });
+    assert_eq!(plain(&ev).len(), 1);
+    assert_eq!(net.nodes[marc].tx_frames - before, 1, "sent again");
+}

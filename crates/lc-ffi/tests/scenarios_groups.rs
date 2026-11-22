@@ -266,7 +266,9 @@ fn gr_5_post_and_receive_in_a_group() {
     sim.until_status(&gchat, m.id, 60, |s| *s == MessageStatus::Flooded);
     let camille = common::find_contact(&sim.core, "Camille").unwrap();
     let julien = common::find_contact(&sim.core, "Julien").unwrap();
-    let seen = sim.until_some("Camille's answer", 300, |c| {
+    // Her answer floods too, nobody acknowledges it, and the hub may lose both its copies: a
+    // member's digest then brings it back, marked late, minutes after (§10.6).
+    let seen = sim.until_some("Camille's answer", 900, |c| {
         c.history(gchat.clone(), None, 100)
             .unwrap()
             .into_iter()

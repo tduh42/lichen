@@ -30,7 +30,8 @@
 //! recipient's companion queues it for `SYNC_NEXT_MESSAGE`, pushes `MSG_WAITING`, and answers a
 //! direct message with an `ACK` that comes back as `SEND_CONFIRMED`. Channel slots answer
 //! `GET_CHANNEL` and `SET_CHANNEL`. A companion without an app (someone with a stock client)
-//! is driven with [`Net::send_plain_text`] and [`Net::post_on_channel`].
+//! is driven with [`Net::send_plain_text`], which sends a direct message again until it is
+//! confirmed as stock clients do, and [`Net::post_on_channel`].
 //!
 //! **Mesh tools** (§15.8, §16), simplified (answers without airtime on the channel, after the
 //! time of the round trip along the shortest route): `GET_CONTACTS` records carry the position
@@ -187,6 +188,8 @@ enum Ev {
     TxEnd(u64),
     /// A push computed ahead (mesh tools: a trace, a server's answer), by its id.
     Push(u64),
+    /// A stock client's direct message not confirmed in time goes again, by its id.
+    StockRetry(u64),
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +232,8 @@ pub struct Net {
     /// Pushes due later (`Ev::Push`): id, companion, frame; a frame queued for
     /// `SYNC_NEXT_MESSAGE` when `queued`.
     later: Vec<Later>,
+    /// Direct messages of stock clients waiting for their confirmation (`Ev::StockRetry`).
+    stock_sends: Vec<StockSend>,
 }
 
 #[derive(Debug)]
@@ -237,6 +242,19 @@ struct Later {
     to: usize,
     frame: Vec<u8>,
     queued: bool,
+}
+
+/// A stock client's direct message, sent again until confirmed (§15).
+#[derive(Debug)]
+struct StockSend {
+    id: u64,
+    from: usize,
+    to: usize,
+    text: String,
+    ts: u32,
+    attempt: u8,
+    /// The ACK tags of its attempts so far.
+    tags: Vec<u32>,
 }
 
 /// See [`Net::deaf`].
@@ -306,6 +324,7 @@ impl Net {
             geometry: Geometry::default(),
             deaf: None,
             later: Vec::new(),
+            stock_sends: Vec::new(),
         }
     }
 
@@ -421,20 +440,78 @@ impl Net {
         i
     }
 
-    /// Node `i` sends a plain direct message to node `to`, as a stock client would.
+    /// Node `i` sends a plain direct message to node `to`, as a stock client would (§15): not
+    /// confirmed within the timeout `SENT` gave plus 2 s, the same text and timestamp go again
+    /// with `attempt` + 1; the third and last attempt floods (`RESET_PATH` first).
     pub fn send_plain_text(&mut self, i: usize, to: usize, text: &str, ts: u32) {
-        let key = self.key(to);
+        self.seq += 1;
+        let send = StockSend {
+            id: self.seq,
+            from: i,
+            to,
+            text: text.to_owned(),
+            ts,
+            attempt: 0,
+            tags: Vec::new(),
+        };
+        self.stock_attempt(send);
+    }
+
+    fn stock_attempt(&mut self, mut send: StockSend) {
+        let key = self.key(send.to);
         let mut frame = [0u8; 176];
         let cmd = lc_meshcore::Command::SendTxtMsg {
             kind: 0,
-            attempt: 0,
-            ts,
+            attempt: send.attempt,
+            ts: send.ts,
             prefix: key[..6].try_into().unwrap_or(&[0; 6]),
-            text: text.as_bytes(),
+            text: send.text.as_bytes(),
         };
-        if let Ok(n) = cmd.encode(&mut frame) {
-            let _ = self.companion_command(i, &frame[..n]);
+        let Ok(n) = cmd.encode(&mut frame) else {
+            return;
+        };
+        // SENT: flood ‖ ack tag u32 ‖ timeout_ms u32.
+        let replies = self.companion_command(send.from, &frame[..n]);
+        let Some(sent) = replies.iter().find(|r| r.first() == Some(&resp::SENT)) else {
+            return;
+        };
+        let le = |r: std::ops::Range<usize>| {
+            sent.get(r)
+                .and_then(|b| b.try_into().ok())
+                .map(u32::from_le_bytes)
+        };
+        let (Some(tag), Some(timeout)) = (le(2..6), le(6..10)) else {
+            return;
+        };
+        send.tags.push(tag);
+        let at = self.now + Millis::from(timeout) + 2_000;
+        let id = send.id;
+        self.stock_sends.push(send);
+        self.schedule(at, Ev::StockRetry(id));
+    }
+
+    /// The time for a confirmation is over: the message goes again unless one of its attempts
+    /// was confirmed, or the last one went.
+    fn stock_retry(&mut self, id: u64) {
+        let Some(pos) = self.stock_sends.iter().position(|s| s.id == id) else {
+            return;
+        };
+        let mut send = self.stock_sends.remove(pos);
+        let confirmed = self.nodes.get(send.from).is_none_or(|n| {
+            send.tags
+                .iter()
+                .any(|t| !n.acks.iter().any(|(a, _)| a == t))
+        });
+        if confirmed || send.attempt >= 2 {
+            return;
         }
+        send.attempt += 1;
+        if send.attempt == 2 {
+            let mut reset = vec![cmd::RESET_PATH];
+            reset.extend_from_slice(&self.key(send.to));
+            let _ = self.companion_command(send.from, &reset);
+        }
+        self.stock_attempt(send);
     }
 
     /// Node `i` puts a channel in slot `index` (§15.3).
@@ -862,6 +939,7 @@ impl Net {
                         }
                     }
                 }
+                Ev::StockRetry(id) => self.stock_retry(id),
             }
         }
         self.now = deadline;

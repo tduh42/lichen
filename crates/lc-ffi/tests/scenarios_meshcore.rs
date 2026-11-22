@@ -34,6 +34,35 @@ fn send_plain_until_delivered(sim: &mut Sim, chat: &ChatRef, s: &str) -> lc_ffi:
     sim.until_status(chat, m.id, 120, |s| *s == MessageStatus::Delivered)
 }
 
+/// MC-1: Marc's message arrives however long the app takes to reach a radio already on, as
+/// iOS's LC-4 starts over FakeTcpRadio (`-tcp`, `-freshInstall`, the script 20 s sooner): what
+/// the radio pushed before the connection is lost, so Camille's first handshake goes
+/// unanswered and her retry can fall on Marc's message at the hub. Marc's stock app sends it
+/// again, as stock clients do (§15; B-ios-31: once only, it was lost whenever the app connected
+/// 11.5 s or more after the radio started).
+#[test]
+fn mc_1_marcs_message_whenever_the_app_reaches_the_radio() {
+    for connect_ms in [2_000, 11_500, 14_000, 17_000, 20_000] {
+        let mut sim = Sim::radio_first(126, "mc1-late", 20, connect_ms);
+        let said = sim.until_event(
+            &format!("Marc's message, the app connected at {connect_ms} ms"),
+            90,
+            |e| match e {
+                LichenEvent::PlainReceived {
+                    chat: ChatRef::Mesh { .. },
+                    text,
+                    ..
+                } if text.starts_with("Hi! Marc") => Some(text.clone()),
+                _ => None,
+            },
+        );
+        let marc = sim.contact("Marc");
+        let row = sim.conversation(&ChatRef::Mesh { key: marc.key }).unwrap();
+        assert_eq!(text(&row.last.message), Some(said.as_str()));
+        assert_eq!(row.unread, 1, "once, at {connect_ms} ms");
+    }
+}
+
 /// MC-1: Marc's plain message arrives in a MeshCore chat under his name; the answer reaches
 /// him, and he answers once. What only lichen does is refused there.
 #[test]
