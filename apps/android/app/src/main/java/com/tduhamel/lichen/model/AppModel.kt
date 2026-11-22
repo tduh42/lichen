@@ -256,9 +256,24 @@ class AppModel(val app: Application) {
             radioRowOf[setting] = row
             radioRows = radioRows + (row to RadioRowState(null, wallNow()))
             (radioAsked ?: radioSettings)?.let { radioAsked = asked(it) }
+            // The core only queues the command: sent now, not when something else wakes the
+            // app (B-user-6).
+            pump()
         } catch (e: LichenException) {
             radioError = e.display(app.resources)
         }
+    }
+
+    /** Reads the radio's battery and storage again (Radio settings opened). */
+    fun refreshRadio() {
+        core.refreshRadio()
+        pump()
+    }
+
+    /** Restarts the radio: the connection drops and comes back. */
+    fun rebootRadio() {
+        core.rebootRadio()
+        pump()
     }
 
     /** A row's outcome, read: it goes. */
@@ -288,6 +303,8 @@ class AppModel(val app: Application) {
     fun setTimer(chat: ChatId, seconds: UInt): String? = try {
         core.setDisappearing(chat.ref, seconds)
         timers[chat] = seconds
+        // A lichen conversation is sent the timer (B-user-6).
+        pump()
         null
     } catch (e: LichenException) {
         e.display(res)

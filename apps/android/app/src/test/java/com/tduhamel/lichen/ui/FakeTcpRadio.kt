@@ -11,9 +11,11 @@ import java.net.Socket
  * A radio on the network, as `lichen bridge` serves one: the demo network's companion behind a
  * TCP port on this machine, with the serial framing (`'<' len frame` from the app, `'>' len
  * frame` to it). The app reaches it through its real TCP link, as a radio it pairs with and
- * saves (not the demo mode). The simulation runs on the wall clock.
+ * saves (not the demo mode). The simulation runs on the wall clock. A [quiet] one says nothing
+ * of its own (B-user-6): its answers to the app, never a push (a message heard, an advert), as a
+ * radio on a quiet mesh, so nothing else wakes the app.
  */
-class FakeTcpRadio : AutoCloseable {
+class FakeTcpRadio(private val quiet: Boolean = false) : AutoCloseable {
     private val server = ServerSocket(0, 1, InetAddress.getLoopbackAddress())
     private val demo = DemoNetwork()
     private val start = System.nanoTime()
@@ -49,7 +51,7 @@ class FakeTcpRadio : AutoCloseable {
             val out = s.getOutputStream()
             Thread({
                 while (!s.isClosed) {
-                    runCatching { send(out, demo.read(now())) }.onFailure { return@Thread }
+                    runCatching { send(out, read()) }.onFailure { return@Thread }
                     Thread.sleep(40)
                 }
             }, "fake-tcp-radio-out").apply { isDaemon = true }.start()
@@ -67,7 +69,7 @@ class FakeTcpRadio : AutoCloseable {
                         continue
                     }
                     demo.write(frame, now())
-                    send(out, demo.read(now()))
+                    send(out, read())
                 }
             } catch (_: Exception) {
                 // Closed: the link dropped.
@@ -75,6 +77,11 @@ class FakeTcpRadio : AutoCloseable {
             runCatching { s.close() }
         }
     }
+
+    /** What the radio has for the app: its answers, and its pushes (0x80 and up, lc-meshcore
+     * `codes::resp`) unless [quiet]. */
+    private fun read(): List<ByteArray> =
+        demo.read(now()).filter { !quiet || (it.firstOrNull()?.toInt() ?: 0) and 0xFF < 0x80 }
 
     private fun send(out: OutputStream, frames: List<ByteArray>) = synchronized(out) {
         if (System.nanoTime() < holdUntil) {

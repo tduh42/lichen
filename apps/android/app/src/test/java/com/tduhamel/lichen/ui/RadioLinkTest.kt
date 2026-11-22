@@ -561,6 +561,28 @@ class RadioLinkTest : UiTest() {
         assertFalse(has(R.string.radio_saved))
     }
 
+    /** RL-11 (B-user-6): on a radio that says nothing of its own, as on a quiet mesh, a setting
+     * goes out at once and is said saved in seconds. It used to wait in the core's queue until
+     * something else woke the app: the row's spinner stayed for minutes. */
+    @Test
+    fun RL_11_aSettingGoesOutOnAQuietRadio() = quietRadio()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_11_aSettingGoesOutOnAQuietRadio_fr() = quietRadio()
+
+    private fun quietRadio(): Unit = FakeTcpRadio(quiet = true).use {
+        launch("onboarding" to false, "tcp" to it.address, "screen" to "radio")
+        waitReal("the radio's settings", 30_000) { model.radioSettings?.read == true }
+        // The connection's reads over, nothing more comes from the radio.
+        val quiet = System.nanoTime() + 2_000_000_000L
+        waitReal("the connection's reads over") { System.nanoTime() > quiet }
+        telemetryBase(R.string.everyone)
+        waitReal("saved", 3_000) { has(R.string.radio_saved) }
+        assertEquals(2, model.radioSettings!!.telemetry.base.toInt())
+        assertEquals(null, model.radioAsked)
+    }
+
     @Test
     fun RL_11_aSettingTheRadioDoesNotKeep() = notKept()
 
