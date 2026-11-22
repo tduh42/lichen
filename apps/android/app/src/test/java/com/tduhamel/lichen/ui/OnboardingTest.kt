@@ -1,5 +1,8 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.hasScrollToIndexAction
 import android.graphics.Bitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
@@ -423,6 +426,70 @@ class OnboardingTest : UiTest() {
         text(R.string.compare).assertIsDisplayed()
         text(R.string.later).assertIsDisplayed()
         assertEquals("the note", !compact, has(R.string.compare_safety_numbers_note))
+    }
+
+    /** B-ios-29's rule, on both apps: while the keyboard is up, the compare banner is compact
+     * (D-10's: its title and Compare / Later), in every language; down, its note comes back. */
+    @Test
+    fun ON_6_compactCompareBannerWithTheKeyboardUp() = bannerWithTheKeyboard()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun ON_6_compactCompareBannerWithTheKeyboardUp_fr() = bannerWithTheKeyboard()
+
+    private fun bannerWithTheKeyboard() {
+        launch("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        text(R.string.compare_safety_numbers_note).assertIsDisplayed()
+        keyboard(300)
+        assertFalse("the note with the keyboard up", has(R.string.compare_safety_numbers_note))
+        text(R.string.compare_safety_numbers_with, "Camille").assertIsDisplayed()
+        text(R.string.compare).assertIsDisplayed()
+        text(R.string.later).assertIsDisplayed()
+        keyboard(0)
+        text(R.string.compare_safety_numbers_note).assertIsDisplayed()
+    }
+
+    /** B-ios-29 on a smaller phone (640 dp tall), in French, at font scale 1.3, the keyboard up
+     * (250 dp): the compare banner leaves the composer on screen while we reply, and the
+     * messages room enough that a tapped quote shows its original. */
+    @Test
+    @Config(qualifiers = "+fr-h640dp", fontScale = 1.3f)
+    fun ON_6_quoteOriginalWithTheKeyboardUp_fr() {
+        launch("demo" to true)
+        camilleWrote()
+        tap("Camille")
+        val chat = ChatId.contact(contact("Camille").key)
+        val first = model.chats[chat].orEmpty().first { !it.outgoing }
+        val hers = (first.message as com.tduhamel.lichen.core.Message.Text).text
+        compose.onAllNodesWithText(hers).onLast().performTouchInput { longClick() }
+        compose.waitForIdle()
+        tapInDialog(R.string.reply)
+        keyboard(250)
+        val reply = "Great, see you there"
+        // The composer stays on screen while we reply (before, the banner pushed it out).
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextInput(reply)
+        tapDesc(R.string.send)
+        advanceUntil("our reply sent", 30) { model.chats[chat].orEmpty().any { it.outgoing && it.quote != null } }
+        advance(2)
+        // Her message out of sight, the quote in our reply; tapped, her message in sight.
+        assertFalse("her message still in sight", hersInSight(hers))
+        compose.onAllNodesWithText(hers.take(20), substring = true).onLast().performClick()
+        compose.mainClock.advanceTimeBy(1_000)
+        advance(1)
+        assertTrue("her message not brought into sight: ${shown()}", hersInSight(hers))
+    }
+
+    /** Her message's own bubble, on the left (the quote in our reply, on the right, says the
+     * same words), at least half in the list's view. */
+    private fun hersInSight(hers: String): Boolean {
+        val list = compose.onNode(hasScrollToIndexAction()).fetchSemanticsNode().boundsInRoot
+        return compose.onAllNodesWithText(hers, useUnmergedTree = true).fetchSemanticsNodes().any {
+            val b = it.boundsInRoot
+            val shown = minOf(b.bottom, list.bottom) - maxOf(b.top, list.top)
+            b.left < list.left + list.width * 0.15f && shown >= b.height / 2
+        }
     }
 
     /** B-user-1: Later puts the banner away, after a restart too; doing neither, it comes back. */
