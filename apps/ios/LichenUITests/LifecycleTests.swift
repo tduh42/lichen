@@ -31,6 +31,15 @@ final class LifecycleTests: LichenUITest {
         wait(app.buttons[action], 5, "no \(action)", file: file, line: line).tap()
     }
 
+    /// Back to Messages by the edge swipe, below where banners show: the Back button's tap
+    /// waits for a banner over the bar to go, and failed when it went meanwhile (LC-2, French:
+    /// "No matches found for … BannerNotification").
+    private func swipeBack(file: StaticString = #filePath, line: UInt = #line) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)))
+        waitGone(composer, 10, "still in the chat", file: file, line: line)
+    }
+
     /// Waits for a notification about `chat`, taps it: its conversation opens. Tapped where it
     /// shows as soon as it does: on a slow runner (CI) the demo's notifications come in a burst,
     /// each banner up 2 or 3 s, and a tap that first checks it is not covered (XCTest's) comes
@@ -106,7 +115,7 @@ final class LifecycleTests: LichenUITest {
         wait(app.buttons[tr("Until I turn it back on")], 5, "no mute durations").tap()
         row("Camille").tap()
         send("Quiet for a while")
-        back()
+        swipeBack()
         let answer = banner("Copy: \"Quiet for a while")
         let deadline = Date().addingTimeInterval(120)
         while !row("Camille").label.contains("Copy: \"Quiet") && Date() < deadline {

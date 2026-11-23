@@ -21,7 +21,9 @@ a part only a real companion shows (the scenario is then in the checklist at the
 `not automated: …`, a part no test shows, and why. A scenario needs a test or a note. A bug
 found gets a test that fails before its fix, at the lowest layer that shows it.
 
-Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`).
+Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, Android `--ez`/`--es`/`--ei`). Every iOS UI test on the demo also runs with `-demoSkip 20`, `-demoSpeed 4`,
+`-noBanners YES` (unless it looks at notifications) and `-plainHeard YES` (what the demo's
+stock-client people send reaches the radio even when the busy air loses it), `LichenUITest.launch`.
 
 **Coverage:** 84 of 86 scenarios have at least one automated test (FFI 75, iOS 82, Android 82, lc-core 2). Written by `python3 -I scripts/testing-coverage.py`.
 

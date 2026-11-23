@@ -30,7 +30,8 @@
 //! recipient's companion queues it for `SYNC_NEXT_MESSAGE`, pushes `MSG_WAITING`, and answers a
 //! direct message with an `ACK` that comes back as `SEND_CONFIRMED`. Channel slots answer
 //! `GET_CHANNEL` and `SET_CHANNEL`. A companion without an app (someone with a stock client)
-//! is driven with [`Net::send_plain_text`] and [`Net::post_on_channel`].
+//! is driven with [`Net::send_plain_text`] and [`Net::post_on_channel`]; [`Net::hand_over`]
+//! gives a companion, out of band, such a frame the air lost on its way (the demo, UI tests).
 //!
 //! **Mesh tools** (§15.8, §16), simplified (answers without airtime on the channel, after the
 //! time of the round trip along the shortest route): `GET_CONTACTS` records carry the position
@@ -1372,6 +1373,47 @@ impl Net {
         let path = self.route(i, from);
         let frame = self.contact_frame(i, resp::NEW_ADVERT, &key, &name, path.as_ref(), kind);
         self.push_to_app(i, &frame);
+    }
+
+    /// The frame node `i` last queued for the air, as it will go out (the one a stock client's
+    /// command just sent: [`Net::send_plain_text`], [`Net::post_on_channel`]).
+    pub fn last_queued(&self, i: usize) -> Option<Vec<u8>> {
+        self.nodes.get(i)?.txq.back().map(|(_, f)| f.clone())
+    }
+
+    /// Companion `i` hears `frame`, as its sender put it on the air, out of band: unless it heard
+    /// it already (its duplicate filter, which then drops a copy that comes later by the air),
+    /// it gets it as at its last hop (a direct packet with its path spent), with an unplaced
+    /// node's readings, and handles it as any frame it hears. Nothing goes on the air but what
+    /// it answers (a direct message's ACK), and nothing at all when it had heard it. Whether it
+    /// was handed over. (The demo's `plain_heard`: what someone with a stock client sends
+    /// reaches the app's radio however busy the air was, UI tests.)
+    pub fn hand_over(&mut self, i: usize, frame: &[u8]) -> bool {
+        let Ok(p) = Packet::decode(frame) else {
+            return false;
+        };
+        if self
+            .nodes
+            .get(i)
+            .is_none_or(|n| n.role != Role::Companion || n.dedup.contains(&p.dedup_hash()))
+        {
+            return false;
+        }
+        let arrived = if matches!(p.route, Route::Direct | Route::TransportDirect) {
+            let mut out = [0u8; 255];
+            let Ok(n) = (Packet {
+                path: Path::EMPTY,
+                ..p
+            })
+            .encode(&mut out) else {
+                return false;
+            };
+            out.get(..n).map(<[u8]>::to_vec).unwrap_or_default()
+        } else {
+            frame.to_vec()
+        };
+        self.receive(i, &arrived, 40, -90);
+        true
     }
 
     /// `IMPORT_CONTACT` (`MyMesh.cpp` L1409, `BaseChatMesh.cpp` L588): `OK` for an ADVERT
