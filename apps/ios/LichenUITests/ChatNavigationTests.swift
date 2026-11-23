@@ -77,24 +77,28 @@ final class ChatNavigationTests: LichenUITest {
                 let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
                 XCTAssertTrue(row.waitForExistence(timeout: 30),
                               "no row \(name) in \(app.buttons.allElementsBoundByIndex.map(\.label))")
-                var tapped = settled(row).label
-                row.tap()
-                XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "\(name) did not open")
                 let bar = app.navigationBars.firstMatch
                 let title = bar.descendants(matching: .any)
                     .matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
-                // A message arriving reorders the list under the tap now and then (the demo is
-                // busy, the runner slow): another chat opens. Back, and once more.
-                if !title.waitForExistence(timeout: 3) {
-                    app.navigationBars.buttons.element(boundBy: 0).tap()
-                    XCTAssertTrue(row.waitForExistence(timeout: 10))
-                    tapped = settled(row).label
+                // A post landing moves its row to the top of the list: the row under the finger
+                // can change between the tap's aim and the tap (B-ios-32: CI's French pass, Lucie's
+                // post at the first tap, both tries), and another chat opens. Back, the row tapped
+                // must then be away from where it was tapped (the list moved), and it is tapped
+                // once more, which must open it. A row that opens another chat in place still
+                // fails: it has not moved, or it opens the wrong chat again.
+                for attempt in 0..<2 {
+                    let at = settled(row).frame
+                    let tapped = row.label
                     row.tap()
                     XCTAssertTrue(inChat(app).waitForExistence(timeout: 10), "\(name) did not open")
+                    if title.waitForExistence(timeout: 5) { break }
+                    let shown = bar.descendants(matching: .any).allElementsBoundByIndex.map(\.label)
+                    XCTAssertEqual(attempt, 0, "round \(round): tapped “\(tapped)” again, the bar shows \(shown)")
+                    app.navigationBars.buttons.element(boundBy: 0).tap()
+                    XCTAssertTrue(row.waitForExistence(timeout: 10), "round \(round): no row \(name) back on the list")
+                    XCTAssertFalse(row.frame.contains(CGPoint(x: at.midX, y: at.midY)),
+                                   "round \(round): tapped “\(tapped)”, which did not move, and the bar shows \(shown)")
                 }
-                let shown = bar.descendants(matching: .any).allElementsBoundByIndex.map(\.label)
-                XCTAssertTrue(title.waitForExistence(timeout: 5),
-                              "round \(round): tapped “\(tapped)”, the bar shows \(shown)")
                 sleep(1)
                 app.navigationBars.buttons.element(boundBy: 0).tap()
                 sleep(1)
