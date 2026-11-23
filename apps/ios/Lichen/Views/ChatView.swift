@@ -102,6 +102,7 @@ struct ChatView: View {
                         .frame(minHeight: 44)
                     }
                     sessionLine
+                        .accessibilityIdentifier("chat.session")
                     ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
                         // A separator when the day changes: "Today", "Yesterday", the date.
                         if i == 0 || !Calendar.current.isDate(messages[i - 1].date, inSameDayAs: m.date) {
@@ -665,6 +666,7 @@ struct DaySeparator: View {
         Text(label)
             .font(.system(.caption))
             .foregroundStyle(Theme.tx2)
+            .accessibilityIdentifier("chat.day")
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
             .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))

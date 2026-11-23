@@ -29,6 +29,9 @@ final class AccessibilityAuditTests: XCTestCase {
 
     private static var permissionLooked = false
 
+    /// The top of a chat: its session line and its day separators (see `audit`).
+    private static let chatTop: Set<String> = ["chat.session", "chat.day"]
+
     /// Audits what is on screen. Left out, as the system's doing and not the app's:
     /// - issues with no element to point at;
     /// - contrast where the content scrolls under the navigation bar or the tab bar (Liquid
@@ -37,7 +40,12 @@ final class AccessibilityAuditTests: XCTestCase {
     ///   whose screenshots measure 7:1 to 16:1 (2026-11-17, iOS 27.2 simulator); it is measured
     ///   again here, WCAG's formula on the element's screenshot, against 4.5:1;
     /// - Dynamic Type and clipping inside the navigation bar: the system caps the bar's text
-    ///   and shows it whole in the Large Content Viewer.
+    ///   and shows it whole in the Large Content Viewer;
+    /// - Dynamic Type of the top of a chat that shows its end (its session line, its day
+    ///   separators): at the audit's largest sizes the chat keeps its last messages in sight and
+    ///   they are scrolled out above it, and on a slow runner the audit then called them
+    ///   "partially unsupported" (#70's and #75's runs; its recording shows them growing at the
+    ///   sizes before). `testTheTopOfAChatGrowsWithTheText` checks that they grow.
     /// And, the app's own but audited apart: Dynamic Type and clipping below `squeezedBelow`.
     /// A banner pinned above the messages grows with the text and leaves them little room, so
     /// the audit no longer sees them grow (B-ios-21, a question for the coordinator); they are
@@ -81,6 +89,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 ignored = underBars || (element.elementType == .staticText && (Self.contrast(of: element) ?? 0) >= 4.5)
             case .dynamicType, .textClipped:
                 ignored = inNavigationBar || squeezedBelow.map { frame.minY >= $0 } == true
+                    || issue.auditType == .dynamicType && Self.chatTop.contains(element.identifier)
             default: ignored = false
             }
             if !ignored {
@@ -151,6 +160,34 @@ final class AccessibilityAuditTests: XCTestCase {
         app.buttons["Later"].tap()
         sleep(2)
         try audit(app, "chat")
+    }
+
+    /// The top of a chat grows with the text: its session line and its day separator are much
+    /// taller at the largest accessibility size than at the default one, scrolled into view
+    /// (the audit cannot always tell: see `audit`).
+    func testTheTopOfAChatGrowsWithTheText() {
+        func heights(_ size: [String]) -> (session: CGFloat, day: CGFloat) {
+            let app = launch(["-open", "Camille", "-quietDemo", "YES"] + size)
+            let session = app.descendants(matching: .any)["chat.session"]
+            let day = app.descendants(matching: .any)["chat.day"]
+            XCTAssertTrue(app.descendants(matching: .any)["composer"].waitForExistence(timeout: 60))
+            XCTAssertTrue(session.waitForExistence(timeout: 90), "no session line")
+            // The top in view: the chat opens at its end.
+            let list = app.scrollViews["chat.messages"]
+            for _ in 0..<6 where !(session.isHittable && day.exists && day.isHittable) {
+                list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+                    .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+            }
+            XCTAssertTrue(session.isHittable && day.isHittable, "the top of the chat is not in view")
+            let measured = (session.frame.height, day.frame.height)
+            app.terminate()
+            return measured
+        }
+        let normal = heights([])
+        let largest = heights(["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        print("Top of a chat, heights at the default and the largest size: \(normal) → \(largest)")
+        XCTAssertGreaterThan(largest.session, normal.session * 1.8, "the session line does not grow: \(normal) → \(largest)")
+        XCTAssertGreaterThan(largest.day, normal.day * 1.8, "the day separator does not grow: \(normal) → \(largest)")
     }
 
     func testGroup() throws {
