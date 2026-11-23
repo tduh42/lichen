@@ -356,6 +356,35 @@ final class OnboardingTests: LichenUITest {
         keep("on-compare-banner-large")
     }
 
+    /// ON-6, B-ios-29: with the keyboard up the banner is compact too, in every language: its
+    /// title, Compare and Later, without the note, so that the messages keep most of the room
+    /// above the keyboard (in French the full banner left them about 100 pt). The keyboard
+    /// down, the note comes back.
+    func testON6_CompactBannerWithTheKeyboardUp() {
+        launch(["-open", "Camille", "-quietDemo", "YES"])
+        wait(keyButton, Self.camilleTimeout, "no session with Camille")
+        let banner = wait(compareBanner("Camille"), 5, "her chat does not ask to compare")
+        let note = containing(tr("Their key is not verified yet. Compare the numbers with them, in person or on a call."))
+        XCTAssertTrue(note.exists, "no note, the keyboard down")
+        send("On my way up")
+        XCTAssertTrue(app.keyboards.firstMatch.exists, "no keyboard after a text")
+        waitGone(note, 5, "the note stayed with the keyboard up")
+        let last = wait(message("On my way up"), 5)
+        XCTAssertTrue(last.isHittable, "the last message is not on screen")
+        // The messages: from below the banner to the composer, more room than the banner's.
+        let room = composer.frame.minY - banner.frame.maxY
+        XCTAssertGreaterThan(room, banner.frame.height, "the banner (\(Int(banner.frame.height)) pt) leaves the messages \(Int(room)) pt")
+        keep("on-compare-banner-keyboard")
+        // A drag from the messages down into the keyboard puts it down (as in Messages): the
+        // note comes back.
+        let list = app.scrollViews.containing(NSPredicate(format: "label BEGINSWITH %@ OR label BEGINSWITH %@",
+                                                          "On my way up", "Hi! I'm at the refuge")).firstMatch
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.97)))
+        waitGone(app.keyboards.firstMatch, 5, "the keyboard stayed up")
+        wait(note, 5, "the note did not come back with the keyboard down")
+    }
+
     /// ON-7, pasted: Léa's code added by paste is not verified; her conversation starts and a
     /// text reaches her.
     func testON7_AddAContactByPastingTheirCode() {

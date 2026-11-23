@@ -63,6 +63,9 @@ struct ChatView: View {
     @State private var blocking = false
     /// Chat info › Media, files and voice (ADR-0034).
     @State private var showingMedia = false
+    /// The keyboard is up: the banner asking to compare is compact then, so that the messages
+    /// keep most of the room above it (B-ios-29: in French they had about 100 pt).
+    @State private var keyboardUp = false
     @AppStorage(radioDetailsKey) private var radioDetails = false
 
     var body: some View {
@@ -77,7 +80,7 @@ struct ChatView: View {
             } else if case let .contact(key) = chat, model.asksToCompare(key) {
                 // Their key is known and not verified: this phone is asked to compare too,
                 // whoever scanned whom (B-user-1).
-                CompareBanner(name: model.title(of: chat)) {
+                CompareBanner(name: model.title(of: chat), compact: keyboardUp) {
                     verifying = Data()
                 } later: {
                     model.compareLaterWith(key)
@@ -141,6 +144,9 @@ struct ChatView: View {
             }
             .scrollPosition(id: $position, anchor: anchor)
             .accessibilityIdentifier("chat.messages")
+            // A drag down on the messages takes the keyboard with it (and the banner asking to
+            // compare is whole again, B-ios-29).
+            .scrollDismissesKeyboard(.interactively)
             .modifier(BottomAnchor(following: followsEnd || position == Self.end || fits == true))
             .modifier(ScrollPhase(scrolling: $userScrolling) { phase in
                 // The user's scroll: no move of ours re-asserts itself over it, and the end is
@@ -256,6 +262,9 @@ struct ChatView: View {
             }
         }
         .screen()
+        // The keyboard, up or down (see `keyboardUp`).
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Theme.s1, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -732,6 +741,8 @@ struct TintedIconLabel: LabelStyle {
 /// verified, or the user says Later.
 private struct CompareBanner: View {
     let name: String
+    /// The title and the buttons only (the keyboard is up).
+    var compact = false
     let compare: () -> Void
     let later: () -> Void
     @Environment(\.dynamicTypeSize) private var textSize
@@ -747,8 +758,9 @@ private struct CompareBanner: View {
                     Text("Compare safety numbers with \(name)")
                         .font(.system(.subheadline, weight: .semibold))
                         .foregroundStyle(Theme.warnFg)
-                    // Compact at accessibility text sizes: the title and the buttons only (D-10).
-                    if !textSize.isAccessibilitySize {
+                    // Compact at accessibility text sizes (D-10) and with the keyboard up (B-ios-29):
+                    // the title and the buttons only.
+                    if !compact, !textSize.isAccessibilitySize {
                         Text("Their key is not verified yet. Compare the numbers with them, in person or on a call.")
                             .font(.system(.footnote))
                             .foregroundStyle(Theme.tx)
