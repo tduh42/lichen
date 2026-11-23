@@ -14,6 +14,7 @@ import XCTest
 ///
 /// Every launch brings the demo's script 20 s sooner (`-demoSkip 20`) and runs it 4 times
 /// faster than the wall clock (`-demoSpeed 4`): Camille's first message comes about 5 s in.
+/// What Lucie and Marc send with the stock app always reaches the radio (`-plainHeard`).
 class LichenUITest: XCTestCase {
     private(set) var app = XCUIApplication()
 
@@ -55,6 +56,10 @@ class LichenUITest: XCTestCase {
             // The demo 4 times faster than the wall clock (D-8): Camille's first message about
             // 5 s in.
             if speed > 1 { setting("demoSpeed", String(speed)) }
+            // What Lucie and Marc send with the stock app (Public's posts, Marc's texts) reaches
+            // the radio, however busy the air: a flood goes once, and one lost in the busy first
+            // minutes failed the tests that wait for it (MC-5, LC-2, "no message from Marc").
+            setting("plainHeard", "YES")
         }
         // Nothing an earlier test left (drafts, settings) changes this one, in the demo or not;
         // a relaunch keeps what this one made.

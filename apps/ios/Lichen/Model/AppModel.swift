@@ -716,6 +716,9 @@ final class AppModel {
         // (UI tests: room to block Camille before her answer is written, CT-10).
         let answerAfter = args.integer(forKey: "answerAfter")
         if answerAfter > 0 { net.answerAfter(seconds: UInt64(answerAfter)) }
+        // -plainHeard YES: what Lucie and Marc send with the stock app reaches the radio however
+        // busy the demo's air was: one the air lost is handed over 20 s later (UI tests).
+        if args.bool(forKey: "plainHeard") { net.plainHeard() }
         // -radioNoFix YES: the demo radio's GPS is on but has no fix, no position (B-user-2).
         if args.bool(forKey: "radioNoFix") { net.gpsWithoutFix() }
         // -manyContacts N: the demo radio also knows N people with the stock MeshCore app (F-4).

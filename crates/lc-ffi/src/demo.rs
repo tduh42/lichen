@@ -166,6 +166,9 @@ enum Action {
     },
     /// The app's radio hears a node's advert and does not add it (§16.1).
     HeardAdvert(usize),
+    /// The app's radio gets a frame someone with a stock client sent, out of band, if the air
+    /// lost it (debug `plainHeard`): see [`Net::hand_over`].
+    HandOver(Vec<u8>),
     /// Someone posts on the refuge's room server (§15.8).
     RoomPost {
         from: usize,
@@ -226,7 +229,14 @@ struct Demo {
     marc_answered: bool,
     /// The refuge's room server (§15.8).
     board: usize,
+    /// What Lucie and Marc send with their stock clients reaches the app's radio however busy
+    /// the air was (debug `plainHeard`, UI tests).
+    plain_heard: bool,
 }
+
+/// How long after Lucie or Marc sent something the app's radio gets it out of band if the air
+/// lost it (debug `plainHeard`): long after a flood or a direct message arrives (a few seconds).
+const HANDED_OVER_AFTER: u64 = 20 * SEC;
 
 /// The app's radio misses every copy of `author`'s second group message (its sender byte;
 /// message counter 1 under a new key, §10.3), whenever it goes out.
@@ -365,6 +375,17 @@ impl Demo {
         self.bots();
     }
 
+    /// With `plainHeard`, what `from` just sent with a stock client is handed to the app's
+    /// radio later if the air lost it. Nothing is scheduled without it: the demo stays as it was.
+    fn hand_over_later(&mut self, from: usize) {
+        if self.plain_heard
+            && let Some(frame) = self.net.last_queued(from)
+        {
+            let at = self.net.now + HANDED_OVER_AFTER;
+            self.pending.push((at, Action::HandOver(frame)));
+        }
+    }
+
     fn act(&mut self, a: Action) {
         let app_key = self.net.key(self.app);
         // The simulated clock (the real one in the app, which runs the demo in real time).
@@ -484,8 +505,16 @@ impl Demo {
             Action::MarcWrites(text) => {
                 let (marc, app) = (self.marc, self.app);
                 self.net.send_plain_text(marc, app, &text, ts);
+                self.hand_over_later(marc);
             }
-            Action::PublicPost { from, text } => self.net.post_on_channel(from, 0, &text, ts),
+            Action::PublicPost { from, text } => {
+                self.net.post_on_channel(from, 0, &text, ts);
+                self.hand_over_later(from);
+            }
+            Action::HandOver(frame) => {
+                let app = self.app;
+                self.net.hand_over(app, &frame);
+            }
             Action::HeardAdvert(from) => {
                 let app = self.app;
                 self.net.hear_advert(app, from);
@@ -1046,6 +1075,7 @@ impl DemoNetwork {
                 marc,
                 marc_answered: false,
                 board,
+                plain_heard: false,
             }),
         })
     }
@@ -1256,6 +1286,22 @@ impl DemoNetwork {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         d.answer_after = seconds * SEC;
+    }
+
+    /// What Lucie and Marc send with their stock clients (Public's posts, Marc's texts) reaches
+    /// the app's radio however busy the air was (debug `plainHeard`, UI tests): a post or a text
+    /// the air lost is handed to the radio, out of band, 20 s of the demo's time after it was
+    /// sent. A flood is sent once and never again, so in the busy first minutes one could be
+    /// lost, and the tests that wait for it failed now and then (MC-5, LC-2). Nothing else
+    /// changes: nothing more goes on the air, but the radio's ACK of a text it is handed (a text
+    /// that came by the air would have had it), and when nothing was lost, nothing at all.
+    /// Call right after `new`.
+    pub fn plain_heard(&self) {
+        let mut d = self
+            .inner
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        d.plain_heard = true;
     }
 
     /// The radio also knows `count` people with the stock MeshCore app, heard over the months
@@ -1729,6 +1775,123 @@ mod skip {
             );
             assert_eq!(posts, 0, "a group or a channel post in a quiet demo");
         }
+    }
+
+    /// The demo with the app's core attached, run until `until` ms (100 ms steps): the plain
+    /// messages the app got (text, when), and the air's figures.
+    fn plain_run(demo: &DemoNetwork, seed: u8, until: u64) -> (Vec<(String, u64)>, [u64; 5]) {
+        let core =
+            LichenCore::new("t".into(), vec![seed; 32], vec![seed ^ 0x80; 32], None).unwrap();
+        core.set_group_consent(false);
+        core.set_request_consent(false);
+        core.connect(0);
+        let mut got = Vec::new();
+        for step in 0..=(until / 100) {
+            let now = step * 100;
+            for f in demo.read(now) {
+                core.on_companion_frame(f, now);
+            }
+            core.tick(now);
+            while let Some(f) = core.poll_companion(now) {
+                demo.write(f, now);
+            }
+            while let Some(e) = core.poll_event() {
+                if let LichenEvent::PlainReceived { text, .. } = e {
+                    got.push((text, now));
+                }
+            }
+        }
+        let st = &demo.inner.lock().unwrap().net.stats;
+        let air = [
+            st.transmissions,
+            st.receptions,
+            st.collisions,
+            st.random_losses,
+            st.half_duplex_losses,
+        ];
+        (got, air)
+    }
+
+    /// `plainHeard`: Lucie's first post on Public and Marc's first text, both missed by the
+    /// app's radio, reach it all the same, once each, 20 s after they were sent; without it,
+    /// never.
+    #[test]
+    fn plain_heard_hands_over_what_the_air_lost() {
+        for heard in [false, true] {
+            let demo = DemoNetwork::new();
+            demo.skip_ahead(20);
+            if heard {
+                demo.plain_heard();
+            }
+            // When they are sent, the script brought 20 s sooner.
+            let (posted, wrote) = {
+                let mut d = demo.inner.lock().unwrap();
+                let app = d.app;
+                d.net.deaf = Some(Box::new(move |r, frame| {
+                    use lc_meshcore::air::{Packet, PayloadType};
+                    r == app
+                        && Packet::decode(frame).is_ok_and(|p| {
+                            matches!(p.ptype, PayloadType::GrpTxt | PayloadType::TxtMsg)
+                        })
+                }));
+                let when = |f: &dyn Fn(&Action) -> bool| {
+                    d.pending
+                        .iter()
+                        .filter(|(_, a)| f(a))
+                        .map(|&(t, _)| t)
+                        .min()
+                        .unwrap()
+                };
+                (
+                    when(&|a| matches!(a, Action::PublicPost { .. })),
+                    when(&|a| matches!(a, Action::MarcWrites(_))),
+                )
+            };
+            // Before the group's keys: the demo then puts its own scripted loss in place.
+            let (got, _) = plain_run(&demo, 21, 50_000);
+            let at = |part: &str| {
+                got.iter()
+                    .filter(|(t, _)| t.contains(part))
+                    .map(|&(_, at)| at)
+                    .collect::<Vec<_>>()
+            };
+            let (fog, marc) = (at("Fog on the Pas de la Ville"), at("Marc from the refuge"));
+            if heard {
+                let after = |sent: u64| sent + HANDED_OVER_AFTER..sent + HANDED_OVER_AFTER + 1_000;
+                assert!(
+                    matches!(fog[..], [t] if after(posted).contains(&t)),
+                    "{posted} {got:?}"
+                );
+                assert!(
+                    matches!(marc[..], [t] if after(wrote).contains(&t)),
+                    "{wrote} {got:?}"
+                );
+            } else {
+                assert!(
+                    fog.is_empty() && marc.is_empty(),
+                    "the air lost them: {got:?}"
+                );
+            }
+        }
+    }
+
+    /// `plainHeard` changes nothing when nothing was lost: over the demo's first 400 s, the
+    /// same frames on the air, and the app gets the same plain messages at the same times.
+    #[test]
+    fn plain_heard_leaves_the_air_alone() {
+        let run = |heard: bool| {
+            let demo = DemoNetwork::new();
+            demo.skip_ahead(20);
+            if heard {
+                demo.plain_heard();
+            }
+            plain_run(&demo, 22, 400_000)
+        };
+        let (without, air) = run(false);
+        let (with, air_with) = run(true);
+        assert_eq!(air, air_with, "the air changed");
+        assert_eq!(without, with, "the app got other plain messages");
+        assert!(without.len() >= 4, "{without:?}");
     }
 
     /// `answerAfter 20` (with `quietDemo`): Camille answers a text 20 s after it reaches her,
