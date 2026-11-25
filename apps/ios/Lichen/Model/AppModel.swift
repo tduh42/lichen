@@ -29,7 +29,13 @@ extension ChatRef {
 /// The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
 @MainActor @Observable
 final class AppModel {
-    var companionState: Companion.State = .off
+    var companionState: Companion.State = .off {
+        didSet {
+            if !isConnected { connectedSince = nil } else if connectedSince == nil { connectedSince = Date() }
+        }
+    }
+    /// Since when the radio's link is up: "connected 2 h 14 min" (Radio settings).
+    var connectedSince: Date?
     var found: [Companion.Found] = []
     var nodeName = ""
     var nodeKey: Data?

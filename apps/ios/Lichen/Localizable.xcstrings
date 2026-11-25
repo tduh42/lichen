@@ -51,16 +51,6 @@
         }
       }
     },
-    "%@ V · about %lld %%": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$@ V · environ %2$lld %%"
-          }
-        }
-      }
-    },
     "%@ added you": {
       "localizations": {
         "fr": {
@@ -1341,6 +1331,16 @@
         }
       }
     },
+    "%lld s of airtime left": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s de temps d’antenne restant"
+          }
+        }
+      }
+    },
     "%lld saved": {
       "localizations": {
         "fr": {
@@ -2191,16 +2191,6 @@
         }
       }
     },
-    "Airtime left": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Temps d’antenne restant"
-          }
-        }
-      }
-    },
     "Airtime left this hour": {
       "localizations": {
         "fr": {
@@ -2531,16 +2521,6 @@
         }
       }
     },
-    "BLE · MeshCore companion": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "BLE · MeshCore companion"
-          }
-        }
-      }
-    },
     "Back in %@ s · SNR measured by each hop, out and back": {
       "localizations": {
         "fr": {
@@ -2597,6 +2577,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Batterie"
+          }
+        }
+      }
+    },
+    "Battery %lld percent, %@ volts": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batterie %1$lld pour cent, %2$@ volts"
           }
         }
       }
@@ -2847,6 +2837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Effacer les médias"
+          }
+        }
+      }
+    },
+    "Clear the search": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effacer la recherche"
           }
         }
       }
@@ -3651,12 +3651,12 @@
         }
       }
     },
-    "Demo network · simulated companion": {
+    "Demo network": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Réseau de démo · companion simulé"
+            "value": "Réseau de démo"
           }
         }
       }
@@ -4281,16 +4281,6 @@
         }
       }
     },
-    "Firmware %@ · %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Micrologiciel %1$@ · %2$@"
-          }
-        }
-      }
-    },
     "Flood and direct": {
       "localizations": {
         "fr": {
@@ -4567,16 +4557,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "GNU GPL 3 ou ultérieure, et ce que lichen inclut"
-          }
-        }
-      }
-    },
-    "GPS": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "GPS"
           }
         }
       }
@@ -6861,6 +6841,16 @@
         }
       }
     },
+    "No setting matches": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucun réglage ne correspond"
+          }
+        }
+      }
+    },
     "No transport reaches the sender: turn iroh or Tor on.": {
       "localizations": {
         "fr": {
@@ -7861,12 +7851,12 @@
         }
       }
     },
-    "Position and telemetry": {
+    "Position and GPS": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Position et télémétrie"
+            "value": "Position et GPS"
           }
         }
       }
@@ -8207,6 +8197,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lecture des réglages de la radio…"
+          }
+        }
+      }
+    },
+    "Readings": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Relevés"
           }
         }
       }
@@ -8887,6 +8887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chercher des personnes, canaux et groupes"
+          }
+        }
+      }
+    },
+    "Search radio settings": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chercher un réglage"
           }
         }
       }
@@ -9831,16 +9841,6 @@
         }
       }
     },
-    "TCP · MeshCore companion · not encrypted": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TCP · MeshCore companion · non chiffré"
-          }
-        }
-      }
-    },
     "Tap to load from GIPHY": {
       "localizations": {
         "fr": {
@@ -10767,6 +10767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ce message n’est plus sur ce téléphone."
+          }
+        }
+      }
+    },
+    "This radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cette radio"
           }
         }
       }
@@ -12231,6 +12241,16 @@
         }
       }
     },
+    "airtime left": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "temps d’antenne restant"
+          }
+        }
+      }
+    },
     "available": {
       "localizations": {
         "fr": {
@@ -12277,6 +12297,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "connecté"
+          }
+        }
+      }
+    },
+    "connected %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "connectée depuis %@"
+          }
+        }
+      }
+    },
+    "connected just now": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "connectée à l’instant"
           }
         }
       }
@@ -12357,6 +12397,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "échec"
+          }
+        }
+      }
+    },
+    "firmware": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "micrologiciel"
           }
         }
       }
@@ -12537,6 +12587,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aucun chemin trouvé"
+          }
+        }
+      }
+    },
+    "not encrypted": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "non chiffré"
           }
         }
       }

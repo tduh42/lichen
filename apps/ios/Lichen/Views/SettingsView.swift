@@ -15,6 +15,7 @@ struct SettingsView: View {
     @State private var exportingBackup = false
     @State private var radioOpen = false
     @AppStorage(radioDetailsKey) private var radioDetails = false
+    @Environment(\.dynamicTypeSize) private var textSize
 
     /// The advert row's subtitle (B-user-4): what an advert is for, then what the radio answered.
     private var advertStatus: String {
@@ -49,73 +50,70 @@ struct SettingsView: View {
                             NavigationLink {
                                 RadioSettingsView()
                             } label: {
-                                CardRow(title: String(localized: "Radio settings"), subtitle: preset) {
+                                CardRow(title: String(localized: "Radio settings"), subtitle: preset, icon: "antenna.radiowaves.left.and.right", tint: .lora) {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .disabled(!model.isConnected)
-                            CardDivider()
+                            CardDivider.tiled
                             // Radios to switch between (ADR-0042).
                             NavigationLink {
                                 SavedRadiosView()
                             } label: {
                                 CardRow(title: String(localized: "Radios"),
-                                        subtitle: String(localized: "\(model.savedRadios.count) saved")) {
+                                        subtitle: String(localized: "\(model.savedRadios.count) saved"), icon: "rectangle.stack") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            CardDivider()
-                            CardRow(title: String(localized: "Sub-band"), subtitle: subBand)
-                            CardDivider()
+                            CardDivider.tiled
+                            CardRow(title: String(localized: "Sub-band"), subtitle: subBand, icon: "waveform")
+                            CardDivider.tiled
                             CardRow(title: String(localized: "Relay for others"),
-                                    subtitle: String(localized: "Stock companion firmware does not repeat: a repeater node does that."))
-                            CardDivider()
+                                    subtitle: String(localized: "Stock companion firmware does not repeat: a repeater node does that."), icon: "arrow.triangle.branch")
+                            CardDivider.tiled
                             // Our advert (B-user-4): nearby or the whole mesh, chosen; then what the
                             // radio answered (without a radio: not sent).
                             Button { choosingAdvert = true } label: {
-                                CardRow(title: String(localized: "Send an advert"), subtitle: advertStatus) {
-                                    Image(systemName: "dot.radiowaves.left.and.right")
-                                        .foregroundStyle(model.isConnected ? Theme.lora : Theme.tx2)
+                                CardRow(title: String(localized: "Send an advert"), subtitle: advertStatus, icon: "dot.radiowaves.left.and.right") {
+                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .sheet(isPresented: $choosingAdvert) { AdvertChoiceSheet() }
-                            CardDivider()
+                            CardDivider.tiled
                             // What MeshCore users and channels see (protocol.md §15.4).
                             Button { meshName = model.nodeName; naming = true } label: {
                                 CardRow(title: String(localized: "Name on the mesh"),
                                         subtitle: model.nodeName.isEmpty ? String(localized: "What people with a MeshCore app see")
-                                                                         : model.nodeName) {
-                                    Image(systemName: "pencil").foregroundStyle(Theme.tx2)
-                                }
+                                                                         : model.nodeName, icon: "pencil")
                             }
                             .buttonStyle(.plain)
                             .disabled(!model.isConnected)
                             .opacity(model.isConnected ? 1 : 0.5)
-                            CardDivider()
+                            CardDivider.tiled
                             // Off: fragments, airtime and signal wait behind long press › Info.
                             CardRow(title: String(localized: "Show radio details"),
-                                    subtitle: String(localized: "Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info.")) {
+                                    subtitle: String(localized: "Fragments, airtime and signal under each message, and the radio card on Messages. Otherwise: long press › Info."), icon: "chart.bar") {
                                 Toggle("Show radio details", isOn: $radioDetails).labelsHidden()
                             }
                         }
                         SectionLabel("Internet transports").padding(.top, 10)
                         CardList {
-                            CardRow(title: String(localized: "iroh (direct P2P)"), subtitle: irohLine) {
+                            CardRow(title: String(localized: "iroh (direct P2P)"), subtitle: irohLine, icon: "link", tint: .iroh) {
                                 Toggle("iroh (direct P2P)", isOn: $model.irohEnabled).labelsHidden()
                             }
-                            CardDivider()
-                            CardRow(title: String(localized: "Tor"), subtitle: torLine) {
+                            CardDivider.tiled
+                            CardRow(title: String(localized: "Tor"), subtitle: torLine, icon: "target", tint: .tor) {
                                 Toggle("Tor", isOn: $model.torEnabled).labelsHidden()
                             }
-                            CardDivider()
+                            CardDivider.tiled
                             CardRow(title: String(localized: "Relay only"),
-                                    subtitle: String(localized: "iroh through relays: contacts never see your IP")) {
+                                    subtitle: String(localized: "iroh through relays: contacts never see your IP"), icon: "arrow.left.arrow.right", tint: .iroh) {
                                 Toggle("Relay only", isOn: $model.relayOnly).labelsHidden()
                             }
                             .opacity(model.irohEnabled ? 1 : 0.5)
@@ -129,7 +127,7 @@ struct SettingsView: View {
                         SectionLabel("GIFs").padding(.top, 10)
                         CardList {
                             CardRow(title: String(localized: "Load GIFs automatically"),
-                                    subtitle: String(localized: "Otherwise tap each one: GIPHY sees your IP address")) {
+                                    subtitle: String(localized: "Otherwise tap each one: GIPHY sees your IP address"), icon: "photo") {
                                 Toggle("Load GIFs automatically", isOn: $model.gifAutoLoad).labelsHidden()
                             }
                         }
@@ -153,12 +151,12 @@ struct SettingsView: View {
                         SectionLabel("Position").padding(.top, 10)
                         CardList {
                             CardRow(title: String(localized: "Send threshold"),
-                                    subtitle: String(localized: "Distance from the predicted track")) {
+                                    subtitle: String(localized: "Distance from the predicted track"), icon: "location") {
                                 Text("50 m").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                             }
-                            CardDivider()
+                            CardDivider.tiled
                             CardRow(title: String(localized: "Heartbeat when still"),
-                                    subtitle: String(localized: "Contacts; groups every 30 min")) {
+                                    subtitle: String(localized: "Contacts; groups every 30 min"), icon: "waveform.path.ecg") {
                                 Text("15 min").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                             }
                         }
@@ -173,7 +171,7 @@ struct SettingsView: View {
                         CardList {
                             NavigationLink { StorageView() } label: {
                                 CardRow(title: String(localized: "Storage"),
-                                        subtitle: String(localized: "Usage per conversation; clear old photos, files and voice messages.")) {
+                                        subtitle: String(localized: "Usage per conversation; clear old photos, files and voice messages."), icon: "internaldrive") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
@@ -194,7 +192,7 @@ struct SettingsView: View {
                                 importing = true
                             } label: {
                                 CardRow(title: String(localized: "Import from the MeshCore app"),
-                                        subtitle: String(localized: "The database it exports: your direct messages and channel posts join your MeshCore chats.")) {
+                                        subtitle: String(localized: "The database it exports: your direct messages and channel posts join your MeshCore chats."), icon: "square.and.arrow.down") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
@@ -215,7 +213,7 @@ struct SettingsView: View {
                             CardList {
                                 Button { exportingBackup = true } label: {
                                     CardRow(title: String(localized: "Export a backup"),
-                                            subtitle: String(localized: "Messages, contacts, groups, settings and media in one file your 24 words open.")) {
+                                            subtitle: String(localized: "Messages, contacts, groups, settings and media in one file your 24 words open."), icon: "archivebox") {
                                         Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                     }
                                     .contentShape(Rectangle())
@@ -229,72 +227,72 @@ struct SettingsView: View {
                             if model.isDemo {
                                 // Off: messages wait for the radio, as when Bluetooth drops (§6.1).
                                 CardRow(title: String(localized: "Simulated radio connected"),
-                                        subtitle: String(localized: "Turn it off to see messages wait for the radio.")) {
+                                        subtitle: String(localized: "Turn it off to see messages wait for the radio."), icon: "power") {
                                     Toggle("Simulated radio connected",
                                            isOn: Binding(get: { !model.demoRadioOff }, set: { model.setDemoRadio(on: $0) }))
                                         .labelsHidden()
                                 }
-                                CardDivider()
+                                CardDivider.tiled
                                 Button { model.stopDemo() } label: {
-                                    CardRow(title: String(localized: "Leave the demo"))
+                                    CardRow(title: String(localized: "Leave the demo"), icon: "rectangle.portrait.and.arrow.right")
                                 }
                                 .buttonStyle(.plain)
                             } else {
                                 Button { model.startDemo() } label: {
                                     CardRow(title: String(localized: "Try the demo network"),
-                                            subtitle: String(localized: "A simulated MeshCore network with two other users and a group, in real time: the app’s real core, without a radio.")) {
+                                            subtitle: String(localized: "A simulated MeshCore network with two other users and a group, in real time: the app’s real core, without a radio."), icon: "play.circle") {
                                         Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                     }
                                     .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }
-                            CardDivider()
+                            CardDivider.tiled
                             Button { onboarded = false } label: {
-                                CardRow(title: String(localized: "Show the welcome screens again"))
+                                CardRow(title: String(localized: "Show the welcome screens again"), icon: "hand.wave")
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                         }
                         SectionLabel("About").padding(.top, 10)
                         CardList {
-                            CardRow(title: String(localized: "Version")) {
+                            CardRow(title: String(localized: "Version"), icon: "info.circle") {
                                 // "0.10.3 (212)": the release and its build (scripts/version.sh).
                                 Text(verbatim: "\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""))")
                                     .foregroundStyle(Theme.tx2)
                             }
-                            CardDivider()
+                            CardDivider.tiled
                             CardRow(title: String(localized: "Stickers"),
-                                    subtitle: String(localized: "Noto Animated Emoji © Google, CC BY 4.0. Animations by Lottie (Airbnb).")) {
+                                    subtitle: String(localized: "Noto Animated Emoji © Google, CC BY 4.0. Animations by Lottie (Airbnb)."), icon: "face.smiling") {
                                 EmptyView()
                             }
-                            CardDivider()
+                            CardDivider.tiled
                             NavigationLink {
                                 IdentityView()
                             } label: {
-                                CardRow(title: String(localized: "Your identity"), subtitle: identityStatus) {
+                                CardRow(title: String(localized: "Your identity"), subtitle: identityStatus, icon: "person.badge.key") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                             }
                             .buttonStyle(.plain)
-                            CardDivider()
+                            CardDivider.tiled
                             NavigationLink {
                                 LicencesView()
                             } label: {
                                 CardRow(title: String(localized: "Licences"),
-                                        subtitle: String(localized: "GNU GPL 3 or later, and what lichen includes")) {
+                                        subtitle: String(localized: "GNU GPL 3 or later, and what lichen includes"), icon: "doc.text") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            CardDivider()
+                            CardDivider.tiled
                             // ADR-0045: no message, key, name or position in it.
                             NavigationLink {
                                 ReportView()
                             } label: {
                                 CardRow(title: String(localized: "Report a problem"),
-                                        subtitle: String(localized: "A log without your messages, to send to the developers")) {
+                                        subtitle: String(localized: "A log without your messages, to send to the developers"), icon: "exclamationmark.bubble") {
                                     Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
                                 }
                                 .contentShape(Rectangle())
@@ -339,13 +337,13 @@ struct SettingsView: View {
         @Bindable var lock = model.lock
         SectionLabel("Privacy").padding(.top, 10).id("privacy")
         CardList {
-            CardRow(title: String(localized: "Lock lichen"), subtitle: unlockMethod) {
+            CardRow(title: String(localized: "Lock lichen"), subtitle: unlockMethod, icon: "lock") {
                 Toggle("Lock lichen", isOn: Binding(get: { lock.enabled }, set: { on in Task { await lock.setEnabled(on) } }))
                     .labelsHidden()
                     .disabled(lock.authenticating)
             }
-            CardDivider()
-            CardRow(title: String(localized: "Lock after")) {
+            CardDivider.tiled
+            CardRow(title: String(localized: "Lock after"), icon: "timer") {
                 Picker("Lock after", selection: $lock.delay) {
                     ForEach(AppLock.delays, id: \.self) { Text(Self.lockDelay($0)).tag($0) }
                 }
@@ -354,10 +352,10 @@ struct SettingsView: View {
             }
             .opacity(lock.enabled ? 1 : 0.5)
             .disabled(!lock.enabled)
-            CardDivider()
+            CardDivider.tiled
             // People the user blocked (ADR-0034), to unblock.
             NavigationLink { BlockedView() } label: {
-                CardRow(title: String(localized: "Blocked")) {
+                CardRow(title: String(localized: "Blocked"), icon: "hand.raised") {
                     HStack(spacing: 8) {
                         Text(String(model.blocked.count)).foregroundStyle(Theme.tx2)
                         Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
@@ -398,35 +396,33 @@ struct SettingsView: View {
 
     // MARK: radio card
 
+    /// The radio in one line: its name, the link, its battery and the airtime left this hour.
     private var radioCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             if model.isConnected {
-                HStack(spacing: 12) {
-                    Image(systemName: "antenna.radiowaves.left.and.right")
-                        .foregroundStyle(Theme.lora)
-                        .frame(width: 40, height: 40)
-                        .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                // The badge beside the name, or under it at the accessibility text sizes.
+                let card = textSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+                card {
+                    IconTile(symbol: "antenna.radiowaves.left.and.right", tint: .lora, side: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.nodeName.isEmpty ? String(localized: "MeshCore radio") : model.nodeName)
                             .font(.system(.body, weight: .semibold))
-                        Text(model.isDemo ? String(localized: "Demo network · simulated companion") :
-                                model.link == .tcp ? String(localized: "TCP · MeshCore companion · not encrypted") :
-                                String(localized: "BLE · MeshCore companion"))
+                        Text(radioLine)
                             .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Badge(text: String(localized: "connected"), background: Theme.okBg, foreground: Theme.okFg)
                 }
+                .accessibilityElement(children: .combine)
             } else {
                 NavigationLink {
                     PairingView()
                 } label: {
                     HStack(spacing: 12) {
-                        Image(systemName: "antenna.radiowaves.left.and.right")
-                            .foregroundStyle(Theme.tx2)
-                            .frame(width: 40, height: 40)
-                            .background(Theme.s2, in: RoundedRectangle(cornerRadius: 10))
+                        IconTile(symbol: "antenna.radiowaves.left.and.right", side: 44)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pair a radio").font(.system(.body, weight: .semibold))
                             Text("No radio connected").font(.system(.footnote)).foregroundStyle(Theme.tx2)
@@ -438,10 +434,6 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Airtime left").font(.system(.footnote)).foregroundStyle(Theme.tx2)
-                AirtimeMeter(usedMs: model.budget.usedMs, limitMs: model.budget.limitMs, large: true)
-            }
             // Over TCP, also while it reconnects: stops trying.
             if (model.isConnected || model.link == .tcp) && !model.isDemo {
                 Button("Disconnect") { model.disconnectRadio() }
@@ -449,6 +441,14 @@ struct SettingsView: View {
             }
         }
         .card(padding: 16)
+    }
+
+    /// "Bluetooth · 69 % · 357 s of airtime left", a figure never parted from its unit.
+    private var radioLine: String {
+        let left = Int((model.budget.limitMs - min(model.budget.usedMs, model.budget.limitMs)) / 1000)
+        let battery = model.radioSettings?.batteryPercent.map { "\($0)\u{a0}%" }
+        let airtime = String(localized: "\(left) s of airtime left").replacingOccurrences(of: "\(left) s", with: "\(left)\u{a0}s")
+        return ([model.linkName] + (battery.map { [$0] } ?? []) + [airtime]).joined(separator: " · ")
     }
 
     private var voiceNote: String {

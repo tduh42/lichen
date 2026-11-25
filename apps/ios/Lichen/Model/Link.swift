@@ -8,6 +8,14 @@ enum RadioLink: Equatable {
     case tcp
 }
 
+extension AppModel {
+    /// How the radio is reached, in a word: "Bluetooth", "TCP · not encrypted", "Demo network".
+    var linkName: String {
+        if isDemo { return String(localized: "Demo network") }
+        return link == .tcp ? "TCP · " + String(localized: "not encrypted") : String(localized: "Bluetooth")
+    }
+}
+
 extension Companion.State {
     /// The state in a word for the problem report's log, without the radio's name.
     var logWord: String {
