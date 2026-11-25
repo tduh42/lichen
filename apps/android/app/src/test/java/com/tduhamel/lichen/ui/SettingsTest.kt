@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.ui
 
+import com.tduhamel.lichen.core.SignalRating
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
 import android.app.Application
@@ -360,6 +361,20 @@ class SettingsTest : UiTest() {
             tab(t)
             audit(str(t))
         }
+        // The Nodes tab with every signal in, a node heard directly (its meter and chart), one
+        // heard through a repeater (its route).
+        restart("demo" to true, "tab" to "nodes")
+        advanceUntil("the nodes' signals", 30) {
+            listOf("hub", "Lucie", "Refuge board").all { n -> model.nodes.any { it.name == n && it.signal != SignalRating.NONE } }
+        }
+        audit("Nodes")
+        tap("hub")
+        audit("hub")
+        scrollTo(hasText(str(R.string.meshcore_public_key)))
+        audit("hub, below")
+        tapDesc(R.string.back)
+        tap("crest")
+        audit("crest")
         // Radio settings: the radio on top, the search, the sections (down to the last); a search.
         restart("demo" to true, "screen" to "radio")
         advanceUntil("the radio's settings") { model.radioSettings?.read == true }

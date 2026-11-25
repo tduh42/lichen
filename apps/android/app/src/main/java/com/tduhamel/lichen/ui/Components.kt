@@ -1,5 +1,14 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
+import com.tduhamel.lichen.core.SignalRating
+import com.tduhamel.lichen.model.dbText
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.launch
@@ -100,6 +109,124 @@ fun TransportBadge(kind: Transport, label: String) {
         Transport.IROH -> Badge(label, t.irohBg, t.irohFg)
         Transport.TOR -> Badge(label, t.torBg, t.torFg)
         Transport.NEUTRAL -> Badge(label, t.s2, t.tx2)
+    }
+}
+
+/** Two or three choices side by side, each a tab (48 dp tall), the chosen one on `actBg`. */
+@Composable
+fun SegmentedTabs(labels: List<String>, selected: Int, choose: (Int) -> Unit) {
+    val t = lichen
+    Row(Modifier.background(t.s2, CircleShape).selectableGroup()) {
+        labels.forEachIndexed { i, label ->
+            val on = i == selected
+            Box(
+                Modifier
+                    .heightIn(min = 48.dp)
+                    .selectable(on, role = Role.Tab) { choose(i) }
+                    .padding(4.dp)
+                    .background(if (on) t.actBg else Color.Transparent, CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) t.actFg else t.tx, maxLines = 1)
+            }
+        }
+    }
+}
+
+/** A reading's colour (ADR-0049): `ok` Good, `warn` Fair, `sos` Bad; `line` without one. */
+@Composable
+fun signalColor(r: SignalRating): Color = when (r) {
+    SignalRating.GOOD -> lichen.ok
+    SignalRating.FAIR -> lichen.warn
+    SignalRating.BAD -> lichen.sos
+    SignalRating.NONE -> lichen.line
+}
+
+/** "Signal good, 7.5 dB", as TalkBack reads a meter. */
+@Composable
+fun signalSaid(r: SignalRating, snr: Float?): String? {
+    if (r == SignalRating.NONE || snr == null) return null
+    return stringResource(
+        when (r) {
+            SignalRating.GOOD -> R.string.signal_good
+            SignalRating.FAIR -> R.string.signal_fair
+            else -> R.string.signal_bad
+        },
+        dbText(snr),
+    )
+}
+
+/** A node's signal (ADR-0049): three bars, Good 3 in `ok`, Fair 2 in `warn`, Bad 1 in `sos`, the
+ * rest in `line`, over the SNR in tabular digits. Nothing without a reading. [large] for a
+ * node's page, small for a row. */
+@Composable
+fun SignalMeter(rating: SignalRating, snrDb: Float?, modifier: Modifier = Modifier, large: Boolean = false) {
+    val said = signalSaid(rating, snrDb) ?: return
+    val lit = when (rating) {
+        SignalRating.GOOD -> 3
+        SignalRating.FAIR -> 2
+        else -> 1
+    }
+    val on = signalColor(rating)
+    val off = lichen.line
+    val unit = if (large) 7.dp else 4.6.dp
+    Column(
+        modifier.clearAndSetSemantics { contentDescription = said },
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(if (large) 4.dp else 3.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(if (large) 3.dp else 2.dp), verticalAlignment = Alignment.Bottom) {
+            for (i in 1..3) {
+                Box(
+                    Modifier
+                        .width(if (large) 6.dp else 4.dp)
+                        .height(unit * (i + 0.3f))
+                        .background(if (i <= lit) on else off, RoundedCornerShape(1.5.dp)),
+                )
+            }
+        }
+        Text(
+            dbText(snrDb!!),
+            fontSize = if (large) 15.sp else 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = lichen.tx,
+            style = TextStyle(fontFeatureSettings = "tnum"),
+            maxLines = 1,
+        )
+    }
+}
+
+/** "1 hop", "2 hops", "path unknown": how far a node is through repeaters. */
+@Composable
+fun HopPill(hops: UByte?, modifier: Modifier = Modifier) {
+    val t = lichen
+    val text = when (hops) {
+        null -> stringResource(R.string.path_unknown)
+        0.toUByte() -> stringResource(R.string.hops_direct)
+        else -> pluralStringResource(R.plurals.hops_n, hops.toInt(), hops.toInt())
+    }
+    Text(
+        text,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        color = t.tx2,
+        maxLines = 1,
+        modifier = modifier.background(t.s2, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/** "lichen", with a lock: a node whose identity is known (a lichen user). */
+@Composable
+fun LichenBadge() {
+    val t = lichen
+    Row(
+        Modifier.background(t.s2, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(Icons.Outlined.Lock, null, tint = t.tx2, modifier = Modifier.size(10.dp))
+        Text(stringResource(R.string.app_name), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = t.tx2, maxLines = 1)
     }
 }
 
