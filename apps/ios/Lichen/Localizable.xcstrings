@@ -831,16 +831,6 @@
         }
       }
     },
-    "%lld known": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld connus"
-          }
-        }
-      }
-    },
     "%lld measures": {
       "localizations": {
         "en": {
@@ -7901,6 +7891,16 @@
         }
       }
     },
+    "Positions": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Positions"
+          }
+        }
+      }
+    },
     "Possible again in %llu s.": {
       "localizations": {
         "fr": {
@@ -8437,16 +8437,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Répéteurs, serveurs de salon et radios des gens, tels que ta radio les connaît. Ceux qu’elle a entendus sans les ajouter sont signalés ; les positions viennent des annonces des nœuds eux-mêmes."
-          }
-        }
-      }
-    },
-    "Repeaters, rooms and radios around": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Répéteurs, salons et radios autour"
           }
         }
       }

@@ -1,7 +1,9 @@
 import MapLibre
 import SwiftUI
 
-/// "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`).
+/// "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`); and Locate,
+/// the search by radio (`SearchView`), its other mode. The SOS button, the mode and the layers
+/// stay at the top in both.
 struct MapScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
@@ -18,27 +20,40 @@ struct MapScreen: View {
     @State private var refresh: Timer?
     @State private var showingOffline = false
 
+    private var locating: Bool { model.mapMode == .locate }
+
     var body: some View {
         ZStack(alignment: .top) {
-            MapGate {
-                MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { bounds, zoom in
-                    camera = (bounds, zoom)
-                }, focus: model.mapPin)
-            }
-            .ignoresSafeArea(edges: .top)
-            VStack(spacing: 8) {
-                topBar
-                if let pin = model.mapPin { PinBar(pin: pin) }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            if let p = offline.progress {
-                DownloadBanner(done: p.done, total: p.total)
-                    .padding(.top, 64)
+            if locating {
+                // Below the bar, which keeps its place at the top.
+                SearchView()
+                    .safeAreaInset(edge: .top, spacing: 0) {
+                        topBar
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Theme.s1)
+                    }
+            } else {
+                MapGate {
+                    MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { bounds, zoom in
+                        camera = (bounds, zoom)
+                    }, focus: model.mapPin)
+                }
+                .ignoresSafeArea(edges: .top)
+                VStack(spacing: 8) {
+                    topBar
+                    if let pin = model.mapPin { PinBar(pin: pin) }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                if let p = offline.progress {
+                    DownloadBanner(done: p.done, total: p.total)
+                        .padding(.top, 64)
+                }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            SharePanel(editing: $editing)
+            if !locating { SharePanel(editing: $editing) }
         }
         .sheet(isPresented: $editing) { ShareSheet() }
         .fullScreenCover(isPresented: $showingSos) { SosView() }
@@ -75,23 +90,54 @@ struct MapScreen: View {
 
     private var dark: Bool { scheme == .dark }
 
+    /// SOS, Positions | Locate, the map's buttons: in one row, or with larger text the modes
+    /// under the SOS button, their words whole. The same views either way (`SosAndModes`), so
+    /// that they keep growing with the text instead of being swapped for others.
     private var topBar: some View {
-        HStack {
-            Button { showingSos = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle")
-                    Text(model.sos ? "SOS on" : "SOS")
-                }
-                .font(.system(.subheadline, weight: .bold))
-                .padding(.horizontal, 18)
-                .frame(height: 44)
-                .background(Theme.sosBtn, in: Capsule())
-                .foregroundStyle(.white)
-                .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: model.sos ? 3 : 0))
+        HStack(alignment: .top, spacing: 10) {
+            SosAndModes(spacing: 10) {
+                sosButton
+                modePicker
             }
-            .accessibilityLabel(model.sos ? "SOS on: open" : "SOS")
-            Spacer()
-            Menu {
+            mapButtons
+        }
+    }
+
+    private var sosButton: some View {
+        Button { showingSos = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle")
+                Text(model.sos ? "SOS on" : "SOS").fixedSize(horizontal: false, vertical: true)
+            }
+            .font(.system(.subheadline, weight: .bold))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 6)
+            .frame(minHeight: 44)
+            .background(Theme.sosBtn, in: Capsule())
+            .foregroundStyle(.white)
+            .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: model.sos ? 3 : 0))
+        }
+        .accessibilityLabel(model.sos ? "SOS on: open" : "SOS")
+    }
+
+    private var modePicker: some View {
+        ModePicker(mode: Binding(get: { model.mapMode }, set: { model.mapMode = $0 }))
+    }
+
+    private var mapButtons: some View {
+        VStack(spacing: 10) {
+            layers
+            if !locating {
+                Button { recenter += 1 } label: {
+                    MapIcon(systemName: "scope", tint: Theme.me)
+                }
+                .accessibilityLabel("Show everyone")
+            }
+        }
+    }
+
+    private var layers: some View {
+        Menu {
                 Picker("Map style", selection: $style) {
                     ForEach(MapStyle.allCases) { Text($0.label).tag($0) }
                 }
@@ -118,11 +164,6 @@ struct MapScreen: View {
                 MapIcon(systemName: "map")
             }
             .accessibilityLabel("Map layers")
-            Button { recenter += 1 } label: {
-                MapIcon(systemName: "scope", tint: Theme.me)
-            }
-            .accessibilityLabel("Show everyone")
-        }
     }
 
     // MARK: items
@@ -217,6 +258,77 @@ private struct PinBar: View {
         .frame(height: 44)
         .background(Theme.s2, in: Capsule())
         .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+    }
+}
+
+/// Positions | Locate, the Map's two modes: a capsule of two 44 pt segments, the chosen one
+/// dark (`actBg`).
+/// The SOS button, then the modes centred in the room left beside it; the modes under it
+/// when both do not fit on one line (larger text).
+private struct SosAndModes: Layout {
+    var spacing: CGFloat
+
+    private func arrange(_ width: CGFloat?, _ subviews: Subviews) -> (side: Bool, sos: CGSize, modes: CGSize) {
+        guard subviews.count == 2 else { return (true, .zero, .zero) }
+        let sos = subviews[0].sizeThatFits(.unspecified)
+        let modes = subviews[1].sizeThatFits(.unspecified)
+        guard let width, sos.width + spacing + modes.width > width else { return (true, sos, modes) }
+        let fitted = { (v: LayoutSubview, w: CGFloat) in v.sizeThatFits(ProposedViewSize(width: w, height: nil)) }
+        return (false, fitted(subviews[0], min(sos.width, width)), fitted(subviews[1], min(modes.width, width)))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        // All the width offered, or what it needs when offered any.
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let (side, sos, modes) = arrange(width, subviews)
+        return side
+            ? CGSize(width: width ?? sos.width + spacing + modes.width, height: max(sos.height, modes.height))
+            : CGSize(width: width ?? max(sos.width, modes.width), height: sos.height + spacing + modes.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let (side, sos, modes) = arrange(bounds.width, subviews)
+        subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(sos))
+        if side {
+            let room = bounds.width - sos.width - spacing
+            let x = bounds.minX + sos.width + spacing + max(0, (room - modes.width) / 2)
+            subviews[1].place(at: CGPoint(x: x, y: bounds.minY), proposal: ProposedViewSize(modes))
+        } else {
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + sos.height + spacing), proposal: ProposedViewSize(modes))
+        }
+    }
+}
+
+private struct ModePicker: View {
+    @Binding var mode: AppModel.MapMode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            segment(.positions, String(localized: "Positions"))
+            segment(.locate, String(localized: "Locate"))
+        }
+        .padding(3)
+        // The shadow under the control, not on its words.
+        .background { Capsule().fill(Theme.s2).shadow(color: .black.opacity(0.25), radius: 4, y: 2) }
+    }
+
+    private func segment(_ m: AppModel.MapMode, _ title: String) -> some View {
+        let on = mode == m
+        return Button { mode = m } label: {
+            Text(title)
+                .font(.system(.subheadline, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .frame(minHeight: 44)
+                .background(on ? Theme.actBg : .clear, in: Capsule())
+                .foregroundStyle(on ? Theme.actFg : Theme.tx)
+                // The whole segment takes the tap, not only its letters.
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 

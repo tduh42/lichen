@@ -69,19 +69,6 @@ struct SettingsView: View {
                             }
                             .buttonStyle(.plain)
                             CardDivider()
-                            // What the radio knows of the mesh (§16).
-                            NavigationLink {
-                                NodesView()
-                            } label: {
-                                CardRow(title: String(localized: "Nodes"),
-                                        subtitle: model.nodes.isEmpty ? String(localized: "Repeaters, rooms and radios around")
-                                                                      : String(localized: "\(model.nodes.count) known")) {
-                                    Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            CardDivider()
                             CardRow(title: String(localized: "Sub-band"), subtitle: subBand)
                             CardDivider()
                             CardRow(title: String(localized: "Relay for others"),

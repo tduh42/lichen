@@ -172,9 +172,12 @@ final class AccessibilityAuditTests: XCTestCase {
             let day = app.descendants(matching: .any)["chat.day"]
             XCTAssertTrue(app.descendants(matching: .any)["composer"].waitForExistence(timeout: 60))
             XCTAssertTrue(session.waitForExistence(timeout: 90), "no session line")
+            // A day separator comes with the first message (an empty chat has no list to drag).
+            XCTAssertTrue(day.waitForExistence(timeout: 90), "no message")
             // The top in view: the chat opens at its end.
             let list = app.scrollViews["chat.messages"]
-            for _ in 0..<6 where !(session.isHittable && day.exists && day.isHittable) {
+            XCTAssertTrue(list.waitForExistence(timeout: 10), "no message list")
+            for _ in 0..<6 where list.exists && !(session.isHittable && day.exists && day.isHittable) {
                 list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
                     .press(forDuration: 0.01, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
             }

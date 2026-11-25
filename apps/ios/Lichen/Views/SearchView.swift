@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// "Locate" (mockup `recherche`): follow an SOS, and search for a group member by radio
-/// (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and
-/// how far, the receptions everyone shared, and the actions (ping, bearing, lower power).
+/// "Locate", a mode of the Map tab (mockup `recherche`): follow an SOS, and search for a group
+/// member by radio (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses),
+/// which way and how far, the receptions everyone shared, and the actions (ping, bearing, lower
+/// power). The Map screen puts its bar (SOS, Positions | Locate, layers) above it.
 struct SearchView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.colorScheme) private var scheme
@@ -12,33 +13,22 @@ struct SearchView: View {
     @State private var error: String?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if let target {
-                    TimelineView(.periodic(from: .now, by: 5)) { _ in content(target) }
-                } else {
-                    // Scrolls when the text is too large for the screen.
-                    GeometryReader { g in
-                        ScrollView { empty.frame(minHeight: g.size.height) }
-                    }
+        Group {
+            if let target {
+                TimelineView(.periodic(from: .now, by: 5)) { _ in content(target) }
+            } else {
+                // Scrolls when the text is too large for the screen.
+                GeometryReader { g in
+                    ScrollView { empty.frame(minHeight: g.size.height) }
                 }
             }
-            .screen()
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Theme.s1, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Text(target.map { String(localized: "Locate · \(model.name(of: $0))") } ?? String(localized: "Locate"))
-                        .font(.system(.body, weight: .semibold))
-                }
-            }
-            .sheet(isPresented: $bearing) {
-                if let target { BearingSheet(target: target) }
-            }
-            .alert(error ?? "", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("OK", role: .cancel) {}
-            }
+        }
+        .screen()
+        .sheet(isPresented: $bearing) {
+            if let target { BearingSheet(target: target) }
+        }
+        .alert(error ?? "", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
+            Button("OK", role: .cancel) {}
         }
         .onAppear {
             model.needsLocation("search", true)
@@ -77,6 +67,12 @@ struct SearchView: View {
         let incident = model.incidents[t]
         return ScrollView {
             VStack(spacing: 12) {
+                // Whom: what the tab's title said before Locate was a mode of the map.
+                Text("Locate · \(model.name(of: t))")
+                    .font(.system(.headline))
+                    .foregroundStyle(Theme.tx)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
                 if model.searchTargets.count > 1 { picker }
                 status(t, incident: incident, search: search)
                 map(t, estimate: estimate, incident: incident, search: search)
