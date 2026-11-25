@@ -478,7 +478,6 @@
     <string name="key_backed_up">Key %1$s… · backed up</string>
     <string name="key_not_backed_up">Key %1$s… · not backed up</string>
     <string name="radio_connected_short">connected</string>
-    <string name="airtime_left_short">Airtime left</string>
     <string name="tagline">Encrypted messaging off the grid, over LoRa and beyond.</string>
     <string name="no_cell_towers">No cell towers</string>
     <string name="no_cell_towers_note">Messages go from radio to radio.</string>
@@ -910,7 +909,6 @@
     <string name="bandwidth">Bandwidth</string>
     <string name="spreading_factor">Spreading factor</string>
     <string name="coding_rate">Coding rate</string>
-    <string name="gps">GPS</string>
     <string name="bluetooth">Bluetooth</string>
     <string name="restart">Restart</string>
     <string name="everyone">Everyone</string>
@@ -919,6 +917,21 @@
     <string name="meshcore_radio">MeshCore radio</string>
     <string name="not_set">Not set</string>
     <string name="none_yet">None yet</string>
+    <!-- Radio settings: the radio on top, the search, the sections. -->
+    <string name="search_radio_settings">Search radio settings</string>
+    <string name="no_setting_matches">No setting matches</string>
+    <string name="position_and_gps">Position and GPS</string>
+    <string name="readings">Readings</string>
+    <string name="this_radio">This radio</string>
+    <string name="connected_for">connected %1$s</string>
+    <string name="connected_now">connected just now</string>
+    <string name="battery_ring">Battery %1$d percent, %2$s volts</string>
+    <string name="airtime_left_stat">airtime left</string>
+    <string name="firmware_stat">firmware</string>
+    <string name="lower">Lower</string>
+    <string name="higher">Higher</string>
+    <!-- Settings' radio card: "Bluetooth · 69 % · 357 s of airtime left". -->
+    <string name="airtime_left_s">%1$d s of airtime left</string>
     <string name="transmit_power">Transmit power</string>
     <string name="delivery">Delivery</string>
     <string name="new_contacts">New contacts</string>
@@ -935,8 +948,6 @@
     <string name="preset_eu_narrow">EU/UK (narrow)</string>
     <string name="preset_us_canada">USA/Canada</string>
     <string name="preset_custom">Custom</string>
-    <string name="radio_firmware">Firmware %1$s · %2$s</string>
-    <string name="radio_battery">%1$s V · about %2$d %%</string>
     <string name="radio_storage">%1$d of %2$d KB used</string>
     <string name="lora_note">A radio on other settings no longer hears the radios of its mesh: choose your region’s preset, or the values your local community uses.</string>
     <string name="lora_confirm_title">Change the LoRa settings?</string>
@@ -945,7 +956,6 @@
     <string name="radio_gps">The radio’s GPS</string>
     <string name="radio_gps_note">Keeps the radio’s position current. It draws power.</string>
     <string name="gps_every">A fix every</string>
-    <string name="position_and_telemetry">Position and telemetry</string>
     <string name="position_in_adverts">Position in adverts</string>
     <string name="position_in_adverts_on">Every advert shows the radio’s position to the whole mesh, unencrypted.</string>
     <string name="position_in_adverts_off">Off: adverts carry no position.</string>

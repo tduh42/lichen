@@ -1,5 +1,36 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.Timer
+import androidx.compose.material.icons.outlined.SyncAlt
+import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.AlternateEmail
+import androidx.compose.material.icons.outlined.Insights
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.VpnLock
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.Gif
+import androidx.compose.material.icons.outlined.Straighten
+import androidx.compose.material.icons.outlined.MonitorHeart
+import androidx.compose.material.icons.outlined.SdStorage
+import androidx.compose.material.icons.outlined.FileDownload
+import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.Science
+import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material.icons.outlined.WavingHand
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Block
+import android.os.SystemClock
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.LaunchedEffect
+import kotlinx.coroutines.delay
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextOverflow
 import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
@@ -69,13 +100,14 @@ fun LichenSwitch(
     checked: Boolean,
     onChange: (Boolean) -> Unit,
     enabled: Boolean = true,
-    /** What it turns on, for screen readers, when no row around it says so. */
+    /** What it turns on, for screen readers: by default the title of its row ([CardRow]). */
     label: String? = null,
 ) {
     val t = lichen
+    val said = label ?: LocalRowTitle.current
     Switch(
         checked, onChange, enabled = enabled,
-        modifier = if (label != null) Modifier.semantics { contentDescription = label } else Modifier,
+        modifier = if (said != null) Modifier.semantics { contentDescription = said } else Modifier,
         colors = SwitchDefaults.colors(
             checkedTrackColor = t.ok, checkedThumbColor = t.actFg,
             uncheckedTrackColor = t.s2, uncheckedThumbColor = t.tx2, uncheckedBorderColor = t.line,
@@ -132,7 +164,7 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { RadioCardLarge(model, pair) }
+            item { RadioCard(model, pair) }
             item { SectionLabel(stringResource(R.string.radio), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
@@ -147,23 +179,24 @@ fun SettingsScreen(
                                 stringResource(R.string.read_from_radio)
                             },
                             merge = false,
+                            tile = { IconTile(Icons.Outlined.SettingsInputAntenna, t.loraBg, t.loraFg) },
                         ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     // Radios to switch between (ADR-0042).
                     Box(Modifier.clickable { radios() }) {
-                        CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size), merge = false) {
+                        CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size), merge = false, tile = { IconTile(Icons.Outlined.Router) }) {
                             Text("›", color = lichen.tx2, fontSize = 20.sp)
                         }
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     val khz = r?.freqKhz?.toInt() ?: 869_618
                     // In the phone's language, as the frequency above it ("869,4–869,65 MHz" in French).
                     val band = if (khz in 869_400..869_650) "%.1f–%.2f MHz".format(869.4, 869.65) else "%.3f MHz".format(khz / 1000.0)
-                    CardRow(stringResource(R.string.sub_band), "$band · ${"%.0f".format(model.budget.limitMs.toDouble() / 36_000)} %")
-                    CardDivider()
-                    CardRow(stringResource(R.string.relay_for_others), stringResource(R.string.relay_for_others_note))
-                    CardDivider()
+                    CardRow(stringResource(R.string.sub_band), "$band · ${"%.0f".format(model.budget.limitMs.toDouble() / 36_000)} %", tile = { IconTile(Icons.Outlined.Timer) })
+                    CardDivider(TileInset)
+                    CardRow(stringResource(R.string.relay_for_others), stringResource(R.string.relay_for_others_note), tile = { IconTile(Icons.Outlined.SyncAlt) })
+                    CardDivider(TileInset)
                     // Our advert (B-user-4): nearby or the whole mesh, chosen; then what the radio
                     // answered (without a radio: not sent).
                     Box(Modifier.clickable { choosingAdvert = true }) {
@@ -171,24 +204,26 @@ fun SettingsScreen(
                             stringResource(R.string.send_advert),
                             advertStatus(model.advert),
                             merge = false,
+                            tile = { IconTile(Icons.Outlined.Campaign) },
                         ) {
                             Icon(Icons.Outlined.SettingsInputAntenna, null, tint = if (model.isConnected) t.lora else t.tx2)
                         }
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     // What MeshCore users and channels see (protocol.md §15.4).
                     Box(Modifier.clickable(enabled = model.isConnected) { naming = true }) {
                         CardRow(
                             stringResource(R.string.name_on_mesh),
                             model.nodeName.ifEmpty { stringResource(R.string.name_on_mesh_note) },
                             merge = false,
+                            tile = { IconTile(Icons.Outlined.AlternateEmail) },
                         ) {
                             Icon(Icons.Outlined.Edit, null, tint = t.tx2)
                         }
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     // Off: fragments, airtime and signal wait behind long press › Info.
-                    CardRow(stringResource(R.string.radio_details), stringResource(R.string.radio_details_note)) {
+                    CardRow(stringResource(R.string.radio_details), stringResource(R.string.radio_details_note), tile = { IconTile(Icons.Outlined.Insights) }) {
                         LichenSwitch(model.radioDetails, model::chooseRadioDetails)
                     }
                 }
@@ -209,11 +244,11 @@ fun SettingsScreen(
                     AppModel.TorStatus.FAILED -> stringResource(R.string.tor_failed)
                 }
                 CardList {
-                    CardRow(stringResource(R.string.iroh_direct), irohLine) { LichenSwitch(model.irohEnabled, model::chooseIroh) }
-                    CardDivider()
-                    CardRow("Tor", torLine) { LichenSwitch(model.torEnabled, model::chooseTor) }
-                    CardDivider()
-                    CardRow(stringResource(R.string.relay_only), stringResource(R.string.relay_only_note)) {
+                    CardRow(stringResource(R.string.iroh_direct), irohLine, tile = { IconTile(Icons.Outlined.Bolt, t.irohBg, t.irohFg) }) { LichenSwitch(model.irohEnabled, model::chooseIroh) }
+                    CardDivider(TileInset)
+                    CardRow("Tor", torLine, tile = { IconTile(Icons.Outlined.VpnLock, t.torBg, t.torFg) }) { LichenSwitch(model.torEnabled, model::chooseTor) }
+                    CardDivider(TileInset)
+                    CardRow(stringResource(R.string.relay_only), stringResource(R.string.relay_only_note), tile = { IconTile(Icons.Outlined.Dns, t.irohBg, t.irohFg) }) {
                         LichenSwitch(model.relayOnly, model::chooseRelayOnly, enabled = model.irohEnabled)
                     }
                 }
@@ -224,7 +259,7 @@ fun SettingsScreen(
             item { SectionLabel(stringResource(R.string.gifs), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    CardRow(stringResource(R.string.gif_auto), stringResource(R.string.gif_auto_note)) {
+                    CardRow(stringResource(R.string.gif_auto), stringResource(R.string.gif_auto_note), tile = { IconTile(Icons.Outlined.Gif) }) {
                         LichenSwitch(model.gifAutoLoad, model::chooseGifAutoLoad)
                     }
                 }
@@ -261,11 +296,11 @@ fun SettingsScreen(
             item { SectionLabel(stringResource(R.string.position), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    CardRow(stringResource(R.string.send_threshold), stringResource(R.string.send_threshold_note)) {
+                    CardRow(stringResource(R.string.send_threshold), stringResource(R.string.send_threshold_note), tile = { IconTile(Icons.Outlined.Straighten) }) {
                         Text("50 m", fontSize = 15.sp, color = t.tx2)
                     }
-                    CardDivider()
-                    CardRow(stringResource(R.string.heartbeat), stringResource(R.string.heartbeat_note)) {
+                    CardDivider(TileInset)
+                    CardRow(stringResource(R.string.heartbeat), stringResource(R.string.heartbeat_note), tile = { IconTile(Icons.Outlined.MonitorHeart) }) {
                         Text("15 min", fontSize = 15.sp, color = t.tx2)
                     }
                 }
@@ -294,7 +329,7 @@ fun SettingsScreen(
             item {
                 CardList {
                     Box(Modifier.clickable(onClick = storage)) {
-                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note), merge = false)
+                        CardRow(stringResource(R.string.storage), stringResource(R.string.storage_note), merge = false, tile = { IconTile(Icons.Outlined.SdStorage) })
                     }
                 }
             }
@@ -306,7 +341,7 @@ fun SettingsScreen(
             item {
                 CardList {
                     Box(Modifier.clickable { importer.launch(arrayOf("*/*")) }) {
-                        CardRow(stringResource(R.string.import_meshcore), stringResource(R.string.import_meshcore_note), merge = false)
+                        CardRow(stringResource(R.string.import_meshcore), stringResource(R.string.import_meshcore_note), merge = false, tile = { IconTile(Icons.Outlined.FileDownload) })
                     }
                 }
             }
@@ -315,36 +350,36 @@ fun SettingsScreen(
                 item { SectionLabel(stringResource(R.string.backup), Modifier.padding(top = 10.dp)) }
                 item {
                     CardList {
-                        BackupExportRow(model, stringResource(R.string.export_backup), stringResource(R.string.export_backup_note))
+                        BackupExportRow(model, stringResource(R.string.export_backup), stringResource(R.string.export_backup_note), tile = { IconTile(Icons.Outlined.Backup) })
                     }
                 }
             }
             item { SectionLabel(stringResource(R.string.demo), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    CardRow(stringResource(R.string.demo_network), stringResource(R.string.demo_network_note)) {
+                    CardRow(stringResource(R.string.demo_network), stringResource(R.string.demo_network_note), tile = { IconTile(Icons.Outlined.Science) }) {
                         LichenSwitch(model.isDemo, { if (it) model.startDemo() else model.stopDemo() })
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     if (model.isDemo) {
                         // Off: messages wait for the radio, as when Bluetooth drops (§6.1).
-                        CardRow(stringResource(R.string.demo_radio), stringResource(R.string.demo_radio_note)) {
+                        CardRow(stringResource(R.string.demo_radio), stringResource(R.string.demo_radio_note), tile = { IconTile(Icons.Outlined.PowerSettingsNew) }) {
                             LichenSwitch(!model.demoRadioOff, { model.setDemoRadio(it) })
                         }
-                        CardDivider()
+                        CardDivider(TileInset)
                     }
                     Box(Modifier.clickable { model.markOnboarded(false) }) {
-                        CardRow(stringResource(R.string.show_welcome_again), merge = false)
+                        CardRow(stringResource(R.string.show_welcome_again), merge = false, tile = { IconTile(Icons.Outlined.WavingHand) })
                     }
                 }
             }
             item { SectionLabel(stringResource(R.string.about), Modifier.padding(top = 10.dp)) }
             item {
                 CardList {
-                    CardRow(stringResource(R.string.version)) { Text("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = t.tx2) }
-                    CardDivider()
-                    CardRow(stringResource(R.string.stickers), stringResource(R.string.stickers_credit))
-                    CardDivider()
+                    CardRow(stringResource(R.string.version), tile = { IconTile(Icons.Outlined.Info) }) { Text("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", color = t.tx2) }
+                    CardDivider(TileInset)
+                    CardRow(stringResource(R.string.stickers), stringResource(R.string.stickers_credit), tile = { IconTile(Icons.Outlined.EmojiEmotions) })
+                    CardDivider(TileInset)
                     Row(Modifier.fillMaxWidth().clickable(onClick = identity), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
                             val f = model.fingerprint.take(2).joinToString(" ")
@@ -352,19 +387,20 @@ fun SettingsScreen(
                                 stringResource(R.string.your_identity),
                                 stringResource(if (model.phraseBackedUp) R.string.key_backed_up else R.string.key_not_backed_up, f),
                                 merge = false,
+                                tile = { IconTile(Icons.Outlined.Fingerprint) },
                             )
                         }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     Row(Modifier.fillMaxWidth().clickable(onClick = licences), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.licences), stringResource(R.string.licences_row), merge = false) }
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.licences), stringResource(R.string.licences_row), merge = false, tile = { IconTile(Icons.Outlined.Description) }) }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
-                    CardDivider()
+                    CardDivider(TileInset)
                     // ADR-0045: no message, key, name or position in it.
                     Row(Modifier.fillMaxWidth().clickable(onClick = report), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.report_problem), stringResource(R.string.report_row), merge = false) }
+                        Box(Modifier.weight(1f)) { CardRow(stringResource(R.string.report_problem), stringResource(R.string.report_row), merge = false, tile = { IconTile(Icons.Outlined.BugReport) }) }
                         Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2, modifier = Modifier.padding(end = 12.dp))
                     }
                 }
@@ -471,16 +507,16 @@ private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
     val prompt = LocalLockPrompt.current
     var choosing by remember { mutableStateOf(false) }
     CardList {
-        CardRow(stringResource(R.string.lock_lichen), stringResource(R.string.lock_lichen_note)) {
+        CardRow(stringResource(R.string.lock_lichen), stringResource(R.string.lock_lichen_note), tile = { IconTile(Icons.Outlined.Lock) }) {
             LichenSwitch(
                 lock.enabled,
                 { if (it) prompt(AppLock.Purpose.ENABLE) else lock.disable() },
                 enabled = lock.pending == null,
             )
         }
-        CardDivider()
+        CardDivider(TileInset)
         Box(Modifier.alpha(if (lock.enabled) 1f else 0.5f).clickable(enabled = lock.enabled) { choosing = true }) {
-            CardRow(stringResource(R.string.lock_after), merge = false) {
+            CardRow(stringResource(R.string.lock_after), merge = false, tile = { IconTile(Icons.Outlined.Timer) }) {
                 Box {
                     Text(lockDelayLabel(lock.delay), fontSize = 15.sp, color = t.tx2)
                     DropdownMenu(choosing, { choosing = false }, containerColor = t.s1) {
@@ -498,10 +534,10 @@ private fun PrivacyCard(model: AppModel, blocked: () -> Unit) {
                 }
             }
         }
-        CardDivider()
+        CardDivider(TileInset)
         // People the user blocked (ADR-0034), to unblock.
         Box(Modifier.clickable(onClick = blocked)) {
-            CardRow(stringResource(R.string.blocked), merge = false) {
+            CardRow(stringResource(R.string.blocked), merge = false, tile = { IconTile(Icons.Outlined.Block) }) {
                 Text("${model.blocked.size}", fontSize = 15.sp, color = t.tx2)
             }
         }
@@ -527,26 +563,38 @@ private fun lockDelayLabel(seconds: Int): String = stringResource(
     },
 )
 
-/** The radio, its link and the airtime left; pairing when none is connected. */
+/** The radio, compact (mockup `Settings`): its name, link, battery and the hour's airtime left,
+ * and "connected"; without one, a way to pair it. */
 @Composable
-private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
+private fun RadioCard(model: AppModel, pair: () -> Unit) {
     val t = lichen
     Column(
-        Modifier.fillMaxWidth().background(t.s1, CardShape).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxWidth().background(t.s1, RoundedCornerShape(18.dp)).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         if (model.isConnected) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(model.nodeName.ifEmpty { stringResource(R.string.radio) }, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
-                Text(
-                    when {
-                        model.isDemo -> stringResource(R.string.demo_network)
-                        // SR-31: the network link to the radio is clear.
-                        model.linkKind == "TCP" -> "TCP · ${stringResource(R.string.radio_connected_short)} · ${stringResource(R.string.tcp_not_encrypted)}"
-                        else -> "${model.linkKind} · ${stringResource(R.string.radio_connected_short)}"
-                    },
-                    fontSize = 13.sp, color = t.tx2,
-                )
+            val left = model.budget.limitMs - minOf(model.budget.usedMs, model.budget.limitMs)
+            Row(
+                Modifier.semantics(mergeDescendants = true) {},
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                IconTile(painterResource(R.drawable.ic_radio_tower), t.loraBg, t.loraFg, size = 44.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        model.nodeName.ifEmpty { stringResource(R.string.radio) },
+                        fontSize = 17.sp, fontWeight = FontWeight.Bold, color = t.tx, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        listOfNotNull(
+                            radioLink(model),
+                            model.radioSettings?.batteryPercent?.let { "$it %" },
+                            stringResource(R.string.airtime_left_s, (left / 1000u).toInt()),
+                        ).joinToString(" · "),
+                        fontSize = 13.sp, color = t.tx2,
+                    )
+                }
+                Badge(stringResource(R.string.radio_connected_short), t.okBg, t.okFg)
             }
         } else {
             Row(
@@ -554,9 +602,7 @@ private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(Modifier.size(40.dp).background(t.s2, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Outlined.SettingsInputAntenna, null, tint = t.tx2)
-                }
+                IconTile(painterResource(R.drawable.ic_radio_tower), size = 44.dp)
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(R.string.pair_a_radio), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
                     Text(stringResource(R.string.no_radio), fontSize = 13.sp, color = t.tx2)
@@ -564,14 +610,40 @@ private fun RadioCardLarge(model: AppModel, pair: () -> Unit) {
                 Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = t.tx2)
             }
         }
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.airtime_left_short), fontSize = 13.sp, color = t.tx2)
-            AirtimeMeter(model.budget.usedMs, model.budget.limitMs, large = true)
-        }
         // Over TCP, also while it reconnects: stops trying.
         if ((model.isConnected || model.tcp.target != null) && !model.isDemo) {
             SecondaryButton(stringResource(R.string.disconnect), background = t.sosBg, foreground = t.sosFg) { model.disconnect() }
         }
+    }
+}
+
+/** The link to the radio as people say it: "Bluetooth", "USB", "TCP · not encrypted" (SR-31), or
+ * the demo network. */
+@Composable
+fun radioLink(model: AppModel): String = when {
+    model.isDemo -> stringResource(R.string.demo_network)
+    model.linkKind == "BLE" -> stringResource(R.string.bluetooth)
+    model.linkKind == "TCP" -> "TCP · ${stringResource(R.string.tcp_not_encrypted)}"
+    else -> model.linkKind
+}
+
+/** "connected 2 h 14 min", "connected just now": since the link came up, kept up to date. */
+@Composable
+fun connectedFor(model: AppModel): String {
+    val since = model.connectedSinceMs ?: return stringResource(R.string.radio_connected_short)
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(since) {
+        while (true) {
+            now = SystemClock.elapsedRealtime()
+            delay(20_000)
+        }
+    }
+    val min = ((now - since) / 60_000).toInt()
+    return when {
+        min < 1 -> stringResource(R.string.connected_now)
+        min < 60 -> stringResource(R.string.connected_for, "$min min")
+        min % 60 == 0 -> stringResource(R.string.connected_for, "${min / 60} h")
+        else -> stringResource(R.string.connected_for, "${min / 60} h ${min % 60} min")
     }
 }
 

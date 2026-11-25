@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasContentDescription
 import android.app.Application
 import android.app.KeyguardManager
 import android.content.Intent
@@ -341,7 +343,9 @@ class SettingsTest : UiTest() {
                             val inside = n.children.flatMap { c -> c.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } }
                             problems += "$screen: an unlabelled button ${w.toInt()}×${h.toInt()} dp holding $inside"
                         }
-                        if (w < 47.5f || h < 47.5f) problems += "$screen: \"$label\" is ${w.toInt()}×${h.toInt()} dp"
+                        // Measured where it shows whole: one a list cuts at its edge is smaller here.
+                        val whole = n.boundsInRoot.height >= n.size.height - 1f && n.boundsInRoot.width >= n.size.width - 1f
+                        if (whole && (w < 47.5f || h < 47.5f)) problems += "$screen: \"$label\" is ${w.toInt()}×${h.toInt()} dp"
                     }
                     n.children.forEach(::walk)
                 }
@@ -356,6 +360,14 @@ class SettingsTest : UiTest() {
             tab(t)
             audit(str(t))
         }
+        // Radio settings: the radio on top, the search, the sections (down to the last); a search.
+        restart("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        audit("radio settings")
+        scrollTo(hasText(str(R.string.restart_radio)))
+        audit("radio settings, below")
+        compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.search_radio_settings))).performTextInput("power")
+        audit("radio settings, searched")
         restart("demo" to true, "open" to "Camille")
         advanceUntil("her chat", 120) { hasDesc(str(R.string.attach)) }
         audit("chat")

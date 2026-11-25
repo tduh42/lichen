@@ -54,7 +54,7 @@ import kotlinx.coroutines.launch
  * Framework's "create document"), makes the backup there, and says what it holds.
  */
 @Composable
-fun BackupExportRow(model: AppModel, title: String, subtitle: String) {
+fun BackupExportRow(model: AppModel, title: String, subtitle: String, tile: (@Composable () -> Unit)? = null) {
     val t = lichen
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -72,7 +72,7 @@ fun BackupExportRow(model: AppModel, title: String, subtitle: String) {
         Modifier.fillMaxWidth().clickable(enabled = !working) { create.launch(model.backupFileName()) },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(Modifier.weight(1f)) { CardRow(title, subtitle, merge = false) }
+        Column(Modifier.weight(1f)) { CardRow(title, subtitle, merge = false, tile = tile) }
         if (working) {
             CircularProgressIndicator(Modifier.padding(end = 16.dp).size(20.dp), color = t.tx2, strokeWidth = 2.dp)
         } else {
