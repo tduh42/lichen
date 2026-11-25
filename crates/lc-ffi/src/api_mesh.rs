@@ -55,6 +55,14 @@ pub struct NodeInfo {
     pub on_radio: bool,
     /// A lichen user: their identity is known.
     pub lichen: bool,
+    /// The last time our radio heard it directly (§16.1, ADR-0049): SNR, RSSI (none when the
+    /// radio does not measure it) and when (Unix seconds, the phone's clock). All `None` for a
+    /// node heard only through repeaters, or not since this radio connected and before.
+    pub snr_db: Option<f32>,
+    pub rssi_dbm: Option<i16>,
+    pub signal_at_s: Option<u64>,
+    /// That reading's rating under the current preset; `None` without one.
+    pub signal: SignalRating,
 }
 
 impl NodeInfo {
@@ -74,7 +82,117 @@ impl NodeInfo {
             lon: n.position.map(|(_, lon)| f64::from(lon) / 1e6),
             on_radio: n.on_radio,
             lichen: contact.is_some_and(|c| c.identity.is_some()),
+            snr_db: n.signal.map(|r| snr(r.snr4)),
+            rssi_dbm: n.signal.and_then(|r| r.rssi).map(i16::from),
+            signal_at_s: n.signal.map(|r| r.at_s),
+            signal: i.core.signal_rating(n.signal.as_ref()).into(),
         }
+    }
+}
+
+/// How good a reading is (§16.1, ADR-0049): its SNR against the current preset's demodulation
+/// limit, and its RSSI; the worse of the two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum SignalRating {
+    Good,
+    Fair,
+    Bad,
+    /// No reading.
+    None,
+}
+
+impl From<lc_core::SignalRating> for SignalRating {
+    fn from(r: lc_core::SignalRating) -> Self {
+        match r {
+            lc_core::SignalRating::Good => Self::Good,
+            lc_core::SignalRating::Fair => Self::Fair,
+            lc_core::SignalRating::Bad => Self::Bad,
+            lc_core::SignalRating::None => Self::None,
+        }
+    }
+}
+
+/// One time our radio heard a node directly (§16.1).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SignalReading {
+    /// Unix seconds, the phone's clock.
+    pub at_s: u64,
+    pub snr_db: f32,
+    /// `None` when the radio does not measure it.
+    pub rssi_dbm: Option<i16>,
+    pub signal: SignalRating,
+}
+
+/// A stop on the route to a node (§16.3): our radio first, then each repeater of its path,
+/// then the node.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct RouteStop {
+    /// Its node key, when known: our radio's, the node's, or the one repeater the hash names.
+    pub key: Option<Vec<u8>>,
+    /// A repeater's hash on the path (hex); `None` for our radio and for the node.
+    pub hash: Option<String>,
+    /// Its name: our radio's, the node's (the nickname the user gave), or the repeaters the
+    /// hash may be (none when unknown, several when ambiguous).
+    pub names: Vec<String>,
+    /// The position its adverts carry. None for our radio: show it where the phone is.
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+}
+
+/// A leg between two stops: the last SNR measured on it towards us (the nearer stop hearing
+/// the farther one), or nothing when nothing measured it (§16.3).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct RouteLeg {
+    pub snr_db: Option<f32>,
+    /// From the frames heard; a trace gives none.
+    pub rssi_dbm: Option<i16>,
+    pub signal: SignalRating,
+    /// When it was measured (Unix seconds, the phone's clock).
+    pub at_s: Option<u64>,
+    /// Measured by the last trace, not by the frames heard.
+    pub traced: bool,
+}
+
+/// The route to a node (§16.3): `legs[i]` joins `stops[i]` and `stops[i + 1]`.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct NodeRoute {
+    pub stops: Vec<RouteStop>,
+    pub legs: Vec<RouteLeg>,
+}
+
+impl NodeRoute {
+    fn of(r: &lc_core::Route, i: &Inner) -> Self {
+        let last = r.stops.len().saturating_sub(1);
+        let stops = r
+            .stops
+            .iter()
+            .enumerate()
+            .map(|(n, s)| {
+                // The node itself is shown under the name the user gave it.
+                let nickname = (n == last && n > 0)
+                    .then(|| s.key.and_then(|k| i.nicknames.get(&k).cloned()))
+                    .flatten();
+                RouteStop {
+                    key: s.key.map(|k| k.to_vec()),
+                    hash: (!s.hash.is_empty()).then(|| hex(&s.hash)),
+                    names: nickname.map_or_else(|| s.names.clone(), |n| vec![n]),
+                    lat: s.position.map(|(lat, _)| f64::from(lat) / 1e6),
+                    lon: s.position.map(|(_, lon)| f64::from(lon) / 1e6),
+                }
+            })
+            .collect();
+        let legs = r
+            .legs
+            .iter()
+            .map(|l| RouteLeg {
+                snr_db: l.reading.map(|r| snr(r.snr4)),
+                rssi_dbm: l.reading.and_then(|r| r.rssi).map(i16::from),
+                signal: i.core.signal_rating(l.reading.as_ref()).into(),
+                at_s: l.reading.map(|r| r.at_s),
+                traced: l.traced,
+            })
+            .collect();
+        Self { stops, legs }
     }
 }
 
@@ -366,9 +484,45 @@ impl LichenCore {
 
     /// The nodes the radio reported since it connected, the most recently heard first: its
     /// contacts (people, repeaters, room servers, sensors) and the nodes it heard without
-    /// adding them. Empty while the radio is away. `ContactsUpdated` follows each change.
+    /// adding them. Empty while the radio is away. `ContactsUpdated` follows each change, a
+    /// node's new signal reading included.
     pub fn nodes(&self) -> Vec<NodeInfo> {
         let i = self.lock();
         i.core.nodes().iter().map(|n| NodeInfo::of(n, &i)).collect()
+    }
+
+    /// What the connected radio (or the last one) heard of `node` directly over the last 7
+    /// days, oldest first, 500 readings at most (§16.1, ADR-0049). Empty for a key that is not
+    /// 32 bytes, without a store or before any radio. `NodeUpdated` follows each new reading.
+    pub fn node_signal_history(&self, node: Vec<u8>) -> Vec<SignalReading> {
+        let Ok(k) = key(&node) else {
+            return Vec::new();
+        };
+        let i = self.lock();
+        let (Some(st), Some(radio)) = (&i.store, i.core.node_key()) else {
+            return Vec::new();
+        };
+        let now_s = u64::try_from(i.wall_ms() / 1000).unwrap_or(0);
+        let since = now_s.saturating_sub(lc_core::signal::HISTORY_KEEP_S);
+        st.signal_history(radio, &k, since)
+            .unwrap_or_default()
+            .iter()
+            .map(|r| SignalReading {
+                at_s: r.at_s,
+                snr_db: snr(r.snr4),
+                rssi_dbm: r.rssi.map(i16::from),
+                signal: i.core.signal_rating(Some(r)).into(),
+            })
+            .collect()
+    }
+
+    /// The route to `node` (§16.3): our radio, the repeaters of its path and the node, with the
+    /// last SNR of each leg and the stops' advertised positions. `None` when the radio floods
+    /// to reach it, does not know it, or the key is not 32 bytes. `NodeUpdated` follows a
+    /// trace's progress and each new reading.
+    pub fn node_route(&self, node: Vec<u8>) -> Option<NodeRoute> {
+        let k = key(&node).ok()?;
+        let i = self.lock();
+        i.core.route(&k).map(|r| NodeRoute::of(&r, &i))
     }
 }

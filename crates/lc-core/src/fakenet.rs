@@ -230,6 +230,9 @@ pub struct Net {
     /// Pushes due later (`Ev::Push`): id, companion, frame; a frame queued for
     /// `SYNC_NEXT_MESSAGE` when `queued`.
     later: Vec<Later>,
+    /// Fixed readings `(snr4, rssi)` of links between unplaced nodes, both ways
+    /// ([`Net::set_link_readings`]); the others hear at SNR 10 dB, RSSI −90 dBm.
+    link_readings: Vec<((usize, usize), (i8, i8))>,
 }
 
 #[derive(Debug)]
@@ -307,6 +310,7 @@ impl Net {
             geometry: Geometry::default(),
             deaf: None,
             later: Vec::new(),
+            link_readings: Vec::new(),
         }
     }
 
@@ -634,7 +638,7 @@ impl Net {
     /// demodulation floor (SF8: −10 dB).
     fn readings(&mut self, t: usize, r: usize) -> Option<(i8, i8)> {
         let Some(mean) = self.mean_rssi(t, r) else {
-            return Some((40, -90));
+            return Some(self.unplaced_readings(t, r));
         };
         let u = ((self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64).max(1e-300);
         let v = (self.rng.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
@@ -652,6 +656,129 @@ impl Net {
             rssi.round().clamp(-127.0, -1.0) as i8
         };
         Some((snr4, rssi))
+    }
+
+    /// What `r` hears of `t` when either is unplaced: the link's fixed readings
+    /// ([`Net::set_link_readings`]), else SNR 10 dB and RSSI −90 dBm. Draws nothing at random:
+    /// the air's timeline stays the same.
+    fn unplaced_readings(&self, t: usize, r: usize) -> (i8, i8) {
+        self.link_readings
+            .iter()
+            .find(|((a, b), _)| (*a, *b) == (t.min(r), t.max(r)))
+            .map_or((40, -90), |(_, v)| *v)
+    }
+
+    /// Gives the link between `a` and `b` fixed readings, both ways, while either is unplaced:
+    /// SNR × 4 and RSSI (dBm). For receptions, traces and neighbour lists; the demo's links
+    /// then differ (ADR-0049) without a draw more on the air.
+    pub fn set_link_readings(&mut self, a: usize, b: usize, snr4: i8, rssi: i8) {
+        let k = (a.min(b), a.max(b));
+        self.link_readings.retain(|(l, _)| *l != k);
+        self.link_readings.push((k, (snr4, rssi)));
+    }
+
+    /// Node `from`'s advert as it puts it on the air (A:§5, protocol §16.6): signed with its
+    /// key, stamped `ts`, with its type, the position it advertises and its name; a flood, or
+    /// zero-hop (direct, empty path).
+    pub fn advert(&self, from: usize, ts: u32, zero_hop: bool) -> Vec<u8> {
+        use lc_meshcore::advert::flag;
+        let Some(n) = self.nodes.get(from) else {
+            return Vec::new();
+        };
+        let mut app_data = vec![self.kind(from) | flag::NAME];
+        if let Some((lat, lon)) = n.advert_position {
+            app_data[0] |= flag::POSITION;
+            app_data.extend_from_slice(&lat.to_le_bytes());
+            app_data.extend_from_slice(&lon.to_le_bytes());
+        }
+        let room = lc_meshcore::advert::APP_DATA_MAX.saturating_sub(app_data.len());
+        app_data.extend(n.name.bytes().take(room));
+        let ts = ts.to_le_bytes();
+        let sig = lc_meshcore::ecdh::sign(&n.prv, &[&n.key, &ts, &app_data]).unwrap_or([0; 64]);
+        let mut payload = n.key.to_vec();
+        payload.extend_from_slice(&ts);
+        payload.extend_from_slice(&sig);
+        payload.extend_from_slice(&app_data);
+        let mut out = [0u8; 255];
+        let len = Packet {
+            route: if zero_hop {
+                Route::Direct
+            } else {
+                Route::Flood
+            },
+            ptype: PayloadType::Advert,
+            transport: None,
+            path: Path::EMPTY,
+            payload: &payload,
+        }
+        .encode(&mut out)
+        .unwrap_or(0);
+        out.get(..len).map(<[u8]>::to_vec).unwrap_or_default()
+    }
+
+    /// Companion `i`'s radio logs `frame` with these readings (`LOG_RX_DATA`, protocol §1),
+    /// out of band: nothing goes on the air, and the radio does nothing else with it.
+    pub fn log_rx(&mut self, i: usize, frame: &[u8], snr4: i8, rssi: i8) {
+        if self.nodes.get(i).is_some_and(|n| n.role == Role::Companion) {
+            let mut log = vec![resp::LOG_RX_DATA, snr4 as u8, rssi as u8];
+            log.extend_from_slice(frame);
+            self.push_to_app(i, &log);
+        }
+    }
+
+    /// Companion `i`'s radio logs node `from`'s flooded advert as it reaches it, out of band
+    /// (the demo's adverts, ADR-0049): from `from` itself when they are linked, else from the
+    /// last repeater of the shortest route, with the hashes of the repeaters it went through;
+    /// with that link's readings, the SNR moved by `jitter4` (× 4) and the RSSI by a quarter of
+    /// it. Stamped by `i`'s radio clock. Nothing goes on the air, nothing is drawn at random,
+    /// and the radio's contacts stay as they are. Whether there was a way.
+    pub fn log_advert(&mut self, i: usize, from: usize, jitter4: i8) -> bool {
+        let Some(route) = self.route(i, from) else {
+            return false;
+        };
+        let last = match route.bytes.first() {
+            Some(h) => self.nodes.iter().position(|n| n.key[0] == *h),
+            None => Some(from),
+        };
+        let Some(last) = last else {
+            return false;
+        };
+        let (snr4, rssi) = match self.mean_snr(last, i) {
+            Some(snr) => (
+                (snr.min(SNR_MAX_DB) * 4.0).round().clamp(-128.0, 127.0) as i8,
+                self.mean_rssi(last, i)
+                    .map_or(-90, |r| r.round().clamp(-127.0, -1.0) as i8),
+            ),
+            None => self.unplaced_readings(last, i),
+        };
+        let snr4 = snr4.saturating_add(jitter4);
+        let rssi = if rssi == 0 {
+            0
+        } else {
+            rssi.saturating_add(jitter4 / 4)
+        };
+        let ts = self.radio_unix_s(i);
+        let advert = self.advert(from, ts, false);
+        // The flood's path lists the repeaters from `from` on, the opposite of `route`.
+        let hops: Vec<u8> = route.bytes.iter().rev().copied().collect();
+        let Ok(p) = Packet::decode(&advert) else {
+            return false;
+        };
+        let Ok(path) = Path::from_hashes(&hops) else {
+            return false;
+        };
+        let mut out = [0u8; 255];
+        let Ok(len) = (Packet { path, ..p }).encode(&mut out) else {
+            return false;
+        };
+        let frame = out.get(..len).map(<[u8]>::to_vec).unwrap_or_default();
+        self.log_rx(i, &frame, snr4, rssi);
+        true
+    }
+
+    /// Node `i`'s radio clock now, Unix seconds (see [`Net::advert`]'s stamp).
+    pub fn radio_clock(&self, i: usize) -> u32 {
+        self.radio_unix_s(i)
     }
 
     pub fn key(&self, i: usize) -> PubKey {
@@ -1008,11 +1135,13 @@ impl Net {
         })
     }
 
-    /// SNR × 4 at `r` of a transmission from `t` (its mean on the plane; 10 dB unplaced).
+    /// SNR × 4 at `r` of a transmission from `t` (its mean on the plane; unplaced, the link's
+    /// fixed reading, else 10 dB).
     fn snr4(&self, t: usize, r: usize) -> i8 {
-        self.mean_snr(t, r).map_or(40, |snr| {
-            (snr.min(SNR_MAX_DB) * 4.0).round().clamp(-128.0, 127.0) as i8
-        })
+        self.mean_snr(t, r)
+            .map_or(self.unplaced_readings(t, r).0, |snr| {
+                (snr.min(SNR_MAX_DB) * 4.0).round().clamp(-128.0, 127.0) as i8
+            })
     }
 
     /// `SEND_TRACE_PATH` (§16.3), simplified: the trace walks the simulated links without

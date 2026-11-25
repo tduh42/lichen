@@ -103,6 +103,7 @@ impl Inner {
             Event::Connected { .. } => {
                 self.save_contacts();
                 self.note_radio_name();
+                self.restore_signals();
                 if let Some(flood) = self.advert_owed.take() {
                     self.core.send_advert(flood, self.last_now);
                 }
@@ -439,6 +440,15 @@ impl Inner {
             Event::RequestAccepted { node, identity } => {
                 self.save_contacts();
                 self.adopt_request(node, identity);
+            }
+            // A node heard directly (§16.1): kept per radio, and its page reads it again.
+            Event::NodeSignal { node, reading } => {
+                if let (Some(st), Some(radio)) = (&self.store, self.core.node_key()) {
+                    let _ = st.put_signal(radio, node, reading);
+                }
+                self.extra.push_back(LichenEvent::NodeUpdated {
+                    node: node.to_vec(),
+                });
             }
             Event::ChannelsUpdated => {
                 if self.core.channels_known()

@@ -71,7 +71,8 @@ back (ADR-0037):
 - **disappearing messages** (a timer was on when they were stored, §6.5), with their media,
   reactions and edits: a file outlives their time;
 - **location**: the shares we were giving and the positions received (§12);
-- search **consents** (§11) and the radio's state (the TX power a search lowered).
+- search **consents** (§11) and the radio's state (the TX power a search lowered);
+- the nodes' **signal readings** (§16.1): they describe one radio's surroundings at one time.
 
 Sessions are never stored (ADR-0003), so none is in a backup either.
 

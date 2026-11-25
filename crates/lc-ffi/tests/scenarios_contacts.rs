@@ -5,7 +5,7 @@ mod common;
 use common::{Sim, contact_chat, find_contact, texts};
 use lc_ffi::{
     ChatRef, DemoNetwork, LichenError, LichenEvent, MessageStatus, NodeKind, ServerLogin,
-    TraceState,
+    SignalRating, TraceState,
 };
 
 fn node(sim: &Sim, name: &str) -> lc_ffi::NodeInfo {
@@ -159,6 +159,62 @@ fn ct_3_nodes() {
     assert_eq!(node(&sim, "Camille").kind, NodeKind::Companion);
 }
 
+/// CT-3: each node's signal (protocol §16.1, ADR-0049): the nodes the radio hears directly
+/// carry their last reading, rated against the preset: the hub Good, Lucie Fair, the board Bad.
+/// Crest, behind the hub, has none of its own. Each reading is kept in the history, which
+/// grows, and the last one shows again after a restart.
+#[test]
+fn ct_3_node_signal() {
+    let mut sim = Sim::persistent(93, "ct3-signal");
+    sim.until("the hub, Lucie and the board heard", 30, |c| {
+        let nodes = c.nodes();
+        ["hub", "Lucie", "Refuge board"]
+            .iter()
+            .all(|n| nodes.iter().any(|x| x.name == *n && x.snr_db.is_some()))
+    });
+    let hub = node(&sim, "hub");
+    assert_eq!(hub.signal, SignalRating::Good, "{hub:?}");
+    assert!(hub.rssi_dbm.is_some(), "{hub:?}");
+    let at = hub.signal_at_s.unwrap();
+    assert!(at.abs_diff(u64::from(sim.unix_s())) < 60, "{at}");
+    let lucie = node(&sim, "Lucie");
+    assert_eq!(lucie.signal, SignalRating::Fair, "{lucie:?}");
+    let board = node(&sim, "Refuge board");
+    assert_eq!(board.signal, SignalRating::Bad, "{board:?}");
+    // Through the hub only: no signal of its own.
+    let crest = node(&sim, "crest");
+    assert_eq!((crest.snr_db, crest.signal), (None, SignalRating::None));
+    assert_eq!((crest.rssi_dbm, crest.signal_at_s), (None, None));
+    // Its page hears of each reading.
+    assert!(sim.events.iter().any(|(_, e)| *e
+        == LichenEvent::NodeUpdated {
+            node: hub.key.clone()
+        }));
+
+    // The history grows with each advert heard.
+    let first = sim.core.node_signal_history(hub.key.clone());
+    assert_eq!(first.last().map(|r| r.snr_db), hub.snr_db);
+    sim.until("another reading of the hub", 30, |c| {
+        c.node_signal_history(hub.key.clone()).len() > first.len()
+    });
+    let h = sim.core.node_signal_history(hub.key.clone());
+    assert!(h.windows(2).all(|w| w[0].at_s <= w[1].at_s), "oldest first");
+    assert!(h.iter().all(|r| r.signal == SignalRating::Good), "{h:?}");
+    assert!(sim.core.node_signal_history(crest.key.clone()).is_empty());
+    assert!(sim.core.node_signal_history(vec![1, 2]).is_empty());
+
+    // Restarted, the app shows the last reading before the radio hears the hub again.
+    sim.restart(1_000);
+    sim.until("the radio's nodes again", 10, |c| {
+        c.nodes().iter().any(|n| n.name == "hub")
+    });
+    let again = node(&sim, "hub");
+    let h = sim.core.node_signal_history(hub.key.clone());
+    assert!(h.len() >= 2, "{h:?}");
+    assert_eq!(again.signal_at_s, h.last().map(|r| r.at_s), "{again:?}");
+    assert_eq!(again.signal, SignalRating::Good);
+}
+
 /// CT-4: the refuge board: logged in, its posts arrive with their authors, its row is in
 /// Messages, a later post comes (200 s), and ours goes out.
 #[test]
@@ -300,6 +356,80 @@ fn ct_7_trace_to_a_node() {
     // A node the radio does not know: nothing to trace.
     assert!(sim.core.start_trace(vec![0x42; 32], sim.now).is_err());
     assert_eq!(sim.core.node_path(vec![0x42; 32]).unwrap(), None);
+}
+
+/// CT-7: the route to crest (protocol §16.3, ADR-0049): our radio, the hub, crest, each with
+/// the position it advertises; the hub's leg measured by its adverts, crest's by a trace once
+/// asked for, never made up before. Julien, a phone beyond crest: his own leg is never measured
+/// (a trace stops at the last repeater).
+#[test]
+fn ct_7_route_to_a_node() {
+    let mut sim = Sim::new(94);
+    sim.until("the hub heard", 30, |c| {
+        c.nodes()
+            .iter()
+            .any(|n| n.name == "hub" && n.snr_db.is_some())
+    });
+    let hub = node(&sim, "hub");
+    let crest = node(&sim, "crest").key;
+    let r = sim.core.node_route(crest.clone()).unwrap();
+    let names: Vec<String> = r.stops.iter().map(|s| s.names.join("/")).collect();
+    assert_eq!(names, ["ThinkNode M5", "hub", "crest"]);
+    assert_eq!(r.stops[1].key.as_ref(), Some(&hub.key));
+    assert_eq!(r.stops[1].hash, Some(format!("{:02x}", hub.key[0])));
+    assert_eq!(
+        (r.stops[0].hash.clone(), r.stops[2].hash.clone()),
+        (None, None)
+    );
+    assert_eq!(r.stops[2].key.as_ref(), Some(&crest));
+    assert_eq!(r.stops[0].lat, None, "our radio: where the phone is");
+    assert_eq!(r.stops[1].lat, hub.lat);
+    assert!(r.stops[2].lat.is_some() && r.stops[2].lon.is_some());
+    assert_eq!(r.legs.len(), 2);
+    assert_eq!(r.legs[0].snr_db, hub.snr_db);
+    assert_eq!(r.legs[0].signal, SignalRating::Good);
+    assert!(!r.legs[0].traced && r.legs[0].rssi_dbm.is_some());
+    assert_eq!(
+        (r.legs[1].snr_db, r.legs[1].at_s),
+        (None, None),
+        "not measured yet"
+    );
+    assert_eq!(r.legs[1].signal, SignalRating::None);
+
+    sim.core.start_trace(crest.clone(), sim.now).unwrap();
+    sim.until("the trace back", 60, |c| {
+        c.trace(crest.clone())
+            .is_some_and(|t| t.state != TraceState::Sending)
+    });
+    assert_eq!(
+        sim.core.trace(crest.clone()).unwrap().state,
+        TraceState::Done
+    );
+    let r = sim.core.node_route(crest.clone()).unwrap();
+    assert!(r.legs[1].traced, "{r:?}");
+    assert_eq!(r.legs[1].snr_db, Some(-3.0), "the hub hearing crest");
+    assert_eq!(r.legs[1].signal, SignalRating::Fair);
+    assert!(r.legs[1].at_s.is_some());
+    assert!(r.legs[0].snr_db.is_some());
+
+    // The hub, heard directly: one leg.
+    let r = sim.core.node_route(hub.key.clone()).unwrap();
+    assert_eq!((r.stops.len(), r.legs.len()), (2, 1));
+    // Julien: the leg from crest to his phone is never measured.
+    let julien = sim.contact("Julien").key;
+    sim.core.start_trace(julien.clone(), sim.now).unwrap();
+    sim.until("the trace to Julien back", 60, |c| {
+        c.trace(julien.clone())
+            .is_some_and(|t| t.state != TraceState::Sending)
+    });
+    let r = sim.core.node_route(julien.clone()).unwrap();
+    let names: Vec<String> = r.stops.iter().map(|s| s.names.join("/")).collect();
+    assert_eq!(names, ["ThinkNode M5", "hub", "crest", "Julien"]);
+    assert!(r.legs[1].snr_db.is_some());
+    assert_eq!(r.legs[2].snr_db, None);
+    // A node the radio does not know.
+    assert!(sim.core.node_route(vec![0x42; 32]).is_none());
+    assert!(sim.core.node_route(vec![1]).is_none());
 }
 
 /// The demo with requests on (`-requestDemo YES`): Camille's first message becomes a request.

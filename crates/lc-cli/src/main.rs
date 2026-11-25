@@ -491,6 +491,15 @@ fn describe(core: &Core, e: &Event) -> String {
             format!("{}: request accepted", name_of(core, node))
         }
         Event::RadioOutcome(o) => format!("radio setting {:?}: {:?}", o.setting, o.outcome),
+        Event::NodeSignal { node, reading } => format!(
+            "{} heard directly: SNR {:.2} dB{} ({:?})",
+            name_of(core, node),
+            f32::from(reading.snr4) / 4.0,
+            reading
+                .rssi
+                .map_or(String::new(), |r| format!(", RSSI {r} dBm")),
+            core.signal_rating(Some(reading))
+        ),
     }
 }
 
