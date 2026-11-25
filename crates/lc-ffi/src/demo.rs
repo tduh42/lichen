@@ -960,6 +960,11 @@ impl DemoNetwork {
         // A board with a GPS, off as the firmware ships it (protocol §1.1).
         net.nodes[app].settings.gps = Some(false);
         net.nodes[app].settings.autoadd = (0x02 | 0x01, 0);
+        // A ThinkNode M5 on stock v1.18 (DEVICE_INFO): its board's name
+        // (`variants/thinknode_m5/ThinknodeM5Board.cpp` L38) and its 40 channel slots
+        // (`variants/thinknode_m5/platformio.ini` L150; 350 contacts, the fake's default).
+        net.nodes[app].board = "Elecrow ThinkNode M5".into();
+        net.nodes[app].channels = vec![None; 40];
         // Its clock kept the time: the nodes it lists show their real age (QA bug B-and-5).
         net.nodes[app].radio_time = Some((unix_now_ms() / 1000) as u32);
         let hub = net.add_repeater(10, "hub");

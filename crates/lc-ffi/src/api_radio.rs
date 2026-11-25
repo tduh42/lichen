@@ -21,7 +21,7 @@ pub struct Telemetry {
 }
 
 /// What the radio reported of its settings; an empty field was not reported.
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct RadioSettings {
     pub name: String,
     pub freq_khz: u32,
@@ -60,6 +60,18 @@ pub struct RadioSettings {
     /// The radio answered: the values are its own. False until then (they are zeros): the
     /// apps say the settings are being read (QA bug B-ios-15).
     pub read: bool,
+    /// The radio's figures (`GET_STATS`, §16.4), each `None` until it reports it: its noise
+    /// floor (dBm), the last packet's RSSI (dBm) and SNR, airtime sent and received (s).
+    pub noise_floor_dbm: Option<i16>,
+    pub last_rssi_dbm: Option<i16>,
+    pub last_snr_db: Option<f32>,
+    pub tx_airtime_s: Option<u32>,
+    pub rx_airtime_s: Option<u32>,
+    /// Seconds since it started; packets received, sent, and received with errors.
+    pub uptime_s: Option<u32>,
+    pub packets_received: Option<u32>,
+    pub packets_sent: Option<u32>,
+    pub receive_errors: Option<u32>,
 }
 
 impl From<&lc_core::radio::RadioSettings> for RadioSettings {
@@ -106,6 +118,15 @@ impl From<&lc_core::radio::RadioSettings> for RadioSettings {
                 lc_core::radio::battery_percent(mv) <= lc_core::radio::BATTERY_LOW_PERCENT
             }),
             read: r.read,
+            noise_floor_dbm: r.noise_floor_dbm,
+            last_rssi_dbm: r.last_rssi.map(i16::from),
+            last_snr_db: r.last_snr4.map(snr),
+            tx_airtime_s: r.tx_air_s,
+            rx_airtime_s: r.rx_air_s,
+            uptime_s: r.uptime_s,
+            packets_received: r.packets_recv,
+            packets_sent: r.packets_sent,
+            receive_errors: r.recv_errors,
         }
     }
 }
@@ -224,6 +245,15 @@ impl LichenCore {
     /// Reads the battery and storage again.
     pub fn refresh_radio(&self) {
         self.lock().core.radio_refresh();
+    }
+
+    /// Reads the radio's figures again (noise floor, airtime, uptime, packets: §16.4), at most
+    /// every 60 s: call it while Radio settings is open. True when a read went out; a
+    /// `RadioSettings` event follows each answer.
+    pub fn refresh_radio_stats(&self, now_ms: u64) -> bool {
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        i.core.radio_refresh_stats(now_ms)
     }
 
     /// Reads the battery again when 10 minutes passed since it was last read (the low-battery

@@ -594,7 +594,13 @@ fn answers(expect: Expect, r: &Response<'_>) -> bool {
             R::Ok,
         ) => true,
         (Expect::Scope, R::DefaultFloodScope { .. }) => true,
-        (Expect::Stats, R::RadioStats { .. }) => true,
+        (
+            Expect::Stats,
+            R::RadioStats { .. }
+            | R::CoreStats { .. }
+            | R::PacketStats { .. }
+            | R::OtherStats { .. },
+        ) => true,
         (Expect::Sync, R::ContactMsg { .. } | R::ChannelMsg { .. } | R::NoMoreMessages) => true,
         (Expect::Channel(i), R::ChannelInfo { index, .. }) => *index == i,
         (
@@ -1489,6 +1495,8 @@ impl Core {
         self.radio_read_all();
         self.contact_resyncs = 0;
         self.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        // The radio's figures after its contacts (§16.4): the card can wait, the lists not.
+        self.radio_read_stats(now);
         self.mesh_connected();
         self.servers_connected();
         self.plain_connected();
@@ -2488,7 +2496,27 @@ impl Core {
                 used_kb,
                 total_kb,
             } => self.radio_battery(millivolts, used_kb, total_kb),
-            Response::RadioStats { noise, .. } => self.search_noise(noise),
+            Response::RadioStats {
+                noise,
+                rssi,
+                snr4,
+                tx_air_s,
+                rx_air_s,
+            } => {
+                self.search_noise(noise);
+                self.radio_radio_stats(noise, rssi, snr4, tx_air_s, rx_air_s);
+            }
+            Response::CoreStats {
+                battery_mv,
+                uptime_s,
+                ..
+            } => self.radio_core_stats(battery_mv, uptime_s),
+            Response::PacketStats {
+                recv,
+                sent,
+                recv_errors,
+                ..
+            } => self.radio_packet_stats(recv, sent, recv_errors),
             _ => {}
         }
         if done {

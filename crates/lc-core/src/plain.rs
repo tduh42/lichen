@@ -1119,6 +1119,8 @@ mod tests {
             40 => vec![vec![21]],
             59 => vec![vec![25, 0, 0]],
             20 => vec![vec![12, 0xAC, 0x0F]],
+            // No figures (`GET_STATS`): an older firmware's `ERR`.
+            56 => vec![vec![1, 1]],
             4 => vec![
                 vec![2, 1, 0, 0, 0],
                 contact(BOB, "Bob"),

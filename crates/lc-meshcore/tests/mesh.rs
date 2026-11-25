@@ -78,6 +78,9 @@ fn mesh_commands_match_the_firmware() {
             "send-telemetry-req" => Command::SendTelemetryReq {
                 key: key.as_ref().unwrap(),
             },
+            "get-stats-0" | "get-stats-1" | "get-stats-2" => {
+                Command::GetStats { kind: n(v, "kind") }
+            }
             "send-binary-req-neighbours" => Command::SendBinaryReq {
                 key: key.as_ref().unwrap(),
                 data: req.as_ref().unwrap(),
@@ -102,7 +105,7 @@ fn mesh_commands_match_the_firmware() {
         assert_eq!(hex::encode(&out[..len]), s(v, "hex"), "{name}");
         seen += 1;
     }
-    assert_eq!(seen, 8);
+    assert_eq!(seen, 11);
 }
 
 #[test]
@@ -205,6 +208,58 @@ fn mesh_responses_decode() {
                 want.extend_from_slice(s(v, "text").as_bytes());
                 assert_eq!(text, want, "{name}");
             }
+            Response::CoreStats {
+                battery_mv,
+                uptime_s,
+                err_flags,
+                queue_len,
+            } => {
+                assert_eq!(battery_mv, n::<u16>(v, "battery_mv"), "{name}");
+                assert_eq!(uptime_s, n::<u32>(v, "uptime_s"), "{name}");
+                assert_eq!(err_flags, n::<u16>(v, "err_flags"), "{name}");
+                assert_eq!(queue_len, n::<u8>(v, "queue_len"), "{name}");
+            }
+            Response::RadioStats {
+                noise,
+                rssi,
+                snr4,
+                tx_air_s,
+                rx_air_s,
+            } => {
+                assert_eq!(noise, n::<i16>(v, "noise"), "{name}");
+                assert_eq!((rssi, snr4), (n(v, "rssi"), n(v, "snr4")), "{name}");
+                assert_eq!((tx_air_s, rx_air_s), (n(v, "tx_air_s"), n(v, "rx_air_s")));
+            }
+            Response::PacketStats {
+                recv,
+                sent,
+                sent_flood,
+                sent_direct,
+                recv_flood,
+                recv_direct,
+                recv_errors,
+            } => {
+                assert_eq!((recv, sent), (n(v, "recv"), n(v, "sent")), "{name}");
+                assert_eq!(
+                    (sent_flood, sent_direct, recv_flood, recv_direct),
+                    (
+                        n(v, "sent_flood"),
+                        n(v, "sent_direct"),
+                        n(v, "recv_flood"),
+                        n(v, "recv_direct")
+                    )
+                );
+                assert_eq!(recv_errors, n::<u32>(v, "recv_errors"), "{name}");
+            }
+            Response::DeviceInfo(d) => {
+                assert_eq!(d.fw_ver, n::<u8>(v, "fw_ver"), "{name}");
+                assert_eq!(d.max_channels, Some(n(v, "max_channels")), "{name}");
+                assert_eq!(d.build_date, s(v, "build_date").as_bytes(), "{name}");
+                assert_eq!(d.manufacturer, s(v, "manufacturer").as_bytes(), "{name}");
+                assert_eq!(d.version, s(v, "version").as_bytes(), "{name}");
+                assert_eq!(d.repeat, Some(v["repeat"].as_bool().unwrap()), "{name}");
+                assert_eq!(d.path_hash_mode, Some(n(v, "path_hash_mode")), "{name}");
+            }
             Response::TelemetryResponse { prefix, data } => {
                 assert_eq!(prefix[..], bytes(v, "prefix"), "{name}");
                 assert_eq!(data, bytes(v, "data"), "{name}");
@@ -215,7 +270,7 @@ fn mesh_responses_decode() {
         }
         seen += 1;
     }
-    assert_eq!(seen, 12);
+    assert_eq!(seen, 16);
 }
 
 /// Status and neighbours decoders never read past what they were given.

@@ -68,7 +68,8 @@ pub enum Command<'a> {
     GetDefaultFloodScope,
     /// `[12] dBm i8` → `OK`, or `ERR 6` outside the radio's range (search, §11.1 POWER).
     SetRadioTxPower { dbm: i8 },
-    /// `[56] type` (v8+) → `STATS`; type 1: noise floor, last RSSI and SNR, airtime (§11.2).
+    /// `[56] type` (v8+) → `STATS`: type 0 battery, uptime, error flags, queue; 1 noise floor,
+    /// last RSSI and SNR, airtime (§11.2); 2 packets (§1.1, §16.4).
     GetStats { kind: u8 },
     /// `[2] txt_type ‖ attempt ‖ ts u32 ‖ key prefix (6) ‖ text` → `SENT`, then push
     /// `SEND_CONFIRMED` once the recipient acknowledged: a plain MeshCore direct message.

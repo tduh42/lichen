@@ -418,11 +418,38 @@ fn radio_stats_and_tx_power() {
             rx_air_s: 4567
         }
     );
+    // Types 0 (core) and 2 (packets), as in companion.toml's `stats-core` and `stats-packets`.
     assert_eq!(
-        Response::decode(&[24, 0, 1, 2]).unwrap(),
-        Response::OtherStats { kind: 0 }
+        Response::decode(&hex::decode("18001b10100e0000020103").unwrap()).unwrap(),
+        Response::CoreStats {
+            battery_mv: 4123,
+            uptime_s: 3600,
+            err_flags: 0x0102,
+            queue_len: 3
+        }
     );
+    assert_eq!(
+        Response::decode(
+            &hex::decode("180201000000020000000300000004000000050000000600000007000000").unwrap()
+        )
+        .unwrap(),
+        Response::PacketStats {
+            recv: 1,
+            sent: 2,
+            sent_flood: 3,
+            sent_direct: 4,
+            recv_flood: 5,
+            recv_direct: 6,
+            recv_errors: 7
+        }
+    );
+    assert_eq!(
+        Response::decode(&[24, 3, 0, 0, 0, 0]).unwrap(),
+        Response::OtherStats { kind: 3 }
+    );
+    assert!(Response::decode(&[24, 0, 1, 2]).is_err(), "truncated");
     assert!(Response::decode(&[24, 1, 0]).is_err(), "truncated");
+    assert!(Response::decode(&[24, 2, 1, 0, 0, 0]).is_err(), "truncated");
 }
 
 /// ADR-0035: a group voice note's signed message (611 bytes) verifies, in several parts as

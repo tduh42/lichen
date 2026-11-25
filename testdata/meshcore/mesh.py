@@ -181,6 +181,31 @@ def main():
     # handler reads it at offset 4, `len >= 4 + PUB_KEY_SIZE`; `len == 4` asks our own radio).
     out("command", "send-telemetry-req", bytes([39, 0, 0, 0]) + rpt, "MyMesh.cpp#L1680", key=rpt)
 
+    # CMD_GET_STATS (56), MyMesh.cpp#L1914: the stats type (0 core, 1 radio, 2 packets, L70-L73).
+    for kind in (0, 1, 2):
+        out("command", f"get-stats-{kind}", bytes([56, kind]), "MyMesh.cpp#L1914", kind=kind)
+
+    # RESP_CODE_STATS (24), MyMesh.cpp#L1916-L1962: the type, then its figures, little-endian.
+    out("response", "stats-core", struct.pack("<BBHIHB", 24, 0, 3_990, 86_520, 0, 2),
+        "MyMesh.cpp#L1916", battery_mv=3_990, uptime_s=86_520, err_flags=0, queue_len=2)
+    out("response", "stats-radio", struct.pack("<BBhbbII", 24, 1, -116, -98, 27, 412, 1_830),
+        "MyMesh.cpp#L1928", noise=-116, rssi=-98, snr4=27, tx_air_s=412, rx_air_s=1_830)
+    out("response", "stats-packets", struct.pack("<BB7I", 24, 2, 5_120, 830, 610, 220, 3_900, 1_220, 14),
+        "MyMesh.cpp#L1943", recv=5_120, sent=830, sent_flood=610, sent_direct=220,
+        recv_flood=3_900, recv_direct=1_220, recv_errors=14)
+    # RESP_CODE_DEVICE_INFO (13), MyMesh.cpp#L1056-L1074, as a ThinkNode M5 companion at v1.18
+    # sends it: FIRMWARE_VER_CODE 14 (MyMesh.h#L7), MAX_CONTACTS 350 / 2 and MAX_GROUP_CHANNELS 40
+    # (variants/thinknode_m5/platformio.ini#L149-L150), the BLE PIN, the build date in 12 bytes
+    # (MyMesh.h#L10), the manufacturer in 40 (ThinknodeM5Board.cpp#L38), the version in 20
+    # (MyMesh.h#L14), repeat off, path hash mode 0.
+    def padded(text, n):
+        return text.encode() + bytes(n - len(text))
+    info = (bytes([13, 14, 175, 40]) + struct.pack("<I", 0) + padded("15 Oct 2026", 12)
+            + padded("Elecrow ThinkNode M5", 40) + padded("v1.18.0", 20) + bytes([0, 0]))
+    out("response", "device-info-thinknode-m5", info, "MyMesh.cpp#L1056", fw_ver=14,
+        max_channels=40, build_date="15 Oct 2026", manufacturer="Elecrow ThinkNode M5",
+        version="v1.18.0", repeat=False, path_hash_mode=0)
+
     # PUSH_CODE_LOGIN_SUCCESS (0x85), MyMesh.cpp#L704: is_admin, key prefix, the server's
     # clock, our permissions (simple_repeater/MyMesh.cpp#L137: role 3 admin), firmware level.
     out("response", "login-success", bytes([0x85, 1]) + rpt[:6] + struct.pack("<IBB", 1_793_000_123, 3, 2),
