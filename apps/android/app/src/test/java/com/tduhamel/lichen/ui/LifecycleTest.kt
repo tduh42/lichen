@@ -67,18 +67,17 @@ class LifecycleTest : UiTest() {
 
     private fun texts(chat: ChatId?) = chat?.let { model.chats[it] }.orEmpty().mapNotNull { (it.message as? Message.Text)?.text }
 
-    /** Logged in to the demo's board (Settings › Nodes), back on Messages. */
+    /** Logged in to the demo's board (the Nodes tab), back on Messages. */
     private fun logInToTheBoard(): ChatId {
         advanceUntil("the room server") { model.nodes.any { it.name == "Refuge board" } }
         val board = model.nodes.first { it.name == "Refuge board" }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("hello")
         tap(R.string.log_in)
         advanceUntil("logged in", 30) { model.server(board.key)?.login == ServerLogin.READ_WRITE }
-        repeat(2) { tapDesc(R.string.back) }
+        tapDesc(R.string.back)
         tab(R.string.tab_messages)
         return ChatId.room(board.key)
     }

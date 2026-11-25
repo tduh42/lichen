@@ -158,19 +158,23 @@ fun roomSubtitle(model: AppModel, chat: ChatId): String {
     return stringResource(R.string.meshcore_room_login, loginLabel(LocalResources.current, login))
 }
 
-/** A screen of the mesh tools: a title bar with a back arrow over a list. */
+/** A screen of the mesh tools: a title bar over a list, with a back arrow unless it is a tab's
+ * root (the Nodes tab). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ToolScreen(title: String, back: () -> Unit, content: LazyListScope.() -> Unit) {
+private fun ToolScreen(title: String, back: (() -> Unit)?, content: LazyListScope.() -> Unit) {
     val t = lichen
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
-            navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
+            navigationIcon = {
+                if (back != null) IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+            },
             title = { Text(title, fontSize = 22.sp) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx, navigationIconContentColor = t.tx),
         )
         LazyColumn(
-            Modifier.weight(1f).windowInsetsPadding(WindowInsets.navigationBars),
+            // A tab's root (no way back): the tab bar below takes the navigation bar.
+            Modifier.weight(1f).then(if (back != null) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             content = content,
@@ -199,14 +203,14 @@ private enum class NodeFilter(val label: Int) {
     }
 }
 
-/** Settings › Nodes: what the radio knows or heard, the most recently heard first. */
+/** The Nodes tab: what the radio knows or heard, the most recently heard first. */
 @Composable
-fun NodesScreen(model: AppModel, back: () -> Unit, open: (ByteArray) -> Unit) {
+fun NodesScreen(model: AppModel, open: (ByteArray) -> Unit) {
     val t = lichen
     var filter by remember { mutableStateOf(NodeFilter.ALL) }
     var query by remember { mutableStateOf("") }
     val shown = model.nodes.filter { filter.keeps(it) && (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) }
-    ToolScreen(stringResource(R.string.nodes), back) {
+    ToolScreen(stringResource(R.string.tab_nodes), back = null) {
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 NodeFilter.entries.forEach { f ->

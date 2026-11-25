@@ -245,7 +245,8 @@ class SettingsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the demo group", 300) { model.groups.isNotEmpty() }
         check("Messages")
-        for (t in listOf(R.string.tab_map, R.string.tab_search, R.string.tab_settings)) {
+        // The Map in both its modes: Positions, then Locate.
+        for (t in listOf(R.string.tab_nodes, R.string.tab_map, R.string.map_locate, R.string.tab_settings)) {
             tab(t)
             check(str(t))
         }
@@ -350,7 +351,8 @@ class SettingsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the demo group", 300) { model.groups.isNotEmpty() }
         audit("Messages")
-        for (t in listOf(R.string.tab_map, R.string.tab_search, R.string.tab_settings)) {
+        // The Map in both its modes: Positions, then Locate.
+        for (t in listOf(R.string.tab_nodes, R.string.tab_map, R.string.map_locate, R.string.tab_settings)) {
             tab(t)
             audit(str(t))
         }

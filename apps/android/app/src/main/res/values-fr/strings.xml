@@ -4,8 +4,15 @@
     <!-- Onglets -->
     <string name="tab_messages">Messages</string>
     <string name="tab_map">Carte</string>
-    <string name="tab_search">Localiser</string>
+    <string name="tab_nodes">Nœuds</string>
     <string name="tab_settings">Réglages</string>
+    <string name="map_positions">Positions</string>
+    <string name="map_locate">Localiser</string>
+    <plurals name="sos_active">
+        <item quantity="one">%1$d SOS</item>
+        <item quantity="many">%1$d SOS</item>
+        <item quantity="other">%1$d SOS</item>
+    </plurals>
 
     <!-- Conversations -->
     <string name="new_short">Nouveau</string>
@@ -1024,13 +1031,6 @@
     <string name="err_not_a_phrase">Ces mots ne forment pas une phrase de récupération. Vérifie chaque mot, et leur ordre.</string>
     <string name="err_backup_damaged">Cette sauvegarde est abîmée ou incomplète : rien n’a été restauré.</string>
     <!-- Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044) -->
-    <string name="nodes">Nœuds</string>
-    <plurals name="nodes_known">
-        <item quantity="one">%1$d connu</item>
-        <item quantity="many">%1$d connus</item>
-        <item quantity="other">%1$d connus</item>
-    </plurals>
-    <string name="nodes_subtitle">Répéteurs, salons et radios autour</string>
     <string name="nodes_need_radio">Connecte ta radio pour voir les nœuds qu’elle connaît.</string>
     <string name="nodes_none_yet">La radio n’a encore signalé aucun nœud.</string>
     <string name="nodes_note">Répéteurs, serveurs de salon et radios des gens, tels que ta radio les connaît. Ceux qu’elle a entendus sans les ajouter sont signalés ; les positions viennent des annonces des nœuds eux-mêmes.</string>

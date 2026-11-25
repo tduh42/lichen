@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -67,6 +70,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +83,7 @@ import com.tduhamel.lichen.core.PeerPosition
 import com.tduhamel.lichen.core.ShareInfo
 import com.tduhamel.lichen.core.SharePrecision
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.AppModel.MapMode
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.OfflineMaps
 import com.tduhamel.lichen.model.hex
@@ -116,9 +121,75 @@ fun ago(unixS: ULong): String {
     return DateUtils.getRelativeTimeSpanString(ms, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS).toString()
 }
 
-/** "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`). */
+/** The Map tab, in one of its two modes: everyone's positions, or Locate (the radio search,
+ * §11). Its SOS button is there in both. */
 @Composable
 fun MapScreen(model: AppModel, sos: () -> Unit) {
+    when (model.mapMode) {
+        MapMode.POSITIONS -> PositionsMap(model, sos)
+        MapMode.LOCATE -> Column(Modifier.fillMaxSize().background(lichen.bg)) {
+            MapBar(model, sos, Modifier.windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp)) {
+                // Nothing to layer here: the room the layers take, so that the modes stay put.
+                Box(Modifier.size(48.dp))
+            }
+            LocateContent(model, Modifier.weight(1f))
+        }
+    }
+}
+
+/** The Map's bar: the SOS button, the two modes, and [end] (the layers). */
+@Composable
+private fun MapBar(model: AppModel, sos: () -> Unit, modifier: Modifier = Modifier, end: @Composable () -> Unit) {
+    val t = lichen
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier
+                .heightIn(min = 48.dp)
+                .shadow(4.dp, CircleShape)
+                .background(t.sosBtn, CircleShape)
+                .clickable(onClick = sos)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(Icons.Outlined.WarningAmber, null, tint = Color.White, modifier = Modifier.size(18.dp))
+            Text(stringResource(if (model.sos) R.string.sos_on else R.string.sos), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1)
+        }
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) { MapModes(model) }
+        end()
+    }
+}
+
+/** Positions | Locate: a segmented control, each mode a tab. */
+@Composable
+private fun MapModes(model: AppModel) {
+    val t = lichen
+    Row(Modifier.shadow(4.dp, CircleShape).background(t.s1, CircleShape).selectableGroup()) {
+        for ((mode, label) in listOf(MapMode.POSITIONS to R.string.map_positions, MapMode.LOCATE to R.string.map_locate)) {
+            val on = model.mapMode == mode
+            Box(
+                Modifier
+                    .weight(1f, fill = false)
+                    .heightIn(min = 48.dp)
+                    .selectable(on, role = Role.Tab) { model.mapMode = mode }
+                    .padding(4.dp)
+                    .background(if (on) t.actBg else Color.Transparent, CircleShape)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                // Smaller rather than cut on a narrow phone, in French with the SOS on.
+                Text(
+                    stringResource(label), color = if (on) t.actFg else t.tx, fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 14.sp),
+                )
+            }
+        }
+    }
+}
+
+/** "Map": positions shared with us, ours, SOS, and our shares (mockup `carte`). */
+@Composable
+private fun PositionsMap(model: AppModel, sos: () -> Unit) {
     val t = lichen
     val context = LocalContext.current
     val offline = remember { OfflineMaps(context) }
@@ -171,24 +242,7 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    Modifier
-                        .heightIn(min = 48.dp)
-                        .shadow(4.dp, CircleShape)
-                        .background(t.sosBtn, CircleShape)
-                        .clickable(onClick = sos)
-                        .padding(horizontal = 18.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(Icons.Outlined.WarningAmber, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Text(stringResource(if (model.sos) R.string.sos_on else R.string.sos), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                }
-                Box(Modifier.weight(1f))
+            MapBar(model, sos) {
                 Box {
                     MapIcon(Icons.Outlined.Layers, stringResource(R.string.map_layers), t.tx) { layers = true }
                     DropdownMenu(layers, { layers = false }, containerColor = t.s1) {
@@ -238,7 +292,8 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
                         Text(stringResource(R.string.offline_note), fontSize = 12.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
                     }
                 }
-                Box(Modifier.width(8.dp))
+            }
+            Box(Modifier.align(Alignment.End)) {
                 MapIcon(Icons.Outlined.MyLocation, stringResource(R.string.show_everyone), t.iroh) { recenter++ }
             }
             model.mapPin?.let { PinBar(model, it) }

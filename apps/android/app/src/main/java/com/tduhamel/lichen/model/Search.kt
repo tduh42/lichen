@@ -88,7 +88,7 @@ val AppModel.activeIncidents: List<SosIncident>
 
 // ----- searching (protocol.md §11) -----
 
-/** The people the Locate tab can show (hex): incidents not ended, and every search we run. */
+/** The people the Map's Locate mode can show (hex): incidents not ended, and every search we run. */
 val AppModel.searchTargets: List<String>
     get() {
         val out = activeIncidents.map { it.from.hex() }.toMutableList()
