@@ -297,16 +297,59 @@ struct SafetyNumber: View {
     }
 }
 
-/// A row inside a card: title, subtitle, trailing content.
+/// A row's icon in a 30 pt tile: neutral (`s2` with `tx`), or tinted for LoRa, iroh and Tor.
+/// Hidden from VoiceOver: the row's title says what it is; left out at the accessibility text
+/// sizes, where the row's words need the room.
+struct IconTile: View {
+    enum Tint { case neutral, lora, iroh, tor }
+
+    let symbol: String
+    var tint = Tint.neutral
+    var side: CGFloat = 30
+    @ScaledMetric(relativeTo: .callout) private var scale: CGFloat = 1
+    @Environment(\.dynamicTypeSize) private var textSize
+
+    var body: some View {
+        let side = self.side * scale
+        if !textSize.isAccessibilitySize {
+            tile(side)
+        }
+    }
+
+    private func tile(_ side: CGFloat) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: side * 0.5, weight: .semibold))
+            .foregroundStyle(colours.1)
+            .frame(width: side, height: side)
+            .background(colours.0, in: RoundedRectangle(cornerRadius: side * 0.27))
+            .accessibilityHidden(true)
+    }
+
+    private var colours: (Color, Color) {
+        switch tint {
+        case .neutral: (Theme.s2, Theme.tx)
+        case .lora: (Theme.loraBg, Theme.loraFg)
+        case .iroh: (Theme.irohBg, Theme.irohFg)
+        case .tor: (Theme.torBg, Theme.torFg)
+        }
+    }
+}
+
+/// A row inside a card: an icon tile, title, subtitle, trailing content.
 struct CardRow<Trailing: View>: View {
     let title: String
     var subtitle: String?
+    var icon: String?
+    var tint = IconTile.Tint.neutral
     @ViewBuilder var trailing: () -> Trailing
 
     var body: some View {
         HStack(spacing: 12) {
+            if let icon { IconTile(symbol: icon, tint: tint) }
             VStack(alignment: .leading, spacing: 2) {
+                // Whole on more lines with larger text, beside its tile.
                 Text(title).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let subtitle {
                     Text(subtitle).font(.system(.footnote)).foregroundStyle(Theme.tx2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -322,8 +365,8 @@ struct CardRow<Trailing: View>: View {
 }
 
 extension CardRow where Trailing == EmptyView {
-    init(title: String, subtitle: String? = nil) {
-        self.init(title: title, subtitle: subtitle) { EmptyView() }
+    init(title: String, subtitle: String? = nil, icon: String? = nil, tint: IconTile.Tint = .neutral) {
+        self.init(title: title, subtitle: subtitle, icon: icon, tint: tint) { EmptyView() }
     }
 }
 
@@ -331,6 +374,8 @@ extension CardRow where Trailing == EmptyView {
 /// app writes them; a tap copies them ("Copied").
 struct MeshCoreKeyRow: View {
     let key: Data
+    /// The row's icon tile, in a card of tiled rows.
+    var icon: String?
     @State private var copied = false
 
     /// "1a2b3c4d 5e6f7a8b …": 8 groups of 8 digits, 4 to a line.
@@ -349,6 +394,7 @@ struct MeshCoreKeyRow: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
         } label: {
             HStack(alignment: .top, spacing: 12) {
+                if let icon { IconTile(symbol: icon) }
                 VStack(alignment: .leading, spacing: 4) {
                     Text("MeshCore public key").font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
                     Text(Self.grouped(key))
@@ -388,9 +434,16 @@ struct CardList<Content: View>: View {
 /// The line between two rows of a card.
 struct CardDivider: View {
     var inset: CGFloat = 16
+    /// Between rows with an icon tile: from the titles' edge (the tiles are left out at the
+    /// accessibility text sizes).
+    var tiled = false
+    @Environment(\.dynamicTypeSize) private var textSize
+
+    static var tiled: CardDivider { CardDivider(tiled: true) }
 
     var body: some View {
-        Rectangle().fill(Theme.line).frame(height: 1).padding(.leading, inset)
+        Rectangle().fill(Theme.line).frame(height: 1)
+            .padding(.leading, tiled && !textSize.isAccessibilitySize ? 58 : inset)
     }
 }
 

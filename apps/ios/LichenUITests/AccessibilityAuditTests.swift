@@ -1,7 +1,8 @@
 import XCTest
 
 /// The system's accessibility audit (`performAccessibilityAudit`, Xcode 15) on the main screens
-/// of the demo network: Messages, a conversation, a group, the map, Locate and Settings.
+/// of the demo network: Messages, a conversation, a group, the map, Locate, Settings and Radio
+/// settings.
 /// Contrast, element labels, hit regions, Dynamic Type, clipped text and traits.
 final class AccessibilityAuditTests: XCTestCase {
     override func setUp() {
@@ -36,6 +37,8 @@ final class AccessibilityAuditTests: XCTestCase {
     /// - issues with no element to point at;
     /// - contrast where the content scrolls under the navigation bar or the tab bar (Liquid
     ///   Glass blurs and fades what is behind it), or under the status bar;
+    /// - contrast off screen (the audit measures a black screenshot there; those elements are
+    ///   audited once scrolled into view) and of disabled controls (WCAG leaves them out);
     /// - contrast the text's own pixels pass: the audit flags plain text in bubbles and notes
     ///   whose screenshots measure 7:1 to 16:1 (2026-11-17, iOS 27.2 simulator); it is measured
     ///   again here, WCAG's formula on the element's screenshot, against 4.5:1;
@@ -86,7 +89,10 @@ final class AccessibilityAuditTests: XCTestCase {
             let ignored: Bool
             switch issue.auditType {
             case .contrast:
-                ignored = underBars || (element.elementType == .staticText && (Self.contrast(of: element) ?? 0) >= 4.5)
+                // Off screen (its screenshot is black: it is audited once scrolled into view) or
+                // disabled (WCAG leaves inactive controls out).
+                ignored = underBars || !app.frame.intersects(frame) || !element.isEnabled
+                    || (element.elementType == .staticText && (Self.contrast(of: element) ?? 0) >= 4.5)
             case .dynamicType, .textClipped:
                 ignored = inNavigationBar || squeezedBelow.map { frame.minY >= $0 } == true
                     || issue.auditType == .dynamicType && Self.chatTop.contains(element.identifier)
@@ -219,5 +225,25 @@ final class AccessibilityAuditTests: XCTestCase {
         app.swipeUp()
         sleep(1)
         try audit(app, "settings, lower")
+    }
+
+    /// Radio settings: its header, its search and its first cards; lower down; a search's
+    /// results.
+    func testRadioSettings() throws {
+        let app = launch(["-tab", "settings", "-screen", "radio"])
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 30), "no radio settings")
+        sleep(2)
+        try audit(app, "radio settings")
+        app.swipeUp()
+        sleep(1)
+        try audit(app, "radio settings, lower")
+        app.swipeDown()
+        app.swipeDown()
+        // Search: the keyboard goes, the rows found stay.
+        field.tap()
+        field.typeText("e\n")
+        sleep(1)
+        try audit(app, "radio settings, search")
     }
 }

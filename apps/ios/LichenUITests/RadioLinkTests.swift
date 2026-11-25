@@ -335,6 +335,51 @@ final class RadioLinkTests: LichenUITest {
         XCTAssertTrue(use.exists, "without its GPS on, the radio may take the phone's position again")
     }
 
+    /// Waits until `element` can be tapped where it is, without a swipe.
+    private func waitInSight(_ element: XCUIElement, _ timeout: TimeInterval, _ message: String,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !(element.exists && element.isHittable) && Date() < deadline { pause(0.3) }
+        XCTAssertTrue(element.exists && element.isHittable, message, file: file, line: line)
+    }
+
+    /// RL-5: the search under the radio's header matches the rows' titles and sections in the
+    /// run's language: "power" ("puissance" in French) finds Transmit power and nothing else;
+    /// a result leads back to every row, the one found brought into sight without a swipe.
+    func testRL5_SearchLandsOnTheSetting() {
+        openRadioSettings()
+        let field = app.textFields[tr("Search radio settings")]
+        wait(field, 5, "no search field")
+        // A row at the bottom, without accents typed: it is brought into sight.
+        focus(field)
+        field.typeText(french ? "redemarrer" : "restart")
+        wait(cardButton(tr("Restart the radio")), 5, "Restart the radio not found").tap()
+        waitInSight(cardButton(tr("Restart the radio")), 5, "the row found is not in sight")
+        XCTAssertEqual(field.value as? String, tr("Search radio settings"), "the search is not cleared")
+        // Nothing found, said.
+        // Back to the top, the scroll settled: a field stopped just under the navigation bar
+        // counts as hittable but its taps go to the bar (French dark run).
+        for _ in 0..<3 { app.swipeDown() }
+        pause(1)
+        focus(field)
+        field.typeText("zzz")
+        wait(element(tr("No setting matches")), 5, "not said that nothing matches")
+        button(tr("Clear the search")).tap()
+        // "power": Transmit power, and no row that does not hold it.
+        focus(field)
+        field.typeText(french ? "puissance" : "power")
+        let result = cardButton(tr("Transmit power"))
+        wait(result, 5, "Transmit power not found")
+        XCTAssertFalse(element(tr("Preset")).exists, "rows that do not match are still shown")
+        XCTAssertFalse(app.steppers.firstMatch.exists, "rows that do not match are still shown")
+        keep("rl-search")
+        result.tap()
+        waitInSight(app.steppers.firstMatch, 5, "the transmit power is not in sight")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label ENDSWITH ' dBm'")).firstMatch.exists,
+                      "no transmit power")
+        XCTAssertTrue(element(tr("Preset")).exists, "the other rows did not come back")
+    }
+
     /// Waits until the advert row says the advert was sent, at a time ("20:41"), nearby or to
     /// the whole mesh.
     private func waitSent(flood: Bool, file: StaticString = #filePath, line: UInt = #line) {
@@ -526,8 +571,11 @@ final class RadioLinkTests: LichenUITest {
     /// Messages and the fragments and airtime under each message.
     func testRL7_BatteryAndRadioDetails() {
         openRadioSettings()
-        XCTAssertTrue(containing(tr("Battery")).exists, "no battery")
-        XCTAssertTrue(containing(num("4.01") + " V").exists, "the radio's battery is not shown")
+        // The header: the battery's ring (79 % at 4.01 V), the link, the airtime left.
+        XCTAssertTrue(element(tr("Battery %lld percent, %@ volts", 79, num("4.01"))).exists, "the radio's battery is not shown")
+        XCTAssertTrue(containing(tr("Demo network") + " · ").exists, "the link is not shown")
+        XCTAssertTrue(containing(tr("airtime left")).exists, "the airtime left is not shown")
+        keep("rl-header")
         app.terminate()
         launch(["-lichen.radioDetails", "YES"])
         wait(containing(tr("Airtime left this hour")), 10, "no radio card on Messages")
