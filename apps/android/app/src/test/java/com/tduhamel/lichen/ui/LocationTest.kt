@@ -1,5 +1,8 @@
 package com.tduhamel.lichen.ui
 
+import com.tduhamel.lichen.model.nodeRoute
+import com.tduhamel.lichen.model.dbText
+import com.tduhamel.lichen.core.SignalRating
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -150,6 +153,50 @@ class LocationTest : UiTest() {
         tapDesc(R.string.map_layers)
         tapInDialog(R.string.map_nodes)
         see("hub")
+    }
+
+    /** MP-3: a node's route on the map (§16.3): from the crest's page, Show on the map draws
+     * You → hub → crest, each leg readable ("hub to crest, not measured"); its card says how
+     * far and through which repeaters, with the legend; a node tapped on the map shows its
+     * own; closed, the share panel is back. The layers menu has the legend too. */
+    @Test
+    fun MP_3_routeOnTheMap() = routeOnTheMap()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MP_3_routeOnTheMap_fr() = routeOnTheMap()
+
+    private fun routeOnTheMap() {
+        launch("demo" to true)
+        advanceUntil("the hub's signal and the crest", 30) {
+            model.nodes.any { it.name == "hub" && it.signal != SignalRating.NONE } && model.nodes.any { it.name == "crest" }
+        }
+        val crest = model.nodes.first { it.name == "crest" }
+        tab(R.string.tab_nodes)
+        tap("crest")
+        tap(R.string.show_on_map)
+        assertEquals(AppModel.Tab.MAP, model.tab)
+        assertEquals(crest.key.hex(), model.mapRouteTo)
+        // The card: to the crest, one hop, via the hub; the legend.
+        see(str(R.string.route_to, "crest"))
+        see(plural(R.plurals.hops_n, 1, 1) + " · " + str(R.string.via, "hub"), substring = true)
+        for (l in listOf(R.string.legend_good, R.string.legend_fair, R.string.legend_weak, R.string.legend_note)) see(l)
+        assertFalse(has(R.string.location_sharing))
+        // Each leg, as TalkBack reads it: the hub's measured, the crest's not.
+        val route = model.nodeRoute(crest.key)!!
+        assertTrue(hasDesc(str(R.string.leg_said, str(R.string.you), "hub", dbText(route.legs[0].snrDb!!))))
+        assertTrue(hasDesc(str(R.string.leg_said, "hub", "crest", str(R.string.not_measured))))
+        // The hub tapped on the map: its own route.
+        tap("hub")
+        see(str(R.string.route_to, "hub"))
+        assertTrue(hasDesc(str(R.string.leg_said, str(R.string.you), "hub", dbText(model.nodeRoute(model.nodes.first { it.name == "hub" }.key)!!.legs[0].snrDb!!))))
+        // Closed: the share panel is back.
+        tapDesc(R.string.close_route)
+        assertNull(model.mapRouteTo)
+        see(R.string.location_sharing)
+        // The legend in the layers menu too.
+        tapDesc(R.string.map_layers)
+        assertTrue(compose.onAllNodes(hasText(str(R.string.legend_note)) and hasAnyAncestor(isPopup())).fetchSemanticsNodes().isNotEmpty())
     }
 
     /** MP-4: an area of the map to keep offline is offered: Map layers › Download this area,

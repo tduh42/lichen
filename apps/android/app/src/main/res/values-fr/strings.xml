@@ -1083,6 +1083,14 @@
     </plurals>
     <string name="no_reading_window">Aucune mesure sur cette durée.</string>
     <string name="no_own_signal">Entendu seulement par des répéteurs : pas de signal propre. La route ci-dessus montre comment il t’atteint.</string>
+    <string name="route_to">Route vers %1$s</string>
+    <string name="traced_ago">tracé %1$s</string>
+    <string name="route_no_positions">Pas de positions pour tracer cette route</string>
+    <string name="close_route">Fermer la route</string>
+    <string name="legend_good">bon</string>
+    <string name="legend_fair">moyen</string>
+    <string name="legend_weak">faible</string>
+    <string name="legend_note">le dernier signal par tronçon</string>
     <string name="filter_all">Tous</string>
     <string name="filter_repeaters">Répéteurs</string>
     <string name="filter_rooms">Salons</string>
