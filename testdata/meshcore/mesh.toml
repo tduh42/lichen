@@ -86,6 +86,67 @@ hex = "27000000606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
 key = "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
 source = "MyMesh.cpp#L1680"
 
+[[command]]
+name = "get-stats-0"
+hex = "3800"
+kind = 0
+source = "MyMesh.cpp#L1914"
+
+[[command]]
+name = "get-stats-1"
+hex = "3801"
+kind = 1
+source = "MyMesh.cpp#L1914"
+
+[[command]]
+name = "get-stats-2"
+hex = "3802"
+kind = 2
+source = "MyMesh.cpp#L1914"
+
+[[response]]
+name = "stats-core"
+hex = "1800960ff8510100000002"
+battery_mv = 3990
+uptime_s = 86520
+err_flags = 0
+queue_len = 2
+source = "MyMesh.cpp#L1916"
+
+[[response]]
+name = "stats-radio"
+hex = "18018cff9e1b9c01000026070000"
+noise = -116
+rssi = -98
+snr4 = 27
+tx_air_s = 412
+rx_air_s = 1830
+source = "MyMesh.cpp#L1928"
+
+[[response]]
+name = "stats-packets"
+hex = "1802001400003e03000062020000dc0000003c0f0000c40400000e000000"
+recv = 5120
+sent = 830
+sent_flood = 610
+sent_direct = 220
+recv_flood = 3900
+recv_direct = 1220
+recv_errors = 14
+source = "MyMesh.cpp#L1943"
+
+[[response]]
+name = "device-info-thinknode-m5"
+hex = "0d0eaf28000000003135204f6374203230323600456c6563726f77205468696e6b4e6f6465204d35000000000000000000000000000000000000000076312e31382e30000000000000000000000000000000"
+fw_ver = 14
+max_channels = 40
+build_date = "15 Oct 2026"
+manufacturer = "Elecrow ThinkNode M5"
+version = "v1.18.0"
+repeat = false
+path_hash_mode = 0
+source = "MyMesh.cpp#L1056"
+
 [[response]]
 name = "login-success"
 hex = "8501606162636465bb02df6a0302"

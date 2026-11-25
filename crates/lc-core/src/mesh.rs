@@ -145,6 +145,8 @@ pub(crate) struct Mesh {
     signals: HashMap<PubKey, Reading>,
     /// When the radio's battery was last asked for (ADR-0042).
     pub(crate) battery_at: Option<Millis>,
+    /// When the radio's figures were last asked for (§16.4).
+    pub(crate) stats_at: Option<Millis>,
     /// Nodes imported from a link, with the `ADD_UPDATE_CONTACT` frame that adds them when
     /// the radio does not take the advert (§16.6).
     adding: HashMap<PubKey, Vec<u8>>,

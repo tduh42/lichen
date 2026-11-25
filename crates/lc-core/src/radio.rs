@@ -15,6 +15,9 @@ pub fn battery_percent(millivolts: u16) -> u8 {
     u8::try_from(pct.min(100)).unwrap_or(100)
 }
 
+/// The radio's figures are read again at most this often when the apps ask (§16.4).
+pub const STATS_EVERY_MS: Millis = 60_000;
+
 /// At or below this charge the apps warn that the radio's battery is low (ADR-0042).
 pub const BATTERY_LOW_PERCENT: u8 = 15;
 
@@ -49,6 +52,18 @@ pub struct RadioSettings {
     /// The radio answered (`SELF_INFO`): the values above are its own, not zeros waiting for
     /// it; the last ones read while it is away.
     pub read: bool,
+    /// Its figures (`GET_STATS`, §16.4), each unknown until the radio reports it: the noise
+    /// floor (dBm), the last packet's RSSI (dBm) and SNR × 4, airtime sent and received (s).
+    pub noise_floor_dbm: Option<i16>,
+    pub last_rssi: Option<i8>,
+    pub last_snr4: Option<i8>,
+    pub tx_air_s: Option<u32>,
+    pub rx_air_s: Option<u32>,
+    /// Seconds since it started; packets received, sent, and received with errors.
+    pub uptime_s: Option<u32>,
+    pub packets_recv: Option<u32>,
+    pub packets_sent: Option<u32>,
+    pub recv_errors: Option<u32>,
 }
 
 impl RadioSettings {
@@ -318,6 +333,58 @@ impl Core {
             }
             Some(_) => false,
         }
+    }
+
+    /// Reads the radio's figures again (noise floor, airtime, uptime, packets: §16.4) when
+    /// [`STATS_EVERY_MS`] passed since they were last read; the apps call it while Radio
+    /// settings is open. True when a read went out.
+    pub fn radio_refresh_stats(&mut self, now: Millis) -> bool {
+        if !self.online
+            || self
+                .mesh
+                .stats_at
+                .is_some_and(|t| now.saturating_sub(t) < STATS_EVERY_MS)
+        {
+            return false;
+        }
+        self.radio_read_stats(now);
+        true
+    }
+
+    /// Asks for the radio's figures, all three types of `GET_STATS` (§16.4).
+    pub(crate) fn radio_read_stats(&mut self, now: Millis) {
+        for kind in [0, 1, 2] {
+            self.command(&Command::GetStats { kind }, Expect::Stats);
+        }
+        self.mesh.stats_at = Some(now);
+    }
+
+    /// `GET_STATS` type 0: uptime, and the battery read again.
+    pub(crate) fn radio_core_stats(&mut self, battery_mv: u16, uptime_s: u32) {
+        self.settings.uptime_s = Some(uptime_s);
+        if battery_mv > 0 {
+            self.settings.battery_mv = Some(battery_mv);
+        }
+        self.events.push_back(Event::RadioSettings);
+    }
+
+    /// `GET_STATS` type 1: a noise floor of 0 (not sampled yet) and an RSSI of 0 (none, or a
+    /// radio that does not measure it) are unknown.
+    pub(crate) fn radio_radio_stats(&mut self, noise: i16, rssi: i8, snr4: i8, tx: u32, rx: u32) {
+        self.settings.noise_floor_dbm = (noise != 0).then_some(noise);
+        self.settings.last_rssi = (rssi != 0).then_some(rssi);
+        self.settings.last_snr4 = Some(snr4);
+        self.settings.tx_air_s = Some(tx);
+        self.settings.rx_air_s = Some(rx);
+        self.events.push_back(Event::RadioSettings);
+    }
+
+    /// `GET_STATS` type 2: packets received, sent, received with errors.
+    pub(crate) fn radio_packet_stats(&mut self, recv: u32, sent: u32, errors: u32) {
+        self.settings.packets_recv = Some(recv);
+        self.settings.packets_sent = Some(sent);
+        self.settings.recv_errors = Some(errors);
+        self.events.push_back(Event::RadioSettings);
     }
 
     /// Reads the battery and storage again (the radio card); nothing before the connection,

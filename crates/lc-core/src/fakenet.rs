@@ -159,6 +159,12 @@ pub struct Node {
     pub telemetry: Vec<u8>,
     /// A server's sensors, added for its clients that are not guests.
     pub sensors: Vec<u8>,
+    /// The board's name a companion reports in `DEVICE_INFO` (`board.getManufacturerName()`).
+    pub board: String,
+    /// Packets heard, and sent and heard by route (flood, direct), for `GET_STATS` type 2.
+    rx_packets: u32,
+    tx_flood: u32,
+    rx_flood: u32,
 }
 
 /// A contact a fake companion added from outside the simulation (§16.6).
@@ -304,6 +310,9 @@ impl std::fmt::Debug for Net {
 }
 
 const DEDUP_SIZE: usize = 160;
+/// What stock v1.18 reports in `DEVICE_INFO` (`examples/companion_radio/MyMesh.h` L10-L14).
+const FIRMWARE_VERSION: &str = "v1.18.0";
+const FIRMWARE_BUILD_DATE: &str = "15 Oct 2026";
 /// Wall clock of every app at simulated time 0 (Unix milliseconds, 2026-10-26).
 pub const EPOCH_MS: u64 = 1_793_000_000_000;
 const FREQ_KHZ: u32 = 869_618;
@@ -378,6 +387,10 @@ impl Net {
             contact_adverts: Vec::new(),
             telemetry: Vec::new(),
             sensors: Vec::new(),
+            board: String::new(),
+            rx_packets: 0,
+            tx_flood: 0,
+            rx_flood: 0,
             contacts_max: 350,
         });
         self.neighbors.push(Vec::new());
@@ -1127,6 +1140,31 @@ impl Net {
         v.extend_from_slice(&lat.to_le_bytes());
         v.extend_from_slice(&lon.to_le_bytes());
         v.extend_from_slice(&unix.to_le_bytes());
+        v
+    }
+
+    /// `DEVICE_INFO` as stock v1.18 sends it (`MyMesh.cpp` L1056-L1074): firmware code 14, the
+    /// contact table / 2, the channel slots, PIN 0, the build date, the board, the version.
+    fn device_info(&self, i: usize) -> Vec<u8> {
+        let Some(n) = self.nodes.get(i) else {
+            return vec![resp::DEVICE_INFO, 14];
+        };
+        let padded = |text: &str, len: usize| {
+            let mut b: Vec<u8> = text.bytes().take(len - 1).collect();
+            b.resize(len, 0);
+            b
+        };
+        let mut v = vec![
+            resp::DEVICE_INFO,
+            14,
+            u8::try_from(n.contacts_max / 2).unwrap_or(u8::MAX),
+            u8::try_from(n.channels.len()).unwrap_or(u8::MAX),
+        ];
+        v.extend_from_slice(&0u32.to_le_bytes());
+        v.extend(padded(FIRMWARE_BUILD_DATE, 12));
+        v.extend(padded(&n.board, 40));
+        v.extend(padded(FIRMWARE_VERSION, 20));
+        v.extend_from_slice(&[0, 0]);
         v
     }
 
@@ -1898,7 +1936,7 @@ impl Net {
                 Some(0 | 100_000..=999_999) => vec![vec![resp::OK]],
                 _ => vec![vec![resp::ERR, 6]],
             },
-            cmd::DEVICE_QUERY => vec![vec![resp::DEVICE_INFO, 14]],
+            cmd::DEVICE_QUERY => vec![self.device_info(i)],
             cmd::SEND_TRACE_PATH => self.trace(i, frame),
             cmd::SEND_LOGIN => self.fake_login(i, frame),
             cmd::SEND_STATUS_REQ => self.fake_status(i, frame),
@@ -2003,9 +2041,39 @@ impl Net {
                 let mut v = vec![resp::STATS, 1];
                 v.extend_from_slice(&noise.to_le_bytes());
                 v.extend_from_slice(&[last_rx.1 as u8, last_rx.0 as u8]);
-                v.extend_from_slice(&[0u8; 8]);
+                let tx_s = u32::try_from(node.tx_airtime_ms / 1000).unwrap_or(u32::MAX);
+                v.extend_from_slice(&tx_s.to_le_bytes());
+                v.extend_from_slice(&0u32.to_le_bytes());
                 vec![v]
             }
+            // Core (`MyMesh.cpp` L1916): battery, uptime, error flags, queue.
+            cmd::GET_STATS if frame.get(1) == Some(&0) => {
+                let mut v = vec![resp::STATS, 0];
+                v.extend_from_slice(&4_012u16.to_le_bytes());
+                let up = u32::try_from(self.now / 1000).unwrap_or(u32::MAX);
+                v.extend_from_slice(&up.to_le_bytes());
+                v.extend_from_slice(&0u16.to_le_bytes());
+                v.push(u8::try_from(node.txq.len()).unwrap_or(u8::MAX));
+                vec![v]
+            }
+            // Packets (`MyMesh.cpp` L1943): received, sent, by route, errors.
+            cmd::GET_STATS if frame.get(1) == Some(&2) => {
+                let sent = u32::try_from(node.tx_frames).unwrap_or(u32::MAX);
+                let mut v = vec![resp::STATS, 2];
+                for x in [
+                    node.rx_packets,
+                    sent,
+                    node.tx_flood,
+                    sent.saturating_sub(node.tx_flood),
+                    node.rx_flood,
+                    node.rx_packets.saturating_sub(node.rx_flood),
+                    0,
+                ] {
+                    v.extend_from_slice(&x.to_le_bytes());
+                }
+                vec![v]
+            }
+            cmd::GET_STATS => vec![vec![resp::ERR, 6]],
             cmd::SET_RADIO_TX_POWER => match frame.get(1).map(|&b| b as i8) {
                 Some(dbm @ -9..=22) => {
                     if let Some(n) = self.nodes.get_mut(i) {
@@ -2347,6 +2415,7 @@ impl Net {
             return;
         };
         let airtime = self.airtime(frame.len());
+        let flood = frame.first().is_some_and(|h| h & 3 < 2);
         let id = self.next_tx_id;
         self.next_tx_id += 1;
         self.air.retain(|tx| tx.end + 10_000 > now);
@@ -2361,6 +2430,7 @@ impl Net {
             n.tx_until = now + airtime;
             n.tx_frames += 1;
             n.tx_airtime_ms += airtime;
+            n.tx_flood = n.tx_flood.saturating_add(u32::from(flood));
         }
         self.stats.transmissions += 1;
         self.schedule(now + airtime, Ev::TxEnd(id));
@@ -2423,8 +2493,11 @@ impl Net {
                 eprintln!("{:>8} {}->{} ok {}", self.now, tx.from, r, label());
             }
             self.stats.receptions += 1;
+            let flood = tx.frame.first().is_some_and(|h| h & 3 < 2);
             if let Some(n) = self.nodes.get_mut(r) {
                 n.last_rx = (snr4, rssi);
+                n.rx_packets = n.rx_packets.saturating_add(1);
+                n.rx_flood = n.rx_flood.saturating_add(u32::from(flood));
             }
             self.receive(r, &tx.frame, snr4, rssi);
         }

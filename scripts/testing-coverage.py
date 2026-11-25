@@ -38,6 +38,7 @@ VARIANTS = {"fr": "fr", "frDark": "fr dark", "dark": "dark"}
 # whole class). The check fails when one is gone.
 OTHER = [
     ("RL-8", "lc-core", "crates/lc-core/tests/radio.rs", "connecting_sets_the_radios_clock"),
+    ("RL-7", "lc-core", "crates/lc-core/tests/radio.rs", "the_radio_s_board_and_figures"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "a_contact_list_cut_short_still_counts"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "records_lost_before_the_end_are_asked_for_again"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "a_direct_advert_is_attributed_and_a_relayed_one_is_not"),

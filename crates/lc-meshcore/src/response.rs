@@ -93,7 +93,24 @@ pub enum Response<'a> {
         tx_air_s: u32,
         rx_air_s: u32,
     },
-    /// `GET_STATS` of another type (not used).
+    /// `GET_STATS` type 0: battery (mV), uptime (s), error flags, packets waiting to be sent.
+    CoreStats {
+        battery_mv: u16,
+        uptime_s: u32,
+        err_flags: u16,
+        queue_len: u8,
+    },
+    /// `GET_STATS` type 2: packets received and sent, by route, and received with errors.
+    PacketStats {
+        recv: u32,
+        sent: u32,
+        sent_flood: u32,
+        sent_direct: u32,
+        recv_flood: u32,
+        recv_direct: u32,
+        recv_errors: u32,
+    },
+    /// `GET_STATS` of another type.
     OtherStats {
         kind: u8,
     },
@@ -381,6 +398,21 @@ impl<'a> Response<'a> {
                     snr4: r.i8().ok_or(t)?,
                     tx_air_s: r.u32().ok_or(t)?,
                     rx_air_s: r.u32().ok_or(t)?,
+                },
+                0 => Response::CoreStats {
+                    battery_mv: r.u16().ok_or(t)?,
+                    uptime_s: r.u32().ok_or(t)?,
+                    err_flags: r.u16().ok_or(t)?,
+                    queue_len: r.u8().ok_or(t)?,
+                },
+                2 => Response::PacketStats {
+                    recv: r.u32().ok_or(t)?,
+                    sent: r.u32().ok_or(t)?,
+                    sent_flood: r.u32().ok_or(t)?,
+                    sent_direct: r.u32().ok_or(t)?,
+                    recv_flood: r.u32().ok_or(t)?,
+                    recv_direct: r.u32().ok_or(t)?,
+                    recv_errors: r.u32().ok_or(t)?,
                 },
                 kind => Response::OtherStats { kind },
             },

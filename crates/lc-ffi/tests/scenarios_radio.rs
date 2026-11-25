@@ -363,6 +363,44 @@ fn rl_6_a_refused_setting() {
     assert_eq!(sim.core.radio_settings().name, "ThinkNode M5");
 }
 
+/// RL-7: the radio card's board and figures: the demo radio is a ThinkNode M5 on stock v1.18
+/// (`DEVICE_INFO`), and reports its noise floor, airtime, uptime and packets (`GET_STATS`,
+/// §16.4) at connection, then again when asked, at most every 60 s.
+#[test]
+fn rl_7_the_radio_card_s_board_and_figures() {
+    let mut sim = Sim::new(78);
+    connected(&mut sim);
+    // The three types come one after the other: packets last.
+    sim.until("the radio's figures", 10, |c| {
+        c.radio_settings().packets_sent.is_some()
+    });
+    let s = sim.core.radio_settings();
+    assert_eq!(s.manufacturer, "Elecrow ThinkNode M5", "{s:?}");
+    assert_eq!(s.firmware, "v1.18.0");
+    assert_eq!(s.build_date, "15 Oct 2026");
+    assert_eq!(s.noise_floor_dbm, Some(-118));
+    assert!(
+        s.tx_airtime_s.is_some() && s.rx_airtime_s.is_some(),
+        "{s:?}"
+    );
+    assert!(
+        s.packets_received.is_some() && s.packets_sent.is_some(),
+        "{s:?}"
+    );
+    assert_eq!(s.receive_errors, Some(0));
+    let up = s.uptime_s.expect("uptime");
+    assert!(
+        !sim.core.refresh_radio_stats(sim.now),
+        "read at connection: not again before 60 s"
+    );
+    sim.run_for(61_000);
+    assert!(sim.core.refresh_radio_stats(sim.now));
+    sim.run_for(2_000);
+    let again = sim.core.radio_settings();
+    assert!(again.uptime_s.is_some_and(|u| u >= up + 60), "{again:?}");
+    assert!(again.packets_received >= s.packets_received);
+}
+
 /// RL-7: the battery is read at connection and again on request; with radio details on, a
 /// message shows its fragments, airtime and signal.
 #[test]

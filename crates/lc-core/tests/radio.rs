@@ -278,3 +278,61 @@ fn a_setting_refused_or_unanswered() {
         [outcome(RadioSetting::Preferences, SettingOutcome::NoAnswer)]
     );
 }
+
+/// The radio's board and firmware (`DEVICE_INFO`), and its figures (`GET_STATS`, §16.4): read
+/// at connection, all three types, then again when asked, at most every 60 s.
+#[test]
+fn the_radio_s_board_and_figures() {
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 2);
+    let a = net.add_companion(1, "alice");
+    net.nodes[a].board = "Elecrow ThinkNode M5".into();
+    net.nodes[a].noise_dbm = -112;
+    net.connect(a);
+    assert!(net.run_until(net.now + 10_000, |n| {
+        n.nodes[a].core.as_ref().is_some_and(|c| c.ready())
+    }));
+    net.run_until(net.now + 2_000, |_| false);
+    let r = net
+        .with_core_ref(a, |c| c.radio_settings().clone())
+        .unwrap();
+    assert_eq!(r.manufacturer, "Elecrow ThinkNode M5");
+    assert_eq!(
+        (r.firmware.as_str(), r.build_date.as_str()),
+        ("v1.18.0", "15 Oct 2026")
+    );
+    assert_eq!(r.noise_floor_dbm, Some(-112));
+    assert_eq!((r.tx_air_s, r.rx_air_s), (Some(0), Some(0)));
+    let up = r.uptime_s.expect("uptime");
+    assert!(
+        r.packets_sent.is_some() && r.packets_recv.is_some(),
+        "{r:?}"
+    );
+    assert_eq!(r.recv_errors, Some(0));
+    // Read at connection: not again before 60 s.
+    assert!(
+        !net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap()
+    );
+    net.run_until(net.now + 61_000, |_| false);
+    assert!(
+        net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap()
+    );
+    assert!(
+        !net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap(),
+        "once"
+    );
+    net.run_until(net.now + 2_000, |_| false);
+    let again = net
+        .with_core_ref(a, |c| c.radio_settings().uptime_s)
+        .unwrap();
+    assert!(again.is_some_and(|u| u >= up + 60), "{again:?} after {up}");
+    // Without a radio: nothing asked.
+    net.disconnect(a);
+    net.run_until(net.now + 61_000, |_| false);
+    assert!(
+        !net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap()
+    );
+}
