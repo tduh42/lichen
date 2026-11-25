@@ -72,7 +72,7 @@ back (ADR-0037):
   reactions and edits: a file outlives their time;
 - **location**: the shares we were giving and the positions received (§12);
 - search **consents** (§11) and the radio's state (the TX power a search lowered);
-- the nodes' **signal readings** (§16.1): they describe one radio's surroundings at one time.
+- the nodes' **signal readings** and the **readings they sent** (§16.1, §16.7): they describe one radio's surroundings at one time.
 
 Sessions are never stored (ADR-0003), so none is in a backup either.
 

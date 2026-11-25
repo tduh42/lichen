@@ -328,6 +328,11 @@ impl Core {
         (keys.all(|k| *k == first) && self.node_key() != Some(&first)).then_some(first)
     }
 
+    /// Whether the radio listed `key` among its contacts in this connection.
+    pub(crate) fn reported_by_radio(&self, key: &PubKey) -> bool {
+        self.mesh.seen.contains_key(key)
+    }
+
     /// The radio is another one, or reconnects: what it reports is read again.
     pub(crate) fn mesh_connected(&mut self) {
         self.mesh.seen.clear();

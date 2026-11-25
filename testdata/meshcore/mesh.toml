@@ -80,6 +80,12 @@ prefix = "606162636465"
 text = "ver"
 source = "MyMesh.cpp#L1132"
 
+[[command]]
+name = "send-telemetry-req"
+hex = "27000000606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+key = "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f"
+source = "MyMesh.cpp#L1680"
+
 [[response]]
 name = "login-success"
 hex = "8501606162636465bb02df6a0302"
@@ -147,6 +153,13 @@ last_snr4 = -8
 posted = 25
 post_pushes = 60
 source = "MyMesh.cpp#L724"
+
+[[response]]
+name = "telemetry-response"
+hex = "8b006061626364650174018801670028"
+prefix = "606162636465"
+data = "0174018801670028"
+source = "MyMesh.cpp#L739"
 
 [[response]]
 name = "binary-response-neighbours"

@@ -63,6 +63,9 @@ pub struct NodeInfo {
     pub signal_at_s: Option<u64>,
     /// That reading's rating under the current preset; `None` without one.
     pub signal: SignalRating,
+    /// When it last answered this radio with its readings (§16.7, Unix seconds, the phone's
+    /// clock): see `node_readings`.
+    pub readings_at_s: Option<u64>,
 }
 
 impl NodeInfo {
@@ -86,6 +89,160 @@ impl NodeInfo {
             rssi_dbm: n.signal.and_then(|r| r.rssi).map(i16::from),
             signal_at_s: n.signal.map(|r| r.at_s),
             signal: i.core.signal_rating(n.signal.as_ref()).into(),
+            readings_at_s: None,
+        }
+    }
+}
+
+/// What a reading measures (§16.7), for its label; `unit` says in what.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReadingKind {
+    AnalogInput,
+    /// A sensor's value without a unit.
+    Generic,
+    Illuminance,
+    Temperature,
+    Humidity,
+    Pressure,
+    Voltage,
+    Current,
+    Frequency,
+    Percentage,
+    Altitude,
+    Power,
+    Distance,
+    /// A position the node's owner lets it send.
+    Latitude,
+    Longitude,
+}
+
+/// One labelled value of a node's readings.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct ReadingValue {
+    pub kind: ReadingKind,
+    /// 1 is the node itself; sensors are numbered from 2.
+    pub channel: u8,
+    pub value: f64,
+    /// "V", "°C", "%", "hPa", "A", "Hz", "m", "W", "lx", "°", or empty.
+    pub unit: String,
+}
+
+/// One answer of a node with its readings (§16.7).
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct NodeReading {
+    /// When it came (Unix seconds, the phone's clock).
+    pub at_s: u64,
+    /// Its battery (the voltage of channel 1), and its charge by the radio's curve.
+    pub battery_mv: Option<u32>,
+    pub battery_percent: Option<u8>,
+    /// Its temperature (channel 1's, else the first), °C.
+    pub temperature_c: Option<f64>,
+    /// Everything else it sent, in order.
+    pub values: Vec<ReadingValue>,
+}
+
+impl NodeReading {
+    pub(crate) fn of(r: &lc_core::Readings) -> Self {
+        use lc_meshcore::lpp::{Kind, SELF_CHANNEL, Value};
+        let mut battery_seen = false;
+        let mut temperature_seen = false;
+        let mut values = Vec::new();
+        for item in &r.items {
+            match item.value {
+                Value::Scalar { kind, value } => {
+                    // The battery and the temperature shown apart, once each.
+                    if kind == Kind::Voltage
+                        && item.channel == SELF_CHANNEL
+                        && !battery_seen
+                        && r.battery_mv == Some(value)
+                    {
+                        battery_seen = true;
+                        continue;
+                    }
+                    if kind == Kind::Temperature
+                        && !temperature_seen
+                        && r.temperature_dc == Some(value)
+                    {
+                        temperature_seen = true;
+                        continue;
+                    }
+                    let (k, scale, unit) = match kind {
+                        Kind::AnalogInput => (ReadingKind::AnalogInput, 100.0, ""),
+                        Kind::Generic => (ReadingKind::Generic, 1.0, ""),
+                        Kind::Illuminance => (ReadingKind::Illuminance, 1.0, "lx"),
+                        Kind::Temperature => (ReadingKind::Temperature, 10.0, "°C"),
+                        Kind::Humidity => (ReadingKind::Humidity, 10.0, "%"),
+                        Kind::Pressure => (ReadingKind::Pressure, 10.0, "hPa"),
+                        Kind::Voltage => (ReadingKind::Voltage, 1000.0, "V"),
+                        Kind::Current => (ReadingKind::Current, 1000.0, "A"),
+                        Kind::Frequency => (ReadingKind::Frequency, 1.0, "Hz"),
+                        Kind::Percentage => (ReadingKind::Percentage, 1.0, "%"),
+                        Kind::Altitude => (ReadingKind::Altitude, 1.0, "m"),
+                        Kind::Power => (ReadingKind::Power, 1.0, "W"),
+                        Kind::Distance => (ReadingKind::Distance, 1000.0, "m"),
+                    };
+                    values.push(ReadingValue {
+                        kind: k,
+                        channel: item.channel,
+                        value: value as f64 / scale,
+                        unit: unit.to_owned(),
+                    });
+                }
+                Value::Gps {
+                    lat_e4,
+                    lon_e4,
+                    alt_cm,
+                } => {
+                    for (kind, value, unit) in [
+                        (ReadingKind::Latitude, f64::from(lat_e4) / 1e4, "°"),
+                        (ReadingKind::Longitude, f64::from(lon_e4) / 1e4, "°"),
+                        (ReadingKind::Altitude, f64::from(alt_cm) / 100.0, "m"),
+                    ] {
+                        values.push(ReadingValue {
+                            kind,
+                            channel: item.channel,
+                            value,
+                            unit: unit.to_owned(),
+                        });
+                    }
+                }
+            }
+        }
+        Self {
+            at_s: r.at_s,
+            battery_mv: r.battery_mv.and_then(|mv| u32::try_from(mv).ok()),
+            battery_percent: r.battery_percent(),
+            temperature_c: r.temperature_dc.map(|t| t as f64 / 10.0),
+            values,
+        }
+    }
+}
+
+/// Where asking a node for its readings stands (§16.7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReadingsState {
+    /// Not asked since the radio connected.
+    Idle,
+    Asking,
+    Answered,
+    /// It answered without a reading lichen reads.
+    AnsweredEmpty,
+    /// No answer in time: it does not answer us (its owner's choice; a repeater answers only
+    /// those logged in), or it was out of reach.
+    NoAnswer,
+    /// The radio refused to ask: the node is not one of its contacts.
+    Refused,
+}
+
+impl From<lc_core::ReadingsState> for ReadingsState {
+    fn from(s: lc_core::ReadingsState) -> Self {
+        match s {
+            lc_core::ReadingsState::Idle => Self::Idle,
+            lc_core::ReadingsState::Asking => Self::Asking,
+            lc_core::ReadingsState::Answered => Self::Answered,
+            lc_core::ReadingsState::AnsweredEmpty => Self::AnsweredEmpty,
+            lc_core::ReadingsState::NoAnswer => Self::NoAnswer,
+            lc_core::ReadingsState::Refused => Self::Refused,
         }
     }
 }
@@ -488,7 +645,62 @@ impl LichenCore {
     /// node's new signal reading included.
     pub fn nodes(&self) -> Vec<NodeInfo> {
         let i = self.lock();
-        i.core.nodes().iter().map(|n| NodeInfo::of(n, &i)).collect()
+        let answered: HashMap<PubKey, u64> = match (&i.store, i.core.node_key()) {
+            (Some(st), Some(radio)) => st
+                .last_readings_times(radio)
+                .unwrap_or_default()
+                .into_iter()
+                .collect(),
+            _ => HashMap::new(),
+        };
+        i.core
+            .nodes()
+            .iter()
+            .map(|n| NodeInfo {
+                readings_at_s: answered.get(&n.key).copied(),
+                ..NodeInfo::of(n, &i)
+            })
+            .collect()
+    }
+
+    /// Asks `node` for its readings (§16.7): its battery, its temperature, what its sensors
+    /// measure. `NodeUpdated` follows each change of `node_readings_state`, and the answer
+    /// (`node_readings`). `TooSoon` while one request to it is out; `UnknownContact` for a node
+    /// not in the radio's contacts; `NoIdentity` without a radio; `OverBudget` when the request
+    /// does not fit the airtime left.
+    pub fn request_node_readings(&self, node: Vec<u8>, now_ms: u64) -> Result<(), LichenError> {
+        let k = key(&node)?;
+        let mut i = self.lock();
+        i.last_now = now_ms;
+        Ok(i.core.request_readings(&k, now_ms)?)
+    }
+
+    /// Where asking `node` for its readings stands.
+    pub fn node_readings_state(&self, node: Vec<u8>) -> ReadingsState {
+        let Ok(k) = key(&node) else {
+            return ReadingsState::Idle;
+        };
+        self.lock().core.readings_state(&k).into()
+    }
+
+    /// What `node` answered this radio (or the last one) over the last 7 days, oldest first,
+    /// 100 answers at most (§16.7, ADR-0050). Empty for a key that is not 32 bytes, without a
+    /// store or before any radio.
+    pub fn node_readings(&self, node: Vec<u8>) -> Vec<NodeReading> {
+        let Ok(k) = key(&node) else {
+            return Vec::new();
+        };
+        let i = self.lock();
+        let (Some(st), Some(radio)) = (&i.store, i.core.node_key()) else {
+            return Vec::new();
+        };
+        let now_s = u64::try_from(i.wall_ms() / 1000).unwrap_or(0);
+        let since = now_s.saturating_sub(lc_core::readings::KEEP_S);
+        st.readings(radio, &k, since)
+            .unwrap_or_default()
+            .iter()
+            .map(|(at, data)| NodeReading::of(&lc_core::Readings::decode(data, *at)))
+            .collect()
     }
 
     /// What the connected radio (or the last one) heard of `node` directly over the last 7

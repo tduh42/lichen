@@ -33,6 +33,8 @@ pub mod cmd {
     pub const SEND_TRACE_PATH: u8 = 36;
     pub const SET_DEVICE_PIN: u8 = 37;
     pub const SET_OTHER_PARAMS: u8 = 38;
+    /// A contact's readings (telemetry, §16.7).
+    pub const SEND_TELEMETRY_REQ: u8 = 39;
     pub const GET_CUSTOM_VARS: u8 = 40;
     pub const SET_CUSTOM_VAR: u8 = 41;
     pub const SEND_BINARY_REQ: u8 = 50;
@@ -80,6 +82,7 @@ pub mod resp {
     pub const LOG_RX_DATA: u8 = 0x88;
     pub const TRACE_DATA: u8 = 0x89;
     pub const NEW_ADVERT: u8 = 0x8A;
+    pub const TELEMETRY_RESPONSE: u8 = 0x8B;
     pub const BINARY_RESPONSE: u8 = 0x8C;
     pub const PATH_DISCOVERY_RESPONSE: u8 = 0x8D;
 }

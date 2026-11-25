@@ -1,9 +1,10 @@
 //! Room servers and repeaters (protocol §15.8, §16.5; ADR-0043, ADR-0044): logins, a room's
 //! posts, a repeater's status and neighbours, and its command line.
 //!
-//! The companion handles one request at a time (a login, a status or a binary request: a
-//! new one replaces the one it waits for), so lichen sends them one after another. Nothing
-//! here is stored except, by the app, a room's password.
+//! The companion handles one request at a time (a login, a status, a binary or a telemetry
+//! request: a new one replaces the one it waits for), so lichen sends them one after another,
+//! a node's readings (§16.7) among them. Nothing here is stored except, by the app, a room's
+//! password and the readings.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -15,6 +16,7 @@ use rand_core::Rng;
 
 use crate::core::{Core, Error, Event, Expect, PubKey, contact_kind};
 use crate::plain::{PlainChat, PlainMessage};
+use crate::readings::ReadingsState;
 use lc_proto::Millis;
 
 /// No answer within the companion's estimate plus this: given up.
@@ -123,7 +125,11 @@ impl Default for Server {
 enum Request {
     Login(Vec<u8>),
     Status,
-    Neighbours { offset: u16 },
+    Neighbours {
+        offset: u16,
+    },
+    /// A node's readings (§16.7): any node in the radio's contacts, people included.
+    Readings,
 }
 
 #[derive(Clone, Debug)]
@@ -145,6 +151,14 @@ pub(crate) struct Servers {
     rooms: Vec<(PubKey, String)>,
     /// Their logins went out in this connection.
     rooms_asked: bool,
+    /// Where asking each node for its readings stands (§16.7).
+    pub(crate) readings: HashMap<PubKey, ReadingsState>,
+}
+
+/// Bytes on the air of a status or telemetry request (§16.5, §16.7): header and path, the two
+/// hashes, the MAC and one block of ciphertext.
+const fn readings_bytes(path_bytes: usize) -> usize {
+    2 + path_bytes + 2 + 2 + 16
 }
 
 fn text_of(b: &[u8]) -> String {
@@ -222,6 +236,11 @@ impl Core {
         Ok(())
     }
 
+    /// Queues a request for `node`'s readings (§16.7); see [`Core::request_readings`].
+    pub(crate) fn queue_readings(&mut self, node: &PubKey, now: Millis) -> Result<(), Error> {
+        self.server_request(node, Request::Readings, now)
+    }
+
     /// Asks repeater `node` for the neighbours it hears, the strongest first (§16.5).
     pub fn request_neighbours(&mut self, node: &PubKey, now: Millis) -> Result<(), Error> {
         self.server_request(node, Request::Neighbours { offset: 0 }, now)?;
@@ -277,12 +296,22 @@ impl Core {
     /// The bytes and hops of the radio's path to server `node`; refused when lichen does not
     /// know it or the radio is away.
     fn server_path(&self, node: &PubKey) -> Result<(usize, Option<u8>), Error> {
+        self.request_path(node, &Request::Status)
+    }
+
+    /// The path for request `r` to `node`: a server's, or for readings any node's the radio
+    /// reported (§16.7).
+    fn request_path(&self, node: &PubKey, r: &Request) -> Result<(usize, Option<u8>), Error> {
         let (kind, path) = self
             .contacts
             .get(node)
             .map(|c| (c.kind, c.out_path.clone()))
             .ok_or(Error::UnknownContact)?;
-        if kind == contact_kind::CHAT {
+        if *r == Request::Readings {
+            if !self.reported_by_radio(node) {
+                return Err(Error::UnknownContact);
+            }
+        } else if kind == contact_kind::CHAT {
             return Err(Error::NotAllowed);
         }
         if !self.online {
@@ -295,7 +324,7 @@ impl Core {
     }
 
     fn server_request(&mut self, node: &PubKey, r: Request, now: Millis) -> Result<(), Error> {
-        self.server_path(node)?;
+        self.request_path(node, &r)?;
         let busy = |(k, q): &(PubKey, Request)| {
             k == node && std::mem::discriminant(q) == std::mem::discriminant(&r)
         };
@@ -305,8 +334,12 @@ impl Core {
         if in_flight || self.servers.queue.iter().any(busy) {
             return Err(Error::TooSoon { wait_ms: 0 });
         }
+        if r == Request::Readings {
+            self.servers.readings.insert(*node, ReadingsState::Asking);
+        } else {
+            self.servers.servers.entry(*node).or_default().no_answer = false;
+        }
         self.servers.queue.push_back((*node, r));
-        self.servers.servers.entry(*node).or_default().no_answer = false;
         self.events.push_back(Event::NodeTool { node: *node });
         self.tick(now);
         Ok(())
@@ -325,7 +358,7 @@ impl Core {
         let Some((key, r)) = self.servers.queue.front().cloned() else {
             return;
         };
-        let Ok((path_bytes, hops)) = self.server_path(&key) else {
+        let Ok((path_bytes, hops)) = self.request_path(&key, &r) else {
             self.servers.queue.pop_front();
             self.server_failed(&key, &r, Login::NoAnswer);
             return;
@@ -333,7 +366,7 @@ impl Core {
         // Our request on the air: an encrypted request of a few blocks (§16.5).
         let len = match &r {
             Request::Login(pw) => 2 + path_bytes + 32 + 1 + 2 + (8 + pw.len()).div_ceil(16) * 16,
-            Request::Status => 2 + path_bytes + 2 + 2 + 16,
+            Request::Status | Request::Readings => readings_bytes(path_bytes),
             Request::Neighbours { .. } => 2 + path_bytes + 2 + 2 + 16,
         };
         let airtime = self.airtime_ms(len);
@@ -350,6 +383,9 @@ impl Core {
                 Expect::Server,
             ),
             Request::Status => self.command(&Command::SendStatusReq { key: &key }, Expect::Server),
+            Request::Readings => {
+                self.command(&Command::SendTelemetryReq { key: &key }, Expect::Server);
+            }
             Request::Neighbours { offset } => {
                 let mut random = [0u8; 4];
                 self.rng.fill_bytes(&mut random);
@@ -380,11 +416,22 @@ impl Core {
     }
 
     fn server_failed(&mut self, key: &PubKey, r: &Request, login: Login) {
+        if *r == Request::Readings {
+            let state = if login == Login::Refused {
+                ReadingsState::Refused
+            } else {
+                ReadingsState::NoAnswer
+            };
+            self.servers.readings.insert(*key, state);
+            self.events.push_back(Event::NodeTool { node: *key });
+            return;
+        }
         let s = self.servers.servers.entry(*key).or_default();
         match r {
             Request::Login(_) => s.login = login,
             Request::Status => s.status_pending = false,
             Request::Neighbours { .. } => s.neighbours_pending = false,
+            Request::Readings => {}
         }
         s.no_answer = login == Login::NoAnswer;
         self.events.push_back(Event::NodeTool { node: *key });
@@ -445,6 +492,29 @@ impl Core {
             s.status = Some(st);
         }
         self.events.push_back(Event::NodeTool { node: f.key });
+    }
+
+    /// Push `TELEMETRY_RESPONSE`: a node's readings (§16.7). Its decoded items are reported to
+    /// keep ([`Event::NodeReadings`]); an answer with none is said so and dropped.
+    pub(crate) fn on_telemetry(&mut self, prefix: &[u8; 6], data: &[u8], now: Millis) {
+        let Some(f) = self.answered(prefix, |r| *r == Request::Readings) else {
+            return;
+        };
+        let known = data.get(..lc_meshcore::lpp::known_len(data)).unwrap_or(&[]);
+        let state = if known.is_empty() {
+            ReadingsState::AnsweredEmpty
+        } else {
+            ReadingsState::Answered
+        };
+        self.servers.readings.insert(f.key, state);
+        match self.unix_s(now) {
+            Some(at_s) if !known.is_empty() => self.events.push_back(Event::NodeReadings {
+                node: f.key,
+                at_s,
+                data: known.to_vec(),
+            }),
+            _ => self.events.push_back(Event::NodeTool { node: f.key }),
+        }
     }
 
     /// Push `BINARY_RESPONSE`: a page of neighbours.
@@ -577,6 +647,7 @@ impl Core {
     /// asked again at the next connection.
     pub(crate) fn servers_connected(&mut self) {
         self.servers.rooms_asked = false;
+        self.servers.readings.clear();
     }
 
     pub(crate) fn servers_disconnected(&mut self) {

@@ -153,6 +153,12 @@ pub struct Node {
     /// The size of its contact table: an advert past it is not added, `ADD_UPDATE_CONTACT`
     /// answers `ERR 3`.
     pub contacts_max: usize,
+    /// The readings it answers `SEND_TELEMETRY_REQ` with (CayenneLPP, §16.7): its battery and
+    /// temperature, to every client of a server, and from a companion whose owner allows it;
+    /// empty, a companion does not answer (telemetry off, the firmware's default).
+    pub telemetry: Vec<u8>,
+    /// A server's sensors, added for its clients that are not guests.
+    pub sensors: Vec<u8>,
 }
 
 /// A contact a fake companion added from outside the simulation (§16.6).
@@ -269,6 +275,16 @@ pub const ORIGIN: (f64, f64) = (45.19, 5.72);
 /// SNR readings saturate there, dB.
 const SNR_MAX_DB: f64 = 13.0;
 
+/// A node's base readings as MeshCore writes them (CayenneLPP, protocol §16.7): channel 1's
+/// voltage (`millivolts`, sent in hundredths of a volt) and temperature (tenths of a °C).
+pub fn base_readings(millivolts: u16, temperature_dc: i16) -> Vec<u8> {
+    let mut v = vec![1, 116];
+    v.extend_from_slice(&(millivolts / 10).to_be_bytes());
+    v.extend_from_slice(&[1, 103]);
+    v.extend_from_slice(&temperature_dc.to_be_bytes());
+    v
+}
+
 /// A plane point (east, north metres) in degrees.
 pub fn latlon(east: f64, north: f64) -> (f64, f64) {
     (
@@ -360,6 +376,8 @@ impl Net {
             clients: Vec::new(),
             posts: Vec::new(),
             contact_adverts: Vec::new(),
+            telemetry: Vec::new(),
+            sensors: Vec::new(),
             contacts_max: 350,
         });
         self.neighbors.push(Vec::new());
@@ -1354,6 +1372,49 @@ impl Net {
         vec![sent]
     }
 
+    /// `SEND_TELEMETRY_REQ` (§16.7): `ERR 2` for a node not in `i`'s contacts; else `SENT`, and
+    /// after the round trip its readings, from a server to its clients (a guest without the
+    /// sensors), from a companion that answers at all.
+    fn fake_telemetry(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
+        let Some(k) = frame.get(4..36) else {
+            return vec![vec![resp::ERR, 6]];
+        };
+        let known = self
+            .nodes
+            .get(i)
+            .is_some_and(|n| n.contacts.iter().any(|(c, ..)| c[..] == *k));
+        let Some(j) = self
+            .nodes
+            .iter()
+            .position(|n| n.key[..] == *k)
+            .filter(|_| known)
+        else {
+            return vec![vec![resp::ERR, 2]];
+        };
+        let tag = self.rng.next_u32().to_le_bytes();
+        let rt = self.round_trip(i, j);
+        let sent = self.sent(&tag, rt);
+        let Some(target) = self.nodes.get(j) else {
+            return vec![sent];
+        };
+        let data = if target.role == Role::Companion {
+            target.telemetry.clone()
+        } else {
+            match self.role_on(i, j) {
+                Some(0) => target.telemetry.clone(),
+                Some(_) => [target.telemetry.as_slice(), target.sensors.as_slice()].concat(),
+                None => Vec::new(),
+            }
+        };
+        if let (Some(rt), false) = (rt, data.is_empty()) {
+            let mut push = vec![resp::TELEMETRY_RESPONSE, 0];
+            push.extend_from_slice(&self.key(j)[..6]);
+            push.extend_from_slice(&data);
+            self.push_later(i, push, rt, false);
+        }
+        vec![sent]
+    }
+
     fn fake_binary(&mut self, i: usize, frame: &[u8]) -> Vec<Vec<u8>> {
         let (Some(k), Some(data)) = (frame.get(1..33), frame.get(33..)) else {
             return vec![vec![resp::ERR, 6]];
@@ -1841,6 +1902,7 @@ impl Net {
             cmd::SEND_TRACE_PATH => self.trace(i, frame),
             cmd::SEND_LOGIN => self.fake_login(i, frame),
             cmd::SEND_STATUS_REQ => self.fake_status(i, frame),
+            cmd::SEND_TELEMETRY_REQ => self.fake_telemetry(i, frame),
             cmd::SEND_BINARY_REQ => self.fake_binary(i, frame),
             cmd::LOGOUT => {
                 let k = frame.get(1..33).unwrap_or(&[]);

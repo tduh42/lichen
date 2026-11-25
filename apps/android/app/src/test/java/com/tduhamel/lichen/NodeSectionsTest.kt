@@ -25,7 +25,7 @@ class NodeSectionsTest {
         readAgo: Long? = null,
     ) = NodeInfo(
         byteArrayOf(name.length.toByte()), name, NodeKind.REPEATER, hops?.toUByte(), heardAgo?.let { (now - it).toULong() },
-        null, null, true, false, snr, null, readAgo?.let { (now - it).toULong() }, signal,
+        null, null, true, false, snr, null, readAgo?.let { (now - it).toULong() }, signal, null,
     )
 
     @Test

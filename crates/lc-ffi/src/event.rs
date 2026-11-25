@@ -397,6 +397,10 @@ impl LichenEvent {
             Event::RequestMessage { .. } | Event::RequestAccepted { .. } => Self::RequestsChanged,
             // The apps read the nodes with the contacts; `NodeUpdated` follows (`on_event`).
             Event::NodeSignal { .. } => Self::ContactsUpdated,
+            // The node's page reads them again (`node_readings`).
+            Event::NodeReadings { node, .. } => Self::NodeUpdated {
+                node: node.to_vec(),
+            },
         }
     }
 }

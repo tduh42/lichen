@@ -187,6 +187,11 @@ pub enum Response<'a> {
         prefix: &'a [u8; 6],
         data: &'a [u8],
     },
+    /// Push `TELEMETRY_RESPONSE`: node `prefix`'s readings, CayenneLPP ([`crate::lpp`], §16.7).
+    TelemetryResponse {
+        prefix: &'a [u8; 6],
+        data: &'a [u8],
+    },
     /// Push `BINARY_RESPONSE`: the answer to request `tag` (`SEND_BINARY_REQ`).
     BinaryResponse {
         tag: u32,
@@ -419,6 +424,13 @@ impl<'a> Response<'a> {
             resp::STATUS_RESPONSE => {
                 let _reserved = r.u8().ok_or(t)?;
                 Response::StatusResponse {
+                    prefix: r.array::<6>().ok_or(t)?,
+                    data: r.rest(),
+                }
+            }
+            resp::TELEMETRY_RESPONSE => {
+                let _reserved = r.u8().ok_or(t)?;
+                Response::TelemetryResponse {
                     prefix: r.array::<6>().ok_or(t)?,
                     data: r.rest(),
                 }

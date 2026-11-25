@@ -437,6 +437,14 @@ pub enum Event {
         node: PubKey,
         reading: crate::signal::Reading,
     },
+    /// Node `node` answered with its readings (§16.7, ADR-0050), received at `at_s` (Unix
+    /// seconds): `data` holds its decoded items as sent, to record for this radio
+    /// ([`crate::Readings::decode`]).
+    NodeReadings {
+        node: PubKey,
+        at_s: u64,
+        data: Vec<u8>,
+    },
 }
 
 /// Why a request was refused right away.
@@ -2146,6 +2154,7 @@ impl Core {
             Response::LoginFail { prefix } => self.on_login(prefix, None),
             Response::StatusResponse { prefix, data } => self.on_status(prefix, data),
             Response::BinaryResponse { tag, data } => self.on_binary(tag, data, now),
+            Response::TelemetryResponse { prefix, data } => self.on_telemetry(prefix, data, now),
             Response::Other { code, .. } if code >= 0x80 => {}
             r => self.on_reply(r, now),
         }
