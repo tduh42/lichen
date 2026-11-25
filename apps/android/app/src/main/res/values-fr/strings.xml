@@ -482,7 +482,6 @@
     <string name="key_backed_up">Clé %1$s… · sauvegardée</string>
     <string name="key_not_backed_up">Clé %1$s… · pas sauvegardée</string>
     <string name="radio_connected_short">connectée</string>
-    <string name="airtime_left_short">Temps d’antenne restant</string>
     <string name="tagline">Messagerie chiffrée hors réseau, sur la LoRa et au-delà.</string>
     <string name="no_cell_towers">Sans antenne relais</string>
     <string name="no_cell_towers_note">Les messages passent de radio en radio.</string>
@@ -919,7 +918,6 @@
     <string name="bandwidth">Bande passante</string>
     <string name="spreading_factor">Facteur d’étalement</string>
     <string name="coding_rate">Taux de codage</string>
-    <string name="gps">GPS</string>
     <string name="bluetooth">Bluetooth</string>
     <string name="restart">Redémarrer</string>
     <string name="everyone">Tout le monde</string>
@@ -928,6 +926,19 @@
     <string name="meshcore_radio">Radio MeshCore</string>
     <string name="not_set">Non réglé</string>
     <string name="none_yet">Aucune pour l’instant</string>
+    <string name="search_radio_settings">Chercher un réglage</string>
+    <string name="no_setting_matches">Aucun réglage ne correspond</string>
+    <string name="position_and_gps">Position et GPS</string>
+    <string name="readings">Relevés</string>
+    <string name="this_radio">Cette radio</string>
+    <string name="connected_for">connectée depuis %1$s</string>
+    <string name="connected_now">connectée à l’instant</string>
+    <string name="battery_ring">Batterie %1$d pour cent, %2$s volts</string>
+    <string name="airtime_left_stat">temps d’antenne restant</string>
+    <string name="firmware_stat">micrologiciel</string>
+    <string name="lower">Moins</string>
+    <string name="higher">Plus</string>
+    <string name="airtime_left_s">%1$d s de temps d’antenne restant</string>
     <string name="transmit_power">Puissance d’émission</string>
     <string name="delivery">Remise</string>
     <string name="new_contacts">Nouveaux contacts</string>
@@ -944,8 +955,6 @@
     <string name="preset_eu_narrow">UE/R.-U. (étroit)</string>
     <string name="preset_us_canada">États-Unis/Canada</string>
     <string name="preset_custom">Personnalisé</string>
-    <string name="radio_firmware">Micrologiciel %1$s · %2$s</string>
-    <string name="radio_battery">%1$s V · environ %2$d %%</string>
     <string name="radio_storage">%1$d ko utilisés sur %2$d</string>
     <string name="lora_note">Une radio réglée autrement n’entend plus les radios de son réseau : choisis le préréglage de ta région, ou les valeurs de ta communauté locale.</string>
     <string name="lora_confirm_title">Changer les réglages LoRa ?</string>
@@ -954,7 +963,6 @@
     <string name="radio_gps">Le GPS de la radio</string>
     <string name="radio_gps_note">Tient à jour la position de la radio. Il consomme de l’énergie.</string>
     <string name="gps_every">Un relevé toutes les</string>
-    <string name="position_and_telemetry">Position et télémétrie</string>
     <string name="position_in_adverts">Position dans les annonces</string>
     <string name="position_in_adverts_on">Chaque annonce montre la position de la radio à tout le réseau, en clair.</string>
     <string name="position_in_adverts_off">Désactivée : les annonces ne portent aucune position.</string>

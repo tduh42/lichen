@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.CompositionLocalProvider
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import androidx.compose.ui.platform.LocalContext
@@ -56,6 +58,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
@@ -253,6 +258,8 @@ fun CardRow(
     /** Off when the row sits in something clickable, which then takes its words (a merged row
      * inside would leave the button without a label). */
     merge: Boolean = true,
+    /** The row's icon on its tile ([IconTile]), before the words. */
+    tile: (@Composable () -> Unit)? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     Row(
@@ -265,19 +272,40 @@ fun CardRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        tile?.invoke()
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = lichen.tx)
             if (subtitle != null) Text(subtitle, fontSize = 13.sp, color = lichen.tx2)
         }
-        trailing()
+        CompositionLocalProvider(LocalRowTitle provides title, content = trailing)
     }
 }
+
+/** The title of the row a control sits in: a switch says it to TalkBack, which reads the switch
+ * apart from its row. */
+val LocalRowTitle = staticCompositionLocalOf<String?> { null }
+
+/** A row's icon on a small tinted tile (30 dp, as in the radio-screens mockups): LoRa's on
+ * `loraBg`, iroh's on `irohBg`, Tor's on `torBg`, the others neutral (`s2` with `tx`). */
+@Composable
+fun IconTile(icon: Painter, background: Color = lichen.s2, tint: Color = lichen.tx, size: Dp = 30.dp) {
+    Box(Modifier.size(size).background(background, RoundedCornerShape(size * 0.27f)), contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(size * 0.57f))
+    }
+}
+
+@Composable
+fun IconTile(icon: ImageVector, background: Color = lichen.s2, tint: Color = lichen.tx, size: Dp = 30.dp) =
+    IconTile(rememberVectorPainter(icon), background, tint, size)
+
+/** The inset of a divider between rows that have a tile: under their text. */
+val TileInset = 58.dp
 
 /** A node's MeshCore public key, in groups of 8 hex digits (F-1). Tapped (or its Copy), its 64
  * digits go to the clipboard and the row says "Copied"; with [share], Copy and Share buttons (Share
  * sends the digits to another app). */
 @Composable
-fun MeshCoreKeyRow(key: ByteArray, share: Boolean = false) {
+fun MeshCoreKeyRow(key: ByteArray, share: Boolean = false, tile: (@Composable () -> Unit)? = null) {
     val t = lichen
     val context = LocalContext.current
     val clipboard = LocalClipboard.current
@@ -299,6 +327,7 @@ fun MeshCoreKeyRow(key: ByteArray, share: Boolean = false) {
             stringResource(R.string.meshcore_public_key),
             if (copied) stringResource(R.string.copied) else hex.chunked(8).joinToString(" "),
             merge = false,
+            tile = tile,
         ) {
             if (share) {
                 IconButton(onClick = { copy() }) { Icon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), tint = t.tx2) }

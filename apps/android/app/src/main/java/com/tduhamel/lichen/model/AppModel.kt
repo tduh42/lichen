@@ -209,7 +209,20 @@ class AppModel(val app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val started = SystemClock.elapsedRealtime()
 
-    var radioState by mutableStateOf<RadioState>(RadioState.Idle)
+    /** The link to the radio; [connectedSinceMs] follows it. */
+    var radioState: RadioState
+        get() = linkState
+        set(v) {
+            if (v !is RadioState.Connected) connectedSinceMs = null
+            else if (linkState !is RadioState.Connected) connectedSinceMs = SystemClock.elapsedRealtime()
+            linkState = v
+        }
+    private var linkState by mutableStateOf<RadioState>(RadioState.Idle)
+
+    /** When the link to the radio came up (elapsed realtime), for "connected 2 h 14 min"; null
+     * without one. */
+    var connectedSinceMs by mutableStateOf<Long?>(null)
+        private set
     var nodeName by mutableStateOf("")
     var nodeKey by mutableStateOf<ByteArray?>(null)
     var radio by mutableStateOf<Radio?>(null)

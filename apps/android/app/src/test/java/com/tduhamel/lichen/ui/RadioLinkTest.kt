@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.hasContentDescription
 import android.content.res.Configuration
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -229,6 +231,71 @@ class RadioLinkTest : UiTest() {
         advanceUntil("the new power read back", 10) { model.radioSettings?.txDbm == (r.txDbm - 1).toByte() }
         see("${r.txDbm - 1} dBm")
         assertEquals(null, model.radioError)
+    }
+
+    /** RL-5: the radio on top of its settings: its name, its link and for how long, its
+     * firmware and the hour's airtime left. */
+    @Test
+    fun RL_5_radioHeader() = header()
+
+    @Test
+    @Config(qualifiers = "+fr-night")
+    fun RL_5_radioHeader_frDark() = header()
+
+    private fun header() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        val r = model.radioSettings!!
+        see(r.name)
+        see(str(R.string.demo_network) + " · ", substring = true)
+        // The firmware when the radio gives it (the demo's does not).
+        if (r.firmware.isNotEmpty()) see(r.firmware) else assertFalse(has(R.string.firmware_stat))
+        see(R.string.airtime_left_stat)
+        val left = (model.budget.limitMs - minOf(model.budget.usedMs, model.budget.limitMs)) / 1000u
+        see("$left s")
+    }
+
+    /** RL-5: Search radio settings: "power" ("puissance" in French) finds Transmit power, its
+     * section under it; chosen, every section comes back and the list stands on its row, under
+     * the search, which stays on top. */
+    @Test
+    fun RL_5_searchRadioSettings() = searchSettings("power")
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_5_searchRadioSettings_fr() = searchSettings("puissance")
+
+    private fun searchSettings(word: String) {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's settings") { model.radioSettings?.read == true }
+        // Far down first.
+        scrollTo(hasText(str(R.string.restart_radio)))
+        val field = compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.search_radio_settings)))
+        field.performTextInput(word)
+        compose.waitForIdle()
+        // Transmit power alone (its section, named the same, not repeated); the other sections gone.
+        assertEquals(1, compose.onAllNodesWithText(str(R.string.transmit_power), useUnmergedTree = true).fetchSemanticsNodes().size)
+        assertFalse(has(R.string.restart_radio))
+        assertFalse(has(R.string.lora_now))
+        tap(R.string.transmit_power)
+        advance(1)
+        // Every section back, the list on Transmit power: its row just under the search.
+        assertTrue(has(R.string.lora_note) || has(R.string.restart_radio) || has(R.string.telemetry_base))
+        val power = compose.onAllNodesWithText(str(R.string.transmit_power), useUnmergedTree = true).onLast()
+        power.assertIsDisplayed()
+        val top = power.fetchSemanticsNode().boundsInRoot.top
+        val under = field.fetchSemanticsNode().boundsInRoot.bottom
+        val dp = context.resources.displayMetrics.density
+        assertTrue("Transmit power ${(top - under) / dp} dp under the search", top >= under && top - under < 120 * dp)
+        see("${model.radioSettings!!.txDbm} dBm")
+        // Found by a section's name too: Bluetooth's three rows.
+        field.performTextInput("Bluetooth")
+        compose.waitForIdle()
+        for (row in listOf(R.string.ble_pin, R.string.save_pin, R.string.restart_radio)) assertTrue(str(row), has(row))
+        // Nothing found, said so.
+        field.performTextReplacement("zzz")
+        compose.waitForIdle()
+        see(R.string.no_setting_matches)
     }
 
     /** RL-5: the radio's position put in its adverts, after the warning: this phone's when the
@@ -630,8 +697,9 @@ class RadioLinkTest : UiTest() {
         launch("demo" to true, "screen" to "radio")
         advanceUntil("the radio's battery") { model.radioSettings?.batteryMv != null }
         val r = model.radioSettings!!
-        text(R.string.battery).assertIsDisplayed()
-        text("${r.batteryPercent} %", substring = true).assertIsDisplayed()
+        // The ring on top, said with its voltage.
+        val volts = "%.2f".format(r.batteryMv!!.toDouble() / 1000)
+        desc(str(R.string.battery_ring, r.batteryPercent!!.toInt(), volts)).assertIsDisplayed()
         tapDesc(R.string.back)
 
         // Off: the radio in one line. On: its card, with the airtime left.
