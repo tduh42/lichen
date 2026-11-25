@@ -313,6 +313,38 @@ fn rssi_estimated_from_noise_floor() {
     }
 }
 
+/// Julien's group envelopes heard directly stay Locate's (§11.2): each searcher measures them
+/// as before, and they are no node's signal (§16.1, ADR-0049: a group envelope names no node in
+/// clear).
+#[test]
+fn group_envelopes_stay_with_locate() {
+    let mut f = Field::new(23, geometry(2.8));
+    let j = f.julien;
+    f.net.with_core(j, |c, now| c.set_sos(true, now));
+    for s in f.searchers {
+        f.start(s);
+    }
+    for _ in 0..4 {
+        f.round(0.0);
+    }
+    let tk = f.target();
+    let mut measured = 0;
+    for s in f.searchers {
+        let me = f.net.with_core_ref(s, |c| *c.key().unwrap()).unwrap();
+        let ms = f
+            .net
+            .with_core(s, |c, _| c.search_measurements(&tk))
+            .unwrap();
+        measured += usize::from(ms.iter().any(|m| m.by == me));
+        let events = f.net.take_events(s);
+        assert!(
+            !events.iter().any(|e| matches!(e, Event::NodeSignal { .. })),
+            "searcher {s}: no node's signal from group envelopes"
+        );
+    }
+    assert!(measured >= 2, "{measured} searchers measured Julien");
+}
+
 /// Only direct copies count: a searcher who hears Julien only through the repeater measures
 /// nothing itself, yet gets the others' measurements and an estimate.
 #[test]

@@ -2,16 +2,20 @@
 //! type, when they were last heard and the position they advertise; a contact's path, hop by
 //! hop; traces.
 //!
-//! The radio is the source of truth: everything here is read again at each connection and
-//! nothing is stored.
+//! The radio is the source of truth: everything here is read again at each connection, and
+//! nothing is stored but what the radio heard of each node (§16.1, ADR-0049): the runner
+//! records the readings and gives the last ones back ([`Core::restore_signal`]).
 
 use std::collections::HashMap;
 
 use lc_meshcore::Command;
+use lc_meshcore::advert::Advert;
+use lc_meshcore::air::{Packet, PayloadType, Route as AirRoute};
 use lc_meshcore::response::Contact as RadioContact;
 use rand_core::Rng;
 
 use crate::core::{Core, Error, Event, Expect, OwnedPath, PubKey, contact_kind};
+use crate::signal::{Reading, SignalRating};
 use lc_proto::Millis;
 
 /// Nodes heard but not in the radio's contacts, kept at most (the newest).
@@ -60,6 +64,8 @@ pub struct Trace {
     pub rtt_ms: Option<Millis>,
     /// Airtime of our transmission.
     pub airtime_ms: Millis,
+    /// When it came back, Unix seconds by the phone's clock (when known).
+    pub done_s: Option<u64>,
     tag: u32,
     started: Millis,
     deadline: Millis,
@@ -84,6 +90,40 @@ pub struct Node {
     /// In the radio's contacts; false for a node heard but not added (manual add, a hop
     /// limit, or a full table: `NEW_ADVERT`).
     pub on_radio: bool,
+    /// The last time our radio heard it directly (§16.1); `None` for a node heard only
+    /// through repeaters. Rate it with [`Core::signal_rating`].
+    pub signal: Option<Reading>,
+}
+
+/// A stop on the route to a node (§16.3): our radio, a repeater of its path, or the node.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RouteStop {
+    /// The node, when known: our radio's, the node's, or the one repeater the hash names.
+    pub key: Option<PubKey>,
+    /// A repeater's hash on the path; empty for our radio and for the node.
+    pub hash: Vec<u8>,
+    /// Its name: our radio's, the node's, or those of the repeaters the hash names (none when
+    /// unknown, several when ambiguous).
+    pub names: Vec<String>,
+    /// The position its adverts carry; none for our radio (the apps put it at the phone's).
+    pub position: Option<(i32, i32)>,
+}
+
+/// A leg of the route between two stops: the last SNR measured on it towards us, the nearer
+/// stop hearing the farther one (§16.3).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RouteLeg {
+    /// `None`: nothing measured it.
+    pub reading: Option<Reading>,
+    /// The reading comes from a trace (no RSSI), not from the frames heard.
+    pub traced: bool,
+}
+
+/// The route to a node (§16.3): our radio first, the node last, a leg between each two.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Route {
+    pub stops: Vec<RouteStop>,
+    pub legs: Vec<RouteLeg>,
 }
 
 /// What a contact record says beyond [`crate::Contact`].
@@ -101,6 +141,8 @@ pub(crate) struct Mesh {
     heard: HashMap<PubKey, Node>,
     /// The last trace per node.
     traces: HashMap<PubKey, Trace>,
+    /// The last direct reading per node, for the connected radio (§16.1).
+    signals: HashMap<PubKey, Reading>,
     /// When the radio's battery was last asked for (ADR-0042).
     pub(crate) battery_at: Option<Millis>,
     /// Nodes imported from a link, with the `ADD_UPDATE_CONTACT` frame that adds them when
@@ -154,6 +196,7 @@ impl Core {
                     last_heard: s.last_heard,
                     position: s.position,
                     on_radio: true,
+                    signal: self.mesh.signals.get(&c.key).copied(),
                 })
             })
             .collect();
@@ -162,7 +205,10 @@ impl Core {
                 .heard
                 .values()
                 .filter(|n| !self.contacts.contains_key(&n.key))
-                .cloned(),
+                .map(|n| Node {
+                    signal: self.mesh.signals.get(&n.key).copied(),
+                    ..n.clone()
+                }),
         );
         v.sort_by(|a, b| {
             b.last_heard
@@ -211,9 +257,75 @@ impl Core {
                 last_heard: s.last_heard,
                 position: s.position,
                 on_radio: false,
+                signal: None,
             },
         );
         self.events.push_back(Event::NodesUpdated);
+    }
+
+    /// Another radio: what it heard of each node is its own (§16.1).
+    pub(crate) fn mesh_radio_changed(&mut self) {
+        self.mesh.signals.clear();
+    }
+
+    /// A frame the radio heard (`LOG_RX_DATA`): a reading of its sender when it came straight
+    /// from it and names it (§16.1, ADR-0049).
+    pub(crate) fn hear_signal(&mut self, p: &Packet<'_>, snr4: i8, rssi: i8, now: Millis) {
+        // A flood gains a hash at each repeater; a direct packet loses one, so an empty path
+        // there may come from the last repeater: only an advert is taken from it.
+        if p.path.hops() != 0 {
+            return;
+        }
+        let flood = matches!(p.route, AirRoute::Flood | AirRoute::TransportFlood);
+        let from = match p.ptype {
+            PayloadType::Advert => self.advert_sender(p.payload),
+            PayloadType::Req | PayloadType::Response | PayloadType::TxtMsg | PayloadType::Path
+                if flood =>
+            {
+                p.payload.get(1).and_then(|&h| self.only_node_with(h))
+            }
+            _ => None,
+        };
+        let (Some(node), Some(at_s)) = (from, self.unix_s(now)) else {
+            return;
+        };
+        let reading = Reading {
+            snr4,
+            rssi: (rssi != 0).then_some(rssi),
+            at_s,
+        };
+        self.mesh.signals.insert(node, reading);
+        self.events.push_back(Event::NodeSignal { node, reading });
+    }
+
+    /// The node an advert comes from: its signature verifies, it is not our radio's, and it is
+    /// not older than the last one the radio reported for that node (a copy played again).
+    fn advert_sender(&self, payload: &[u8]) -> Option<PubKey> {
+        let a = Advert::decode(payload).ok()?;
+        if self.node_key() == Some(a.key) || !a.verify() {
+            return None;
+        }
+        let last = self
+            .mesh
+            .seen
+            .get(a.key)
+            .map(|s| s.last_advert)
+            .or_else(|| self.mesh.heard.get(a.key).map(|n| n.last_advert))
+            .unwrap_or(0);
+        (a.timestamp >= last).then_some(*a.key)
+    }
+
+    /// The one node lichen knows whose key starts with `hash` (our radio, its contacts and
+    /// ours, the nodes it heard); none when there are several.
+    fn only_node_with(&self, hash: u8) -> Option<PubKey> {
+        let mut keys = self
+            .node_key()
+            .into_iter()
+            .chain(self.contacts.keys())
+            .chain(self.mesh.heard.keys())
+            .filter(|k| k.first() == Some(&hash));
+        let first = *keys.next()?;
+        (keys.all(|k| *k == first) && self.node_key() != Some(&first)).then_some(first)
     }
 
     /// The radio is another one, or reconnects: what it reports is read again.
@@ -438,6 +550,7 @@ impl Core {
                 status: TraceStatus::Sending,
                 rtt_ms: None,
                 airtime_ms: airtime,
+                done_s: None,
                 tag,
                 started: now,
                 deadline: now + TRACE_SENT_MS,
@@ -473,7 +586,9 @@ impl Core {
 
     /// Push `TRACE_DATA`.
     pub(crate) fn on_trace_data(&mut self, tag: u32, snrs: &[u8], final_snr4: i8, now: Millis) {
+        let done_s = self.unix_s(now);
         if let Some((node, t)) = self.trace_by_tag(tag) {
+            t.done_s = done_s;
             t.snrs = snrs.iter().map(|&b| b as i8).collect();
             t.final_snr4 = Some(final_snr4);
             t.status = TraceStatus::Done;
@@ -494,6 +609,155 @@ impl Core {
         for node in late {
             self.events.push_back(Event::NodeTool { node });
         }
+    }
+
+    /// The rating of a reading under the current preset (§16.1); `None` without one.
+    pub fn signal_rating(&self, reading: Option<&Reading>) -> SignalRating {
+        reading.map_or(SignalRating::None, |r| {
+            crate::signal::rate(r.snr4, r.rssi, self.radio.sf)
+        })
+    }
+
+    /// The last direct reading of `node` for the connected radio.
+    pub fn signal_of(&self, node: &PubKey) -> Option<Reading> {
+        self.mesh.signals.get(node).copied()
+    }
+
+    /// The last reading of `node` the runner stored for this radio (§16.1): kept unless a newer
+    /// one is known.
+    pub fn restore_signal(&mut self, node: PubKey, reading: Reading) {
+        if self
+            .mesh
+            .signals
+            .get(&node)
+            .is_none_or(|r| r.at_s < reading.at_s)
+        {
+            self.mesh.signals.insert(node, reading);
+        }
+    }
+
+    /// The route to `node` (§16.3): `None` when the radio floods to reach it or does not know
+    /// it.
+    pub fn route(&self, node: &PubKey) -> Option<Route> {
+        let (kind, path) = self.node(node)?;
+        let path = path?;
+        let me = *self.node_key()?;
+        let size = usize::from(path.len_byte >> 6) + 1;
+        let hashes: Vec<&[u8]> = path.bytes.chunks(size).collect();
+        let mut stops = vec![RouteStop {
+            key: Some(me),
+            hash: Vec::new(),
+            names: vec![self.node_name().to_owned()],
+            position: None,
+        }];
+        for h in &hashes {
+            let mut repeaters = self.nodes_with(h).filter(|(_, k)| repeats(*k));
+            let only = match (repeaters.next(), repeaters.next()) {
+                (Some((key, _)), None) => Some(key),
+                _ => None,
+            };
+            stops.push(RouteStop {
+                key: only,
+                hash: h.to_vec(),
+                names: self.hop_names(h),
+                position: only.and_then(|k| self.advertised(&k)),
+            });
+        }
+        stops.push(RouteStop {
+            key: Some(*node),
+            hash: Vec::new(),
+            names: self.node_named(node).into_iter().collect(),
+            position: self.advertised(node),
+        });
+        // What a trace measured, when it came back along today's path: out, then back.
+        let mut out: Vec<&[u8]> = hashes.clone();
+        if repeats(kind) {
+            out.push(node.get(..size)?);
+        }
+        let m = out.len();
+        let trace = self.mesh.traces.get(node).filter(|t| {
+            m > 0
+                && t.status == TraceStatus::Done
+                && t.hops.len() == 2 * m - 1
+                && t.hops.iter().zip(&out).all(|(h, o)| h.hash == *o)
+        });
+        let traced = |snr4: Option<i8>| {
+            let (t, snr4) = (trace?, snr4?);
+            Some(Reading {
+                snr4,
+                rssi: None,
+                at_s: t.done_s?,
+            })
+        };
+        let legs = (0..stops.len() - 1)
+            .map(|k| {
+                if k == 0 {
+                    // Our radio hearing the first stop: its own reading, or the trace's last
+                    // transmission, whichever is newer.
+                    let own = stops
+                        .get(1)
+                        .and_then(|s| s.key)
+                        .and_then(|key| self.mesh.signals.get(&key).copied());
+                    let back = traced(trace.and_then(|t| t.final_snr4));
+                    return match (own, back) {
+                        (Some(o), Some(b)) if b.at_s > o.at_s => RouteLeg {
+                            reading: Some(b),
+                            traced: true,
+                        },
+                        (Some(o), _) => RouteLeg {
+                            reading: Some(o),
+                            traced: false,
+                        },
+                        (None, b) => RouteLeg {
+                            reading: b,
+                            traced: b.is_some(),
+                        },
+                    };
+                }
+                // Stop k hearing stop k + 1: the trace's return half, up to its far end.
+                let reading = (k < m)
+                    .then(|| traced(trace.and_then(|t| t.snrs.get(2 * m - 1 - k).copied())))
+                    .flatten();
+                RouteLeg {
+                    reading,
+                    traced: reading.is_some(),
+                }
+            })
+            .collect();
+        Some(Route { stops, legs })
+    }
+
+    /// The nodes lichen knows whose key starts with `hash`, with their type.
+    fn nodes_with<'a>(&'a self, hash: &'a [u8]) -> impl Iterator<Item = (PubKey, u8)> + 'a {
+        let heard = self
+            .mesh
+            .heard
+            .values()
+            .filter(|n| !self.contacts.contains_key(&n.key))
+            .map(|n| (n.key, n.kind));
+        self.contacts
+            .values()
+            .map(|c| (c.key, c.kind))
+            .chain(heard)
+            .filter(move |(k, _)| k.starts_with(hash))
+    }
+
+    /// The position a node's adverts carry, as the radio reported it.
+    fn advertised(&self, key: &PubKey) -> Option<(i32, i32)> {
+        self.mesh
+            .seen
+            .get(key)
+            .map(|s| s.position)
+            .or_else(|| self.mesh.heard.get(key).map(|n| n.position))
+            .flatten()
+    }
+
+    /// A node's name, as the radio or lichen knows it.
+    fn node_named(&self, key: &PubKey) -> Option<String> {
+        self.contacts
+            .get(key)
+            .map(|c| c.name.clone())
+            .or_else(|| self.mesh.heard.get(key).map(|n| n.name.clone()))
     }
 
     pub(crate) fn next_mesh_wakeup(&self) -> Option<Millis> {

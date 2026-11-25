@@ -162,6 +162,7 @@ impl Diag {
             Event::Requested { .. } => ("introduction request", None),
             Event::RequestMessage { snr4, .. } => ("request message received", snr(*snr4)),
             Event::RequestAccepted { .. } => ("request accepted", None),
+            Event::NodeSignal { reading, .. } => ("node heard directly", snr(reading.snr4)),
             // Events added later are logged by kind alone until they get a word.
             #[allow(unreachable_patterns)]
             _ => ("other event", None),

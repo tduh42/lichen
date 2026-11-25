@@ -22,6 +22,7 @@ use crate::core::{Contact, FailReason, OwnedPath, PubKey};
 use crate::group::GroupId;
 use crate::location::{Precision, Share};
 use crate::plain::{Channel, ChannelId};
+use crate::signal::Reading;
 use lc_proto::location::Position;
 
 pub use rusqlite::Error;
@@ -48,7 +49,8 @@ pub use rusqlite::Error;
 /// 15: introduction requests (ADR-0046): `requests`, `request_messages` (tables added).
 /// 16: blocks lifted (ADR-0034): `block_periods` (table added, nothing migrated).
 /// 17: a contact's MeshCore type (`contacts.kind`, added to older databases as a person's).
-const VERSION: i32 = 17;
+/// 18: each node's signal (ADR-0049): `signals` (table added, nothing migrated).
+const VERSION: i32 = 18;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -370,7 +372,32 @@ CREATE TABLE IF NOT EXISTS plain_replies (
     message INTEGER PRIMARY KEY,
     target INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS signals (
+    radio BLOB NOT NULL,
+    node BLOB NOT NULL,
+    at INTEGER NOT NULL,
+    snr4 INTEGER NOT NULL,
+    rssi INTEGER
+);
+CREATE INDEX IF NOT EXISTS signals_by_node ON signals (radio, node, at);
 ";
+
+/// A reading from columns `at, snr4, rssi` starting at `first`; `None` when one is out of range.
+fn reading(r: &rusqlite::Row<'_>, first: usize) -> Result<Option<Reading>, Error> {
+    let at: i64 = r.get(first)?;
+    let snr4: i64 = r.get(first + 1)?;
+    let rssi: Option<i64> = r.get(first + 2)?;
+    Ok((|| {
+        Some(Reading {
+            snr4: i8::try_from(snr4).ok()?,
+            rssi: match rssi {
+                Some(v) => Some(i8::try_from(v).ok()?),
+                None => None,
+            },
+            at_s: u64::try_from(at).ok()?,
+        })
+    })())
+}
 
 /// The last position received from a sender in a conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -667,6 +694,7 @@ impl Store {
             "DELETE FROM invitations;
              DELETE FROM shares;
              DELETE FROM positions;
+             DELETE FROM signals;
              DELETE FROM search_consent;
              DELETE FROM reactions WHERE pending <> 0;
              DELETE FROM amendments WHERE pending <> 0;",
@@ -890,6 +918,78 @@ impl Store {
             self.scrub();
         }
         Ok(n)
+    }
+
+    // ----- each node's signal (protocol.md §16.1, ADR-0049) -----------------------------
+
+    /// Records a reading of `node` by `radio` (both node keys), and forgets that node's
+    /// readings by that radio older than [`HISTORY_KEEP_S`](crate::signal::HISTORY_KEEP_S)
+    /// before it, or beyond the newest [`HISTORY_MAX`](crate::signal::HISTORY_MAX).
+    pub fn put_signal(&self, radio: &PubKey, node: &PubKey, r: &Reading) -> Result<(), Error> {
+        let at = i64::try_from(r.at_s).unwrap_or(i64::MAX);
+        let keep = i64::try_from(crate::signal::HISTORY_KEEP_S).unwrap_or(i64::MAX);
+        let max = i64::try_from(crate::signal::HISTORY_MAX).unwrap_or(i64::MAX);
+        let (radio, node) = (radio.as_slice(), node.as_slice());
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO signals (radio, node, at, snr4, rssi) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![radio, node, at, r.snr4, r.rssi],
+        )?;
+        tx.execute(
+            "DELETE FROM signals WHERE radio = ?1 AND node = ?2 AND at < ?3",
+            params![radio, node, at.saturating_sub(keep)],
+        )?;
+        tx.execute(
+            "DELETE FROM signals WHERE radio = ?1 AND node = ?2 AND rowid NOT IN
+               (SELECT rowid FROM signals WHERE radio = ?1 AND node = ?2
+                ORDER BY at DESC, rowid DESC LIMIT ?3)",
+            params![radio, node, max],
+        )?;
+        tx.commit()
+    }
+
+    /// The last reading of each node by `radio`.
+    pub fn last_signals(&self, radio: &PubKey) -> Result<Vec<(PubKey, Reading)>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT node, at, snr4, rssi FROM signals s WHERE radio = ?1 AND rowid =
+               (SELECT rowid FROM signals t WHERE t.radio = s.radio AND t.node = s.node
+                ORDER BY at DESC, rowid DESC LIMIT 1)",
+        )?;
+        let rows = st.query_map(params![radio.as_slice()], |r| {
+            let node: Vec<u8> = r.get(0)?;
+            Ok(node
+                .as_slice()
+                .try_into()
+                .ok()
+                .zip(reading(r, 1).ok().flatten()))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// The readings of `node` by `radio` since `since_s` (Unix seconds), oldest first.
+    pub fn signal_history(
+        &self,
+        radio: &PubKey,
+        node: &PubKey,
+        since_s: u64,
+    ) -> Result<Vec<Reading>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT at, snr4, rssi FROM signals WHERE radio = ?1 AND node = ?2 AND at >= ?3
+             ORDER BY at, rowid",
+        )?;
+        let since = i64::try_from(since_s).unwrap_or(i64::MAX);
+        let rows = st.query_map(params![radio.as_slice(), node.as_slice(), since], |r| {
+            reading(r, 0)
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Forgets the readings older than `before` (Unix seconds).
+    pub fn prune_signals(&self, before: u64) -> Result<usize, Error> {
+        self.conn.execute(
+            "DELETE FROM signals WHERE at < ?1",
+            params![i64::try_from(before).unwrap_or(i64::MAX)],
+        )
     }
 
     /// Forgets positions older than `before` (Unix seconds).

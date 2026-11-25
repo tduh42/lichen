@@ -166,6 +166,9 @@ enum Action {
     },
     /// The app's radio hears a node's advert and does not add it (§16.1).
     HeardAdvert(usize),
+    /// A node advertises (§16.1, ADR-0049): the app's radio logs it with the signal it hears
+    /// it at, out of band (nothing on the air).
+    Advertises(usize),
     /// The app's radio gets a frame someone with a stock client sent, out of band, if the air
     /// lost it (debug `plainHeard`): see [`Net::hand_over`].
     HandOver(Vec<u8>),
@@ -232,11 +235,36 @@ struct Demo {
     /// What Lucie and Marc send with their stock clients reaches the app's radio however busy
     /// the air was (debug `plainHeard`, UI tests).
     plain_heard: bool,
+    /// Adverts logged so far (their jitter).
+    adverts: usize,
 }
 
 /// How long after Lucie or Marc sent something the app's radio gets it out of band if the air
 /// lost it (debug `plainHeard`): long after a flood or a direct message arrives (a few seconds).
 const HANDED_OVER_AFTER: u64 = 20 * SEC;
+
+/// What the app's radio hears of each link (SNR × 4, RSSI dBm), fixed so that the signal
+/// screens show each rating (ADR-0049): the hub close by and Good, Lucie Fair, the crest leg
+/// Fair. Only the values the radios report change: nothing more is drawn, so the air's
+/// timeline stays where the scenarios expect it.
+const LINK_READINGS: [(&str, &str, i8, i8); 8] = [
+    ("app", "hub", 30, -104),
+    ("app", "lucie", -16, -117),
+    ("hub", "camille", 26, -106),
+    ("hub", "crest", -12, -116),
+    ("crest", "julien", 20, -108),
+    ("hub", "marc", 14, -110),
+    ("hub", "lucie", 10, -111),
+    ("hub", "board", 18, -109),
+];
+
+/// The refuge board's adverts reach the app's radio directly, barely (SNR × 4, RSSI): a link
+/// too weak to route by, its traffic goes through the hub. Bad.
+const BOARD_DIRECT: (i8, i8) = (-38, -121);
+
+/// Small steps of the SNR (× 4) from one advert to the next, so that a node's chart moves
+/// without leaving its rating.
+const ADVERT_JITTER: [i8; 8] = [0, -2, 1, -3, 2, -1, 3, -2];
 
 /// The app's radio misses every copy of `author`'s second group message (its sender byte;
 /// message counter 1 under a new key, §10.3), whenever it goes out.
@@ -518,6 +546,23 @@ impl Demo {
             Action::HeardAdvert(from) => {
                 let app = self.app;
                 self.net.hear_advert(app, from);
+            }
+            Action::Advertises(from) => {
+                let jitter = ADVERT_JITTER
+                    .get(self.adverts % ADVERT_JITTER.len())
+                    .copied()
+                    .unwrap_or(0);
+                self.adverts += 1;
+                let app = self.app;
+                if from == self.board {
+                    let ts = self.net.radio_clock(app);
+                    let advert = self.net.advert(from, ts, false);
+                    let (snr4, rssi) = BOARD_DIRECT;
+                    self.net
+                        .log_rx(app, &advert, snr4.saturating_add(jitter), rssi);
+                } else {
+                    self.net.log_advert(app, from, jitter);
+                }
             }
             Action::RoomPost { from, text } => {
                 let board = self.board;
@@ -949,6 +994,22 @@ impl DemoNetwork {
         net.nodes[hub].advert_position = Some(e6(HUB));
         net.nodes[crest].advert_position = Some(e6(CREST));
         net.nodes[board].advert_position = Some(e6(BOARD));
+        let named = [
+            ("app", app),
+            ("hub", hub),
+            ("crest", crest),
+            ("camille", camille),
+            ("julien", julien),
+            ("marc", marc),
+            ("lucie", lucie),
+            ("board", board),
+        ];
+        let index = |name: &str| named.iter().find(|(n, _)| *n == name).map(|(_, i)| *i);
+        for (a, b, snr4, rssi) in LINK_READINGS {
+            if let (Some(a), Some(b)) = (index(a), index(b)) {
+                net.set_link_readings(a, b, snr4, rssi);
+            }
+        }
         for n in [hub, crest, board] {
             net.know(app, n, true);
         }
@@ -1027,6 +1088,16 @@ impl DemoNetwork {
             // Early, before the bots' sessions and groups: the scripted scenarios stay as they
             // were (an extra frame later shifts their timing on the simulated air).
             (3 * SEC, Action::HeardAdvert(lucie)),
+            // Adverts in the radio's log only (ADR-0049), the hub twice so that its history
+            // grows; crest's comes through the hub. Nothing goes on the air, but every frame
+            // from the radio makes the core tick, and each tick draws its sessions' jitter
+            // afresh (§7.3): once sessions run, a frame more moves the scenarios' timeline. So
+            // early, before any session, and not again.
+            (4 * SEC, Action::Advertises(hub)),
+            (5 * SEC, Action::Advertises(lucie)),
+            (6 * SEC, Action::Advertises(board)),
+            (7 * SEC, Action::Advertises(crest)),
+            (9 * SEC, Action::Advertises(hub)),
             (
                 200 * SEC,
                 Action::RoomPost {
@@ -1076,6 +1147,7 @@ impl DemoNetwork {
                 marc_answered: false,
                 board,
                 plain_heard: false,
+                adverts: 0,
             }),
         })
     }
@@ -1109,7 +1181,7 @@ impl DemoNetwork {
 
     /// A quiet demo (debug `quietDemo`, for UI tests of direct chats): no group, no photo, no
     /// position share, no channel or room post; Camille's first message, Marc's and Lucie's
-    /// advert stay. Camille then answers in seconds instead of the minute or more the group's
+    /// advert stay, and the adverts in the radio's log (nothing on the air). Camille then answers in seconds instead of the minute or more the group's
     /// keys and her photo take on the air. Call right after `new`.
     pub fn quiet(&self) {
         let mut d = self
@@ -1119,7 +1191,10 @@ impl DemoNetwork {
         d.pending.retain(|(_, a)| {
             matches!(
                 a,
-                Action::Dm { .. } | Action::MarcWrites(_) | Action::HeardAdvert(_)
+                Action::Dm { .. }
+                    | Action::MarcWrites(_)
+                    | Action::HeardAdvert(_)
+                    | Action::Advertises(_)
             )
         });
     }

@@ -431,6 +431,12 @@ pub enum Event {
         node: PubKey,
         identity: PubKey,
     },
+    /// Our radio heard node `node` directly (§16.1, ADR-0049): a reading to record for this
+    /// radio; [`Core::nodes`] shows it as the node's last.
+    NodeSignal {
+        node: PubKey,
+        reading: crate::signal::Reading,
+    },
 }
 
 /// Why a request was refused right away.
@@ -2283,6 +2289,8 @@ impl Core {
                 let again = self.online && self.node == Some(*si.key);
                 if self.node.is_some_and(|n| n != *si.key) {
                     self.forget_routes();
+                    // Another radio hears other nodes, otherwise (§16.1).
+                    self.mesh_radio_changed();
                 }
                 self.node = Some(*si.key);
                 self.online = true;
@@ -3236,6 +3244,8 @@ impl Core {
         let Ok(p) = Packet::decode(raw) else {
             return;
         };
+        // A node heard directly (§16.1); group envelopes go on to Locate as before.
+        self.hear_signal(&p, snr4, rssi, now);
         if p.ptype != PayloadType::GrpData
             || !matches!(p.route, Route::Flood | Route::TransportFlood)
         {
