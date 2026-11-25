@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Nodes tab: three linked nodes (the radio-screens mockups, Main.dc.html). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M3.5,17a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0M15.5,17a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0M9.5,6a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000" />
+    <path
+        android:pathData="M10.7,8.2l-3.4,6.6M13.3,8.2l3.4,6.6M8.5,17h7"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round" />
+</vector>

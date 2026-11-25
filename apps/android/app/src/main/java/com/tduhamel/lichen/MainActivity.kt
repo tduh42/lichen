@@ -205,6 +205,7 @@ class MainActivity : FragmentActivity() {
             say = e.getString("say"),
             sayPlain = e.getString("sayPlain"),
             tab = e.getString("tab"),
+            mapMode = e.getString("mapMode"),
             screen = e.getString("screen"),
             tcp = e.getString("tcp"),
             media = e.getBoolean("media"),

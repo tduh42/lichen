@@ -1,9 +1,14 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isPopup
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -15,6 +20,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.SharePrecision
+import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.measurements
@@ -227,6 +233,62 @@ class LocationTest : UiTest() {
         advanceUntil("Camille's SOS over", 600) { model.positions.any { it.from.hex() == camille && !it.sos } }
     }
 
+    /** MP-5: the SOS button in the Map's Locate mode too: on, sent to the group, stopped; the
+     * Map still in Locate mode after. */
+    @Test
+    fun MP_5_sosFromLocateMode() = sosFromLocate()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MP_5_sosFromLocateMode_fr() = sosFromLocate()
+
+    private fun sosFromLocate() {
+        launch("demo" to true, "tab" to "map", "mapMode" to "locate")
+        advanceUntil("the demo group", 300) { model.groups.isNotEmpty() }
+        see(R.string.no_search)
+        tap(R.string.sos)
+        compose.onAllNodesWithContentDescription(str(R.string.send_sos)).onFirst().performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        assertTrue(model.sos)
+        advanceUntil("sent", 60) { model.sosStatus?.lastQueuedS != null }
+        tap(R.string.stop_sos)
+        assertFalse(model.sos)
+        tapDesc(R.string.close)
+        assertEquals(AppModel.MapMode.LOCATE, model.mapMode)
+        see(R.string.no_search)
+    }
+
+    /** MP-6: Locate is a mode of the Map: the debug extra `tab locate` opens it; Julien's SOS
+     * counts on the Map tab; Locate shows his search, Positions the map; the two switch. */
+    @Test
+    fun MP_6_locateIsAModeOfTheMap() = locateMode()
+
+    @Test
+    @Config(qualifiers = "+fr-night")
+    fun MP_6_locateIsAModeOfTheMap_frDark() = locateMode()
+
+    private fun locateMode() {
+        launch("demo" to true, "sosdemo" to true, "tab" to "locate")
+        see(R.string.no_search)
+        val julien = { model.contacts.firstOrNull { it.name == "Julien" }?.key?.hex() }
+        advanceUntil("his alert", 900) { julien() != null && model.sosAlert == julien() }
+        tap(R.string.dismiss)
+        // His SOS on the Map tab's badge, said with its name (there is no Locate tab any more).
+        compose.onNode(hasText(str(R.string.tab_map)) and isTab)
+            .assert(hasContentDescription(str(R.string.tab_map) + ", " + plural(R.plurals.sos_active, 1, 1)))
+        see(str(R.string.search_name, "Julien"))
+        see(R.string.start_search)
+        // Positions: the map and its share panel, not the search.
+        tab(R.string.map_positions)
+        see(R.string.location_sharing)
+        assertFalse(has(str(R.string.search_name, "Julien")))
+        tab(R.string.map_locate)
+        see(str(R.string.search_name, "Julien"))
+        assertFalse(has(R.string.location_sharing))
+    }
+
+    private val isTab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+
     /** MP-6: Julien in SOS without GPS: located from his alert; pinged; the group's readings;
      * an estimate. */
     @Test
@@ -243,6 +305,8 @@ class LocationTest : UiTest() {
         val key = contact("Julien").key
         tap(R.string.start_search)
         assertNotNull(model.search(julien()!!))
+        // The Map, in its Locate mode.
+        assertEquals(AppModel.MapMode.LOCATE, model.mapMode)
         see(str(R.string.search_name, "Julien"))
         // Ten minutes, pinged whenever the button allows ("Ping in 12 s" counts down on the
         // screen's own clock, B-and-21; hearing him starts it again).

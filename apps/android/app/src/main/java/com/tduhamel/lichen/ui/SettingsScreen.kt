@@ -94,7 +94,6 @@ fun SettingsScreen(
     radio: () -> Unit = {},
     licences: () -> Unit = {},
     report: () -> Unit = {},
-    nodes: () -> Unit = {},
     radios: () -> Unit = {},
     blocked: () -> Unit = {},
     storage: () -> Unit = {},
@@ -156,15 +155,6 @@ fun SettingsScreen(
                         CardRow(stringResource(R.string.radios), pluralStringResource(R.plurals.radios_saved, model.savedRadios.size, model.savedRadios.size), merge = false) {
                             Text("›", color = lichen.tx2, fontSize = 20.sp)
                         }
-                    }
-                    CardDivider()
-                    // What the radio knows of the mesh (§16).
-                    Box(Modifier.clickable { nodes() }) {
-                        CardRow(
-                            stringResource(R.string.nodes),
-                            if (model.nodes.isEmpty()) stringResource(R.string.nodes_subtitle) else pluralStringResource(R.plurals.nodes_known, model.nodes.size, model.nodes.size),
-                            merge = false,
-                        ) { Text("›", color = lichen.tx2, fontSize = 20.sp) }
                     }
                     CardDivider()
                     val khz = r?.freqKhz?.toInt() ?: 869_618

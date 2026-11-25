@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Looper
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -341,9 +342,10 @@ abstract class UiTest {
         scrollFailure(matcher, why)
     }
 
-    /** One of the four tabs. */
+    /** One of the four tabs, or of the Map's two modes (Positions, Locate): a tab of that
+     * name, not a title that says the same. */
     fun tab(@StringRes id: Int) {
-        compose.onAllNodesWithText(str(id)).onFirst().performClick()
+        compose.onAllNodes(hasText(str(id)) and SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)).onFirst().performClick()
         compose.waitForIdle()
     }
 }

@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,12 +30,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -56,6 +52,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -89,12 +86,12 @@ import com.tduhamel.lichen.model.unhex
 import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
-/** "Locate" (mockup `recherche`): follow an SOS, and search for a group member by radio
- * (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way and how
- * far, the receptions everyone shared, and the actions (ping, bearing, lower power). */
-@OptIn(ExperimentalMaterial3Api::class)
+/** The Map's Locate mode (mockup `recherche`): follow an SOS, and search for a group member by
+ * radio (protocol.md §11): where they probably are (heat map, 68 % / 95 % ellipses), which way
+ * and how far, the receptions everyone shared, and the actions (ping, bearing, lower power). The
+ * Map's own bar (SOS, the modes) is above it. */
 @Composable
-fun SearchScreen(model: AppModel) {
+fun LocateContent(model: AppModel, modifier: Modifier = Modifier) {
     val t = lichen
     val context = LocalContext.current
     var error by remember { mutableStateOf<String?>(null) }
@@ -122,24 +119,10 @@ fun SearchScreen(model: AppModel) {
     val targets = model.searchTargets
     val target = model.searchTarget?.takeIf { it in targets } ?: targets.firstOrNull()
     LaunchedEffect(target) { recenter++ }
-    Scaffold(
-        containerColor = t.bg,
-        contentWindowInsets = WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        target?.let { stringResource(R.string.search_name, model.name(it.unhex())) } ?: stringResource(R.string.tab_search),
-                        fontSize = 22.sp,
-                    )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = t.bg, titleContentColor = t.tx),
-            )
-        },
-    ) { padding ->
+    Box(modifier.fillMaxSize().background(t.bg)) {
         if (target == null) {
             Column(
-                Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                Modifier.fillMaxSize().padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
             ) {
@@ -147,7 +130,7 @@ fun SearchScreen(model: AppModel) {
                 Text(stringResource(R.string.no_search), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
                 Text(stringResource(R.string.no_search_note), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
             }
-            return@Scaffold
+            return@Box
         }
         val node = target.unhex()
         val search = model.search(target)
@@ -155,10 +138,16 @@ fun SearchScreen(model: AppModel) {
         val estimate = if (search == null) null else model.searchEstimate(node)
         val incident = model.incidents[target]
         LazyColumn(
-            Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item {
+                Text(
+                    stringResource(R.string.search_name, model.name(node)), fontSize = 22.sp, color = t.tx,
+                    modifier = Modifier.semantics { heading() },
+                )
+            }
             if (targets.size > 1) item { TargetPicker(model, targets, target) }
             item { StatusBanner(model, incident, search) }
             item {

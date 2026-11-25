@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Chat
-import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.Map
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Badge as M3Badge
@@ -24,8 +23,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -37,6 +41,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.AppModel.MapMode
 import com.tduhamel.lichen.model.AppModel.Tab
 import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.activeIncidents
@@ -46,8 +51,8 @@ import com.tduhamel.lichen.model.unhex
 
 private val TabRoutes = mapOf(
     Tab.MESSAGES to "messages",
+    Tab.NODES to "nodes",
     Tab.MAP to "map",
-    Tab.SEARCH to "search",
     Tab.SETTINGS to "settings",
 )
 
@@ -95,12 +100,17 @@ fun RootScreen(model: AppModel) {
             popUpTo(nav.graph.startDestinationId) { saveState = true }
             launchSingleTop = true
         }
+        // The Map in one of its modes: Locate (the radio search, §11) or the positions.
+        fun map(mode: MapMode) {
+            model.mapMode = mode
+            tab("map")
+        }
         model.sosAlert?.takeIf { !model.lock.locked }?.let { from ->
             SosReceivedDialog(
                 model, from,
-                search = { tab("search") },
+                search = { map(MapMode.LOCATE) },
                 reply = { model.openChat = ChatId.contact(from.unhex()) },
-                map = { tab("map") },
+                map = { map(MapMode.POSITIONS) },
             )
         }
         // A place in a message (ADR-0034): the Map tab, on it.
@@ -111,12 +121,12 @@ fun RootScreen(model: AppModel) {
         }
         // Shared into lichen from another app (ADR-0034): where to send it.
         model.incomingShare?.let { share -> ShareTargetSheet(model, share) { model.incomingShare = null } }
-        // An SOS notification, or the debug extra `screen locate`: the Locate tab on them.
+        // An SOS notification, or the debug extra `screen locate`: the Map's Locate mode on them.
         LaunchedEffect(model.openSearch) {
             val who = model.openSearch ?: return@LaunchedEffect
             model.openSearch = null
             model.searchTarget = who
-            tab("search")
+            map(MapMode.LOCATE)
         }
         NavHost(
             nav,
@@ -145,14 +155,14 @@ fun RootScreen(model: AppModel) {
                     nav.navigate("chat/${chat.route}") { popUpTo("messages") }
                 }
             }
+            // Positions or Locate (a mode of the Map); its SOS button in both.
             composable("map") { MapScreen(model, sos = { nav.navigate("sos") }) }
-            composable("search") { SearchScreen(model) }
             composable("sos") { SosScreen(model, close = { nav.popBackStack() }) }
             composable("settings") {
                 SettingsScreen(
                     model, pair = { nav.navigate("pairing") }, identity = { nav.navigate("identity") }, radio = { nav.navigate("radio") },
                     licences = { nav.navigate("licences") }, report = { nav.navigate("report") },
-                    nodes = { nav.navigate("nodes") }, radios = { nav.navigate("radios") },
+                    radios = { nav.navigate("radios") },
                     blocked = { nav.navigate("blocked") }, storage = { nav.navigate("storage") },
                 )
             }
@@ -174,8 +184,8 @@ fun RootScreen(model: AppModel) {
                 }
             }
             composable("pairing") { PairingScreen(model, back = { nav.popBackStack() }) }
-            // Mesh tools (§16): nodes, a node, a repeater's console, saved radios.
-            composable("nodes") { NodesScreen(model, back = { nav.popBackStack() }) { nav.navigate("node/${it.hex()}") } }
+            // Mesh tools (§16): the Nodes tab, a node, a repeater's console, saved radios.
+            composable("nodes") { NodesScreen(model) { nav.navigate("node/${it.hex()}") } }
             composable("node/{key}") { e ->
                 val key = e.arguments?.getString("key")?.takeIf { it.isHex(32) }?.unhex()
                 if (key != null) {
@@ -208,15 +218,27 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
     val t = lichen
     NavigationBar(containerColor = t.s1) {
         val items = listOf(
-            Triple(Tab.MESSAGES, Icons.AutoMirrored.Outlined.Chat, R.string.tab_messages),
-            Triple(Tab.MAP, Icons.Outlined.Map, R.string.tab_map),
-            Triple(Tab.SEARCH, Icons.Outlined.GpsFixed, R.string.tab_search),
-            Triple(Tab.SETTINGS, Icons.Outlined.Settings, R.string.tab_settings),
+            Triple(Tab.MESSAGES, rememberVectorPainter(Icons.AutoMirrored.Outlined.Chat), R.string.tab_messages),
+            // Three linked nodes: what the radio knows of the mesh (§16).
+            Triple(Tab.NODES, painterResource(R.drawable.ic_nodes), R.string.tab_nodes),
+            Triple(Tab.MAP, rememberVectorPainter(Icons.Outlined.Map), R.string.tab_map),
+            Triple(Tab.SETTINGS, rememberVectorPainter(Icons.Outlined.Settings), R.string.tab_settings),
         )
         for ((tab, icon, label) in items) {
             val r = TabRoutes.getValue(tab)
+            val badge = when (tab) {
+                Tab.MESSAGES -> model.totalUnread
+                // An SOS to follow, in the Map's Locate mode.
+                Tab.MAP -> model.activeIncidents.size
+                else -> 0
+            }
+            // The badge said with the tab's name: Material hides the icon's badge from TalkBack.
+            val said = if (badge == 0) null else stringResource(label) + ", " + pluralStringResource(
+                if (tab == Tab.MAP) R.plurals.sos_active else R.plurals.unread, badge, badge,
+            )
             NavigationBarItem(
                 selected = route == r,
+                modifier = if (said != null) Modifier.semantics { contentDescription = said } else Modifier,
                 onClick = {
                     model.tab = tab
                     nav.navigate(r) {
@@ -225,17 +247,7 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
                         restoreState = true
                     }
                 },
-                icon = {
-                    TabIcon(
-                        icon,
-                        when (tab) {
-                            Tab.MESSAGES -> model.totalUnread
-                            // A search to follow.
-                            Tab.SEARCH -> model.activeIncidents.size
-                            else -> 0
-                        },
-                    )
-                },
+                icon = { TabIcon(icon, badge) },
                 label = { Text(stringResource(label), fontSize = 12.sp, fontWeight = FontWeight.Medium) },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = t.tx,
@@ -250,7 +262,7 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
 }
 
 @Composable
-private fun TabIcon(icon: ImageVector, badge: Int) {
+private fun TabIcon(icon: Painter, badge: Int) {
     if (badge > 0) {
         BadgedBox(badge = { M3Badge(containerColor = lichen.actBg, contentColor = lichen.actFg) { Text("$badge") } }) {
             Icon(icon, null)

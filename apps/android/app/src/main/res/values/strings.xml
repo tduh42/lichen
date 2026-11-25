@@ -6,8 +6,16 @@
     <!-- Tabs -->
     <string name="tab_messages">Messages</string>
     <string name="tab_map">Map</string>
-    <string name="tab_search">Locate</string>
+    <string name="tab_nodes">Nodes</string>
     <string name="tab_settings">Settings</string>
+    <!-- The Map's two modes (a segmented control at its top). -->
+    <string name="map_positions">Positions</string>
+    <string name="map_locate">Locate</string>
+    <!-- The Map tab's badge, said with its name: the SOS cases to follow. -->
+    <plurals name="sos_active">
+        <item quantity="one">%1$d SOS</item>
+        <item quantity="other">%1$d SOS</item>
+    </plurals>
 
     <!-- Conversations -->
     <string name="new_short">New</string>
@@ -1013,12 +1021,6 @@
     <string name="err_not_a_phrase">These words are not a recovery phrase. Check each word, and their order.</string>
     <string name="err_backup_damaged">This backup is damaged or incomplete: nothing was restored.</string>
     <!-- Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044) -->
-    <string name="nodes">Nodes</string>
-    <plurals name="nodes_known">
-        <item quantity="one">%1$d known</item>
-        <item quantity="other">%1$d known</item>
-    </plurals>
-    <string name="nodes_subtitle">Repeaters, rooms and radios around</string>
     <string name="nodes_need_radio">Connect your radio to see the nodes it knows.</string>
     <string name="nodes_none_yet">The radio has not reported any node yet.</string>
     <string name="nodes_note">Repeaters, room servers and people’s radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes’ own adverts.</string>

@@ -94,7 +94,10 @@ data class MapPin(val lat: Double, val lon: Double, val version: Int) {
 /** The app side of the lichen core: runs it (frames in and out, timer), keeps the UI state.
  * The Kotlin counterpart of the iOS app's `AppModel`; everything runs on the main thread. */
 class AppModel(val app: Application) {
-    enum class Tab { MESSAGES, MAP, SEARCH, SETTINGS }
+    enum class Tab { MESSAGES, NODES, MAP, SETTINGS }
+
+    /** The Map tab's two modes: everyone's positions, or Locate (the radio search, §11). */
+    enum class MapMode { POSITIONS, LOCATE }
 
     /** The link to the radio, as the radio card shows it. */
     sealed interface RadioState {
@@ -117,7 +120,10 @@ class AppModel(val app: Application) {
         val say: String? = null,
         /** Answer the first MeshCore direct message with this (§15). */
         val sayPlain: String? = null,
+        /** `nodes`, `map`, `locate` (the Map in Locate mode) or `settings`. */
         val tab: String? = null,
+        /** The Map's mode: `locate` or `positions`. */
+        val mapMode: String? = null,
         val screen: String? = null,
         /** A companion to reach over TCP at launch, e.g. `10.0.2.2:5000` (`lichen bridge`). */
         val tcp: String? = null,
@@ -125,7 +131,7 @@ class AppModel(val app: Application) {
         val media: Boolean = false,
         /** Share our position (100 m) with this contact at launch. */
         val share: String? = null,
-        /** An SOS from Julien (screenshots of the alert and the Locate tab). */
+        /** An SOS from Julien (screenshots of the alert and of the Map in Locate mode). */
         val sosDemo: Boolean = false,
         /** The welcome screens: shown (true), skipped (false), or as saved (null). */
         val onboarding: Boolean? = null,
@@ -370,6 +376,9 @@ class AppModel(val app: Application) {
         private set
     var tab by mutableStateOf(Tab.MESSAGES)
 
+    /** What the Map tab shows: positions, or Locate. */
+    var mapMode by mutableStateOf(MapMode.POSITIONS)
+
     /** A chat to open (debug extra `open`, notifications later). */
     var openChat by mutableStateOf<ChatId?>(null)
 
@@ -438,7 +447,8 @@ class AppModel(val app: Application) {
     /** The sender (hex) whose full-screen SOS alert is up, until dismissed. */
     var sosAlert by mutableStateOf<String?>(null)
 
-    /** The person (hex) the Locate tab shows; `openSearch` asks the tab to open on them. */
+    /** The person (hex) the Map's Locate mode shows; `openSearch` asks the Map to open on them
+     * in that mode. */
     var searchTarget by mutableStateOf<String?>(null)
     var openSearch by mutableStateOf<String?>(null)
 
@@ -452,6 +462,7 @@ class AppModel(val app: Application) {
     fun showOnMap(lat: Double, lon: Double) {
         mapPin = MapPin(lat, lon, (mapPin?.version ?: 0) + 1)
         tab = Tab.MAP
+        mapMode = MapMode.POSITIONS
         openMap = true
     }
 
@@ -466,7 +477,7 @@ class AppModel(val app: Application) {
     /** What our SOS is doing. */
     var sosStatus by mutableStateOf<SosStatus?>(null)
 
-    /** The compass heading (degrees from true north) while the Locate tab is on screen. */
+    /** The compass heading (degrees from true north) while the Map is on screen in Locate mode. */
     var heading by mutableStateOf<Double?>(null)
     private val compass = Compass(app) { heading = it }
     internal var lastBatteryReport = 0L
@@ -479,7 +490,7 @@ class AppModel(val app: Application) {
         if (changed) updateLocator()
     }
 
-    /** The compass, while the Locate tab is on screen. */
+    /** The compass, while the Map is on screen in Locate mode. */
     fun useHeading(on: Boolean) {
         if (on && compass.available) {
             compass.start()
@@ -795,9 +806,18 @@ class AppModel(val app: Application) {
         }
         options.onboarding?.let { markOnboarded(!it) }
         when (options.tab) {
+            "nodes" -> tab = Tab.NODES
             "map" -> tab = Tab.MAP
-            "locate" -> tab = Tab.SEARCH
+            // Locate is a mode of the Map.
+            "locate" -> {
+                tab = Tab.MAP
+                mapMode = MapMode.LOCATE
+            }
             "settings" -> tab = Tab.SETTINGS
+        }
+        when (options.mapMode) {
+            "locate" -> mapMode = MapMode.LOCATE
+            "positions" -> mapMode = MapMode.POSITIONS
         }
         if (options.demo) startDemo()
         options.tcp?.let { connectTcp(it) }

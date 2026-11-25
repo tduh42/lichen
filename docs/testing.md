@@ -61,7 +61,7 @@ stock-client people send reaches the radio even when the busy air loses it), `Li
 |----|----------|----------|-------|------------|
 | CT-1 | Contacts list | People only, sorted, names and hop badges right | | FFI ct_1_contacts_list<br>iOS ContactsTests.testCT1_ContactsList<br>Android ContactsTest: CT_1_contactsList (+fr), CT_1_contactsSortedAsPeopleReadThem<br>· real radio: every person a real companion holds |
 | CT-2 | Rename a contact | Shown everywhere (list, chat title, notifications); reset restores the node name | | FFI ct_2_rename_a_contact<br>iOS ContactsTests.testCT2_RenameAContact<br>Android ContactsTest: CT_2_renameAContact (+fr), CT_2_contactsMeshcorePublicKey (+fr) |
-| CT-3 | Nodes: repeaters, rooms, heard nodes | Each with its kind, position, last heard | | FFI ct_3_nodes<br>iOS ContactsTests.testCT3_Nodes<br>Android ContactsTest: CT_3_nodes (+fr dark), CT_3_nodeMeshcorePublicKey (+fr) |
+| CT-3 | The Nodes tab: repeaters, rooms, heard nodes | Opens on the node list, each with its kind, position, last heard; a node's page pushes from it; Settings no longer lists them | `-tab nodes` | FFI ct_3_nodes<br>iOS ContactsTests.testCT3_Nodes<br>Android ContactsTest: CT_3_nodes (+fr dark), CT_3_nodesTabOpensOnTheList (+fr), CT_3_nodeMeshcorePublicKey (+fr) |
 | CT-4 | Room: log in, read posts, post | Posts arrive, the room's row is in Messages, a post goes out | `-roomLogin hello -open "Refuge board"` | FFI ct_4_room_log_in_read_and_post<br>iOS ContactsTests.testCT4_RoomLoginReadAndPost<br>Android ContactsTest.CT_4_roomLogInReadPost (+fr) |
 | CT-5 | Room: wrong password | Refused, said so | | FFI ct_5_room_wrong_password<br>iOS ContactsTests.testCT5_RoomWrongPassword<br>Android ContactsTest.CT_5_roomWrongPassword |
 | CT-6 | Repeater: admin login, status, CLI | Status read, a CLI command answered | | FFI ct_6_repeater_admin_status_and_cli<br>iOS ContactsTests.testCT6_RepeaterAdmin<br>Android ContactsTest.CT_6_repeaterAdmin (+fr) |
@@ -135,8 +135,8 @@ stock-client people send reaches the radio even when the busy air loses it), `Li
 | MP-2 | Positions received on the map | Camille exact, Julien coarse (1 km cell) | | FFI mp_2_positions_received_on_the_map<br>iOS LocationTests.testMP2_PositionsReceivedOnTheMap<br>Android LocationTest.MP_2_positionsReceivedOnTheMap (+fr dark) |
 | MP-3 | Nodes layer | Repeaters and rooms where they advertise | | FFI mp_3_nodes_layer<br>iOS LocationTests.testMP3_NodesLayer<br>Android LocationTest.MP_3_nodesLayer (+fr) |
 | MP-4 | Offline maps | Download a region; the map works without network | | iOS LocationTests.testMP4_OfflineMapsOffered<br>Android LocationTest.MP_4_offlineMapsOffered (+fr)<br>· not automated: downloading a region, the map without network (Internet) |
-| MP-5 | SOS: send, receive, stop | Beacon shown to the group; stop ends it | `-sosdemo YES` | FFI mp_5_sos_send_receive_stop<br>iOS LocationTests.testMP5_SosReceivedSentStopped<br>Android LocationTest: MP_5_sendAndStopAnSos (+fr dark), MP_5_receiveSos (+fr) |
-| MP-6 | Locate a member without GPS | Search converges, estimate shown | `-sosdemo YES` | FFI mp_6_locate_a_member_without_gps<br>iOS LocationTests.testMP6_LocateAMemberWithoutGps<br>Android LocationTest.MP_6_locateAMemberWithoutGps (+fr) |
+| MP-5 | SOS: send, receive, stop | Beacon shown to the group; stop ends it; the SOS button in both of the Map's modes | `-sosdemo YES` | FFI mp_5_sos_send_receive_stop<br>iOS LocationTests.testMP5_SosReceivedSentStopped<br>Android LocationTest: MP_5_sendAndStopAnSos (+fr dark), MP_5_receiveSos (+fr), MP_5_sosFromLocateMode (+fr) |
+| MP-6 | Locate a member without GPS | The Map's Locate mode shows the search; it converges, estimate shown; an SOS counts on the Map tab | `-sosdemo YES -tab locate` | FFI mp_6_locate_a_member_without_gps<br>iOS LocationTests.testMP6_LocateAMemberWithoutGps<br>Android LocationTest: MP_6_locateIsAModeOfTheMap (+fr dark), MP_6_locateAMemberWithoutGps (+fr) |
 
 ## 9. Settings
 

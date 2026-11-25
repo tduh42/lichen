@@ -1,6 +1,9 @@
 package com.tduhamel.lichen.ui
 
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.isRoot
@@ -142,7 +145,6 @@ class ContactsTest : UiTest() {
     @Config(qualifiers = "+fr-night")
     fun CT_3_nodes_frDark() {
         assertEquals("1 saut", plural(R.plurals.hops_n, 1, 1))
-        assertEquals("1 connu", plural(R.plurals.nodes_known, 1, 1))
         nodes()
     }
 
@@ -151,9 +153,7 @@ class ContactsTest : UiTest() {
         advanceUntil("the radio's nodes and Lucie's advert", 20) {
             model.nodes.any { it.name == "hub" } && model.nodes.any { it.name == "Lucie" }
         }
-        tab(R.string.tab_settings)
-        see(pluralSafe(model.nodes.size))
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         text("hub").assertIsDisplayed()
         text("crest").assertIsDisplayed()
         val crest = model.nodes.first { it.name == "crest" }
@@ -173,7 +173,36 @@ class ContactsTest : UiTest() {
         text(str(R.string.last_heard, model.heard(hub.lastHeardS)), substring = true).assertIsDisplayed()
     }
 
-    private fun pluralSafe(n: Int) = plural(R.plurals.nodes_known, n, n)
+    /** CT-3: the Nodes tab opens on the node list (from the debug extra `tab nodes` and from the
+     * tab bar), a node's page pushes from it and comes back to it; Settings no longer lists the
+     * nodes. */
+    @Test
+    fun CT_3_nodesTabOpensOnTheList() = nodesTab()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_3_nodesTabOpensOnTheList_fr() = nodesTab()
+
+    private fun nodesTab() {
+        launch("demo" to true, "tab" to "nodes")
+        advanceUntil("the radio's nodes", 20) { model.nodes.any { it.name == "hub" } }
+        // Its title and its list at once; a tab's root has no way back.
+        assertTrue(has(R.string.tab_nodes))
+        see("hub")
+        assertFalse(hasDesc(str(R.string.back)))
+        tap("hub")
+        see(R.string.advertised_position)
+        tapDesc(R.string.back)
+        see("crest")
+        // Settings: no Nodes row, only the tab of that name.
+        tab(R.string.tab_settings)
+        see(R.string.radio_settings)
+        assertEquals(0, compose.onAllNodes(hasText(str(R.string.tab_nodes)) and !isTab).fetchSemanticsNodes().size)
+        tab(R.string.tab_nodes)
+        see("hub")
+    }
+
+    private val isTab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
 
     /** The MeshCore public key row of a contact or node: the key in groups of 8; tapped, its
      * 64 hex digits on the clipboard and "Copied" (F-1). */
@@ -209,7 +238,7 @@ class ContactsTest : UiTest() {
         copiesKey(contact("Marc").key)
     }
 
-    /** CT-3 (F-1): a node's MeshCore public key, copied from its screen (Settings › Nodes). */
+    /** CT-3 (F-1): a node's MeshCore public key, copied from its screen (the Nodes tab). */
     @Test
     fun CT_3_nodeMeshcorePublicKey() = nodeKey()
 
@@ -220,8 +249,7 @@ class ContactsTest : UiTest() {
     private fun nodeKey() {
         launch("demo" to true)
         advanceUntil("the radio's nodes") { model.nodes.any { it.name == "hub" } }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("hub")
         copiesKey(model.nodes.first { it.name == "hub" }.key)
     }
@@ -238,8 +266,7 @@ class ContactsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the room server") { model.nodes.any { it.name == "Refuge board" } }
         val board = model.nodes.first { it.name == "Refuge board" }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("hello")
@@ -261,8 +288,8 @@ class ContactsTest : UiTest() {
             model.last(ChatId.room(board.key))?.let { it.outgoing && it.status !is com.tduhamel.lichen.core.MessageStatus.Waiting } == true
         }
         text("Two of us tonight").assertIsDisplayed()
-        // Back to the node, the nodes, Settings: then Messages.
-        repeat(3) { tapDesc(R.string.back) }
+        // Back to the node, then the Nodes tab: then Messages.
+        repeat(2) { tapDesc(R.string.back) }
         tab(R.string.tab_messages)
         text("Refuge board").assertIsDisplayed()
     }
@@ -273,8 +300,7 @@ class ContactsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the room server") { model.nodes.any { it.name == "Refuge board" } }
         val board = model.nodes.first { it.name == "Refuge board" }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("wrong")
@@ -297,8 +323,7 @@ class ContactsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the hub") { model.nodes.any { it.name == "hub" } }
         val hub = model.nodes.first { it.name == "hub" }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("hub")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("password")
@@ -321,8 +346,7 @@ class ContactsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the crest") { model.nodes.any { it.name == "crest" } }
         val crest = model.nodes.first { it.name == "crest" }
-        tab(R.string.tab_settings)
-        tap(R.string.nodes)
+        tab(R.string.tab_nodes)
         tap("crest")
         tap(R.string.trace_path)
         advanceUntil("the trace back", 30) { model.trace(crest.key)?.state == com.tduhamel.lichen.core.TraceState.DONE }
