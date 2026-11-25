@@ -255,7 +255,7 @@ struct GroupView: View {
                     if let e = model.startSearch(m.key) {
                         error = e
                     } else {
-                        model.tab = .search
+                        model.openLocate()
                     }
                 } label: {
                     Label("Locate \(m.name)", systemImage: "scope")

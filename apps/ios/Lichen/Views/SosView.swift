@@ -197,7 +197,7 @@ struct SosReceivedView: View {
                         }
                     }
                     model.searchTarget = from
-                    model.tab = .search
+                    model.openLocate()
                     model.sosAlert = nil
                 }
                 .buttonStyle(.primary)
@@ -210,7 +210,7 @@ struct SosReceivedView: View {
                     .buttonStyle(.secondary)
                     .disabled(!model.contacts.contains { $0.key == from })
                     Button("Show on the map") {
-                        model.tab = .map
+                        model.openMap()
                         model.sosAlert = nil
                     }
                     .buttonStyle(.secondary)

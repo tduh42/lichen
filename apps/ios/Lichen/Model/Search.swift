@@ -64,7 +64,7 @@ extension AppModel {
         // -screen locate: straight to the search, for screenshots.
         if debugScreen == "locate" {
             _ = startSearch(from)
-            tab = .search
+            openLocate()
             return
         }
         #endif

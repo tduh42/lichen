@@ -11,11 +11,9 @@ final class ContactsTests: LichenUITest {
                                          name, ", " + tr("lichen") + ",", tr("MeshCore chat · not lichen-encrypted"))).firstMatch
     }
 
-    /// Settings › Nodes, then the node `name`.
+    /// The Nodes tab, then the node `name`.
     private func openNode(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        tab(.settings)
-        let nodes = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Nodes"))).firstMatch
-        wait(nodes, 10, "no Nodes", file: file, line: line).tap()
+        tab(.nodes)
         let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch
         wait(row, 20, "no node \(name)", file: file, line: line).tap()
         wait(app.navigationBars[name], 5, "\(name) did not open", file: file, line: line)
@@ -82,13 +80,26 @@ final class ContactsTests: LichenUITest {
              "her own name did not come back")
     }
 
+    /// CT-3: the Nodes tab opens on the node list, under its large title; Settings no longer
+    /// lists the nodes.
+    func testCT3_NodesTabOpensOnTheList() {
+        launch(["-quietDemo", "YES"])
+        tab(.nodes)
+        wait(app.navigationBars[tr("Nodes")], 5, "the Nodes tab has no title")
+        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'hub'")).firstMatch, 20, "no hub in the list")
+        keep("ct-nodes-tab")
+        tab(.settings)
+        wait(cardButton(tr("Radio settings")), 10, "not on Settings")
+        let nodes = NSPredicate(format: "label BEGINSWITH %@", tr("Nodes"))
+        XCTAssertEqual(app.buttons.matching(nodes).count, app.tabBars.buttons.matching(nodes).count,
+                       "Settings still lists the nodes")
+    }
+
     /// CT-3: the nodes the radio knows: repeaters and the room with their kind, the positions
     /// they advertise and when they were last heard; Lucie, heard, not added.
     func testCT3_Nodes() {
         launch()
-        tab(.settings)
-        let nodes = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Nodes"))).firstMatch
-        wait(nodes, 10).tap()
+        tab(.nodes)
         for (name, kind) in [("hub", "Repeater"), ("crest", "Repeater"), ("Refuge board", "Room server"), ("Lucie", "Companion")] {
             let n = wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch, 20, "no node \(name)")
             XCTAssertTrue(n.label.contains(tr(kind)), "\(name): \(n.label)")
@@ -302,8 +313,7 @@ final class ContactsTests: LichenUITest {
         XCTAssertNotEqual(marc, camille)
         button(tr("Done")).tap()
         back()
-        tab(.settings)
-        wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Nodes"))).firstMatch, 10).tap()
+        tab(.nodes)
         wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'hub'")).firstMatch, 20, "no hub").tap()
         let hub = checkMeshCoreKey(meshcoreKey)
         XCTAssertFalse([camille, marc].contains(hub), "the hub's key is someone else's")

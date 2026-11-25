@@ -273,8 +273,23 @@ final class AppModel {
     var debugInvite: String?
     @ObservationIgnored private var debugInviteMade = false
     var tab = Tab.messages
+    /// What the Map tab shows: the positions, or Locate, the search by radio (§11).
+    var mapMode = MapMode.positions
 
-    enum Tab: Hashable { case messages, map, search, settings }
+    enum Tab: Hashable { case messages, nodes, map, settings }
+    enum MapMode: Hashable { case positions, locate }
+
+    /// The Map tab in Locate: following an SOS, or locating someone.
+    func openLocate() {
+        mapMode = .locate
+        tab = .map
+    }
+
+    /// The Map tab, showing the positions.
+    func openMap() {
+        mapMode = .positions
+        tab = .map
+    }
 
     // Location (protocol.md §12).
     var shares: [ShareInfo] = []
@@ -423,7 +438,7 @@ final class AppModel {
             // An SOS notification opens its search.
             if case let .contact(key) = chat, let i = incidents[key], i.state() != .ended {
                 searchTarget = key
-                tab = .search
+                openLocate()
                 return
             }
             tab = .messages
@@ -463,8 +478,15 @@ final class AppModel {
         if args.bool(forKey: "demo") { startDemo() }
         switch args.string(forKey: "tab") {
         case "map": tab = .map
-        case "locate": tab = .search
+        case "locate": openLocate()
+        case "nodes": tab = .nodes
         case "settings": tab = .settings
+        default: break
+        }
+        // -mapMode locate|positions: what the Map tab shows.
+        switch args.string(forKey: "mapMode") {
+        case "locate": mapMode = .locate
+        case "positions": mapMode = .positions
         default: break
         }
         debugScreen = args.string(forKey: "screen")
@@ -2252,7 +2274,7 @@ final class AppModel {
     /// its tiles (offline areas included).
     func showOnMap(lat: Double, lon: Double) {
         mapPin = MapPin(lat: lat, lon: lon, version: (mapPin?.version ?? 0) + 1)
-        tab = .map
+        openMap()
     }
 
     func setSos(_ on: Bool) {

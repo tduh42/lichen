@@ -3,7 +3,7 @@ import SwiftUI
 // Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044): the nodes the radio knows, a
 // node's path and trace, room servers and repeaters, saved radios.
 
-/// Settings › Nodes: what the radio knows or heard, the most recently heard first (§16.1).
+/// The Nodes tab: what the radio knows or heard, the most recently heard first (§16.1).
 struct NodesView: View {
     @Environment(AppModel.self) private var model
     @State private var filter = Filter.all
@@ -72,7 +72,7 @@ struct NodesView: View {
         .screen()
         .searchable(text: $query, prompt: Text("Name"))
         .navigationTitle("Nodes")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(.large)
     }
 }
 

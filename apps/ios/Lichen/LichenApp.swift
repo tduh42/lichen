@@ -80,12 +80,15 @@ struct RootView: View {
                 .tabItem { Label("Messages", systemImage: "bubble.left") }
                 .tag(AppModel.Tab.messages)
                 .badge(model.totalUnread)
+            // What the radio knows of the mesh (§16): repeaters, rooms and people's radios.
+            NavigationStack { NodesView() }
+                .tabItem { Label("Nodes", systemImage: "point.3.connected.trianglepath.dotted") }
+                .tag(AppModel.Tab.nodes)
+            // Positions, and Locate (the search by radio) as a mode of the map: the badge
+            // counts the SOS cases still active.
             MapScreen()
                 .tabItem { Label("Map", systemImage: "map") }
                 .tag(AppModel.Tab.map)
-            SearchView()
-                .tabItem { Label("Locate", systemImage: "scope") }
-                .tag(AppModel.Tab.search)
                 .badge(model.activeIncidents.count)
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }

@@ -96,6 +96,36 @@ final class LocationTests: LichenUITest {
         wait(button(tr("Send an SOS")), 5, "the SOS did not stop")
     }
 
+    /// MP-5: in Locate, the Map's other mode, an SOS alert still comes over everything, and the
+    /// SOS button stays at the top: ours starts and stops from there.
+    func testMP5_SosFromLocate() {
+        launch(["-tab", "locate", "-sosdemo", "YES"])
+        wait(button(tr("Dismiss")), 90, "no SOS alert over Locate").tap()
+        XCTAssertTrue(button(tr("Positions")).exists, "not on the Map's Locate")
+        button(tr("SOS")).tap()
+        let hold = wait(button(tr("Send an SOS")), 5, "no SOS from Locate")
+        hold.press(forDuration: 3.5)
+        let stop = wait(button(tr("Stop the SOS")), 5, "the SOS did not start")
+        keep("mp-sos-from-locate")
+        stop.tap()
+        wait(button(tr("Send an SOS")), 5, "the SOS did not stop")
+    }
+
+    /// MP-6: Locate is a mode of the Map (Positions | Locate at the top): it shows the search
+    /// for Julien, whose SOS came without GPS; Positions brings the map back.
+    func testMP6_LocateIsAModeOfTheMap() {
+        launch(["-tab", "map", "-sosdemo", "YES"])
+        wait(button(tr("Dismiss")), 90, "no SOS from Julien").tap()
+        // The Map tab counts the SOS cases still active (the Locate tab did).
+        let badge = app.tabBars.buttons.element(boundBy: Tab.map.rawValue).value as? String ?? ""
+        XCTAssertTrue(badge.contains("1"), "the Map tab's badge: \(badge)")
+        locateMode()
+        wait(element(tr("Locate · %@", "Julien")), 10, "Locate does not show Julien")
+        keep("mp-locate-mode")
+        button(tr("Positions")).tap()
+        wait(button(tr("Show everyone")), 5, "the map did not come back")
+    }
+
     /// MP-6: Julien, without GPS, located by radio: started from his alert, the search opens on
     /// him, takes measures, and shows where he probably is, in metres or kilometres (D-13).
     func testMP6_LocateAMemberWithoutGps() {

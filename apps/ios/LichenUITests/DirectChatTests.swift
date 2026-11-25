@@ -316,8 +316,10 @@ final class DirectChatTests: LichenUITest {
         XCTAssertEqual(composer.value as? String, text, "copied text")
         // The place: Show on the map.
         menu(textOf(text), tr("Show on the map"))
-        wait(app.tabBars.buttons.element(boundBy: 1), 5)
-        XCTAssertTrue(app.tabBars.buttons.element(boundBy: 1).isSelected, "the map did not open")
+        let map = app.tabBars.buttons.element(boundBy: Tab.map.rawValue)
+        wait(map, 5)
+        XCTAssertTrue(map.isSelected, "the map did not open")
+        XCTAssertTrue(button(tr("Show everyone")).exists, "the map did not open on the positions")
         keep("dm-place-map")
     }
 }

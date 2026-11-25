@@ -156,10 +156,25 @@ class LichenUITest: XCTestCase {
         app.navigationBars.buttons.element(boundBy: 0).tap()
     }
 
-    enum Tab: Int { case messages, map, locate, settings }
+    /// The tabs, in their order: Locate is a mode of the Map (`locateMode()`).
+    enum Tab: Int { case messages, nodes, map, settings }
 
     func tab(_ tab: Tab) {
         app.tabBars.buttons.element(boundBy: tab.rawValue).tap()
+    }
+
+    /// The Map tab in Locate, its other mode (Positions | Locate at the top). A tap while a
+    /// full-screen alert is still going away is lost (MP-6, French dark run): tapped again
+    /// until Locate is the selected mode.
+    func locateMode(file: StaticString = #filePath, line: UInt = #line) {
+        tab(.map)
+        let locate = wait(button(tr("Locate")), 10, "no Locate on the map", file: file, line: line)
+        for _ in 0..<3 where !locate.isSelected {
+            locate.tap()
+            let deadline = Date().addingTimeInterval(3)
+            while !locate.isSelected && Date() < deadline { pause(0.3) }
+        }
+        XCTAssertTrue(locate.isSelected, "the map is not in Locate", file: file, line: line)
     }
 
     // MARK: Waiting
