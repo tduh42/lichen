@@ -5,6 +5,9 @@ import com.tduhamel.lichen.core.ChannelCode
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.LinkKind
 import com.tduhamel.lichen.core.NodeInfo
+import com.tduhamel.lichen.core.NodeRoute
+import com.tduhamel.lichen.core.SignalRating
+import com.tduhamel.lichen.core.SignalReading
 import com.tduhamel.lichen.core.PathHop
 import com.tduhamel.lichen.core.SavedRadio
 import com.tduhamel.lichen.core.ServerInfo
@@ -20,6 +23,76 @@ fun AppModel.nodePath(key: ByteArray): List<PathHop>? {
     meshToolsVersion
     return runCatching { core.nodePath(key) }.getOrNull()
 }
+
+/** The route to [key] (protocol §16.3): our radio, the repeaters of its path, the node; each
+ * leg's last SNR towards us, or none when nothing measured it. Read again when the nodes or a
+ * trace change. */
+fun AppModel.nodeRoute(key: ByteArray): NodeRoute? {
+    meshToolsVersion
+    nodes
+    return runCatching { core.nodeRoute(key) }.getOrNull()
+}
+
+/** What our radio heard of [key] directly, the last 7 days (ADR-0049), oldest first. */
+fun AppModel.nodeSignalHistory(key: ByteArray): List<SignalReading> {
+    meshToolsVersion
+    nodes
+    return runCatching { core.nodeSignalHistory(key) }.getOrDefault(emptyList()).sortedBy { it.atS }
+}
+
+/** Where [key] shows on the map: its advertised position, else the farthest stop of its route
+ * that advertises one; null when none does. */
+fun AppModel.nodePlace(key: ByteArray): Pair<Double, Double>? {
+    node(key)?.let { n -> if (n.lat != null && n.lon != null) return n.lat!! to n.lon!! }
+    return nodeRoute(key)?.stops?.drop(1)?.lastOrNull { it.lat != null && it.lon != null }?.let { it.lat!! to it.lon!! }
+}
+
+/** The Map tab, in Positions mode, centred on [key] (a node's page's Show on the map). */
+fun AppModel.showNodeOnMap(key: ByteArray) {
+    val (lat, lon) = nodePlace(key) ?: return
+    mapFocus = MapPin(lat, lon, (mapFocus?.version ?: 0) + (mapPin?.version ?: 0) + 1)
+    tab = AppModel.Tab.MAP
+    mapMode = AppModel.MapMode.POSITIONS
+    openMap = true
+}
+
+/** Heard directly in the last 24 h (ADR-0049): the Nodes tab's "In reach". */
+fun NodeInfo.inReach(nowS: Long): Boolean =
+    signal != SignalRating.NONE && signalAtS?.let { nowS - it.toLong() <= 86_400 } == true
+
+/** Heard at all, directly or not, in the last [seconds]. */
+fun NodeInfo.heardWithin(nowS: Long, seconds: Long): Boolean = lastHeardS?.let { nowS - it.toLong() <= seconds } == true
+
+private fun SignalRating.rank(): Int = when (this) {
+    SignalRating.GOOD -> 0
+    SignalRating.FAIR -> 1
+    SignalRating.BAD -> 2
+    SignalRating.NONE -> 3
+}
+
+/** The Nodes tab's two sections: in reach, by rating then SNR; through repeaters, by hops then
+ * the last heard, the nodes with no known path last. */
+fun nodeSections(nodes: List<NodeInfo>, nowS: Long): Pair<List<NodeInfo>, List<NodeInfo>> {
+    val (reach, through) = nodes.partition { it.inReach(nowS) }
+    return reach.sortedWith(compareBy<NodeInfo> { it.signal.rank() }.thenByDescending { it.snrDb ?: Float.NEGATIVE_INFINITY }) to
+        through.sortedWith(
+            compareBy<NodeInfo> { it.hops == null }.thenBy { it.hops?.toInt() ?: 0 }.thenByDescending { it.lastHeardS?.toLong() ?: 0L },
+        )
+}
+
+/** "1.2 km NE", "300 m S" from the phone, when both positions are known. */
+fun AppModel.distanceBearing(lat: Double?, lon: Double?): String? {
+    if (lat == null || lon == null) return null
+    val (d, b) = distanceTo(lat, lon) ?: return null
+    val points = app.resources.getString(R.string.compass_points).split(',')
+    val point = points[((b + 22.5) / 45).toInt().mod(8)]
+    // "850 m", "2.4 km", in the phone's language (as the SOS screen writes it).
+    val far = if (d < 1_000) "${kotlin.math.round(d).toInt()} m" else "%.1f km".format(d / 1000)
+    return "$far $point"
+}
+
+/** An SNR as people read it: "7.5 dB", "−3.0 dB" (a true minus), the decimal of the language. */
+fun dbText(snr: Float): String = (if (snr <= -0.05f) "−" else "") + "%.1f dB".format(kotlin.math.abs(snr))
 
 fun AppModel.trace(key: ByteArray): TraceInfo? {
     meshToolsVersion

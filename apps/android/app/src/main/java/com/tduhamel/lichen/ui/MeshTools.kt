@@ -1,5 +1,50 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import com.tduhamel.lichen.core.NodeRoute
+import com.tduhamel.lichen.core.RouteLeg
+import com.tduhamel.lichen.core.RouteStop
+import com.tduhamel.lichen.core.SignalRating
+import com.tduhamel.lichen.core.SignalReading
+import com.tduhamel.lichen.model.dbText
+import com.tduhamel.lichen.model.distanceBearing
+import com.tduhamel.lichen.model.heardWithin
+import com.tduhamel.lichen.model.initials
+import com.tduhamel.lichen.model.nodePlace
+import com.tduhamel.lichen.model.nodeRoute
+import com.tduhamel.lichen.model.nodeSections
+import com.tduhamel.lichen.model.nodeSignalHistory
+import com.tduhamel.lichen.model.showNodeOnMap
+import com.tduhamel.lichen.model.wallNow
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -78,11 +123,9 @@ import com.tduhamel.lichen.core.LinkKind
 import com.tduhamel.lichen.core.MeshChannel
 import com.tduhamel.lichen.core.NodeInfo
 import com.tduhamel.lichen.core.NodeKind
-import com.tduhamel.lichen.core.PathHop
 import com.tduhamel.lichen.core.SavedRadio
 import com.tduhamel.lichen.core.ServerLogin
 import com.tduhamel.lichen.core.ServerStats
-import com.tduhamel.lichen.core.TraceInfo
 import com.tduhamel.lichen.core.TraceState
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
@@ -92,7 +135,6 @@ import com.tduhamel.lichen.model.display
 import com.tduhamel.lichen.model.forgetRadio
 import com.tduhamel.lichen.model.heard
 import com.tduhamel.lichen.model.node
-import com.tduhamel.lichen.model.nodePath
 import com.tduhamel.lichen.model.parseChannelQr
 import com.tduhamel.lichen.model.refreshSavedRadios
 import com.tduhamel.lichen.model.requestNeighbours
@@ -145,12 +187,6 @@ fun loginLabel(res: android.content.res.Resources, login: ServerLogin): String =
 private val ServerLogin.isIn: Boolean
     get() = this == ServerLogin.GUEST || this == ServerLogin.READ_ONLY || this == ServerLogin.READ_WRITE || this == ServerLogin.ADMIN
 
-private fun hopsText(res: android.content.res.Resources, hops: UByte?): String = when (hops) {
-    null -> res.getString(R.string.hops_flood)
-    0.toUByte() -> res.getString(R.string.hops_direct)
-    else -> res.getQuantityString(R.plurals.hops_n, hops.toInt(), hops.toInt())
-}
-
 /** A room chat's subtitle: what it is, and the login (§15.8). */
 @Composable
 fun roomSubtitle(model: AppModel, chat: ChatId): String {
@@ -190,34 +226,74 @@ private fun Note(text: String) {
 @Composable
 private fun Chevron() = Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = lichen.tx2)
 
-// ----- nodes (§16.1) -----
+// ----- nodes (§16.1, ADR-0049) -----
 
 private enum class NodeFilter(val label: Int) {
-    ALL(R.string.filter_all), REPEATERS(R.string.filter_repeaters), ROOMS(R.string.filter_rooms), PEOPLE(R.string.filter_people);
+    ALL(R.string.filter_all), PEOPLE(R.string.filter_people), REPEATERS(R.string.filter_repeaters), ROOMS(R.string.filter_rooms),
+    HEARD(R.string.filter_heard_2h);
 
-    fun keeps(n: NodeInfo): Boolean = when (this) {
+    fun keeps(n: NodeInfo, nowS: Long): Boolean = when (this) {
         ALL -> true
         REPEATERS -> n.kind == NodeKind.REPEATER
         ROOMS -> n.kind == NodeKind.ROOM_SERVER
         PEOPLE -> n.kind == NodeKind.COMPANION || n.kind == NodeKind.UNKNOWN
+        HEARD -> n.heardWithin(nowS, TWO_HOURS_S)
     }
 }
 
-/** The Nodes tab: what the radio knows or heard, the most recently heard first. */
+private const val TWO_HOURS_S = 7_200L
+
+/** Now, Unix seconds, read again every 30 s: "heard" times and the 2 h and 24 h limits move on. */
+@Composable
+private fun nowSeconds(): Long {
+    var tick by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000)
+            tick++
+        }
+    }
+    @Suppress("UNUSED_EXPRESSION") tick
+    return wallNow() / 1000
+}
+
+/** The phone's position while [who] is on screen: each node's distance and bearing. */
+@Composable
+private fun UsesLocation(model: AppModel, who: String) {
+    DisposableEffect(Unit) {
+        model.needsLocation(who, true)
+        onDispose { model.needsLocation(who, false) }
+    }
+}
+
+/** The Nodes tab (mockup `Main`): who the radio hears directly and how well, then those it
+ * reaches through repeaters. */
 @Composable
 fun NodesScreen(model: AppModel, open: (ByteArray) -> Unit) {
     val t = lichen
     var filter by remember { mutableStateOf(NodeFilter.ALL) }
     var query by remember { mutableStateOf("") }
-    val shown = model.nodes.filter { filter.keeps(it) && (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) }
+    UsesLocation(model, "nodes")
+    val nowS = nowSeconds()
+    val shown = model.nodes.filter { filter.keeps(it, nowS) && (query.isBlank() || it.name.contains(query.trim(), ignoreCase = true)) }
+    val (reach, through) = nodeSections(shown, nowS)
     ToolScreen(stringResource(R.string.tab_nodes), back = null) {
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val heard = model.nodes.count { it.heardWithin(nowS, TWO_HOURS_S) }
+            Text(
+                pluralStringResource(R.plurals.nodes_known, model.nodes.size, model.nodes.size) + " · " +
+                    pluralStringResource(R.plurals.nodes_heard_2h, heard, heard),
+                fontSize = 13.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
+        item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 NodeFilter.entries.forEach { f ->
+                    val count = if (f == NodeFilter.HEARD) null else model.nodes.count { f.keeps(it, nowS) }
                     FilterChip(
                         selected = filter == f,
                         onClick = { filter = f },
-                        label = { Text(stringResource(f.label)) },
+                        label = { Text(stringResource(f.label) + (count?.let { " $it" } ?: "")) },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = t.s1, labelColor = t.tx,
                             selectedContainerColor = t.actBg, selectedLabelColor = t.actFg,
@@ -241,11 +317,25 @@ fun NodesScreen(model: AppModel, open: (ByteArray) -> Unit) {
                 )
             }
         } else {
-            item {
-                CardList {
-                    shown.forEachIndexed { i, n ->
-                        if (i > 0) CardDivider()
-                        NodeRow(model, n) { open(n.key) }
+            if (reach.isNotEmpty()) {
+                item { SectionLabel(stringResource(R.string.nodes_in_reach), Modifier.padding(top = 10.dp)) }
+                item {
+                    CardList {
+                        reach.forEachIndexed { i, n ->
+                            if (i > 0) CardDivider(inset = 68.dp)
+                            NodeRow(model, n, nowS, inReach = true) { open(n.key) }
+                        }
+                    }
+                }
+            }
+            if (through.isNotEmpty()) {
+                item { SectionLabel(stringResource(R.string.nodes_through_repeaters), Modifier.padding(top = 10.dp)) }
+                item {
+                    CardList {
+                        through.forEachIndexed { i, n ->
+                            if (i > 0) CardDivider(inset = 68.dp)
+                            NodeRow(model, n, nowS, inReach = false) { open(n.key) }
+                        }
                     }
                 }
             }
@@ -254,58 +344,111 @@ fun NodesScreen(model: AppModel, open: (ByteArray) -> Unit) {
     }
 }
 
+/** What a node is, in a word: its kind; "MeshCore app" for someone with the stock app; nothing
+ * for a lichen user (the badge says it). */
 @Composable
-private fun NodeRow(model: AppModel, n: NodeInfo, open: () -> Unit) {
+private fun nodeKindWord(n: NodeInfo): String? = when {
+    n.kind == NodeKind.COMPANION && n.lichen -> null
+    n.kind == NodeKind.COMPANION -> stringResource(R.string.node_kind_stock)
+    else -> nodeKindLabel(LocalResources.current, n.kind)
+}
+
+/** A person's initials, or a node's kind on its tile (a repeater's in `lora`). */
+@Composable
+private fun NodeLeading(n: NodeInfo, size: androidx.compose.ui.unit.Dp) {
     val t = lichen
-    val res = LocalResources.current
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = open).padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    if (n.kind == NodeKind.COMPANION) {
+        Avatar(n.name, n.key, size)
+        return
+    }
+    val repeater = n.kind == NodeKind.REPEATER
+    Box(
+        Modifier.size(size).background(if (repeater) t.loraBg else t.s2, RoundedCornerShape(size * 0.27f)),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(36.dp).background(t.s2, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
-            Icon(nodeKindIcon(n.kind), null, tint = if (n.kind == NodeKind.REPEATER) t.lora else t.tx2)
+        val tint = if (repeater) t.loraFg else t.tx
+        if (repeater) {
+            Icon(painterResource(R.drawable.ic_radio_tower), null, tint = tint, modifier = Modifier.size(size * 0.55f))
+        } else {
+            Icon(nodeKindIcon(n.kind), null, tint = tint, modifier = Modifier.size(size * 0.55f))
         }
-        Column(Modifier.weight(1f)) {
-            Text(n.name, fontSize = 16.sp, color = t.tx)
-            Text(
-                listOf(nodeKindLabel(res, n.kind), hopsText(res, n.hops), model.heard(n.lastHeardS)).joinToString(" · "),
-                fontSize = 13.sp, color = t.tx2,
-            )
-        }
-        if (!n.onRadio) Badge(stringResource(R.string.heard_badge), t.s2, t.tx2)
-        Chevron()
     }
 }
 
-/** One node: its path and trace; a room's login; a repeater's administration (§16). */
+/** The names of the repeaters a route goes through ("hub, crest"), when its path names them. */
+private fun viaNames(route: NodeRoute?): String? =
+    route?.stops?.drop(1)?.dropLast(1)?.map { it.names.joinToString(" / ") }?.filter { it.isNotEmpty() }?.takeIf { it.isNotEmpty() }?.joinToString(", ")
+
+/** A stop's name: its names joined (a hash several repeaters share), else its hash. */
+private fun stopName(s: RouteStop): String = s.names.joinToString(" / ").ifEmpty { s.hash?.uppercase() ?: "?" }
+
+@Composable
+private fun NodeRow(model: AppModel, n: NodeInfo, nowS: Long, inReach: Boolean, open: () -> Unit) {
+    val t = lichen
+    val route = if (inReach) null else model.nodeRoute(n.key)
+    val recent = n.heardWithin(nowS, TWO_HOURS_S)
+    val parts = listOfNotNull(
+        nodeKindWord(n),
+        viaNames(route)?.let { stringResource(R.string.via, it) },
+        model.distanceBearing(n.lat, n.lon),
+    )
+    val heard = model.heard(n.lastHeardS)
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = open).heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        NodeLeading(n, 40.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    n.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                )
+                if (n.lichen) LichenBadge()
+                if (!n.onRadio) Badge(stringResource(R.string.heard_badge), t.s2, t.tx2)
+            }
+            Text(
+                buildAnnotatedString {
+                    parts.forEach { append(it); append(" · ") }
+                    // Heard lately: in `ok`.
+                    if (recent) withStyle(SpanStyle(color = t.ok)) { append(heard) } else append(heard)
+                },
+                fontSize = 13.sp, color = t.tx2,
+            )
+        }
+        if (inReach) SignalMeter(n.signal, n.snrDb) else HopPill(n.hops)
+    }
+}
+
+/** One node (mockup `NodePage`): who it is and how well it is heard, how it reaches us (the
+ * route, a trace), its signal over a day or a week; a room's login, a repeater's administration
+ * (§16). */
 @Composable
 fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () -> Unit, openChat: (ChatId) -> Unit) {
     val t = lichen
-    val res = LocalResources.current
     val n = model.node(key)
     var error by remember { mutableStateOf<String?>(null) }
+    UsesLocation(model, "node")
+    val nowS = nowSeconds()
     ToolScreen(n?.name ?: stringResource(R.string.node_kind_unknown), back) {
+        if (n != null) item { NodeHeader(model, n, nowS) }
+        item { SectionLabel(stringResource(R.string.how_it_reaches_you), Modifier.padding(top = 10.dp)) }
+        item { RouteCard(model, key) { error = it } }
+        if (n != null) item { SignalSection(model, n, nowS) }
         if (n != null) item {
-            CardList {
-                CardRow(
-                    nodeKindLabel(res, n.kind),
-                    listOfNotNull(
-                        if (n.onRadio) null else stringResource(R.string.heard_not_added),
-                        stringResource(R.string.last_heard, model.heard(n.lastHeardS)),
-                    ).joinToString(" · "),
-                )
-                if (n.lat != null && n.lon != null) {
+            CardList(Modifier.padding(top = 10.dp)) {
+                if (!n.onRadio) {
+                    CardRow(stringResource(R.string.heard_not_added))
                     CardDivider()
-                    CardRow(stringResource(R.string.advertised_position), "%.5f, %.5f".format(n.lat, n.lon))
                 }
-                CardDivider()
+                if (n.lat != null && n.lon != null) {
+                    CardRow(stringResource(R.string.advertised_position), "%.5f, %.5f".format(n.lat, n.lon))
+                    CardDivider()
+                }
                 MeshCoreKeyRow(key)
             }
         }
-        item { SectionLabel(stringResource(R.string.path), Modifier.padding(top = 10.dp)) }
-        item { PathCard(model, key) }
-        item { TraceCard(model, key) { error = it } }
         if (n?.kind == NodeKind.ROOM_SERVER) {
             item { SectionLabel(stringResource(R.string.room), Modifier.padding(top = 10.dp)) }
             item {
@@ -334,62 +477,244 @@ fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () ->
     }
 }
 
-/** The radio's path to a node, hop by hop (§16.2). */
+/** The node on top: its tile, name, kind and distance, when last heard; its signal (heard
+ * directly) or how many repeaters away. */
 @Composable
-private fun PathCard(model: AppModel, key: ByteArray) {
-    val path = model.nodePath(key)
-    CardList {
-        when {
-            path == null -> CardRow(stringResource(R.string.no_path), stringResource(R.string.no_path_flood_note))
-            path.isEmpty() -> CardRow(stringResource(R.string.hops_direct_title), stringResource(R.string.direct_note))
-            else -> path.forEachIndexed { i, hop ->
-                if (i > 0) CardDivider()
-                CardRow(hop.display(), stringResource(R.string.hop_n, i + 1, hop.hash.uppercase()))
+private fun NodeHeader(model: AppModel, n: NodeInfo, nowS: Long) {
+    val t = lichen
+    Row(
+        Modifier.fillMaxWidth().background(t.s1, CardShape).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        NodeLeading(n, 56.dp)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(n.name, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = t.tx, modifier = Modifier.weight(1f, fill = false))
+                if (n.lichen) LichenBadge()
+            }
+            val what = listOfNotNull(nodeKindWord(n), model.distanceBearing(n.lat, n.lon)).joinToString(" · ")
+            if (what.isNotEmpty()) Text(what, fontSize = 13.sp, color = t.tx2)
+            Text(
+                stringResource(R.string.heard_cap, model.heard(n.lastHeardS)),
+                fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                color = if (n.heardWithin(nowS, TWO_HOURS_S)) t.ok else t.tx2,
+            )
+        }
+        if (n.signal != SignalRating.NONE) SignalMeter(n.signal, n.snrDb, large = true) else HopPill(n.hops)
+    }
+}
+
+/** How it reaches us (§16.3): the route stop by stop, each leg's last signal; the last trace,
+ * Trace again, Show on the map. */
+@Composable
+private fun RouteCard(model: AppModel, key: ByteArray, error: (String) -> Unit) {
+    val t = lichen
+    val route = model.nodeRoute(key)
+    val trace = model.trace(key)
+    Column(
+        Modifier.fillMaxWidth().background(t.s1, CardShape).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (route != null && route.stops.size >= 2) {
+            RouteRibbon(model, route)
+        } else {
+            Text(stringResource(R.string.no_path), fontSize = 15.sp, color = t.tx)
+        }
+        // When the legs were traced, and today's trace's figures.
+        val tracedAt = route?.legs?.filter { it.traced }?.mapNotNull { it.atS }?.maxOrNull()
+        Text(
+            when (trace?.state) {
+                TraceState.SENDING -> stringResource(R.string.trace_sending)
+                TraceState.NO_ANSWER -> stringResource(R.string.trace_no_answer)
+                TraceState.REFUSED -> stringResource(R.string.trace_refused)
+                TraceState.DONE -> stringResource(
+                    R.string.traced_summary,
+                    model.heard(tracedAt ?: (wallNow() / 1000).toULong()),
+                    "%.1f".format((trace.rttMs ?: 0uL).toDouble() / 1000),
+                    "%.1f".format(trace.airtimeMs.toDouble() / 1000),
+                )
+                null -> tracedAt?.let { stringResource(R.string.traced_at, model.heard(it)) } ?: stringResource(R.string.not_traced)
+            },
+            fontSize = 13.sp, color = t.tx2,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton(
+                stringResource(
+                    when {
+                        trace?.state == TraceState.SENDING -> R.string.tracing
+                        trace != null || tracedAt != null -> R.string.trace_again
+                        else -> R.string.trace_path
+                    },
+                ),
+                Modifier.weight(1f),
+                enabled = model.isConnected && trace?.state != TraceState.SENDING,
+            ) { model.startTrace(key)?.let(error) }
+            // Where the node, or a repeater on the way, advertises a position.
+            if (model.nodePlace(key) != null) {
+                SecondaryButton(stringResource(R.string.show_on_map), Modifier.weight(1f)) { model.showNodeOnMap(key) }
             }
         }
     }
 }
 
-/** Traces the path there and back, and shows each hop's SNR (§16.3). */
+/** You → each repeater → the node, a leg between each two: its colour by rating and its SNR,
+ * or a dashed `line` "not measured". */
 @Composable
-private fun TraceCard(model: AppModel, key: ByteArray, error: (String) -> Unit) {
+private fun RouteRibbon(model: AppModel, route: NodeRoute) {
+    val you = stringResource(R.string.you)
+    val last = route.stops.lastIndex
+    val names = route.stops.mapIndexed { i, s -> if (i == 0) you else stopName(s) }
+    // Five stops fit a phone's width; more scroll.
+    val scrolls = route.stops.size > 5
+    Row(
+        Modifier.fillMaxWidth().then(if (scrolls) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
+        verticalAlignment = Alignment.Top,
+    ) {
+        route.stops.forEachIndexed { i, stop ->
+            RouteStopView(model, stop, i, last, names[i])
+            if (i < last) {
+                val leg = route.legs.getOrNull(i)
+                RouteLegView(leg, names[i], names[i + 1], if (scrolls) Modifier.width(64.dp) else Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RouteStopView(model: AppModel, stop: RouteStop, i: Int, last: Int, name: String) {
     val t = lichen
-    val trace = model.trace(key)
-    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SecondaryButton(
-            stringResource(if (trace?.state == TraceState.SENDING) R.string.tracing else R.string.trace_path),
-            enabled = model.isConnected && trace?.state != TraceState.SENDING,
-        ) { model.startTrace(key)?.let(error) }
-        if (trace != null) {
-            val you = stringResource(R.string.you)
-            CardList {
-                trace.legs.forEachIndexed { i, leg ->
-                    if (i > 0) CardDivider()
-                    CardRow("${leg.from?.display() ?: you} → ${leg.to?.display() ?: you}") {
-                        val snr = leg.snrDb
-                        Text(
-                            snr?.let { "%.1f dB".format(it) } ?: "–",
-                            fontFamily = FontFamily.Monospace,
-                            color = when {
-                                snr == null -> t.tx2
-                                snr >= 0 -> t.ok
-                                snr >= -7 -> t.warn
-                                else -> t.sos
-                            },
-                        )
-                    }
+    Column(Modifier.width(62.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        val node = stop.key?.let { model.node(it) }
+        // Every tile in the same 40 dp: the node's ring fits in it, the names line up.
+        Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+            when {
+                // Our radio: its initials on a dark disc.
+                i == 0 -> Box(Modifier.size(34.dp).background(t.actBg, CircleShape), contentAlignment = Alignment.Center) {
+                    Text(initials(model.nodeName.ifEmpty { name }), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = t.actFg)
+                }
+                i == last && node != null -> Box(Modifier.border(2.dp, t.tx2, if (node.kind == NodeKind.COMPANION) CircleShape else RoundedCornerShape(11.dp)).padding(3.dp)) {
+                    NodeLeading(node, 30.dp)
+                }
+                else -> Box(Modifier.size(34.dp).background(t.loraBg, RoundedCornerShape(9.dp)), contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.ic_radio_tower), null, tint = t.loraFg, modifier = Modifier.size(19.dp))
                 }
             }
-            Note(traceSummary(LocalResources.current, trace))
+        }
+        Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        if (i == 0 && model.nodeName.isNotEmpty()) {
+            Text(model.nodeName, fontSize = 11.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
         }
     }
 }
 
-private fun traceSummary(res: android.content.res.Resources, t: TraceInfo): String = when (t.state) {
-    TraceState.SENDING -> res.getString(R.string.trace_sending)
-    TraceState.DONE -> res.getString(R.string.trace_done, "%.1f".format((t.rttMs ?: 0uL).toDouble() / 1000))
-    TraceState.NO_ANSWER -> res.getString(R.string.trace_no_answer)
-    TraceState.REFUSED -> res.getString(R.string.trace_refused)
+@Composable
+private fun RouteLegView(leg: RouteLeg?, from: String, to: String, modifier: Modifier) {
+    val t = lichen
+    val snr = leg?.snrDb
+    val rating = leg?.signal ?: SignalRating.NONE
+    val label = snr?.let { dbText(it) } ?: stringResource(R.string.not_measured)
+    val said = stringResource(R.string.leg_said, from, to, label)
+    Column(
+        // The line at the tiles' middle.
+        modifier.padding(top = 18.dp).clearAndSetSemantics { contentDescription = said },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (snr != null) {
+            Box(Modifier.fillMaxWidth().height(4.dp).background(if (rating != SignalRating.NONE) signalColor(rating) else t.tx2, CircleShape))
+        } else {
+            // Nothing measured it: dashed, in `line`.
+            Canvas(Modifier.fillMaxWidth().height(4.dp)) {
+                drawLine(
+                    t.line, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = size.height,
+                    cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx(), 5.dp.toPx())),
+                )
+            }
+        }
+        Text(
+            label, fontSize = if (snr != null) 12.sp else 11.sp, fontWeight = if (snr != null) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (snr != null && rating != SignalRating.NONE) signalColor(rating) else t.tx2,
+            style = TextStyle(fontFeatureSettings = "tnum"), maxLines = 1, textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/** Its signal over the last 24 h or 7 days (ADR-0049); for a node heard only through
+ * repeaters, why there is none. */
+@Composable
+private fun SignalSection(model: AppModel, n: NodeInfo, nowS: Long) {
+    val t = lichen
+    var week by rememberSaveable { mutableStateOf(false) }
+    val history = model.nodeSignalHistory(n.key)
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(stringResource(if (week) R.string.signal_7d else R.string.signal_24h), Modifier.weight(1f))
+            if (history.isNotEmpty()) {
+                SegmentedTabs(listOf(stringResource(R.string.range_24h), stringResource(R.string.range_7d)), if (week) 1 else 0) { week = it == 1 }
+            }
+        }
+        Column(Modifier.fillMaxWidth().background(t.s1, CardShape).padding(horizontal = 16.dp, vertical = 12.dp)) {
+            if (history.isEmpty()) {
+                Text(stringResource(R.string.no_own_signal), fontSize = 14.sp, color = t.tx2)
+                return@Column
+            }
+            val window = if (week) 7 * 86_400L else 86_400L
+            val points = history.filter { nowS - it.atS.toLong() <= window }
+            if (points.isEmpty()) {
+                Text(stringResource(R.string.no_reading_window), fontSize = 14.sp, color = t.tx2)
+            } else {
+                SignalChart(points, nowS, window)
+            }
+            val now = n.snrDb ?: history.last().snrDb
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                Text(
+                    stringResource(if (week) R.string.chart_since_7d else R.string.chart_since_24h), fontSize = 11.sp, color = t.tx2,
+                    modifier = Modifier.weight(1f).alignByBaseline(),
+                )
+                Text(
+                    stringResource(R.string.signal_now, dbText(now)), color = t.tx2, modifier = Modifier.alignByBaseline(),
+                    style = TextStyle(fontSize = 11.sp, fontFeatureSettings = "tnum"),
+                )
+            }
+        }
+    }
+}
+
+/** The readings in their window: a dot each, coloured by its rating, joined by a thin line; dB
+ * up the side. */
+@Composable
+private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long) {
+    val t = lichen
+    val measurer = rememberTextMeasurer()
+    val said = pluralStringResource(R.plurals.chart_said, points.size, points.size, dbText(points.last().snrDb))
+    val colors = points.map { if (it.signal == SignalRating.NONE) t.tx2 else signalColor(it.signal) }
+    val lo = floor(minOf(points.minOf { it.snrDb } - 1f, points.maxOf { it.snrDb } - 6f))
+    val hi = ceil(maxOf(points.maxOf { it.snrDb } + 1f, lo + 6f))
+    val labelStyle = TextStyle(fontSize = 10.sp, color = t.tx2, fontFeatureSettings = "tnum")
+    Canvas(Modifier.fillMaxWidth().height(92.dp).clearAndSetSemantics { contentDescription = said }) {
+        val left = 34.dp.toPx()
+        val w = size.width - left
+        val h = size.height
+        fun y(db: Float) = h - (db - lo) / (hi - lo) * h
+        fun x(at: ULong) = left + ((at.toLong() - (nowS - window)).toFloat() / window) * w
+        // dB up the side, with faint lines.
+        for (db in listOf(hi, (hi + lo) / 2, lo)) {
+            val yy = y(db).coerceIn(0f, h)
+            drawLine(t.line, Offset(left, yy), Offset(size.width, yy), strokeWidth = 1.dp.toPx())
+            val text = measurer.measure(dbText(db).replace(" dB", ""), labelStyle)
+            drawText(text, topLeft = Offset(0f, (yy - text.size.height / 2).coerceIn(0f, h - text.size.height)))
+        }
+        val pts = points.map { Offset(x(it.atS).coerceIn(left, size.width), y(it.snrDb)) }
+        if (pts.size > 1) {
+            val path = Path().apply {
+                moveTo(pts.first().x, pts.first().y)
+                pts.drop(1).forEach { lineTo(it.x, it.y) }
+            }
+            drawPath(path, t.tx2.copy(alpha = 0.5f), style = Stroke(1.5.dp.toPx()))
+        }
+        pts.forEachIndexed { i, p -> drawCircle(colors[i], 3.5.dp.toPx(), p) }
+    }
 }
 
 /** Logging in to a room server or a repeater (§15.8, §16.5). */

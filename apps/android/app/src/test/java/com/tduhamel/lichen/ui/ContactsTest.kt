@@ -1,5 +1,12 @@
 package com.tduhamel.lichen.ui
 
+import com.tduhamel.lichen.model.nodeRoute
+import org.junit.Assert.assertNull
+import com.tduhamel.lichen.core.SignalRating
+import com.tduhamel.lichen.model.dbText
+import com.tduhamel.lichen.model.heardWithin
+import com.tduhamel.lichen.model.nodeSignalHistory
+import com.tduhamel.lichen.model.wallNow
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -133,11 +140,14 @@ class ContactsTest : UiTest() {
         assertEquals("Camille", model.name(camille.key))
     }
 
-    /** CT-3: the nodes the radio knows or heard, each with its kind, position, last heard. */
+    /** CT-3: the nodes the radio knows or heard, each with its kind, position, last heard; in
+     * reach (heard directly, ADR-0049) with their signal, by rating: the hub Good, Lucie Fair, the
+     * board Bad; through repeaters, the crest one hop away. */
     @Test
     fun CT_3_nodes() {
         // The crest is one hop away: singular (B-and-4).
         assertEquals("1 hop", plural(R.plurals.hops_n, 1, 1))
+        assertEquals("7.5 dB", dbText(7.5f))
         nodes()
     }
 
@@ -145,15 +155,41 @@ class ContactsTest : UiTest() {
     @Config(qualifiers = "+fr-night")
     fun CT_3_nodes_frDark() {
         assertEquals("1 saut", plural(R.plurals.hops_n, 1, 1))
+        assertEquals("7,5 dB", dbText(7.5f))
         nodes()
+    }
+
+    /** The demo's nodes, the hub, Lucie and the board with a reading of their own. */
+    private fun nodesHeard() {
+        advanceUntil("the radio's nodes, their signals and Lucie's advert", 30, { model.nodes.map { it.name to it.signal } }) {
+            listOf("hub", "Lucie", "Refuge board").all { n -> model.nodes.any { it.name == n && it.signal != SignalRating.NONE } } &&
+                model.nodes.any { it.name == "crest" }
+        }
     }
 
     private fun nodes() {
         launch("demo" to true)
-        advanceUntil("the radio's nodes and Lucie's advert", 20) {
-            model.nodes.any { it.name == "hub" } && model.nodes.any { it.name == "Lucie" }
-        }
+        nodesHeard()
         tab(R.string.tab_nodes)
+        // How many it knows, how many it heard lately.
+        val nowS = wallNow() / 1000
+        val heard = model.nodes.count { it.heardWithin(nowS, 7_200) }
+        see(plural(R.plurals.nodes_known, model.nodes.size, model.nodes.size) + " · " + plural(R.plurals.nodes_heard_2h, heard, heard))
+        // In reach, by rating, each with its meter and its last SNR (the demo's links vary a
+        // little around 7.5, −4.0 and −9.5 dB): the hub Good, Lucie Fair, the board Bad.
+        see(R.string.nodes_in_reach)
+        val signal = { name: String -> model.nodes.first { it.name == name } }
+        assertEquals(SignalRating.GOOD, signal("hub").signal)
+        assertEquals(SignalRating.FAIR, signal("Lucie").signal)
+        assertEquals(SignalRating.BAD, signal("Refuge board").signal)
+        desc(str(R.string.signal_good, dbText(signal("hub").snrDb!!))).assertIsDisplayed()
+        desc(str(R.string.signal_fair, dbText(signal("Lucie").snrDb!!))).assertIsDisplayed()
+        desc(str(R.string.signal_bad, dbText(signal("Refuge board").snrDb!!))).assertIsDisplayed()
+        val top = { name: String -> text(name).fetchSemanticsNode().boundsInRoot.top }
+        assertTrue("hub, Lucie, the board in that order", top("hub") < top("Lucie") && top("Lucie") < top("Refuge board"))
+        // Through repeaters: the crest, with its hops.
+        see(R.string.nodes_through_repeaters)
+        assertTrue("the crest below the board", top("Refuge board") < top("crest"))
         text("hub").assertIsDisplayed()
         text("crest").assertIsDisplayed()
         val crest = model.nodes.first { it.name == "crest" }
@@ -170,7 +206,59 @@ class ContactsTest : UiTest() {
         tap("hub")
         text(R.string.advertised_position).assertIsDisplayed()
         text("%.5f, %.5f".format(hub.lat, hub.lon)).assertIsDisplayed()
-        text(str(R.string.last_heard, model.heard(hub.lastHeardS)), substring = true).assertIsDisplayed()
+        text(str(R.string.heard_cap, model.heard(hub.lastHeardS)), substring = true).assertIsDisplayed()
+    }
+
+    /** CT-3: the filters, each with its count; Heard in 2 h keeps the nodes heard lately. */
+    @Test
+    fun CT_3_nodeFilters() = filters()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_3_nodeFilters_fr() = filters()
+
+    private fun filters() {
+        launch("demo" to true)
+        nodesHeard()
+        tab(R.string.tab_nodes)
+        val repeaters = model.nodes.count { it.kind == NodeKind.REPEATER }
+        tap("${str(R.string.filter_repeaters)} $repeaters")
+        text("hub").assertIsDisplayed()
+        assertFalse(has("Lucie"))
+        tap(R.string.filter_heard_2h)
+        val nowS = wallNow() / 1000
+        for (n in model.nodes) assertEquals(n.name, n.heardWithin(nowS, 7_200), has(n.name))
+        tap("${str(R.string.filter_all)} ${model.nodes.size}")
+        text("Lucie").assertIsDisplayed()
+    }
+
+    /** CT-3: the hub's page: its large meter, its signal over the last 24 h (a reading at least),
+     * now. */
+    @Test
+    fun CT_3_hubPage() = hubPage()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_3_hubPage_fr() = hubPage()
+
+    private fun hubPage() {
+        launch("demo" to true)
+        nodesHeard()
+        tab(R.string.tab_nodes)
+        tap("hub")
+        val hub = model.nodes.first { it.name == "hub" }
+        desc(str(R.string.signal_good, dbText(hub.snrDb!!))).assertIsDisplayed()
+        see(R.string.signal_24h)
+        val readings = model.nodeSignalHistory(hub.key)
+        assertTrue("a reading at least", readings.isNotEmpty())
+        val last = readings.last()
+        assertTrue(hasDesc(plural(R.plurals.chart_said, readings.size, readings.size, dbText(last.snrDb))))
+        see(str(R.string.signal_now, dbText(hub.snrDb!!)))
+        // A week, then a day again.
+        tab(R.string.range_7d)
+        see(R.string.signal_7d)
+        tab(R.string.range_24h)
+        assertFalse(has(R.string.no_own_signal))
     }
 
     /** CT-3: the Nodes tab opens on the node list (from the debug extra `tab nodes` and from the
@@ -341,19 +429,49 @@ class ContactsTest : UiTest() {
     }
 
     /** CT-7: a trace to the crest, two hops away: each hop's SNR, out and back. */
+    /** CT-7: the crest's route, You → hub → crest: the hub's leg from its signal, the crest's not
+     * measured until a trace measures it; no signal of its own; Show on the map. */
     @Test
-    fun CT_7_traceToANode() {
+    fun CT_7_traceToANode() = traceToCrest()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_7_traceToANode_fr() = traceToCrest()
+
+    private fun traceToCrest() {
         launch("demo" to true)
-        advanceUntil("the crest") { model.nodes.any { it.name == "crest" } }
+        nodesHeard()
         val crest = model.nodes.first { it.name == "crest" }
         tab(R.string.tab_nodes)
         tap("crest")
+        see(R.string.how_it_reaches_you)
+        val you = str(R.string.you)
+        // You → hub → crest: the hub's leg from its own signal (about 7.5 dB, Good), the crest's
+        // not measured (it is heard only through the hub).
+        val route = model.nodeRoute(crest.key)!!
+        assertEquals(listOf("hub"), route.stops[1].names)
+        assertEquals(SignalRating.GOOD, route.legs[0].signal)
+        assertNull(route.legs[1].snrDb)
+        desc(str(R.string.leg_said, you, "hub", dbText(route.legs[0].snrDb!!))).assertIsDisplayed()
+        desc(str(R.string.leg_said, "hub", "crest", str(R.string.not_measured))).assertIsDisplayed()
+        see(R.string.not_traced)
+        // Heard only through the hub: no signal of its own.
+        see(R.string.no_own_signal)
         tap(R.string.trace_path)
         advanceUntil("the trace back", 30) { model.trace(crest.key)?.state == com.tduhamel.lichen.core.TraceState.DONE }
         val trace = model.trace(crest.key)!!
         assertTrue("legs out and back", trace.legs.size >= 2)
-        for (leg in trace.legs) leg.snrDb?.let { see("%.1f dB".format(it)) }
-        see(str(R.string.trace_done, "%.1f".format((trace.rttMs ?: 0uL).toDouble() / 1000)))
+        // The crest's leg, measured now (about −3.0 dB).
+        val traced = model.nodeRoute(crest.key)!!.legs[1]
+        assertTrue("traced", traced.traced)
+        desc(str(R.string.leg_said, "hub", "crest", dbText(traced.snrDb!!))).assertIsDisplayed()
+        see(str(R.string.traced_summary, "", "", "").substringBefore(" "), substring = true)
+        see(R.string.trace_again)
+        // The map, on it.
+        tap(R.string.show_on_map)
+        assertEquals(com.tduhamel.lichen.model.AppModel.Tab.MAP, model.tab)
+        assertEquals(com.tduhamel.lichen.model.AppModel.MapMode.POSITIONS, model.mapMode)
+        see(R.string.location_sharing)
     }
 
     /** CT-8: Camille's first message, a request: accepted, her chat opens with it. */

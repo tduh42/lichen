@@ -470,10 +470,15 @@ class AppModel(val app: Application) {
     var mapPin by mutableStateOf<MapPin?>(null)
     var openMap by mutableStateOf(false)
 
+    /** A node's place, from its page's Show on the map (§16.3): the map centres on it, once per
+     * version, without a pin of its own. */
+    var mapFocus by mutableStateOf<MapPin?>(null)
+
     /** Shows a place from a message's text on lichen's own map: nothing is fetched but its
      * tiles (offline areas included). */
     fun showOnMap(lat: Double, lon: Double) {
-        mapPin = MapPin(lat, lon, (mapPin?.version ?: 0) + 1)
+        // Newer than any node shown before (the map centres on the latest of the two).
+        mapPin = MapPin(lat, lon, (mapPin?.version ?: 0) + (mapFocus?.version ?: 0) + 1)
         tab = Tab.MAP
         mapMode = MapMode.POSITIONS
         openMap = true

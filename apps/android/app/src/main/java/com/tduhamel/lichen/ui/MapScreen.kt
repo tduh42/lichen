@@ -229,14 +229,16 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
         if ((ids - seen).isNotEmpty()) {
             val first = seen.isEmpty()
             seen = seen + ids
-            if (!(first && model.mapPin != null)) recenter++
+            if (!(first && (model.mapPin != null || model.mapFocus != null))) recenter++
         }
     }
 
     Column(Modifier.fillMaxSize().background(t.bg)) {
         Box(Modifier.weight(1f)) {
             MapGate(model) {
-                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize(), focus = model.mapPin) { b, z -> camera = b to z }
+                // The latest of a place from a message and a node from its page.
+                val focus = listOfNotNull(model.mapPin, model.mapFocus).maxByOrNull { it.version }
+                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize(), focus = focus) { b, z -> camera = b to z }
             }
             Column(
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),

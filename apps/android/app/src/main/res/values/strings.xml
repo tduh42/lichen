@@ -1034,6 +1034,48 @@
     <string name="nodes_need_radio">Connect your radio to see the nodes it knows.</string>
     <string name="nodes_none_yet">The radio has not reported any node yet.</string>
     <string name="nodes_note">Repeaters, room servers and people’s radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes’ own adverts.</string>
+    <!-- The Nodes tab (ADR-0049): who the radio hears directly and how well, the others through repeaters. -->
+    <plurals name="nodes_known">
+        <item quantity="one">%1$d known</item>
+        <item quantity="other">%1$d known</item>
+    </plurals>
+    <plurals name="nodes_heard_2h">
+        <item quantity="one">%1$d heard in the last 2 h</item>
+        <item quantity="other">%1$d heard in the last 2 h</item>
+    </plurals>
+    <string name="filter_heard_2h">Heard in 2 h</string>
+    <string name="nodes_in_reach">In reach · heard directly by your radio</string>
+    <string name="nodes_through_repeaters">Through repeaters</string>
+    <string name="path_unknown">path unknown</string>
+    <string name="node_kind_stock">MeshCore app</string>
+    <string name="via">via %1$s</string>
+    <!-- N, NE, E, SE, S, SW, W, NW: a bearing in eight points. -->
+    <string name="compass_points">N,NE,E,SE,S,SW,W,NW</string>
+    <!-- The signal meter, as TalkBack reads it. -->
+    <string name="signal_good">Signal good, %1$s</string>
+    <string name="signal_fair">Signal fair, %1$s</string>
+    <string name="signal_bad">Signal weak, %1$s</string>
+    <!-- A node's page: how it reaches you, its signal. -->
+    <string name="how_it_reaches_you">How it reaches you</string>
+    <string name="not_measured">not measured</string>
+    <string name="leg_said">%1$s to %2$s, %3$s</string>
+    <string name="trace_again">Trace again</string>
+    <string name="traced_summary">Traced %1$s · back in %2$s s · %3$s s of airtime</string>
+    <string name="traced_at">Traced %1$s</string>
+    <string name="not_traced">Not traced yet</string>
+    <string name="signal_24h">Signal, last 24 h</string>
+    <string name="signal_7d">Signal, last 7 days</string>
+    <string name="range_24h">24 h</string>
+    <string name="range_7d">7 days</string>
+    <string name="signal_now">now %1$s</string>
+    <string name="chart_since_24h">24 h ago</string>
+    <string name="chart_since_7d">7 days ago</string>
+    <plurals name="chart_said">
+        <item quantity="one">Signal chart: %1$d reading, now %2$s</item>
+        <item quantity="other">Signal chart: %1$d readings, now %2$s</item>
+    </plurals>
+    <string name="no_reading_window">No reading in this time.</string>
+    <string name="no_own_signal">Heard only through repeaters: no signal of its own. The route above shows how it reaches you.</string>
     <string name="filter_all">All</string>
     <string name="filter_repeaters">Repeaters</string>
     <string name="filter_rooms">Rooms</string>
@@ -1045,29 +1087,21 @@
     <string name="node_kind_sensor">Sensor</string>
     <string name="heard_badge">heard</string>
     <string name="heard_not_added">Heard, not in the radio’s contacts</string>
-    <string name="last_heard">Last heard %1$s</string>
     <string name="never_heard">never heard</string>
     <string name="just_now">just now</string>
     <string name="minutes_ago">%1$d min ago</string>
     <string name="hours_ago">%1$d h ago</string>
     <string name="days_ago">%1$d d ago</string>
     <string name="advertised_position">Advertised position</string>
-    <string name="path">Path</string>
     <string name="no_path">No path known</string>
-    <string name="no_path_flood_note">Your radio floods to reach it until it learns a path.</string>
-    <string name="hops_flood">flood</string>
     <string name="hops_direct">direct</string>
     <plurals name="hops_n">
         <item quantity="one">%1$d hop</item>
         <item quantity="other">%1$d hops</item>
     </plurals>
-    <string name="hops_direct_title">Direct</string>
-    <string name="direct_note">Your radio hears it without a repeater.</string>
-    <string name="hop_n">Hop %1$d · %2$s</string>
     <string name="trace_path">Trace the path</string>
     <string name="tracing">Tracing…</string>
     <string name="trace_sending">On its way through the repeaters and back.</string>
-    <string name="trace_done">Back in %1$s s · SNR measured by each hop, out and back</string>
     <string name="trace_no_answer">No answer: a hop did not hear it, or the radio was disconnected.</string>
     <string name="trace_refused">The radio refused the trace.</string>
     <string name="err_no_path">No repeater on the way: the radio hears it directly, or does not know a path yet.</string>
