@@ -1,5 +1,17 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalResources
+import com.tduhamel.lichen.core.SignalRating
+import com.tduhamel.lichen.model.dbText
+import com.tduhamel.lichen.model.node
+import com.tduhamel.lichen.model.nodeRoute
+import com.tduhamel.lichen.model.heard
+import com.tduhamel.lichen.model.unhex
 import android.Manifest
 import android.text.format.DateUtils
 import android.text.format.Formatter
@@ -221,6 +233,9 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
         }
     }
     val items = mapItems(model, showNodes)
+    val route = model.mapRouteTo?.let { mapRoute(model, it) }
+    // The legs whose chip the map has no room for (a short leg between two markers): in the card.
+    var hiddenLegs by remember(model.mapRouteTo) { mutableStateOf(emptyList<Int>()) }
     // Someone new on the map: reframe around everyone (nodes do not count). A place from a
     // message is centred on by itself (`focus`), and keeps the map on it.
     val people = items.filter { it.kind != MapItem.Kind.NODE && it.kind != MapItem.Kind.PLACE }.map { it.id }
@@ -229,7 +244,7 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
         if ((ids - seen).isNotEmpty()) {
             val first = seen.isEmpty()
             seen = seen + ids
-            if (!(first && (model.mapPin != null || model.mapFocus != null))) recenter++
+            if (!(first && (model.mapPin != null || model.mapFocus != null || model.mapRouteTo != null))) recenter++
         }
     }
 
@@ -238,7 +253,12 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
             MapGate(model) {
                 // The latest of a place from a message and a node from its page.
                 val focus = listOfNotNull(model.mapPin, model.mapFocus).maxByOrNull { it.version }
-                LichenMap(items, style.resolved(t.dark), recenter, Modifier.fillMaxSize(), focus = focus) { b, z -> camera = b to z }
+                LichenMap(
+                    items, style.resolved(t.dark), recenter, Modifier.fillMaxSize(), focus = focus, route = route,
+                    // A node tapped: its route (§16.3).
+                    onTap = { id -> if (id.startsWith("n:")) model.mapRouteTo = id.removePrefix("n:") },
+                    onHiddenChips = { hiddenLegs = it },
+                ) { b, z -> camera = b to z }
             }
             Column(
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars).padding(horizontal = 16.dp, vertical = 8.dp),
@@ -269,6 +289,8 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
                                 layers = false
                             },
                         )
+                        // How a route's legs read (§16.3).
+                        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { RouteLegend() }
                         HorizontalDivider(color = t.line)
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.download_area)) },
@@ -300,6 +322,15 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
             }
             model.mapPin?.let { PinBar(model, it) }
             }
+            // A node's route: its card over the map's foot.
+            model.mapRouteTo?.let { key ->
+                Box(Modifier.align(Alignment.BottomCenter)) {
+                    RouteMapCard(
+                        model, key, drawn = (route?.lines?.isNotEmpty() == true),
+                        unlabelled = hiddenLegs.mapNotNull { route?.lines?.getOrNull(it) },
+                    ) { model.mapRouteTo = null }
+                }
+            }
             offline.progress?.let { (done, total) ->
                 Row(
                     Modifier
@@ -315,8 +346,11 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
                 }
             }
         }
-        SharePanel(model) {
-            editing = true
+        // Our shares, unless a route takes the foot of the map.
+        if (model.mapRouteTo == null) {
+            SharePanel(model) {
+                editing = true
+            }
         }
     }
     if (editing) ShareSheet(model) { editing = false }
@@ -352,6 +386,134 @@ private fun MapIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label
 }
 
 private const val PLACE_ID = "place"
+
+/** The route the map draws to [key] (§16.3): our radio at the phone, the other stops where
+ * they advertise; a line per leg in its rating's colour, dashed in `line` when nothing measured
+ * it; stops without a position skipped, the stops around them joined by a dashed line. */
+@Composable
+private fun mapRoute(model: AppModel, key: String): MapRoute? {
+    val t = lichen
+    val res = LocalResources.current
+    val route = model.nodeRoute(key.unhex()) ?: return null
+    val notMeasured = res.getString(R.string.not_measured)
+    val names = route.stops.mapIndexed { i, s ->
+        if (i == 0) res.getString(R.string.you) else s.names.joinToString(" / ").ifEmpty { s.hash?.uppercase() ?: "?" }
+    }
+    val places = route.stops.mapIndexed { i, s ->
+        if (i == 0) model.myFix?.let { it.lat to it.lon } else if (s.lat != null && s.lon != null) s.lat!! to s.lon!! else null
+    }
+    val lines = mutableListOf<MapRoute.Line>()
+    var prev: Int? = null
+    places.forEachIndexed { j, p ->
+        if (p == null) return@forEachIndexed
+        val i = prev
+        prev = j
+        if (i == null) return@forEachIndexed
+        val from = places[i]!!
+        val legs = route.legs.subList(i.coerceAtMost(route.legs.size), j.coerceAtMost(route.legs.size))
+        val text = { l: com.tduhamel.lichen.core.RouteLeg -> l.snrDb?.let { dbText(it) } ?: notMeasured }
+        if (legs.size == 1) {
+            val leg = legs.single()
+            val measured = leg.snrDb != null
+            val color = when {
+                !measured -> t.line
+                leg.signal == SignalRating.NONE -> t.tx2
+                else -> signalColor(leg.signal)
+            }
+            lines += MapRoute.Line(
+                from, p, color.toArgb(), dashed = !measured, chip = text(leg), chipColor = (if (measured) color else t.tx2).toArgb(),
+                said = res.getString(R.string.leg_said, names[i], names[j], text(leg)),
+            )
+        } else {
+            // Stops without a position between: one dashed line across them, its chip each leg's.
+            lines += MapRoute.Line(
+                from, p, t.line.toArgb(), dashed = true, chip = legs.joinToString(" · ") { text(it) }, chipColor = t.tx2.toArgb(),
+                said = legs.mapIndexed { k, l -> res.getString(R.string.leg_said, names[i + k], names[i + k + 1], text(l)) }.joinToString("; "),
+            )
+        }
+    }
+    return MapRoute(key, lines)
+}
+
+/** The route's card (mockup `Map`): to whom, how many hops, through which repeaters, when it
+ * was traced; the legend, or why nothing is drawn; a way to close it. */
+@Composable
+private fun RouteMapCard(model: AppModel, key: String, drawn: Boolean, unlabelled: List<MapRoute.Line>, close: () -> Unit) {
+    val t = lichen
+    val res = LocalResources.current
+    val node = model.node(key.unhex())
+    val route = model.nodeRoute(key.unhex())
+    val hops = when (val h = node?.hops) {
+        null -> res.getString(R.string.path_unknown)
+        0.toUByte() -> res.getString(R.string.hops_direct)
+        else -> res.getQuantityString(R.plurals.hops_n, h.toInt(), h.toInt())
+    }
+    val via = route?.stops?.drop(1)?.dropLast(1)?.map { it.names.joinToString(" / ") }?.filter { it.isNotEmpty() }
+        ?.takeIf { it.isNotEmpty() }?.let { res.getString(R.string.via, it.joinToString(", ")) }
+    val traced = route?.legs?.filter { it.traced }?.mapNotNull { it.atS }?.maxOrNull()?.let { res.getString(R.string.traced_ago, model.heard(it)) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .shadow(6.dp, RoundedCornerShape(18.dp))
+            .background(t.s1, RoundedCornerShape(18.dp))
+            .padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(top = 6.dp)) {
+                Text(res.getString(R.string.route_to, node?.name ?: key.take(8)), fontSize = 17.sp, fontWeight = FontWeight.Bold, color = t.tx)
+                Text(listOfNotNull(hops, via, traced).joinToString(" · "), fontSize = 13.sp, color = t.tx2)
+            }
+            IconButton(onClick = close) {
+                Box(Modifier.size(36.dp).background(t.s2, CircleShape), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Outlined.Close, stringResource(R.string.close_route), tint = t.tx, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+        // A leg too short on screen for its chip: said here, in its colour.
+        unlabelled.forEach { line ->
+            Row(
+                Modifier.clearAndSetSemantics { contentDescription = line.said },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LegendItem(Color(line.color), line.dashed, line.said.substringBeforeLast(", "))
+                Text(line.chip, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(line.chipColor))
+            }
+        }
+        if (drawn) RouteLegend() else Text(stringResource(R.string.route_no_positions), fontSize = 13.sp, color = t.tx2)
+    }
+}
+
+/** How a route's legs read: good, fair, weak, not measured; the last signal per leg. */
+@Composable
+fun RouteLegend() {
+    val t = lichen
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            LegendItem(t.ok, false, stringResource(R.string.legend_good))
+            LegendItem(t.warn, false, stringResource(R.string.legend_fair))
+            LegendItem(t.sos, false, stringResource(R.string.legend_weak))
+            LegendItem(t.line, true, stringResource(R.string.not_measured))
+        }
+        Text(stringResource(R.string.legend_note), fontSize = 12.sp, color = t.tx2)
+    }
+}
+
+@Composable
+private fun LegendItem(color: Color, dashed: Boolean, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+        Canvas(Modifier.size(width = 18.dp, height = 4.dp)) {
+            drawLine(
+                color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = size.height,
+                cap = if (dashed) StrokeCap.Butt else StrokeCap.Round,
+                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 2.dp.toPx())) else null,
+            )
+        }
+        Text(label, fontSize = 12.sp, color = lichen.tx2, maxLines = 1)
+    }
+}
 
 /** The place from a message on the map (ADR-0034): its coordinates, to copy, and a way to put
  * it away. */
@@ -395,7 +557,9 @@ private fun mapItems(model: AppModel, showNodes: Boolean): List<MapItem> {
             val lat = n.lat ?: continue
             val lon = n.lon ?: continue
             val color = if (n.kind == com.tduhamel.lichen.core.NodeKind.REPEATER) t.lora.toArgb() else 0xFFD6D6D0.toInt()
-            out += MapItem("n:" + n.key.hex(), MapItem.Kind.NODE, lat, lon, 0.0, initials(n.name), n.name, color, t.dark)
+            // Heard directly: a thin ring in its rating's colour (ADR-0049).
+            val ring = if (n.signal != SignalRating.NONE) signalColor(n.signal).toArgb() else null
+            out += MapItem("n:" + n.key.hex(), MapItem.Kind.NODE, lat, lon, 0.0, initials(n.name), n.name, color, t.dark, ring)
         }
     }
     model.mapPin?.let { pin ->

@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.hasClickAction
 import com.tduhamel.lichen.model.nodeRoute
 import org.junit.Assert.assertNull
 import com.tduhamel.lichen.core.SignalRating
@@ -207,6 +209,19 @@ class ContactsTest : UiTest() {
         text(R.string.advertised_position).assertIsDisplayed()
         text("%.5f, %.5f".format(hub.lat, hub.lon)).assertIsDisplayed()
         text(str(R.string.heard_cap, model.heard(hub.lastHeardS)), substring = true).assertIsDisplayed()
+    }
+
+    /** CT-3: a lichen user's row: once Camille's identity is known, the lichen badge, not "MeshCore
+     * app" (the nodes are read again when an identity is learned). */
+    @Test
+    fun CT_3_lichenUserInTheNodes() {
+        launch("demo" to true)
+        advanceUntil("Camille's identity", 120) { model.contacts.any { it.name == "Camille" && it.identity != null } }
+        assertTrue("her node is a lichen user", model.nodes.first { it.name == "Camille" }.lichen)
+        tab(R.string.tab_nodes)
+        val row = compose.onNode(hasText("Camille") and hasClickAction())
+        row.assert(hasText(str(R.string.app_name)))
+        row.assert(!hasText(str(R.string.node_kind_stock), substring = true))
     }
 
     /** CT-3: the filters, each with its count; Heard in 2 h keeps the nodes heard lately. */
@@ -467,11 +482,11 @@ class ContactsTest : UiTest() {
         desc(str(R.string.leg_said, "hub", "crest", dbText(traced.snrDb!!))).assertIsDisplayed()
         see(str(R.string.traced_summary, "", "", "").substringBefore(" "), substring = true)
         see(R.string.trace_again)
-        // The map, on it.
+        // The map, with its route (MP-3).
         tap(R.string.show_on_map)
         assertEquals(com.tduhamel.lichen.model.AppModel.Tab.MAP, model.tab)
         assertEquals(com.tduhamel.lichen.model.AppModel.MapMode.POSITIONS, model.mapMode)
-        see(R.string.location_sharing)
+        see(str(R.string.route_to, "crest"))
     }
 
     /** CT-8: Camille's first message, a request: accepted, her chat opens with it. */

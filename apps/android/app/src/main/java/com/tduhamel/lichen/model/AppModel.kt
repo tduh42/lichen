@@ -474,6 +474,10 @@ class AppModel(val app: Application) {
      * version, without a pin of its own. */
     var mapFocus by mutableStateOf<MapPin?>(null)
 
+    /** The node (hex) whose route the map draws (§16.3), from its page or a tap on it; null
+     * when closed. */
+    var mapRouteTo by mutableStateOf<String?>(null)
+
     /** Shows a place from a message's text on lichen's own map: nothing is fetched but its
      * tiles (offline areas included). */
     fun showOnMap(lat: Double, lon: Double) {
@@ -1172,6 +1176,8 @@ class AppModel(val app: Application) {
             }
             is LichenEvent.IdentityLearned -> {
                 refreshContacts()
+                // A node's lichen badge follows its identity (NodeInfo.lichen): read again.
+                nodes = core.nodes()
                 // Debug extra `open`: opened before their identity arrived, as a MeshCore chat;
                 // now that they turn out to have lichen, their conversation.
                 if (debugMesh == e.node.hex()) {

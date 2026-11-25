@@ -47,10 +47,19 @@ fun AppModel.nodePlace(key: ByteArray): Pair<Double, Double>? {
     return nodeRoute(key)?.stops?.drop(1)?.lastOrNull { it.lat != null && it.lon != null }?.let { it.lat!! to it.lon!! }
 }
 
-/** The Map tab, in Positions mode, centred on [key] (a node's page's Show on the map). */
+/** How many stops of [key]'s route the map can place: ours at the phone, the others where they
+ * advertise. Fewer than two: no route to draw. */
+fun AppModel.routePlaces(key: ByteArray): Int {
+    val route = nodeRoute(key) ?: return 0
+    return (if (myFix != null) 1 else 0) + route.stops.drop(1).count { it.lat != null && it.lon != null }
+}
+
+/** The Map tab, in Positions mode, with [key]'s route (a node's page's Show on the map): the
+ * camera takes the route in, or centres on the node when there is none to draw. */
 fun AppModel.showNodeOnMap(key: ByteArray) {
     val (lat, lon) = nodePlace(key) ?: return
-    mapFocus = MapPin(lat, lon, (mapFocus?.version ?: 0) + (mapPin?.version ?: 0) + 1)
+    mapRouteTo = key.hex()
+    if (routePlaces(key) < 2) mapFocus = MapPin(lat, lon, (mapFocus?.version ?: 0) + (mapPin?.version ?: 0) + 1)
     tab = AppModel.Tab.MAP
     mapMode = AppModel.MapMode.POSITIONS
     openMap = true

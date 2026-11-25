@@ -1,5 +1,21 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.TextStyle
+import org.maplibre.android.style.layers.Property
 import com.tduhamel.lichen.LichenApplication
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -82,9 +98,110 @@ data class MapItem(
     /** ARGB. */
     val color: Int,
     val dark: Boolean,
+    /** A node heard directly: a thin ring in its rating's colour (ARGB, ADR-0049). */
+    val ring: Int? = null,
 ) {
     /** `NODE`: a mesh node (ADR-0041 to ADR-0044); `PLACE`: coordinates from a message (ADR-0034). */
     enum class Kind { ME, PEER, SOS, NODE, PLACE }
+}
+
+/** A node's route on the map (protocol §16.3): lines between the stops that have a position,
+ * each coloured by its leg's rating, dashed where nothing measured it or where stops without a
+ * position are skipped; a chip at each line's middle, which TalkBack reads ("hub to crest,
+ * −3.0 dB"). [key] is the node's (hex): the camera fits a new one. */
+data class MapRoute(val key: String, val lines: List<Line>) {
+    data class Line(
+        val from: Pair<Double, Double>,
+        val to: Pair<Double, Double>,
+        /** ARGB. */
+        val color: Int,
+        val dashed: Boolean,
+        val chip: String,
+        /** Its chip's colour, ARGB. */
+        val chipColor: Int,
+        val said: String,
+    )
+}
+
+/** The route's chips where they fit as the camera moves: each on its line, clear of every marker
+ * and its label; a line with no room for its chip has none (reported, the card lists it). */
+@Composable
+private fun RouteChips(m: MapLibreMap, route: MapRoute, items: List<MapItem>, moved: androidx.compose.runtime.IntState, hidden: ((List<Int>) -> Unit)?) {
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    @Suppress("UNUSED_EXPRESSION") moved.intValue
+    fun screen(lat: Double, lon: Double) = m.projection.toScreenLocation(LatLng(lat, lon)).let { Offset(it.x, it.y) }
+    val boxes = items.map { markerBox(it, screen(it.lat, it.lon), density) }
+    val spots = route.lines.map { line ->
+        val text = measurer.measure(line.chip, TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFeatureSettings = "tnum")).size
+        val chip = Size(text.width + 14 * density, text.height + 4 * density)
+        chipSpot(screen(line.from.first, line.from.second), screen(line.to.first, line.to.second), chip, boxes, 3 * density)
+    }
+    val none = spots.indices.filter { spots[it] == null }
+    LaunchedEffect(none) { hidden?.invoke(none) }
+    route.lines.forEachIndexed { i, line ->
+        val c = spots[i] ?: return@forEachIndexed
+        RouteChip(
+            line,
+            Modifier.layout { measurable, constraints ->
+                val placeable = measurable.measure(constraints.copy(minWidth = 0, minHeight = 0))
+                layout(constraints.maxWidth, constraints.maxHeight) {
+                    placeable.place(c.x.toInt() - placeable.width / 2, c.y.toInt() - placeable.height / 2)
+                }
+            },
+        )
+    }
+}
+
+/** Where a leg's chip goes on screen: on the leg from [a] to [b], as near its middle as it can
+ * without coming within [margin] of any of [boxes] (the markers and their labels); null when
+ * nowhere on the leg is free (a short leg between two markers). */
+internal fun chipSpot(a: Offset, b: Offset, chip: Size, boxes: List<Rect>, margin: Float): Offset? {
+    for (t in listOf(0.5f, 0.42f, 0.58f, 0.34f, 0.66f, 0.26f, 0.74f, 0.18f, 0.82f)) {
+        val c = a + (b - a) * t
+        val r = Rect(c.x - chip.width / 2 - margin, c.y - chip.height / 2 - margin, c.x + chip.width / 2 + margin, c.y + chip.height / 2 + margin)
+        if (boxes.none { it.overlaps(r) }) return c
+    }
+    return null
+}
+
+/** The screen area a marker takes around its point: its avatar (and rating ring) and the label
+ * under it, as [markerBitmap] draws them. */
+private fun markerBox(item: MapItem, p: Offset, density: Float): Rect {
+    val avatar = (if (item.kind == MapItem.Kind.ME) 22 else 32) * density
+    val labelH = if (item.label.isEmpty()) 0f else 16 * density
+    val gap = if (item.label.isEmpty()) 0f else 4 * density
+    val labelW = if (item.label.isEmpty()) {
+        0f
+    } else {
+        Paint().apply {
+            textSize = 11 * density
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }.measureText(item.label) + 12 * density
+    }
+    val w = max(avatar + (if (item.ring != null) 12 else 4) * density, labelW)
+    val top = avatar / 2 + (if (item.ring != null) 6 else 3) * density
+    return Rect(p.x - w / 2, p.y - top, p.x + w / 2, p.y + avatar / 2 + gap + labelH)
+}
+
+/** A leg's chip: its SNR in its rating's colour ("not measured" in `tx2`) on the card colour;
+ * TalkBack reads the leg ("hub to crest, −3.0 dB"). */
+@Composable
+private fun RouteChip(line: MapRoute.Line, modifier: Modifier = Modifier) {
+    val t = lichen
+    Text(
+        line.chip,
+        modifier
+            .shadow(2.dp, RoundedCornerShape(7.dp))
+            .background(t.s1, RoundedCornerShape(7.dp))
+            .padding(horizontal = 7.dp, vertical = 2.dp)
+            .clearAndSetSemantics { contentDescription = line.said },
+        color = Color(line.chipColor),
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        style = TextStyle(fontFeatureSettings = "tnum"),
+        maxLines = 1,
+    )
 }
 
 /** A search estimate on the map: the heat grid as an image over its bounds, and the 68 % and
@@ -116,6 +233,13 @@ fun LichenMap(
     margins: IntArray = intArrayOf(95, 140, 95, 70),
     /** A place to centre on, once per version (after any `recenter`). */
     focus: com.tduhamel.lichen.model.MapPin? = null,
+    /** A node's route, drawn under the markers. */
+    route: MapRoute? = null,
+    /** A marker tapped: its item's id. */
+    onTap: ((String) -> Unit)? = null,
+    /** The route's lines (indices) whose chip finds no room on the map, clear of every marker
+     * and label: the card lists them. */
+    onHiddenChips: ((List<Int>) -> Unit)? = null,
     onCamera: (LatLngBounds, Double) -> Unit,
 ) {
     // No MapLibre (the JVM UI tests): the markers' labels where the map would be, everything
@@ -132,13 +256,24 @@ fun LichenMap(
             }
         }
         Column(modifier.background(lichen.s1)) {
-            for (item in items) if (item.label.isNotEmpty()) Text(item.label, color = lichen.tx2)
+            for (item in items) {
+                if (item.label.isEmpty()) continue
+                val tap = onTap?.takeIf { item.kind == MapItem.Kind.NODE }
+                Text(item.label, color = lichen.tx2, modifier = if (tap != null) Modifier.clickable { tap(item.id) } else Modifier)
+            }
+            // The route's chips, as on the map.
+            route?.lines?.forEach { RouteChip(it) }
         }
         return
     }
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val mapView = remember { MapView(context).apply { onCreate(null) } }
+    // Bumped as the camera moves: the route's chips follow their lines (read by them alone).
+    val moved = remember { mutableIntStateOf(0) }
+    // The listener is set once: it calls the latest.
+    val tapNow by rememberUpdatedState(onTap)
+    val casingDark = lichen.dark
     var map by remember { mutableStateOf<MapLibreMap?>(null) }
     var loaded by remember { mutableStateOf<Style?>(null) }
     DisposableEffect(lifecycle) {
@@ -159,7 +294,11 @@ fun LichenMap(
             mapView.onDestroy()
         }
     }
-    AndroidView({ mapView }, modifier)
+    Box(modifier.clipToBounds()) {
+        AndroidView({ mapView }, Modifier.fillMaxSize())
+        val m = map
+        if (m != null && loaded != null && route != null) RouteChips(m, route, items, moved, onHiddenChips)
+    }
     LaunchedEffect(Unit) {
         mapView.getMapAsync { m ->
             m.uiSettings.apply {
@@ -170,6 +309,16 @@ fun LichenMap(
             m.cameraPosition = CameraPosition.Builder().target(LatLng(45.0, 5.5)).zoom(9.0).build()
             m.addOnCameraIdleListener {
                 onCamera(m.projection.visibleRegion.latLngBounds, m.cameraPosition.zoom)
+                moved.intValue++
+            }
+            m.addOnCameraMoveListener { moved.intValue++ }
+            // A marker tapped: the item it shows; a node first where markers overlap (only a node
+            // does something when tapped, its route).
+            m.addOnMapClickListener { at ->
+                val ids = m.queryRenderedFeatures(m.projection.toScreenLocation(at), ITEMS).mapNotNull { it.getStringProperty("id") }
+                val id = ids.firstOrNull { it.startsWith("n:") } ?: ids.firstOrNull()
+                if (id != null) tapNow?.invoke(id)
+                id != null
             }
             map = m
         }
@@ -181,6 +330,7 @@ fun LichenMap(
             s.addSource(GeoJsonSource(CIRCLES))
             s.addSource(GeoJsonSource(ITEMS))
             s.addSource(GeoJsonSource(ELLIPSES))
+            s.addSource(GeoJsonSource(ROUTE))
             s.addLayer(
                 LineLayer(ELLIPSES, ELLIPSES).withProperties(
                     PropertyFactory.lineColor(android.graphics.Color.rgb(0xDC, 0x26, 0x26)),
@@ -198,6 +348,28 @@ fun LichenMap(
                     PropertyFactory.lineColor(Expression.toColor(Expression.get("color"))),
                     PropertyFactory.lineWidth(1.2f),
                 ),
+            )
+            // A route under the markers: a casing, then the measured legs, then the dashed ones.
+            s.addLayer(
+                LineLayer("$ROUTE-casing", ROUTE).withProperties(
+                    PropertyFactory.lineColor(if (casingDark) android.graphics.Color.rgb(0x0E, 0x0E, 0x0D) else android.graphics.Color.WHITE),
+                    PropertyFactory.lineWidth(9f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                ),
+            )
+            s.addLayer(
+                LineLayer("$ROUTE-solid", ROUTE).withProperties(
+                    PropertyFactory.lineColor(Expression.toColor(Expression.get("color"))),
+                    PropertyFactory.lineWidth(5f),
+                    PropertyFactory.lineCap(Property.LINE_CAP_ROUND),
+                ).withFilter(Expression.eq(Expression.get("dashed"), Expression.literal(false))),
+            )
+            s.addLayer(
+                LineLayer("$ROUTE-dashed", ROUTE).withProperties(
+                    PropertyFactory.lineColor(Expression.toColor(Expression.get("color"))),
+                    PropertyFactory.lineWidth(5f),
+                    PropertyFactory.lineDasharray(arrayOf(1.6f, 1.2f)),
+                ).withFilter(Expression.eq(Expression.get("dashed"), Expression.literal(true))),
             )
             s.addLayer(
                 SymbolLayer(ITEMS, ITEMS).withProperties(
@@ -218,6 +390,7 @@ fun LichenMap(
             if (s.getImage(icon) == null) s.addImage(icon, markerBitmap(item, density))
             Feature.fromGeometry(Point.fromLngLat(item.lon, item.lat)).apply {
                 addStringProperty("icon", icon)
+                addStringProperty("id", item.id)
                 addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 3; MapItem.Kind.PLACE -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0; MapItem.Kind.NODE -> -1 })
             }
         }
@@ -234,6 +407,16 @@ fun LichenMap(
         }
         s.getSourceAs<GeoJsonSource>(ITEMS)?.setGeoJson(FeatureCollection.fromFeatures(markers))
         s.getSourceAs<GeoJsonSource>(CIRCLES)?.setGeoJson(FeatureCollection.fromFeatures(circles))
+    }
+    LaunchedEffect(loaded, route) {
+        val s = loaded ?: return@LaunchedEffect
+        val lines = route?.lines.orEmpty().map { l ->
+            Feature.fromGeometry(LineString.fromLngLats(listOf(Point.fromLngLat(l.from.second, l.from.first), Point.fromLngLat(l.to.second, l.to.first)))).apply {
+                addStringProperty("color", "#%06X".format(l.color and 0xFFFFFF))
+                addBooleanProperty("dashed", l.dashed)
+            }
+        }
+        s.getSourceAs<GeoJsonSource>(ROUTE)?.setGeoJson(FeatureCollection.fromFeatures(lines))
     }
     LaunchedEffect(loaded, overlay) {
         val s = loaded ?: return@LaunchedEffect
@@ -268,6 +451,22 @@ fun LichenMap(
         val f = focus ?: return@LaunchedEffect
         if (loaded == null) return@LaunchedEffect
         m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(f.lat, f.lon), max(m.cameraPosition.zoom, 14.0)), 600)
+    }
+    // A new route: the camera takes all of it in, the card below kept clear. After the fits
+    // above: on the map's first load, the route wins.
+    LaunchedEffect(route?.key, loaded) {
+        val m = map ?: return@LaunchedEffect
+        val r = route ?: return@LaunchedEffect
+        if (loaded == null || r.lines.isEmpty()) return@LaunchedEffect
+        val b = LatLngBounds.Builder()
+        r.lines.forEach {
+            b.include(LatLng(it.from.first.coerceIn(-LAT_MAX, LAT_MAX), it.from.second))
+            b.include(LatLng(it.to.first.coerceIn(-LAT_MAX, LAT_MAX), it.to.second))
+        }
+        val d = context.resources.displayMetrics.density
+        val camera = runCatching { m.getCameraForLatLngBounds(b.build(), intArrayOf((60 * d).toInt(), (150 * d).toInt(), (60 * d).toInt(), (230 * d).toInt())) }.getOrNull()
+            ?: return@LaunchedEffect
+        m.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(camera).zoom(minOf(camera.zoom, 15.0)).build()), 600)
     }
 }
 
@@ -314,7 +513,8 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
     val labelH = if (item.label.isEmpty()) 0f else 16 * density
     val gap = if (item.label.isEmpty()) 0f else 4 * density
     val labelW = if (item.label.isEmpty()) 0f else labelPaint.measureText(item.label) + 2 * padX
-    val w = max(avatar + 4 * density, labelW)
+    // A node's rating ring takes a little more room around it.
+    val w = max(avatar + (if (item.ring != null) 12 else 4) * density, labelW)
     val h = avatar + 2 * (gap + labelH) + 4 * density
     val bmp = Bitmap.createBitmap(w.toInt().coerceAtLeast(1), h.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
@@ -324,7 +524,18 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
     val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = item.color }
     val r = avatar / 2
     if (item.kind == MapItem.Kind.NODE) {
-        // A node: a rounded square.
+        // A node: a rounded square; heard directly, a thin ring in its rating's colour.
+        item.ring?.let { color ->
+            val o2 = r + 4.5f * density
+            c.drawRoundRect(
+                RectF(cx - o2, cy - o2, cx + o2, cy + o2), 11 * density, 11 * density,
+                Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = color
+                    style = Paint.Style.STROKE
+                    strokeWidth = 2 * density
+                },
+            )
+        }
         val o = r + 2 * density
         c.drawRoundRect(RectF(cx - o, cy - o, cx + o, cy + o), 9 * density, 9 * density, ring)
         c.drawRoundRect(RectF(cx - r, cy - r, cx + r, cy + r), 8 * density, 8 * density, fill)
@@ -361,6 +572,7 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
 }
 
 private const val ITEMS = "lichen-items"
+private const val ROUTE = "lichen-route"
 private const val CIRCLES = "lichen-circles"
 private const val ELLIPSES = "lichen-search-ellipses"
 private const val HEAT = "lichen-search-heat"

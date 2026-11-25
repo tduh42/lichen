@@ -1076,6 +1076,15 @@
     </plurals>
     <string name="no_reading_window">No reading in this time.</string>
     <string name="no_own_signal">Heard only through repeaters: no signal of its own. The route above shows how it reaches you.</string>
+    <!-- A node's route on the map (§16.3). -->
+    <string name="route_to">Route to %1$s</string>
+    <string name="traced_ago">traced %1$s</string>
+    <string name="route_no_positions">No positions to draw this route</string>
+    <string name="close_route">Close the route</string>
+    <string name="legend_good">good</string>
+    <string name="legend_fair">fair</string>
+    <string name="legend_weak">weak</string>
+    <string name="legend_note">the last signal per leg</string>
     <string name="filter_all">All</string>
     <string name="filter_repeaters">Repeaters</string>
     <string name="filter_rooms">Rooms</string>
