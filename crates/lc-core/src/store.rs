@@ -50,7 +50,8 @@ pub use rusqlite::Error;
 /// 16: blocks lifted (ADR-0034): `block_periods` (table added, nothing migrated).
 /// 17: a contact's MeshCore type (`contacts.kind`, added to older databases as a person's).
 /// 18: each node's signal (ADR-0049): `signals` (table added, nothing migrated).
-const VERSION: i32 = 18;
+/// 19: a node's readings (ADR-0050): `readings` (table added, nothing migrated).
+const VERSION: i32 = 19;
 
 /// A conversation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -380,6 +381,13 @@ CREATE TABLE IF NOT EXISTS signals (
     rssi INTEGER
 );
 CREATE INDEX IF NOT EXISTS signals_by_node ON signals (radio, node, at);
+CREATE TABLE IF NOT EXISTS readings (
+    radio BLOB NOT NULL,
+    node BLOB NOT NULL,
+    at INTEGER NOT NULL,
+    data BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS readings_by_node ON readings (radio, node, at);
 ";
 
 /// A reading from columns `at, snr4, rssi` starting at `first`; `None` when one is out of range.
@@ -695,6 +703,7 @@ impl Store {
              DELETE FROM shares;
              DELETE FROM positions;
              DELETE FROM signals;
+             DELETE FROM readings;
              DELETE FROM search_consent;
              DELETE FROM reactions WHERE pending <> 0;
              DELETE FROM amendments WHERE pending <> 0;",
@@ -988,6 +997,83 @@ impl Store {
     pub fn prune_signals(&self, before: u64) -> Result<usize, Error> {
         self.conn.execute(
             "DELETE FROM signals WHERE at < ?1",
+            params![i64::try_from(before).unwrap_or(i64::MAX)],
+        )
+    }
+
+    // ----- a node's readings (protocol.md §16.7, ADR-0050) --------------------------------
+
+    /// Records the readings `data` (CayenneLPP, its decoded items as sent) of `node` by `radio`,
+    /// received at `at_s`, and forgets that node's readings by that radio older than
+    /// [`KEEP_S`](crate::readings::KEEP_S) before it, or beyond the newest
+    /// [`KEEP_MAX`](crate::readings::KEEP_MAX).
+    pub fn put_readings(
+        &self,
+        radio: &PubKey,
+        node: &PubKey,
+        at_s: u64,
+        data: &[u8],
+    ) -> Result<(), Error> {
+        let at = i64::try_from(at_s).unwrap_or(i64::MAX);
+        let keep = i64::try_from(crate::readings::KEEP_S).unwrap_or(i64::MAX);
+        let max = i64::try_from(crate::readings::KEEP_MAX).unwrap_or(i64::MAX);
+        let (radio, node) = (radio.as_slice(), node.as_slice());
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "INSERT INTO readings (radio, node, at, data) VALUES (?1, ?2, ?3, ?4)",
+            params![radio, node, at, data],
+        )?;
+        tx.execute(
+            "DELETE FROM readings WHERE radio = ?1 AND node = ?2 AND at < ?3",
+            params![radio, node, at.saturating_sub(keep)],
+        )?;
+        tx.execute(
+            "DELETE FROM readings WHERE radio = ?1 AND node = ?2 AND rowid NOT IN
+               (SELECT rowid FROM readings WHERE radio = ?1 AND node = ?2
+                ORDER BY at DESC, rowid DESC LIMIT ?3)",
+            params![radio, node, max],
+        )?;
+        tx.commit()
+    }
+
+    /// The readings of `node` by `radio` since `since_s` (Unix seconds), oldest first: when
+    /// each came, and its data.
+    pub fn readings(
+        &self,
+        radio: &PubKey,
+        node: &PubKey,
+        since_s: u64,
+    ) -> Result<Vec<(u64, Vec<u8>)>, Error> {
+        let mut st = self.conn.prepare(
+            "SELECT at, data FROM readings WHERE radio = ?1 AND node = ?2 AND at >= ?3
+             ORDER BY at, rowid",
+        )?;
+        let since = i64::try_from(since_s).unwrap_or(i64::MAX);
+        let rows = st.query_map(params![radio.as_slice(), node.as_slice(), since], |r| {
+            let at: i64 = r.get(0)?;
+            let data: Vec<u8> = r.get(1)?;
+            Ok(u64::try_from(at).ok().map(|at| (at, data)))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// When each node last answered `radio` with readings.
+    pub fn last_readings_times(&self, radio: &PubKey) -> Result<Vec<(PubKey, u64)>, Error> {
+        let mut st = self
+            .conn
+            .prepare("SELECT node, MAX(at) FROM readings WHERE radio = ?1 GROUP BY node")?;
+        let rows = st.query_map(params![radio.as_slice()], |r| {
+            let node: Vec<u8> = r.get(0)?;
+            let at: i64 = r.get(1)?;
+            Ok(node.as_slice().try_into().ok().zip(u64::try_from(at).ok()))
+        })?;
+        Ok(rows.filter_map(|r| r.ok().flatten()).collect())
+    }
+
+    /// Forgets the readings older than `before` (Unix seconds).
+    pub fn prune_readings(&self, before: u64) -> Result<usize, Error> {
+        self.conn.execute(
+            "DELETE FROM readings WHERE at < ?1",
             params![i64::try_from(before).unwrap_or(i64::MAX)],
         )
     }

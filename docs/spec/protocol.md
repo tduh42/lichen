@@ -951,3 +951,37 @@ lichen's flow, for a link read as §15.3 says, the radio connected (else refused
 2. A signed advert: `IMPORT_CONTACT` with the packet as the link holds it, its path included, then `GET_CONTACT_BY_KEY` (30): `CONTACT` means the radio took it. The radio then knows the path the sharer's radio knew, as when the stock app imports a link; emptied, it would record the node as heard directly. lichen does not make it the contact's path.
 3. Not taken (`ERR`: manual add, a path of as many hops as the auto-add limit or more, a full table), or a contact code: `ADD_UPDATE_CONTACT` with the type, flags 0, no path (`out_path_len` 0xFF, `OUT_PATH_UNKNOWN`, `src/helpers/ContactInfo.h` L6), the name, the advert's timestamp (0 for a code: the node's next advert then updates the contact) and its position (0, 0 for none), then `GET_CONTACT_BY_KEY`.
 4. The contact then comes as any other (§16.1): among the people for a companion, the nodes for the others. An `ERR` to `ADD_UPDATE_CONTACT`, or a contact still missing after it, is reported as the radio refusing the contact, as a setting it refuses (§1.1). Vectors in `testdata/meshcore/mesh.toml` (`[[link]]`).
+
+### 16.7 Readings (telemetry, ADR-0050)
+
+A node can answer with its readings: its battery, its temperature, and what its sensors measure. The facts come from the firmware at v1.18 (as above; `NodePrefs.h`, `DataStore.cpp` are `examples/companion_radio/`; `SensorManager.h` and `sensors/EnvironmentSensorManager.cpp` are `src/helpers/`), and from the CayenneLPP library it builds with (`electroniccats/CayenneLPP @ 1.6.1`, `platformio.ini` L27; `https://github.com/ElectronicCats/CayenneLPP/blob/1.6.1/src/…`). Vectors: `testdata/meshcore/mesh.toml` (command and push) and `testdata/lichen/lpp.toml` (the values, written by `lpp.py`).
+
+- **The request**: `SEND_TELEMETRY_REQ` (39, `MyMesh.cpp` L47, L1680): `[39] ‖ reserved (3, zero) ‖ key (32)` → `SENT` (`flood`, `ack` = a tag, `timeout_ms` its estimate), or `ERR 2` when the node is not one of its contacts, `ERR 3` when it cannot send. On the air (`BaseChatMesh.cpp` L690–L712) it is a REQ to the node, direct along its path or flooded when it has none, whose plaintext is `tag u32 ‖ 0x03 ‖ 0 0 0 0 ‖ 4 random bytes`: the first zero byte is an inverse mask of what we ask for, so nothing is held back. It costs what a status request costs (§16.5): `2 + path + 2 + 2 + 16` bytes.
+- **One at a time**: the companion waits for one request only, and a new one (login, status, binary, telemetry) replaces the one it waits for (`clearPendingReqs`, `MyMesh.h` L192). Readings therefore go in the queue of §16.5, behind a login or a status already asked. One request per node at a time; a second is refused until the first is answered or given up.
+- **The answer**: the node's RESPONSE carries `tag ‖ readings` (`MyMesh.cpp` L677–L682, at most 180 bytes of readings, `MAX_PACKET_PAYLOAD − 4`); the companion pushes `TELEMETRY_RESPONSE` (0x8B, L128, L739–L748): `reserved ‖ key prefix (6) ‖ readings`, matched by the prefix with the request out. Over Bluetooth the push holds 165 bytes of readings at most (§1 fact 10); what is cut off is not decoded.
+- **Who answers**:
+  - a person's radio (`onContactRequest`, `MyMesh.cpp` L639–L686) by its owner's three telemetry modes (§1.1: base, location, environment; each 0 nobody, 1 the contacts allowed one by one, 2 everyone; `NodePrefs.h` L7–L9) and, in mode 1, the bits its owner set on our contact (`flags`: base 0x02, location 0x04, environment 0x08, `src/helpers/ContactInfo.h` L30–L32). With base allowed it answers its battery and its MCU's temperature, plus its position (GPS) and sensors when those are allowed (`EnvironmentSensorManager.cpp` L685–L698); without, it does not answer. The three are off by default (§1 fact 8): someone with the stock app answers only if they chose to;
+  - a repeater or a room server (`simple_repeater/MyMesh.cpp` L240–L260, L663–L677; `simple_room_server/MyMesh.cpp` L181–L200, L578) answers only the clients it lists, those that logged in (§16.5), in this connection or before. A guest gets the base readings (battery, MCU temperature); an admin or member also its sensors. A node that does not list us does not answer: log in first, as a guest at least.
+- **The format** (CayenneLPP, `CayenneLPP.cpp` L593–L638): items `channel ‖ type ‖ value`, the value big-endian, two's complement for the types the library signs (L556–L589: analog, temperature, voltage, current, altitude, GPS). The encoder multiplies and truncates (`value × multiplier`, toward zero). lichen decodes these types (`CayenneLPP.h` L27–L110), in the units it keeps them in (integers: no floats in `lc-meshcore`):
+
+| Type | Name | Bytes | Kept as |
+|---|---|---|---|
+| 2 | analog input | 2, signed | hundredths |
+| 100 | generic sensor | 4, unsigned | as sent |
+| 101 | illuminance | 2, unsigned | lux |
+| 103 | temperature | 2, signed | tenths of a °C |
+| 104 | relative humidity | 1, unsigned, ½ % steps | tenths of a % |
+| 115 | barometric pressure | 2, unsigned | tenths of a hPa |
+| 116 | voltage | 2, signed, 0.01 V steps | millivolts |
+| 117 | current | 2, signed | milliamps |
+| 118 | frequency | 4, unsigned | hertz |
+| 120 | percentage | 1, unsigned | percent |
+| 121 | altitude | 2, signed | metres |
+| 128 | power | 2, unsigned | watts |
+| 130 | distance | 4, unsigned | millimetres |
+| 136 | GPS | 9: latitude, longitude 3 bytes signed each (0.0001°), altitude 3 bytes signed (0.01 m) | 10⁻⁴ degrees, centimetres |
+
+  Decoding stops at the first type not in the table, and at an item cut short, keeping the items before it: a length is never guessed. Channel 1 is the node itself (`TELEM_CHANNEL_SELF`, `SensorManager.h` L10): its voltage is the node's battery and its temperature the MCU's; sensors take channels 2 and up.
+- **What the apps show**: the battery, the voltage of channel 1 in volts and as a charge by the radio's curve (§16.4: 3.3 V empty, 4.2 V full); the temperature, channel 1's, else the first one; the other items as labelled values with their units, numbered by channel past the first. When it was sent is when the answer came.
+- **Outcomes**: answered (the readings); answered without a reading (no item in the table: nothing kept); no answer (none within the companion's estimate plus 4 s, 10 s without `SENT`, or the radio gone); refused (`ERR`, or a node not in the radio's contacts, refused before anything is sent). Nothing is asked again by itself: the user asks again.
+- **Kept**: per radio (its node key) and node, the decoded part of each answer (its items in the table, as sent) and when it came: those of the last 7 days, the newest 100 at most. Not in a backup (backup §3). Our own radio answers others under its own telemetry setting (§1.1, ADR-0032): asking changes nothing there.

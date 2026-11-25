@@ -166,3 +166,10 @@ path = "fuzz_targets/advert_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "lpp_decode"
+path = "fuzz_targets/lpp_decode.rs"
+test = false
+doc = false
+bench = false

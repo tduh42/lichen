@@ -994,6 +994,12 @@ impl DemoNetwork {
         net.nodes[hub].advert_position = Some(e6(HUB));
         net.nodes[crest].advert_position = Some(e6(CREST));
         net.nodes[board].advert_position = Some(e6(BOARD));
+        // Their readings (§16.7), to the clients they list: crest 3.92 V and 4 °C; the hub
+        // 4.10 V and 11.5 °C, and for those who are not guests its humidity (71.5 %) and
+        // pressure (846.3 hPa). They come only when asked: nothing more on the air before.
+        net.nodes[crest].telemetry = lc_core::fakenet::base_readings(3_920, 40);
+        net.nodes[hub].telemetry = lc_core::fakenet::base_readings(4_100, 115);
+        net.nodes[hub].sensors = vec![2, 104, 143, 2, 115, 0x21, 0x0F];
         let named = [
             ("app", app),
             ("hub", hub),

@@ -75,6 +75,9 @@ fn mesh_commands_match_the_firmware() {
             "logout" => Command::Logout {
                 key: key.as_ref().unwrap(),
             },
+            "send-telemetry-req" => Command::SendTelemetryReq {
+                key: key.as_ref().unwrap(),
+            },
             "send-binary-req-neighbours" => Command::SendBinaryReq {
                 key: key.as_ref().unwrap(),
                 data: req.as_ref().unwrap(),
@@ -99,7 +102,7 @@ fn mesh_commands_match_the_firmware() {
         assert_eq!(hex::encode(&out[..len]), s(v, "hex"), "{name}");
         seen += 1;
     }
-    assert_eq!(seen, 7);
+    assert_eq!(seen, 8);
 }
 
 #[test]
@@ -202,11 +205,17 @@ fn mesh_responses_decode() {
                 want.extend_from_slice(s(v, "text").as_bytes());
                 assert_eq!(text, want, "{name}");
             }
+            Response::TelemetryResponse { prefix, data } => {
+                assert_eq!(prefix[..], bytes(v, "prefix"), "{name}");
+                assert_eq!(data, bytes(v, "data"), "{name}");
+                let items: Vec<_> = lc_meshcore::lpp::items(data).collect();
+                assert_eq!(items.len(), 2, "{name}: {items:?}");
+            }
             r => panic!("{name}: {r:?}"),
         }
         seen += 1;
     }
-    assert_eq!(seen, 11);
+    assert_eq!(seen, 12);
 }
 
 /// Status and neighbours decoders never read past what they were given.

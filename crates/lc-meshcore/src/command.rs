@@ -141,6 +141,8 @@ pub enum Command<'a> {
     SendStatusReq { key: &'a [u8; 32] },
     /// `[29] key` → `OK`: the radio stops keeping the connection to that server alive.
     Logout { key: &'a [u8; 32] },
+    /// `[39] reserved (3) ‖ key` → `SENT`, then push `TELEMETRY_RESPONSE` (§16.7).
+    SendTelemetryReq { key: &'a [u8; 32] },
     /// `[50] key ‖ request` → `SENT` (`ack` = the tag), then push `BINARY_RESPONSE` with the
     /// same tag (§16.5).
     SendBinaryReq { key: &'a [u8; 32], data: &'a [u8] },
@@ -422,6 +424,11 @@ impl Command<'_> {
             }
             Command::Logout { key } => {
                 w.u8(cmd::LOGOUT)?;
+                w.put(key)?;
+            }
+            Command::SendTelemetryReq { key } => {
+                w.u8(cmd::SEND_TELEMETRY_REQ)?;
+                w.put(&[0, 0, 0])?;
                 w.put(key)?;
             }
             Command::SendBinaryReq { key, data } => {

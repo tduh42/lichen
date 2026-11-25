@@ -491,6 +491,20 @@ fn describe(core: &Core, e: &Event) -> String {
             format!("{}: request accepted", name_of(core, node))
         }
         Event::RadioOutcome(o) => format!("radio setting {:?}: {:?}", o.setting, o.outcome),
+        Event::NodeReadings { node, data, .. } => {
+            let r = lc_core::Readings::decode(data, 0);
+            format!(
+                "{}: readings, battery {}, temperature {}, {} items",
+                name_of(core, node),
+                r.battery_mv.map_or("?".into(), |mv| format!("{mv} mV")),
+                r.temperature_dc.map_or("?".into(), |t| format!(
+                    "{}.{} °C",
+                    t / 10,
+                    (t % 10).abs()
+                )),
+                r.items.len()
+            )
+        }
         Event::NodeSignal { node, reading } => format!(
             "{} heard directly: SNR {:.2} dB{} ({:?})",
             name_of(core, node),

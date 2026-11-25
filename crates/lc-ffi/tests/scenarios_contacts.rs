@@ -4,8 +4,8 @@ mod common;
 
 use common::{Sim, contact_chat, find_contact, texts};
 use lc_ffi::{
-    ChatRef, DemoNetwork, LichenError, LichenEvent, MessageStatus, NodeKind, ServerLogin,
-    SignalRating, TraceState,
+    ChatRef, DemoNetwork, LichenError, LichenEvent, MessageStatus, NodeKind, ReadingsState,
+    ServerLogin, SignalRating, TraceState,
 };
 
 fn node(sim: &Sim, name: &str) -> lc_ffi::NodeInfo {
@@ -430,6 +430,92 @@ fn ct_7_route_to_a_node() {
     // A node the radio does not know.
     assert!(sim.core.node_route(vec![0x42; 32]).is_none());
     assert!(sim.core.node_route(vec![1]).is_none());
+}
+
+/// CT-14: a node's readings (protocol §16.7, ADR-0050): crest, which lists us once we log in
+/// as its guest, answers 3.92 V, about 69 % and 4 °C, and again when asked again; one request
+/// at a time. Marc, with the stock app, never answers. Lucie, heard but not on the radio,
+/// cannot be asked.
+#[test]
+fn ct_14_a_node_s_readings() {
+    let mut sim = Sim::new(95);
+    let crest = sim.contact("crest").key;
+    assert_eq!(
+        sim.core.node_readings_state(crest.clone()),
+        ReadingsState::Idle
+    );
+    assert!(sim.core.node_readings(crest.clone()).is_empty());
+    assert_eq!(node(&sim, "crest").readings_at_s, None);
+    sim.core
+        .server_login(crest.clone(), "hello".into(), false, sim.now)
+        .unwrap();
+    sim.until("guest on the crest", 30, |c| {
+        c.server(crest.clone()).unwrap().login == ServerLogin::Guest
+    });
+    sim.core
+        .request_node_readings(crest.clone(), sim.now)
+        .unwrap();
+    assert_eq!(
+        sim.core.node_readings_state(crest.clone()),
+        ReadingsState::Asking
+    );
+    assert!(matches!(
+        sim.core.request_node_readings(crest.clone(), sim.now),
+        Err(LichenError::TooSoon { .. })
+    ));
+    sim.until("crest's readings", 60, |c| {
+        c.node_readings_state(crest.clone()) != ReadingsState::Asking
+    });
+    assert_eq!(
+        sim.core.node_readings_state(crest.clone()),
+        ReadingsState::Answered
+    );
+    let r = sim.core.node_readings(crest.clone());
+    assert_eq!(r.len(), 1, "{r:?}");
+    assert_eq!(r[0].battery_mv, Some(3_920));
+    assert_eq!(r[0].battery_percent, Some(69));
+    assert_eq!(r[0].temperature_c, Some(4.0));
+    assert!(
+        r[0].values.is_empty(),
+        "a guest gets the base readings: {r:?}"
+    );
+    assert!(r[0].at_s.abs_diff(u64::from(sim.unix_s())) < 60);
+    assert_eq!(node(&sim, "crest").readings_at_s, Some(r[0].at_s));
+    assert!(sim.events.iter().any(|(_, e)| *e
+        == LichenEvent::NodeUpdated {
+            node: crest.clone()
+        }));
+    // Asked again: a second answer in its history.
+    sim.core
+        .request_node_readings(crest.clone(), sim.now)
+        .unwrap();
+    sim.until("crest's readings again", 60, |c| {
+        c.node_readings(crest.clone()).len() == 2
+    });
+
+    // Marc never answers: no answer, nothing kept.
+    let marc = sim.contact("Marc").key;
+    sim.core
+        .request_node_readings(marc.clone(), sim.now)
+        .unwrap();
+    sim.until("Marc's silence", 120, |c| {
+        c.node_readings_state(marc.clone()) != ReadingsState::Asking
+    });
+    assert_eq!(
+        sim.core.node_readings_state(marc.clone()),
+        ReadingsState::NoAnswer
+    );
+    assert!(sim.core.node_readings(marc.clone()).is_empty());
+    assert_eq!(node(&sim, "Marc").readings_at_s, None);
+
+    // Lucie is not on the radio: refused at once.
+    let lucie = node(&sim, "Lucie").key;
+    assert!(matches!(
+        sim.core.request_node_readings(lucie.clone(), sim.now),
+        Err(LichenError::UnknownContact)
+    ));
+    assert_eq!(sim.core.node_readings_state(lucie), ReadingsState::Idle);
+    assert!(sim.core.node_readings(vec![1, 2]).is_empty());
 }
 
 /// The demo with requests on (`-requestDemo YES`): Camille's first message becomes a request.

@@ -23,6 +23,7 @@ mod bytes;
 pub mod codes;
 pub mod command;
 pub mod ecdh;
+pub mod lpp;
 pub mod path;
 pub mod response;
 pub mod server;

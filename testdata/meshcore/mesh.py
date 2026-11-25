@@ -177,6 +177,10 @@ def main():
     out("command", "send-txt-msg-cli", struct.pack("<BBBI", 2, 1, 0, 1_793_000_000) + rpt[:6] + b"ver",
         "MyMesh.cpp#L1132", kind=1, attempt=0, ts=1_793_000_000, prefix=rpt[:6], text="ver")
 
+    # CMD_SEND_TELEMETRY_REQ (39), MyMesh.cpp#L1680: three reserved bytes, then the key (the
+    # handler reads it at offset 4, `len >= 4 + PUB_KEY_SIZE`; `len == 4` asks our own radio).
+    out("command", "send-telemetry-req", bytes([39, 0, 0, 0]) + rpt, "MyMesh.cpp#L1680", key=rpt)
+
     # PUSH_CODE_LOGIN_SUCCESS (0x85), MyMesh.cpp#L704: is_admin, key prefix, the server's
     # clock, our permissions (simple_repeater/MyMesh.cpp#L137: role 3 admin), firmware level.
     out("response", "login-success", bytes([0x85, 1]) + rpt[:6] + struct.pack("<IBB", 1_793_000_123, 3, 2),
@@ -208,6 +212,14 @@ def main():
     out("response", "status-response-room", bytes([0x87, 0]) + room[:6] + stats,
         "MyMesh.cpp#L724", prefix=room[:6], battery_mv=3900, uptime_s=3_600, last_snr4=-8,
         posted=25, post_pushes=60)
+    # PUSH_CODE_TELEMETRY_RESPONSE (0x8B), MyMesh.cpp#L739-L748: reserved, key prefix, the
+    # CayenneLPP readings after the node's 4-byte tag (simple_repeater/MyMesh.cpp#L240-L260):
+    # channel 1 voltage 3.92 V (type 116, 0.01 V, big-endian) and temperature 4.0 C (type 103,
+    # 0.1 C).
+    lpp = bytes([1, 116]) + (392).to_bytes(2, "big") + bytes([1, 103]) + (40).to_bytes(2, "big")
+    out("response", "telemetry-response", bytes([0x8B, 0]) + rpt[:6] + lpp, "MyMesh.cpp#L739",
+        prefix=rpt[:6], data=lpp)
+
     # PUSH_CODE_BINARY_RESPONSE (0x8C), MyMesh.cpp#L750: reserved, tag, the answer after its
     # tag; GET_NEIGHBOURS' answer, simple_repeater/MyMesh.cpp#L341-L360: total, count, and per
     # neighbour its key prefix, seconds since heard (u32), SNR x 4 (i8).

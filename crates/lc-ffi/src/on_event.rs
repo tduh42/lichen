@@ -441,6 +441,12 @@ impl Inner {
                 self.save_contacts();
                 self.adopt_request(node, identity);
             }
+            // A node's readings (§16.7): kept per radio.
+            Event::NodeReadings { node, at_s, data } => {
+                if let (Some(st), Some(radio)) = (&self.store, self.core.node_key()) {
+                    let _ = st.put_readings(radio, node, *at_s, data);
+                }
+            }
             // A node heard directly (§16.1): kept per radio, and its page reads it again.
             Event::NodeSignal { node, reading } => {
                 if let (Some(st), Some(radio)) = (&self.store, self.core.node_key()) {
