@@ -1107,6 +1107,9 @@
     <string name="traced_ago">tracé %1$s</string>
     <string name="route_no_positions">Pas de positions pour tracer cette route</string>
     <string name="close_route">Fermer la route</string>
+    <string name="chart_good">Bon</string>
+    <string name="chart_fair">Moyen</string>
+    <string name="chart_limits">bon au-dessus de %1$s, moyen au-dessus de %2$s</string>
     <string name="legend_good">bon</string>
     <string name="legend_fair">moyen</string>
     <string name="legend_weak">faible</string>

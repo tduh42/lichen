@@ -1104,6 +1104,10 @@
     <string name="route_no_positions">No positions to draw this route</string>
     <string name="close_route">Close the route</string>
     <string name="legend_good">good</string>
+    <!-- The signal chart's bands (ADR-0049): their limits under the radio's preset. -->
+    <string name="chart_good">Good</string>
+    <string name="chart_fair">Fair</string>
+    <string name="chart_limits">good above %1$s, fair above %2$s</string>
     <string name="legend_fair">fair</string>
     <string name="legend_weak">weak</string>
     <string name="legend_note">the last signal per leg</string>

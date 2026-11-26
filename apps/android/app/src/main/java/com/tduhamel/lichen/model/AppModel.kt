@@ -11,6 +11,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.SignalLimits
 import com.tduhamel.lichen.core.InviteInfo
 import com.tduhamel.lichen.core.BlockedContact
 import com.tduhamel.lichen.core.ChatUsage
@@ -251,6 +252,10 @@ class AppModel(val app: Application) {
     var savedRadios by mutableStateOf(listOf<SavedRadio>())
     /** What the radio reported of its settings (protocol §1.1), read again after each change. */
     var radioSettings by mutableStateOf<RadioSettings?>(null)
+    /** The SNR and RSSI from which a reading is Good, and Fair, under the radio's preset
+     * (ADR-0049): the signal chart's bands. Read again on `Connected` and `RadioSettings`;
+     * null before a radio. */
+    var signalLimits by mutableStateOf<SignalLimits?>(null)
     /** Why a setting could not be sent (out of range, no radio), for a dialog. */
     var radioError by mutableStateOf<String?>(null)
     /** Each radio setting row the user changed: waiting (outcome null) or what became of it,
@@ -1200,6 +1205,7 @@ class AppModel(val app: Application) {
                 nodeName = e.name
                 radio = e.radio
                 radioSettings = core.radioSettings()
+                signalLimits = core.signalLimits()
                 radioConnected()
                 radioReading = core.radioReading()
                 // The ongoing notification names the node, not the link's address.
@@ -1239,6 +1245,7 @@ class AppModel(val app: Application) {
                 radioSettings = r
                 radioReading = core.radioReading()
                 radio = core.radio()
+                signalLimits = core.signalLimits()
                 if (r.name.isNotEmpty()) nodeName = r.name
             }
             LichenEvent.ContactsUpdated -> {
