@@ -69,6 +69,45 @@ final class LocationTests: LichenUITest {
         wait(nodeMarker("hub"), 5, "the nodes did not come back")
     }
 
+    /// Any element read as `text` followed by something ("hub to crest, " then its SNR).
+    private func starting(_ text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", text)).firstMatch
+    }
+
+    /// MP-3: crest's route on the map, from its page's Show on the map: the card (to whom, one
+    /// hop, via hub), the legend, each leg read ("You to hub, 7.5 dB"; "hub to crest, not
+    /// measured" before a trace); closed, our shares come back. A node tapped on the map draws
+    /// its own route; the layers menu has the legend.
+    func testMP3_RouteOnTheMap() {
+        launch(["-quietDemo", "YES"])
+        tab(.nodes)
+        let hubRow = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'hub'")).firstMatch
+        waitLabel(wait(hubRow, 30, "no hub"), contains: " dB", 30)
+        app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'crest'")).firstMatch.tap()
+        wait(button(tr("Show on the map")), 5, "no Show on the map").tap()
+        wait(element(tr("Route to %@", "crest")), 10, "no route card")
+        let card = containing(tr("%lld hops", 1))
+        XCTAssertTrue(card.exists && card.label.contains(tr("via %@", "hub")), "the card: \(card.label)")
+        XCTAssertTrue(containing(tr("the last signal per leg")).exists, "no legend")
+        let hubLeg = starting(tr("%@ to %@, %@", tr("You"), "hub", ""))
+        wait(hubLeg, 5, "the leg to the hub is not read")
+        XCTAssertTrue(hubLeg.label.hasSuffix(" dB"), hubLeg.label)
+        XCTAssertTrue(element(tr("%@ to %@, %@", "hub", "crest", tr("not measured"))).exists
+                      || containing(tr("%@ to %@, %@", "hub", "crest", tr("not measured"))).exists, "the leg to crest is not read")
+        keep("mp-route")
+        button(tr("Close the route")).tap()
+        waitGone(element(tr("Route to %@", "crest")), 5, "the card stayed")
+        wait(element(tr("Location sharing")), 5, "our shares did not come back")
+        // A node tapped on the map: its route.
+        nodeMarker("hub").tap()
+        wait(element(tr("Route to %@", "hub")), 10, "a node tapped draws no route")
+        button(tr("Close the route")).tap()
+        // The legend in the layers menu.
+        button(tr("Map layers")).tap()
+        wait(app.buttons[tr("good")], 5, "no legend in the layers")
+        XCTAssertTrue(app.buttons[tr("not measured")].exists)
+    }
+
     /// MP-4: an area of the map to keep offline is offered (the download itself needs the
     /// Internet: not run here).
     func testMP4_OfflineMapsOffered() {

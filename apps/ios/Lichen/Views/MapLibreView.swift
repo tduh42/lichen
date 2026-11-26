@@ -45,6 +45,8 @@ struct MapItem: Equatable, Identifiable {
     let dark: Bool
     /// A node's symbol (SF Symbols).
     var symbol: String? = nil
+    /// A node heard directly: a thin ring in its rating's colour (ADR-0049).
+    var ring: UIColor? = nil
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 }
@@ -64,6 +66,28 @@ struct MapOverlay: Equatable {
     static func == (a: MapOverlay, b: MapOverlay) -> Bool { a.version == b.version }
 }
 
+/// A node's route on the map (§16.3): a line per leg between the stops that have a position,
+/// in its rating's colour, dashed where nothing measured it; its SNR on a chip near its middle.
+struct MapRoute: Equatable {
+    struct Line: Equatable {
+        let fromLat: Double
+        let fromLon: Double
+        let toLat: Double
+        let toLon: Double
+        let color: UIColor
+        let dashed: Bool
+        /// "7.5 dB", "not measured"; several legs' joined across stops without a position.
+        let chip: String
+        let chipColor: UIColor
+        /// "hub to crest, −3.0 dB", as VoiceOver reads the leg.
+        let said: String
+    }
+
+    /// The node's key (hex).
+    let key: String
+    let lines: [Line]
+}
+
 /// MapLibre Native in SwiftUI: items as annotation views, circles as polygons.
 struct MapLibreView: UIViewRepresentable {
     let items: [MapItem]
@@ -78,8 +102,14 @@ struct MapLibreView: UIViewRepresentable {
     var insets = UIEdgeInsets(top: 140, left: 95, bottom: 70, right: 95)
     /// A place to centre on, once per `version` (after any `recenter`).
     var focus: MapPin?
+    /// A node's route to draw, the camera taking it in once per node.
+    var route: MapRoute?
+    /// An item tapped (its id).
+    var onSelect: ((String) -> Void)?
+    /// The route's legs whose chip finds no room on the map (by index): said in the card.
+    var onHiddenChips: (([Int]) -> Void)?
 
-    func makeUIView(context: Context) -> MLNMapView {
+    func makeUIView(context: Context) -> MapContainer {
         let map = MLNMapView(frame: .zero, styleURL: style.url)
         map.delegate = context.coordinator
         map.compassViewPosition = .bottomLeft
@@ -93,10 +123,13 @@ struct MapLibreView: UIViewRepresentable {
         map.compassView.accessibilityLabel = String(localized: "Compass: tap to face north")
         map.setCenter(CLLocationCoordinate2D(latitude: 45.0, longitude: 5.5), zoomLevel: 9, animated: false)
         context.coordinator.style = style
-        return map
+        // The route's chips over the map, beside it: VoiceOver reads them (the map lists only
+        // its own annotations).
+        return MapContainer(map: map, chips: context.coordinator.chips)
     }
 
-    func updateUIView(_ map: MLNMapView, context: Context) {
+    func updateUIView(_ container: MapContainer, context: Context) {
+        let map = container.map
         let c = context.coordinator
         c.parent = self
         if c.style != style {
@@ -105,6 +138,7 @@ struct MapLibreView: UIViewRepresentable {
         }
         c.apply(items, to: map)
         c.applyOverlay(overlay, to: map)
+        c.applyRoute(route, to: map)
         if c.recenter != recenter {
             c.recenter = recenter
             fit(map)
@@ -173,6 +207,11 @@ struct MapLibreView: UIViewRepresentable {
         private var ellipses: [MLNPolyline] = []
         private var ellipseWidths: [ObjectIdentifier: CGFloat] = [:]
         private static let heatId = "lichen-search-heat"
+        private var drawnRoute: MapRoute?
+        private var routeLayers = 0
+        private var fittedRoute: String?
+        let chips = ChipLayer()
+        private var hiddenChips: [Int] = []
 
         init(parent: MapLibreView) {
             self.parent = parent
@@ -192,7 +231,7 @@ struct MapLibreView: UIViewRepresentable {
                 if let a = annotations[item.id] {
                     if a.item != item {
                         let redraw = a.item.label != item.label || a.item.kind != item.kind
-                            || a.item.initials != item.initials || a.item.dark != item.dark
+                            || a.item.initials != item.initials || a.item.dark != item.dark || a.item.ring != item.ring
                         a.item = item
                         a.coordinate = item.coordinate
                         if redraw {
@@ -275,7 +314,111 @@ struct MapLibreView: UIViewRepresentable {
         }
 
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
-            MainActor.assumeIsolated { applyOverlay(parent.overlay, to: mapView, force: true) }
+            MainActor.assumeIsolated {
+                applyOverlay(parent.overlay, to: mapView, force: true)
+                applyRoute(parent.route, to: mapView, force: true)
+            }
+        }
+
+        /// Draws `route` (again after a style change, which drops its layers): a line layer per
+        /// leg, dashed where nothing measured it; the camera takes a new route in.
+        @MainActor
+        func applyRoute(_ route: MapRoute?, to map: MLNMapView, force: Bool = false) {
+            guard force || route != drawnRoute else { return }
+            guard let style = map.style else { return }
+            drawnRoute = route
+            for i in 0..<routeLayers {
+                if let l = style.layer(withIdentifier: "lichen-route-\(i)") { style.removeLayer(l) }
+                if let s = style.source(withIdentifier: "lichen-route-\(i)") { style.removeSource(s) }
+            }
+            routeLayers = 0
+            chips.show(route?.lines ?? [])
+            guard let route else {
+                fittedRoute = nil
+                layoutChips(map)
+                return
+            }
+            for (i, line) in route.lines.enumerated() {
+                var coords = [CLLocationCoordinate2D(latitude: line.fromLat, longitude: line.fromLon),
+                              CLLocationCoordinate2D(latitude: line.toLat, longitude: line.toLon)]
+                let feature = MLNPolylineFeature(coordinates: &coords, count: 2)
+                let source = MLNShapeSource(identifier: "lichen-route-\(i)", shape: feature)
+                style.addSource(source)
+                let layer = MLNLineStyleLayer(identifier: "lichen-route-\(i)", source: source)
+                layer.lineColor = NSExpression(forConstantValue: line.color)
+                layer.lineWidth = NSExpression(forConstantValue: 4)
+                layer.lineCap = NSExpression(forConstantValue: line.dashed ? "butt" : "round")
+                if line.dashed { layer.lineDashPattern = NSExpression(forConstantValue: [2, 1.5]) }
+                style.addLayer(layer)
+                routeLayers += 1
+            }
+            // A new route: the camera takes all its stops in.
+            if fittedRoute != route.key, !route.lines.isEmpty {
+                fittedRoute = route.key
+                var sw = CLLocationCoordinate2D(latitude: 90, longitude: 180)
+                var ne = CLLocationCoordinate2D(latitude: -90, longitude: -180)
+                for l in route.lines {
+                    for (lat, lon) in [(l.fromLat, l.fromLon), (l.toLat, l.toLon)] {
+                        sw.latitude = min(sw.latitude, lat); sw.longitude = min(sw.longitude, lon)
+                        ne.latitude = max(ne.latitude, lat); ne.longitude = max(ne.longitude, lon)
+                    }
+                }
+                let camera = map.cameraThatFitsCoordinateBounds(MLNCoordinateBounds(sw: sw, ne: ne),
+                                                                edgePadding: UIEdgeInsets(top: 160, left: 70, bottom: 90, right: 70))
+                map.setCamera(camera, withDuration: 0.6, animationTimingFunction: nil)
+            }
+            layoutChips(map)
+        }
+
+        /// Puts each leg's chip along it, as near its middle as is free of the markers and their
+        /// labels and of the other chips; a leg with no free spot gets none on the map (its card
+        /// says it).
+        @MainActor
+        func layoutChips(_ map: MLNMapView) {
+            guard let route = drawnRoute else {
+                report([])
+                return
+            }
+            // The markers with their labels, in the map's coordinates.
+            var taken: [CGRect] = annotations.values.compactMap { a in
+                map.view(for: a).flatMap { $0.isHidden ? nil : $0.convert($0.bounds, to: map) }
+            }
+            var hidden: [Int] = []
+            for (i, line) in route.lines.enumerated() {
+                let a = map.convert(CLLocationCoordinate2D(latitude: line.fromLat, longitude: line.fromLon), toPointTo: map)
+                let b = map.convert(CLLocationCoordinate2D(latitude: line.toLat, longitude: line.toLon), toPointTo: map)
+                let size = chips.size(of: i)
+                let spot = [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8].lazy.map { t -> CGRect in
+                    let p = CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
+                    return CGRect(x: p.x - size.width / 2, y: p.y - size.height / 2, width: size.width, height: size.height)
+                }.first { r in map.bounds.contains(r) && !taken.contains { $0.insetBy(dx: -2, dy: -2).intersects(r) } }
+                if let spot {
+                    taken.append(spot)
+                    chips.place(i, at: spot)
+                } else {
+                    chips.place(i, at: nil)
+                    hidden.append(i)
+                }
+            }
+            report(hidden)
+        }
+
+        private func report(_ hidden: [Int]) {
+            guard hidden != hiddenChips else { return }
+            hiddenChips = hidden
+            let tell = parent.onHiddenChips
+            DispatchQueue.main.async { tell?(hidden) }
+        }
+
+        func mapViewRegionIsChanging(_ mapView: MLNMapView) {
+            MainActor.assumeIsolated { layoutChips(mapView) }
+        }
+
+        func mapView(_ mapView: MLNMapView, didSelect annotation: MLNAnnotation) {
+            MainActor.assumeIsolated {
+                mapView.deselectAnnotation(annotation, animated: false)
+                if let a = annotation as? ItemAnnotation { parent.onSelect?(a.item.id) }
+            }
         }
 
         func mapView(_ mapView: MLNMapView, lineWidthForPolylineAnnotation annotation: MLNPolyline) -> CGFloat {
@@ -314,7 +457,10 @@ struct MapLibreView: UIViewRepresentable {
         func mapView(_ mapView: MLNMapView, regionDidChangeAnimated animated: Bool) {
             let bounds = mapView.visibleCoordinateBounds
             let zoom = mapView.zoomLevel
-            MainActor.assumeIsolated { parent.onCamera(bounds, zoom) }
+            MainActor.assumeIsolated {
+                parent.onCamera(bounds, zoom)
+                layoutChips(mapView)
+            }
         }
     }
 }
@@ -351,7 +497,7 @@ final class ItemAnnotationView: MLNAnnotationView {
             : a.item.label.isEmpty ? a.item.initials : a.item.label
         imageView.frame = CGRect(origin: .zero, size: size)
         frame.size = size
-        let anchor = a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2
+        let anchor = MarkerBadge.padding(a.item) + (a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2)
         centerOffset = CGVector(dx: 0, dy: size.height / 2 - anchor)
         layer.zPosition = switch a.item.kind {
         case .sos: 3
@@ -369,6 +515,9 @@ struct MarkerBadge: View {
     static let dot: CGFloat = 22
     let item: MapItem
 
+    /// Room around the marker: its ring, when it has one.
+    static func padding(_ item: MapItem) -> CGFloat { item.ring == nil ? 2 : 6 }
+
     var body: some View {
         VStack(spacing: 4) {
             switch item.kind {
@@ -384,6 +533,12 @@ struct MarkerBadge: View {
                     .frame(width: Self.avatar, height: Self.avatar)
                     .background(Color(item.color), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: item.dark ? 0x0E0E0D : 0xFFFFFF), lineWidth: 2))
+                    // Heard directly: a thin ring in its rating's colour, round for a person.
+                    .overlay {
+                        if let ring = item.ring {
+                            RoundedRectangle(cornerRadius: 11).stroke(Color(ring), lineWidth: 2.5).padding(-4)
+                        }
+                    }
             case .place:
                 Image(systemName: "mappin")
                     .font(.system(size: 16, weight: .bold))
@@ -412,7 +567,84 @@ struct MarkerBadge: View {
                     .fixedSize()
             }
         }
-        .padding(2)
+        .padding(Self.padding(item))
+    }
+}
+
+/// The map with the route's chips over it, in the same coordinates.
+final class MapContainer: UIView {
+    let map: MLNMapView
+
+    init(map: MLNMapView, chips: ChipLayer) {
+        self.map = map
+        super.init(frame: .zero)
+        for v in [map, chips] as [UIView] {
+            v.frame = bounds
+            v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            addSubview(v)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+}
+
+/// The route's SNR chips over the map (`MapRoute`): placed by the map's coordinator, each read
+/// as its leg ("hub to crest, −3.0 dB").
+final class ChipLayer: UIView {
+    private var labels: [UILabel] = []
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func show(_ lines: [MapRoute.Line]) {
+        labels.forEach { $0.removeFromSuperview() }
+        labels = lines.map { line in
+            let l = PaddedLabel()
+            l.text = line.chip
+            // Tabular digits, growing with the text size.
+            l.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .bold))
+            l.adjustsFontForContentSizeCategory = true
+            l.textColor = line.chipColor
+            l.backgroundColor = UIColor { $0.userInterfaceStyle == .dark ? UIColor(Theme.s1) : .white }
+            l.layer.cornerRadius = 8
+            l.layer.masksToBounds = true
+            l.textAlignment = .center
+            l.isAccessibilityElement = true
+            l.accessibilityLabel = line.said
+            l.isHidden = true
+            addSubview(l)
+            return l
+        }
+    }
+
+    func size(of i: Int) -> CGSize {
+        guard i < labels.count else { return .zero }
+        let s = labels[i].intrinsicContentSize
+        return CGSize(width: ceil(s.width), height: ceil(s.height))
+    }
+
+    func place(_ i: Int, at rect: CGRect?) {
+        guard i < labels.count else { return }
+        if let rect { labels[i].frame = rect }
+        labels[i].isHidden = rect == nil
+    }
+}
+
+/// A label with room around its text (a chip).
+final class PaddedLabel: UILabel {
+    private let inset = UIEdgeInsets(top: 3, left: 7, bottom: 3, right: 7)
+
+    override var intrinsicContentSize: CGSize {
+        let s = super.intrinsicContentSize
+        return CGSize(width: s.width + inset.left + inset.right, height: s.height + inset.top + inset.bottom)
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: inset))
     }
 }
 
