@@ -22,10 +22,14 @@ import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tduhamel.lichen.R
+import com.tduhamel.lichen.core.NodeKind
 import com.tduhamel.lichen.core.SharePrecision
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.NodeFilter
+import com.tduhamel.lichen.model.heardWithin
 import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.wallNow
 import com.tduhamel.lichen.model.measurements
 import com.tduhamel.lichen.model.search
 import com.tduhamel.lichen.model.searchEstimate
@@ -153,6 +157,65 @@ class LocationTest : UiTest() {
         tapDesc(R.string.map_layers)
         tapInDialog(R.string.map_nodes)
         see("hub")
+    }
+
+    /** MP-3: the nodes layer's filters, in the layers menu: the Nodes tab's chips with their
+     * counts; Repeaters leaves only the repeaters; Heard in 2 h hides a node last heard 3 h ago;
+     * All brings every node back. The choice is the map's own (the Nodes tab keeps All), kept
+     * while the app runs; a route's stops stay whatever it leaves. */
+    @Test
+    fun MP_3_nodeFiltersOnTheMap() = nodeFilters()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MP_3_nodeFiltersOnTheMap_fr() = nodeFilters()
+
+    private fun nodeFilters() {
+        launch("demo" to true)
+        advanceUntil("the radio's nodes", 30) {
+            model.nodes.count { it.lat != null } >= 3 && model.nodes.any { it.name == "crest" } && model.nodes.any { it.name == "hub" && it.signal != SignalRating.NONE }
+        }
+        tab(R.string.tab_map)
+        fun placed() = model.nodes.filter { it.lat != null && it.lon != null }
+        for (n in placed()) see(n.name)
+        fun choose(label: String) {
+            tapDesc(R.string.map_layers)
+            tapInDialog(label)
+            // The menu stays open, to show what each leaves.
+            assertTrue(compose.onAllNodes(hasText(str(R.string.filter_heard_2h)) and hasAnyAncestor(isPopup())).fetchSemanticsNodes().isNotEmpty())
+            back()
+        }
+        // Repeaters: hub, crest and the other repeaters alone.
+        val repeaters = model.nodes.count { it.kind == NodeKind.REPEATER }
+        choose("${str(R.string.filter_repeaters)} $repeaters")
+        assertEquals(NodeFilter.REPEATERS, model.mapNodeFilter)
+        for (n in placed()) assertEquals(n.name, if (n.kind == NodeKind.REPEATER) 1 else 0, count(n.name))
+        assertEquals(1, count("hub"))
+        assertEquals(0, count("Refuge board"))
+        // Apart from the Nodes tab's, which still shows everyone; kept on the way back.
+        tab(R.string.tab_nodes)
+        text("Lucie").assertIsDisplayed()
+        tab(R.string.tab_map)
+        assertEquals(0, count("Refuge board"))
+        // A route's stops whatever the filter: Rooms, with the crest's route on.
+        val crest = model.nodes.first { it.name == "crest" }
+        choose("${str(R.string.filter_rooms)} ${model.nodes.count { it.kind == NodeKind.ROOM_SERVER }}")
+        assertEquals(0, count("crest"))
+        model.mapRouteTo = crest.key.hex()
+        compose.waitForIdle()
+        for (n in listOf("hub", "crest", "Refuge board")) assertEquals(n, 1, count(n))
+        tapDesc(R.string.close_route)
+        assertEquals(0, count("hub"))
+        // Heard in 2 h: the hub, as if last heard 3 h ago, leaves.
+        val nowS = wallNow() / 1000
+        model.nodes = model.nodes.map { if (it.name == "hub") it.copy(lastHeardS = (nowS - 3 * 3_600).toULong()) else it }
+        choose(str(R.string.filter_heard_2h))
+        for (n in placed()) assertEquals(n.name, if (n.heardWithin(nowS, 7_200)) 1 else 0, count(n.name))
+        assertEquals(0, count("hub"))
+        assertTrue(count("crest") == 1)
+        // All: every node again.
+        choose("${str(R.string.filter_all)} ${model.nodes.size}")
+        for (n in placed()) assertEquals(n.name, 1, count(n.name))
     }
 
     /** MP-3: a node's route on the map (§16.3): from the crest's page, Show on the map draws

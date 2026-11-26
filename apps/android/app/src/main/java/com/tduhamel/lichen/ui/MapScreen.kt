@@ -19,6 +19,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -97,6 +98,7 @@ import com.tduhamel.lichen.core.SharePrecision
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.AppModel.MapMode
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.NodeFilter
 import com.tduhamel.lichen.model.OfflineMaps
 import com.tduhamel.lichen.model.hex
 import com.tduhamel.lichen.model.initials
@@ -232,7 +234,10 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
             model.refreshPositions()
         }
     }
-    val items = mapItems(model, showNodes)
+    val nowS = nowSeconds()
+    // A route's stops stay on the map whatever the filter (§16.3).
+    val stops = model.mapRouteTo?.let { k -> model.nodeRoute(k.unhex())?.stops?.mapNotNull { it.key?.hex() } }.orEmpty().toSet()
+    val items = mapItems(model, showNodes, model.mapNodeFilter, nowS, stops)
     val route = model.mapRouteTo?.let { mapRoute(model, it) }
     // The legs whose chip the map has no room for (a short leg between two markers): in the card.
     var hiddenLegs by remember(model.mapRouteTo) { mutableStateOf(emptyList<Int>()) }
@@ -289,6 +294,13 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
                                 layers = false
                             },
                         )
+                        // Which nodes: as the Nodes tab's chips, a choice of the map's own; the
+                        // menu stays open to show what each leaves.
+                        if (showNodes) {
+                            Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp).widthIn(max = 284.dp)) {
+                                NodeFilterChips(model, nowS, model.mapNodeFilter, wrap = true) { model.mapNodeFilter = it }
+                            }
+                        }
                         // How a route's legs read (§16.3).
                         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { RouteLegend() }
                         HorizontalDivider(color = t.line)
@@ -546,14 +558,15 @@ private fun PinBar(model: AppModel, pin: com.tduhamel.lichen.model.MapPin) {
     }
 }
 
-/** The markers: everyone's last position (SOS first in colour), ours, and a place from a
- * message. */
+/** The markers: the nodes the layer's filter keeps (and a route's stops, whatever it keeps),
+ * everyone's last position (SOS first in colour), ours, and a place from a message. */
 @Composable
-private fun mapItems(model: AppModel, showNodes: Boolean): List<MapItem> {
+private fun mapItems(model: AppModel, showNodes: Boolean, filter: NodeFilter, nowS: Long, stops: Set<String>): List<MapItem> {
     val t = lichen
     val out = mutableListOf<MapItem>()
     if (showNodes) {
         for (n in model.nodes) {
+            if (!filter.keeps(n, nowS) && n.key.hex() !in stops) continue
             val lat = n.lat ?: continue
             val lon = n.lon ?: continue
             val color = if (n.kind == com.tduhamel.lichen.core.NodeKind.REPEATER) t.lora.toArgb() else 0xFFD6D6D0.toInt()

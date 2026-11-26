@@ -74,6 +74,23 @@ fun NodeInfo.inReach(nowS: Long): Boolean =
 /** Heard at all, directly or not, in the last [seconds]. */
 fun NodeInfo.heardWithin(nowS: Long, seconds: Long): Boolean = lastHeardS?.let { nowS - it.toLong() <= seconds } == true
 
+const val TWO_HOURS_S = 7_200L
+
+/** The nodes a list or the map shows (the Nodes tab, the Map's nodes layer): all, by kind, or
+ * those heard in the last 2 h. */
+enum class NodeFilter(val label: Int) {
+    ALL(R.string.filter_all), PEOPLE(R.string.filter_people), REPEATERS(R.string.filter_repeaters), ROOMS(R.string.filter_rooms),
+    HEARD(R.string.filter_heard_2h);
+
+    fun keeps(n: NodeInfo, nowS: Long): Boolean = when (this) {
+        ALL -> true
+        REPEATERS -> n.kind == com.tduhamel.lichen.core.NodeKind.REPEATER
+        ROOMS -> n.kind == com.tduhamel.lichen.core.NodeKind.ROOM_SERVER
+        PEOPLE -> n.kind == com.tduhamel.lichen.core.NodeKind.COMPANION || n.kind == com.tduhamel.lichen.core.NodeKind.UNKNOWN
+        HEARD -> n.heardWithin(nowS, TWO_HOURS_S)
+    }
+}
+
 private fun SignalRating.rank(): Int = when (this) {
     SignalRating.GOOD -> 0
     SignalRating.FAIR -> 1

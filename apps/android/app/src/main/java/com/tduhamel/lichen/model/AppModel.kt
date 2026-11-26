@@ -483,6 +483,10 @@ class AppModel(val app: Application) {
      * when closed. */
     var mapRouteTo by mutableStateOf<String?>(null)
 
+    /** The nodes the Map's nodes layer shows (its layers menu): kept while the app runs, apart
+     * from the Nodes tab's own; never stored. A route's stops show whatever it is. */
+    var mapNodeFilter by mutableStateOf(NodeFilter.ALL)
+
     /** Why the radio would not ask a node (hex) for its readings (§16.7): not one of its
      * contacts, not enough airtime. Said on the node's page until the next request. */
     var readingsRefusals by mutableStateOf(mapOf<String, LichenException>())

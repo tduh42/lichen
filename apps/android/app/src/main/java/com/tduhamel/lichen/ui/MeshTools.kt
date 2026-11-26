@@ -20,6 +20,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -51,6 +53,8 @@ import com.tduhamel.lichen.core.SignalRating
 import com.tduhamel.lichen.core.SignalReading
 import com.tduhamel.lichen.model.dbText
 import com.tduhamel.lichen.model.distanceBearing
+import com.tduhamel.lichen.model.NodeFilter
+import com.tduhamel.lichen.model.TWO_HOURS_S
 import com.tduhamel.lichen.model.heardWithin
 import com.tduhamel.lichen.model.initials
 import com.tduhamel.lichen.model.nodePlace
@@ -254,24 +258,37 @@ private fun Chevron() = Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, nul
 
 // ----- nodes (§16.1, ADR-0049) -----
 
-private enum class NodeFilter(val label: Int) {
-    ALL(R.string.filter_all), PEOPLE(R.string.filter_people), REPEATERS(R.string.filter_repeaters), ROOMS(R.string.filter_rooms),
-    HEARD(R.string.filter_heard_2h);
-
-    fun keeps(n: NodeInfo, nowS: Long): Boolean = when (this) {
-        ALL -> true
-        REPEATERS -> n.kind == NodeKind.REPEATER
-        ROOMS -> n.kind == NodeKind.ROOM_SERVER
-        PEOPLE -> n.kind == NodeKind.COMPANION || n.kind == NodeKind.UNKNOWN
-        HEARD -> n.heardWithin(nowS, TWO_HOURS_S)
+/** The filter chips over a list of nodes (the Nodes tab, the Map's layers): All, People,
+ * Repeaters, Rooms with how many there are, Heard in 2 h; in one scrolling line, or wrapped
+ * onto more ([wrap], in a menu). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun NodeFilterChips(model: AppModel, nowS: Long, selected: NodeFilter, wrap: Boolean = false, choose: (NodeFilter) -> Unit) {
+    val t = lichen
+    val chips = @Composable {
+        NodeFilter.entries.forEach { f ->
+            val count = if (f == NodeFilter.HEARD) null else model.nodes.count { f.keeps(it, nowS) }
+            FilterChip(
+                selected = selected == f,
+                onClick = { choose(f) },
+                label = { Text(stringResource(f.label) + (count?.let { " $it" } ?: "")) },
+                colors = FilterChipDefaults.filterChipColors(
+                    containerColor = t.s1, labelColor = t.tx,
+                    selectedContainerColor = t.actBg, selectedLabelColor = t.actFg,
+                ),
+            )
+        }
+    }
+    if (wrap) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
+    } else {
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { chips() }
     }
 }
 
-private const val TWO_HOURS_S = 7_200L
-
 /** Now, Unix seconds, read again every 30 s: "heard" times and the 2 h and 24 h limits move on. */
 @Composable
-private fun nowSeconds(): Long {
+fun nowSeconds(): Long {
     var tick by remember { mutableLongStateOf(0L) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -312,22 +329,7 @@ fun NodesScreen(model: AppModel, open: (ByteArray) -> Unit) {
                 fontSize = 13.sp, color = t.tx2, modifier = Modifier.padding(horizontal = 4.dp),
             )
         }
-        item {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                NodeFilter.entries.forEach { f ->
-                    val count = if (f == NodeFilter.HEARD) null else model.nodes.count { f.keeps(it, nowS) }
-                    FilterChip(
-                        selected = filter == f,
-                        onClick = { filter = f },
-                        label = { Text(stringResource(f.label) + (count?.let { " $it" } ?: "")) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = t.s1, labelColor = t.tx,
-                            selectedContainerColor = t.actBg, selectedLabelColor = t.actFg,
-                        ),
-                    )
-                }
-            }
-        }
+        item { NodeFilterChips(model, nowS, filter) { filter = it } }
         item {
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
