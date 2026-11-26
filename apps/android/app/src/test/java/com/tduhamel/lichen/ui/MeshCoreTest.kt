@@ -7,9 +7,7 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onLast
@@ -21,10 +19,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeReader
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.Message
 import com.tduhamel.lichen.core.MessageStatus
@@ -204,9 +198,8 @@ class MeshCoreTest : UiTest() {
         text(R.string.whoever_scans_joins).assertIsDisplayed()
         assertFalse(hasDesc(str(R.string.qr_of, "Public")))
         tap(R.string.show_code)
-        val image = desc(str(R.string.qr_of, "Public")).captureToImage().asAndroidBitmap()
         val code = model.channelQr(chat.hex.unhexed())
-        assertEquals(code, decodeQr(image))
+        assertEquals(code, readQr(str(R.string.qr_of, "Public")))
         assertTrue(code!!.startsWith("meshcore://channel/add?name="))
 
         // Another channel's code, scanned: joined, and its chat opens.
@@ -285,9 +278,4 @@ class MeshCoreTest : UiTest() {
 
     private fun String.unhexed(): ByteArray = chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
-    private fun decodeQr(image: android.graphics.Bitmap): String {
-        val px = IntArray(image.width * image.height)
-        image.getPixels(px, 0, image.width, 0, 0, image.width, image.height)
-        return QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(image.width, image.height, px)))).text
-    }
 }

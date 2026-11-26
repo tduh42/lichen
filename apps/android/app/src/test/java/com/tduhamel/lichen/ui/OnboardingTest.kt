@@ -3,12 +3,9 @@ package com.tduhamel.lichen.ui
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.hasScrollToIndexAction
-import android.graphics.Bitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
@@ -17,10 +14,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.google.zxing.BinaryBitmap
-import com.google.zxing.RGBLuminanceSource
-import com.google.zxing.common.HybridBinarizer
-import com.google.zxing.qrcode.QRCodeReader
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.LichenCore
 import com.tduhamel.lichen.model.ChatId
@@ -239,8 +232,7 @@ class OnboardingTest : UiTest() {
         compose.waitForIdle()
         text(R.string.my_code).assertIsDisplayed()
         val card = model.myCard()!!
-        val image = desc(R.string.your_contact_code).captureToImage().asAndroidBitmap()
-        assertEquals(card, decodeQr(image))
+        assertEquals(card, readQr(str(R.string.your_contact_code)))
         // Read by another phone: a contact named after me.
         val other = LichenCore("test", ByteArray(32) { 3 }, ByteArray(32) { 42 }, null)
         val me = other.addContactCard(card, true)
@@ -537,8 +529,7 @@ class OnboardingTest : UiTest() {
         text(R.string.compare_numbers_with, "Noé").assertIsDisplayed()
         tap(R.string.done)
         text(R.string.now_let_scan_your_code, "Noé").assertIsDisplayed()
-        val image = desc(R.string.your_contact_code).captureToImage().asAndroidBitmap()
-        assertEquals(model.myCard(), decodeQr(image))
+        assertEquals(model.myCard(), readQr(str(R.string.your_contact_code)))
         tap(R.string.done)
         text(R.string.message_placeholder).assertIsDisplayed()
         assertTrue(model.contacts.first { it.key.contentEquals(node) }.verified)
@@ -560,10 +551,4 @@ class OnboardingTest : UiTest() {
         return Triple(card, identity, node)
     }
 
-    private fun decodeQr(image: Bitmap): String {
-        val px = IntArray(image.width * image.height)
-        image.getPixels(px, 0, image.width, 0, 0, image.width, image.height)
-        val bits = BinaryBitmap(HybridBinarizer(RGBLuminanceSource(image.width, image.height, px)))
-        return QRCodeReader().decode(bits).text
-    }
 }

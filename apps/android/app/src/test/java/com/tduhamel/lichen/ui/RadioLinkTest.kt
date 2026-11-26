@@ -4,9 +4,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.hasContentDescription
 import android.content.res.Configuration
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -489,7 +487,7 @@ class RadioLinkTest : UiTest() {
         see(hex.chunked(8).joinToString(" "))
         // Its code: the QR reads back as the stock app's contact code for this radio.
         see(R.string.meshcore_code_note)
-        val code = readQr(desc(R.string.meshcore_code).captureToImage().asAndroidBitmap())
+        val code = readQr(str(R.string.meshcore_code))
         assertEquals(meshcoreContactCode(model.radioSettings!!.name, key, NodeKind.COMPANION), code)
         val read = readMeshcoreContactCode(code)
         assertTrue(read.key.contentEquals(key))
