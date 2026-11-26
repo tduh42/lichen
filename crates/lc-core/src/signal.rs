@@ -44,20 +44,42 @@ pub fn snr_limit4(sf: u8) -> i16 {
     -10 * (i16::from(sf.clamp(5, 12)) - 4)
 }
 
+/// Where the ratings start at a spreading factor (§16.1): a reading at a limit or above it has
+/// the rating above that limit, as long as the other figure allows it. SNR × 4 and dBm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limits {
+    pub good_snr4: i16,
+    pub fair_snr4: i16,
+    pub good_rssi: i8,
+    pub fair_rssi: i8,
+}
+
+/// The limits at spreading factor `sf`: what [`rate`] compares with, and what the apps draw.
+pub fn limits(sf: u8) -> Limits {
+    let floor = snr_limit4(sf);
+    Limits {
+        good_snr4: floor + GOOD_MARGIN4,
+        fair_snr4: floor + FAIR_MARGIN4,
+        good_rssi: GOOD_RSSI_DBM,
+        fair_rssi: FAIR_RSSI_DBM,
+    }
+}
+
 /// The rating of a reading at spreading factor `sf` (§16.1).
 pub fn rate(snr4: i8, rssi: Option<i8>, sf: u8) -> SignalRating {
-    let margin = i16::from(snr4) - snr_limit4(sf);
-    let by_snr = if margin >= GOOD_MARGIN4 {
+    let l = limits(sf);
+    let snr4 = i16::from(snr4);
+    let by_snr = if snr4 >= l.good_snr4 {
         SignalRating::Good
-    } else if margin >= FAIR_MARGIN4 {
+    } else if snr4 >= l.fair_snr4 {
         SignalRating::Fair
     } else {
         SignalRating::Bad
     };
     let by_rssi = match rssi {
         None => SignalRating::Good,
-        Some(r) if r >= GOOD_RSSI_DBM => SignalRating::Good,
-        Some(r) if r >= FAIR_RSSI_DBM => SignalRating::Fair,
+        Some(r) if r >= l.good_rssi => SignalRating::Good,
+        Some(r) if r >= l.fair_rssi => SignalRating::Fair,
         Some(_) => SignalRating::Bad,
     };
     if rank(by_rssi) < rank(by_snr) {

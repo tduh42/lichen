@@ -312,6 +312,45 @@ fn demodulation_limits() {
     assert_eq!(limits, [-10, -20, -30, -40, -50, -60, -70, -80]);
 }
 
+/// The limits are where the ratings change (§16.1): at SF7, SF10 and SF12, a reading exactly at
+/// a limit gets the rating above it, one 0.25 dB (or 1 dBm) below the rating under it. The
+/// figures come from `limits`, never from literals here.
+#[test]
+fn the_limits_are_where_the_ratings_change() {
+    use SignalRating::{Bad, Fair, Good};
+    for sf in [7, 10, 12] {
+        let l = signal::limits(sf);
+        let snr = |q: i16| i8::try_from(q).unwrap();
+        assert!(l.good_snr4 > l.fair_snr4, "SF{sf}: {l:?}");
+        assert_eq!(signal::rate(snr(l.good_snr4), None, sf), Good, "SF{sf}");
+        assert_eq!(signal::rate(snr(l.good_snr4 - 1), None, sf), Fair, "SF{sf}");
+        assert_eq!(signal::rate(snr(l.fair_snr4), None, sf), Fair, "SF{sf}");
+        assert_eq!(signal::rate(snr(l.fair_snr4 - 1), None, sf), Bad, "SF{sf}");
+        // The RSSI under a good SNR.
+        let good = snr(l.good_snr4);
+        assert_eq!(signal::rate(good, Some(l.good_rssi), sf), Good, "SF{sf}");
+        assert_eq!(
+            signal::rate(good, Some(l.good_rssi - 1), sf),
+            Fair,
+            "SF{sf}"
+        );
+        assert_eq!(signal::rate(good, Some(l.fair_rssi), sf), Fair, "SF{sf}");
+        assert_eq!(signal::rate(good, Some(l.fair_rssi - 1), sf), Bad, "SF{sf}");
+    }
+    // A higher spreading factor decodes weaker signals: its limits are lower.
+    assert!(signal::limits(12).good_snr4 < signal::limits(7).good_snr4);
+}
+
+/// The core gives the limits of the radio's preset once it reported it, none before.
+#[test]
+fn the_core_gives_the_limits_of_the_radio_s_preset() {
+    let fresh = lc_core::Core::new(lc_core::Config::new("t", [3; 32], [4; 32]));
+    assert_eq!(fresh.signal_limits(), None, "no radio yet");
+    let m = mesh(8);
+    let got = m.net.with_core_ref(m.app, |c| c.signal_limits()).unwrap();
+    assert_eq!(got, Some(signal::limits(8)));
+}
+
 /// The core rates under the radio's preset: SF8 here.
 #[test]
 fn the_core_rates_under_the_radio_s_preset() {

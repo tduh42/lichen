@@ -70,8 +70,8 @@ pub use api_import::ImportReport;
 pub use api_mesh::{
     ChannelCode, MeshCoreAdd, MeshCoreContact, MeshCoreLink, NodeInfo, NodeKind, NodeReading,
     NodeRoute, PathHop, ReadingKind, ReadingValue, ReadingsState, RouteLeg, RouteStop,
-    SignalRating, SignalReading, TraceInfo, TraceLeg, TraceState, meshcore_contact_code,
-    read_meshcore_contact_code, read_meshcore_link,
+    SignalLimits, SignalRating, SignalReading, TraceInfo, TraceLeg, TraceState,
+    meshcore_contact_code, read_meshcore_contact_code, read_meshcore_link,
 };
 pub use api_plain::hashtag_channel_name;
 pub use api_radio::{

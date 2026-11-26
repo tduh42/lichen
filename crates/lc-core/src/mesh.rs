@@ -625,6 +625,16 @@ impl Core {
         })
     }
 
+    /// The rating limits under the current preset (§16.1), for the apps' charts; `None` before
+    /// the radio reported its preset. [`Event::RadioSettings`] follows a preset changed (and
+    /// [`Event::Connected`] the first one): read them again then.
+    pub fn signal_limits(&self) -> Option<crate::signal::Limits> {
+        // The preset the ratings use ([`Core::signal_rating`]), once the radio reported it.
+        self.settings
+            .read
+            .then(|| crate::signal::limits(self.radio.sf))
+    }
+
     /// The last direct reading of `node` for the connected radio.
     pub fn signal_of(&self, node: &PubKey) -> Option<Reading> {
         self.mesh.signals.get(node).copied()

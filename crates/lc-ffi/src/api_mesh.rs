@@ -269,6 +269,18 @@ impl From<lc_core::SignalRating> for SignalRating {
     }
 }
 
+/// Where the ratings start under the current preset (§16.1), for the bands of a signal chart:
+/// a reading at a limit or above it is rated above it, as long as the other figure allows.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct SignalLimits {
+    /// SNR from which a reading is Good, and Fair (dB).
+    pub good_snr_db: f32,
+    pub fair_snr_db: f32,
+    /// RSSI from which a reading is Good, and Fair (dBm).
+    pub good_rssi_dbm: i16,
+    pub fair_rssi_dbm: i16,
+}
+
 /// One time our radio heard a node directly (§16.1).
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct SignalReading {
@@ -701,6 +713,18 @@ impl LichenCore {
             .iter()
             .map(|(at, data)| NodeReading::of(&lc_core::Readings::decode(data, *at)))
             .collect()
+    }
+
+    /// The rating limits under the current preset (§16.1), for the bands of a node's signal
+    /// chart; `None` before a radio reported its preset. Read them again on `Connected` and
+    /// `RadioSettings` (sent after a preset changed).
+    pub fn signal_limits(&self) -> Option<SignalLimits> {
+        self.lock().core.signal_limits().map(|l| SignalLimits {
+            good_snr_db: f32::from(l.good_snr4) / 4.0,
+            fair_snr_db: f32::from(l.fair_snr4) / 4.0,
+            good_rssi_dbm: i16::from(l.good_rssi),
+            fair_rssi_dbm: i16::from(l.fair_rssi),
+        })
     }
 
     /// What the connected radio (or the last one) heard of `node` directly over the last 7
