@@ -19,6 +19,8 @@ struct MapScreen: View {
     @State private var editing = false
     @State private var refresh: Timer?
     @State private var showingOffline = false
+    /// The route's legs whose chip finds no room on the map: said in its card.
+    @State private var hiddenLegs: [Int] = []
 
     private var locating: Bool { model.mapMode == .locate }
 
@@ -35,9 +37,13 @@ struct MapScreen: View {
                     }
             } else {
                 MapGate {
+                    let route = model.mapRouteTo.flatMap(mapRoute)
                     MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { bounds, zoom in
                         camera = (bounds, zoom)
-                    }, focus: focus)
+                    }, focus: focus, route: route, onSelect: { id in
+                        // A node tapped: its route (§16.3).
+                        if id.hasPrefix("n:"), let key = Data(hex: String(id.dropFirst(2))) { model.mapRouteTo = key }
+                    }, onHiddenChips: { hiddenLegs = $0 })
                 }
                 .ignoresSafeArea(edges: .top)
                 VStack(spacing: 8) {
@@ -53,7 +59,15 @@ struct MapScreen: View {
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !locating { SharePanel(editing: $editing) }
+            if !locating {
+                // A node's route takes the foot of the map; our shares otherwise.
+                if let key = model.mapRouteTo {
+                    RouteMapCard(key: key, drawn: model.mapRouteTo.flatMap(mapRoute).map { !$0.lines.isEmpty } ?? false,
+                                 unlabelled: hiddenLegs.compactMap { i in model.mapRouteTo.flatMap(mapRoute)?.lines[safe: i] })
+                } else {
+                    SharePanel(editing: $editing)
+                }
+            }
         }
         .sheet(isPresented: $editing) { ShareSheet() }
         .fullScreenCover(isPresented: $showingSos) { SosView() }
@@ -69,7 +83,7 @@ struct MapScreen: View {
             }
             seen = Set(items.map(\.id))
             // A place from a message, or a node shown from its page, keeps the map on itself.
-            if !items.isEmpty, model.mapPin == nil, model.mapFocus == nil { recenter += 1 }
+            if !items.isEmpty, model.mapPin == nil, model.mapFocus == nil, model.mapRouteTo == nil { recenter += 1 }
             #if DEBUG
             if model.debugScreen == "sos" { showingSos = true }
             #endif
@@ -177,6 +191,12 @@ struct MapScreen: View {
                 } footer: {
                     Text("Downloaded areas work without a network.")
                 }
+                // How a node's route reads (§16.3).
+                Section("the last signal per leg") {
+                    ForEach(RouteLegend.items, id: \.label) { item in
+                        Label { Text(verbatim: item.label) } icon: { Image(uiImage: RouteLegend.swatch(item.color, dashed: item.dashed)) }
+                    }
+                }
             } label: {
                 MapIcon(systemName: "map")
             }
@@ -218,7 +238,9 @@ struct MapScreen: View {
                     id: "n:" + n.key.hex, kind: .node, lat: lat, lon: lon, radius: 0,
                     initials: "", label: n.name,
                     color: UIColor(n.kind == .repeater ? Theme.lora : Color(hex: 0xD6D6D0)).resolvedColor(with: traits),
-                    dark: dark, symbol: n.kind.symbol
+                    dark: dark, symbol: n.kind.symbol,
+                    // Heard directly: a ring in its rating's colour (ADR-0049).
+                    ring: n.signal == .none ? nil : UIColor(n.signal.color).resolvedColor(with: traits)
                 ))
             }
         }
@@ -229,6 +251,50 @@ struct MapScreen: View {
             ))
         }
         return out
+    }
+
+    /// The route the map draws to `key` (§16.3): our radio at the phone, the other stops where
+    /// they advertise; a line per leg in its rating's colour, dashed in `line` when nothing
+    /// measured it; stops without a position skipped, the stops around them joined by a dashed
+    /// line.
+    private func mapRoute(_ key: Data) -> MapRoute? {
+        guard let route = model.nodeRoute(key) else { return nil }
+        let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
+        let ui = { (c: Color) in UIColor(c).resolvedColor(with: traits) }
+        let notMeasured = String(localized: "not measured")
+        let names = route.stops.enumerated().map { i, s in i == 0 ? String(localized: "You") : s.display }
+        let places: [(Double, Double)?] = route.stops.enumerated().map { i, s in
+            if i == 0 { return model.myFix.map { ($0.lat, $0.lon) } }
+            if let lat = s.lat, let lon = s.lon { return (lat, lon) }
+            return nil
+        }
+        let text = { (l: RouteLeg) in l.snrDb.map(dbText) ?? notMeasured }
+        var lines: [MapRoute.Line] = []
+        var prev: Int?
+        for (j, place) in places.enumerated() {
+            guard let to = place else { continue }
+            defer { prev = j }
+            guard let i = prev, let from = places[i] else { continue }
+            let legs = Array(route.legs[min(i, route.legs.count)..<min(j, route.legs.count)])
+            if legs.count == 1, let leg = legs.first {
+                let measured = leg.snrDb != nil
+                let color = !measured ? Theme.line : leg.signal == .none ? Theme.tx2 : leg.signal.color
+                lines.append(MapRoute.Line(
+                    fromLat: from.0, fromLon: from.1, toLat: to.0, toLon: to.1, color: ui(color), dashed: !measured,
+                    chip: text(leg), chipColor: ui(measured ? color : Theme.tx2),
+                    said: String(localized: "\(names[i]) to \(names[j]), \(text(leg))")
+                ))
+            } else {
+                // Stops without a position between: one dashed line across them, its chip each leg's.
+                lines.append(MapRoute.Line(
+                    fromLat: from.0, fromLon: from.1, toLat: to.0, toLon: to.1, color: ui(Theme.line), dashed: true,
+                    chip: legs.map(text).joined(separator: " · "), chipColor: ui(Theme.tx2),
+                    said: legs.enumerated().map { k, l in String(localized: "\(names[i + k]) to \(names[i + k + 1]), \(text(l))") }
+                        .joined(separator: "; ")
+                ))
+            }
+        }
+        return MapRoute(key: key.hex, lines: lines)
     }
 
     private func label(_ p: PeerPosition, name: String) -> String {
@@ -720,5 +786,175 @@ struct ShareSheet: View {
 
     private func set(_ chat: ChatID, _ p: SharePrecision?) {
         error = model.setShare(chat, precision: p, hours: hours)
+    }
+}
+
+extension Array {
+    /// The element at `i`, or nil past the ends.
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
+}
+
+/// A node's route on the map (mockup `Map`): to whom, how many hops, through which repeaters,
+/// when it was traced; the legs whose chip found no room on the map; the legend, or why nothing
+/// is drawn; a way to close it.
+struct RouteMapCard: View {
+    let key: Data
+    let drawn: Bool
+    let unlabelled: [MapRoute.Line]
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        let node = model.node(key)
+        let route = model.nodeRoute(key)
+        let hops: String = switch node?.hops {
+        case nil: String(localized: "path unknown")
+        case 0?: String(localized: "direct")
+        case let h?: String(localized: "\(Int(h)) hops")
+        }
+        let line = [hops, route?.via.map { String(localized: "via \($0)") },
+                    route?.tracedAt.map { String(localized: "traced \(model.heard($0))") }].compactMap { $0 }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "Route to \(node?.name ?? String(key.hex.prefix(8)))"))
+                        .font(.system(.headline))
+                        .foregroundStyle(Theme.tx)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(verbatim: line.joined(separator: " · "))
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Button { model.mapRouteTo = nil } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(.footnote, weight: .bold))
+                        .foregroundStyle(Theme.tx)
+                        .frame(width: 36, height: 36)
+                        .background(Theme.s2, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close the route")
+            }
+            // A leg too short on screen for its chip: said here, in its colour.
+            ForEach(Array(unlabelled.enumerated()), id: \.offset) { _, leg in
+                HStack(spacing: 8) {
+                    Image(uiImage: RouteLegend.swatch(leg.color, dashed: leg.dashed)).accessibilityHidden(true)
+                    Text(verbatim: leg.said.components(separatedBy: ", ").dropLast().joined(separator: ", "))
+                        .font(.system(.caption))
+                        .foregroundStyle(Theme.tx2)
+                    Text(verbatim: leg.chip)
+                        .font(.system(.caption, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Color(leg.chipColor))
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(leg.said)
+            }
+            if drawn {
+                RouteLegend()
+            } else {
+                Text("No positions to draw this route")
+                    .font(.system(.footnote))
+                    .foregroundStyle(Theme.tx2)
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 6)
+        .padding(.vertical, 12)
+        .background(Theme.s1, in: RoundedRectangle(cornerRadius: 18))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+}
+
+/// How a route's legs read: good, fair, weak, not measured; the last signal per leg.
+struct RouteLegend: View {
+    struct Item {
+        let label: String
+        let color: UIColor
+        let dashed: Bool
+    }
+
+    static var items: [Item] {
+        [Item(label: String(localized: "good"), color: UIColor(Theme.ok), dashed: false),
+         Item(label: String(localized: "fair"), color: UIColor(Theme.warn), dashed: false),
+         Item(label: String(localized: "weak"), color: UIColor(Theme.sos), dashed: false),
+         Item(label: String(localized: "not measured"), color: UIColor(Theme.line), dashed: true)]
+    }
+
+    /// A short line in a leg's colour, dashed when nothing measured it.
+    static func swatch(_ color: UIColor, dashed: Bool) -> UIImage {
+        let size = CGSize(width: 18, height: 6)
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            let path = UIBezierPath()
+            path.move(to: CGPoint(x: 2, y: 3))
+            path.addLine(to: CGPoint(x: 16, y: 3))
+            path.lineWidth = 4
+            path.lineCapStyle = dashed ? .butt : .round
+            if dashed { path.setLineDash([4, 2], count: 2, phase: 0) }
+            color.setStroke()
+            path.stroke()
+        }
+        return image.withRenderingMode(.alwaysOriginal)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // On more lines with larger text.
+            FlowLayout(spacing: 12, lineSpacing: 4) {
+                ForEach(Self.items, id: \.label) { item in
+                    HStack(spacing: 5) {
+                        Image(uiImage: Self.swatch(item.color, dashed: item.dashed)).accessibilityHidden(true)
+                        Text(verbatim: item.label).font(.system(.caption)).foregroundStyle(Theme.tx2)
+                    }
+                    .fixedSize()
+                }
+            }
+            Text("the last signal per leg")
+                .font(.system(.caption))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Its views side by side, onto the next line when the room runs out.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 4
+
+    private func lines(_ width: CGFloat, _ subviews: Subviews) -> [(CGPoint, CGSize)] {
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
+        return subviews.map { v in
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0 && x + s.width > width {
+                x = 0
+                y += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+            defer {
+                x += s.width + spacing
+                lineHeight = max(lineHeight, s.height)
+            }
+            return (CGPoint(x: x, y: y), s)
+        }
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil } ?? .infinity
+        let placed = lines(width, subviews)
+        let w = placed.map { $0.0.x + $0.1.width }.max() ?? 0
+        let h = placed.map { $0.0.y + $0.1.height }.max() ?? 0
+        return CGSize(width: width.isFinite ? width : w, height: h)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (v, (p, s)) in zip(subviews, lines(bounds.width, subviews)) {
+            v.place(at: CGPoint(x: bounds.minX + p.x, y: bounds.minY + p.y), proposal: ProposedViewSize(s))
+        }
     }
 }

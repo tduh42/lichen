@@ -238,6 +238,13 @@ final class AccessibilityAuditTests: XCTestCase {
         XCTAssertTrue(app.navigationBars["crest"].waitForExistence(timeout: 5), "crest's page did not open")
         sleep(2)
         try audit(app, "crest's page")
+        // Its route on the map, with its card.
+        let show = app.buttons["showOnMap"]
+        if show.exists {
+            show.tap()
+            sleep(4)
+            try audit(app, "a route on the map")
+        }
     }
 
     func testSettings() throws {

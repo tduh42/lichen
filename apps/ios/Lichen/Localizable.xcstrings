@@ -2991,6 +2991,16 @@
         }
       }
     },
+    "Close the route": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer la route"
+          }
+        }
+      }
+    },
     "Code shown on the radio": {
       "localizations": {
         "fr": {
@@ -6941,6 +6951,16 @@
         }
       }
     },
+    "No positions to draw this route": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de positions pour tracer cette route"
+          }
+        }
+      }
+    },
     "No radio connected": {
       "localizations": {
         "fr": {
@@ -8807,6 +8827,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Salons"
+          }
+        }
+      }
+    },
+    "Route to %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Route vers %@"
           }
         }
       }
@@ -12701,6 +12731,16 @@
         }
       }
     },
+    "fair": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "moyen"
+          }
+        }
+      }
+    },
     "firmware": {
       "localizations": {
         "fr": {
@@ -12717,6 +12757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "complète sur demande"
+          }
+        }
+      }
+    },
+    "good": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bon"
           }
         }
       }
@@ -13021,6 +13071,16 @@
         }
       }
     },
+    "the last signal per leg": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "le dernier signal par tronçon"
+          }
+        }
+      }
+    },
     "their identity changed: verify it first": {
       "localizations": {
         "fr": {
@@ -13047,6 +13107,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "trop grand"
+          }
+        }
+      }
+    },
+    "traced %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tracé %@"
           }
         }
       }
@@ -13097,6 +13167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "via %@"
+          }
+        }
+      }
+    },
+    "weak": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "faible"
           }
         }
       }

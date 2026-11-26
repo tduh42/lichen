@@ -2280,6 +2280,9 @@ final class AppModel {
     /// Where the map centres next, without a pin (a node's page's Show on the map); the later
     /// of this and `mapPin` wins.
     var mapFocus: MapPin?
+    /// The node whose route the map draws (§16.3): from its page's Show on the map, or the node
+    /// tapped on the map; until the route's card is closed.
+    var mapRouteTo: Data?
 
     /// Shows a place from a message's text on the map: lichen's own map, nothing fetched but
     /// its tiles (offline areas included).

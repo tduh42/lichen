@@ -388,6 +388,7 @@ struct RouteCard: View {
                         Label("Show on the map", systemImage: "map")
                     }
                     .buttonStyle(.secondary)
+                    .accessibilityIdentifier("showOnMap")
                 }
             }
         }

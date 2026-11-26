@@ -145,10 +145,21 @@ extension AppModel {
         return nodeRoute(key)?.stops.dropFirst().last { $0.lat != nil && $0.lon != nil }.map { ($0.lat ?? 0, $0.lon ?? 0) }
     }
 
-    /// The Map tab, in Positions mode, centred on `key` (a node's page's Show on the map).
+    /// How many stops of `key`'s route the map can place: ours at the phone, the others where
+    /// they advertise. Fewer than two: no route to draw.
+    func routePlaces(_ key: Data) -> Int {
+        guard let route = nodeRoute(key) else { return 0 }
+        return (myFix != nil ? 1 : 0) + route.stops.dropFirst().filter { $0.lat != nil && $0.lon != nil }.count
+    }
+
+    /// The Map tab, in Positions mode, with `key`'s route (a node's page's Show on the map): the
+    /// camera takes the route in, or centres on the node when there is none to draw.
     func showNodeOnMap(_ key: Data) {
         guard let (lat, lon) = nodePlace(key) else { return }
-        mapFocus = MapPin(lat: lat, lon: lon, version: max(mapFocus?.version ?? 0, mapPin?.version ?? 0) + 1)
+        mapRouteTo = key
+        if routePlaces(key) < 2 {
+            mapFocus = MapPin(lat: lat, lon: lon, version: max(mapFocus?.version ?? 0, mapPin?.version ?? 0) + 1)
+        }
         openMap()
     }
 
