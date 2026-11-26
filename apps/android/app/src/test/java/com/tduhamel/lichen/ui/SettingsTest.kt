@@ -397,6 +397,10 @@ class SettingsTest : UiTest() {
         audit("radio settings")
         scrollTo(hasText(str(R.string.restart_radio)))
         audit("radio settings, below")
+        // Its figures, last (§16.4).
+        advanceUntil("the radio's figures") { model.radioSettings?.uptimeS != null }
+        scrollTo(hasText(str(R.string.figures_note)))
+        audit("radio settings, its figures")
         compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.search_radio_settings))).performTextInput("power")
         audit("radio settings, searched")
         restart("demo" to true, "open" to "Camille")

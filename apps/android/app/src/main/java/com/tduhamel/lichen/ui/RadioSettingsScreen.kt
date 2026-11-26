@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -30,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.CallMade
+import androidx.compose.material.icons.automirrored.outlined.CallReceived
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AltRoute
@@ -40,17 +43,22 @@ import androidx.compose.material.icons.outlined.CellTower
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Done
 import androidx.compose.material.icons.outlined.DoneAll
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.GpsFixed
 import androidx.compose.material.icons.outlined.GraphicEq
+import androidx.compose.material.icons.outlined.Hearing
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.MoveToInbox
+import androidx.compose.material.icons.outlined.Outbox
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Pin
 import androidx.compose.material.icons.outlined.PinDrop
 import androidx.compose.material.icons.outlined.Place
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.RestartAlt
 import androidx.compose.material.icons.outlined.Save
@@ -100,7 +108,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -114,6 +124,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.NodeKind
 import com.tduhamel.lichen.core.RadioSetting
@@ -122,7 +135,12 @@ import com.tduhamel.lichen.core.SettingOutcome
 import com.tduhamel.lichen.core.Telemetry
 import com.tduhamel.lichen.core.meshcoreContactCode
 import com.tduhamel.lichen.model.AppModel
+import com.tduhamel.lichen.model.RadioFigure
 import com.tduhamel.lichen.model.bandwidth
+import com.tduhamel.lichen.model.dbmText
+import com.tduhamel.lichen.model.figureText
+import com.tduhamel.lichen.model.figures
+import com.tduhamel.lichen.model.refreshRadioStats
 import java.text.Normalizer
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
@@ -151,13 +169,26 @@ private val INTERVALS = listOf(60u, 300u, 900u, 3_600u)
 /**
  * The radio's own settings (protocol §1.1, ADR-0032): read from the radio at each connection
  * and after each change; the radio keeps them, lichen stores none. On top, the radio itself (its
- * link, battery, firmware and the hour's airtime); then a search, and the settings in sections.
+ * link, battery, firmware, noise floor and the hour's airtime); then a search, the settings in
+ * sections, and what the radio counted since it started (§16.4), read again every minute while
+ * the screen is on view.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
     val t = lichen
     LaunchedEffect(Unit) { model.refreshRadio() }
+    // Its figures: now, then every minute while this screen is in view; never in the background
+    // (stopped with the app, or when the screen closes).
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                model.refreshRadioStats()
+                delay(60_000)
+            }
+        }
+    }
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
             navigationIcon = { IconButton(onClick = back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
@@ -186,6 +217,8 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
         val lora = listOf(shown.freqKhz, shown.bwHz, shown.sf, shown.cr)
         var preset by remember(lora) { mutableStateOf(RadioPreset.matching(shown)) }
         val sections = settingSections(model, shown, preset)
+        // What the search also finds in the header: its noise floor.
+        val header = headerSection(shown)
         val focus = remember { RowFocus() }
         var query by rememberSaveable { mutableStateOf("") }
         val list = rememberLazyListState()
@@ -195,13 +228,13 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
         LaunchedEffect(landing, query) {
             val (section, row) = landing ?: return@LaunchedEffect
             if (query.isNotEmpty()) return@LaunchedEffect
-            val i = sections.indexOfFirst { it.key == section }
-            // The sections laid out again first; then below the header and the search, which
-            // stays on top.
+            // The header first in the list; a section below it and the search, which stays on top.
+            val i = if (section == header?.key) 0 else sections.indexOfFirst { it.key == section }.let { if (it >= 0) it + 2 else -1 }
+            // The sections laid out again first.
             withFrameNanos { }
             if (i >= 0) {
-                list.scrollToItem(i + 2)
-                list.scrollBy(-searchHeight.intValue.toFloat())
+                list.scrollToItem(i)
+                if (i > 0) list.scrollBy(-searchHeight.intValue.toFloat())
                 withFrameNanos { }
                 focus.requesters[row]?.bringIntoView()
                 focus.highlight = row
@@ -215,7 +248,7 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
             focus.highlight = null
         }
         val folded = fold(query.trim())
-        val results = if (folded.isEmpty()) emptyList() else sections.flatMap { s ->
+        val results = if (folded.isEmpty()) emptyList() else (listOfNotNull(header) + sections).flatMap { s ->
             if (fold(s.label).contains(folded)) s.rows.map { s to it } else s.rows.filter { fold(it.title).contains(folded) }.map { s to it }
         }
         CompositionLocalProvider(LocalRowFocus provides focus) {
@@ -251,6 +284,7 @@ fun RadioSettingsScreen(model: AppModel, back: () -> Unit) {
                                     "bluetooth" -> BluetoothSection(model)
                                     "device" -> DeviceSection(model, shown)
                                     "code" -> MeshCoreCode(model, shown)
+                                    "since" -> SinceSection(shown)
                                 }
                             }
                         }
@@ -356,7 +390,18 @@ private fun settingSections(model: AppModel, r: RadioSettings, preset: RadioPres
     if (model.nodeKey != null) {
         out += SettingSection("code", stringResource(R.string.meshcore_code), listOf(e("code", stringResource(R.string.meshcore_code), Icons.Outlined.QrCode2)))
     }
+    val figures = r.figures()
+    if (figures.isNotEmpty()) {
+        out += SettingSection("since", stringResource(R.string.since_started), figures.map { e(it.key, stringResource(it.title), it.icon) })
+    }
     return out
+}
+
+/** The header's figures the search finds: its noise floor, when the radio reported it. */
+@Composable
+private fun headerSection(r: RadioSettings): SettingSection? {
+    if (r.noiseFloorDbm == null) return null
+    return SettingSection("header", stringResource(R.string.this_radio), listOf(SettingEntry("noise", stringResource(R.string.noise_floor), Icons.Outlined.GraphicEq)))
 }
 
 /** Letters without their accents, in lower case: "émission" is found by "emission". */
@@ -462,8 +507,8 @@ private fun Chevron() = Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, nul
 // ----- the radio -----
 
 /** The radio on top (mockup `RadioSettings`): its name and model, its link and for how long, its
- * battery, the hour's airtime left, its firmware. (The noise floor joins them once the core
- * reports it.) */
+ * battery, the hour's airtime left, its noise floor and firmware (each only once the radio gave
+ * it). */
 @Composable
 private fun RadioHeader(model: AppModel, r: RadioSettings) {
     val t = lichen
@@ -488,6 +533,7 @@ private fun RadioHeader(model: AppModel, r: RadioSettings) {
         Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(1.dp).background(t.line))
         Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Stat("${left / 1000u} s", stringResource(R.string.airtime_left_stat), Modifier.weight(1f))
+            r.noiseFloorDbm?.let { Stat(dbmText(it), stringResource(R.string.noise_floor_stat), Modifier.weight(1f).landing("noise")) }
             if (r.firmware.isNotEmpty()) Stat(r.firmware, stringResource(R.string.firmware_stat), Modifier.weight(1f))
         }
         Bar(left.toFloat() / maxOf(model.budget.limitMs, 1uL).toFloat(), Modifier.padding(top = 10.dp), color = t.lora)
@@ -921,6 +967,89 @@ private fun MeshCoreCode(model: AppModel, r: RadioSettings) {
     ) {
         QrImage(code, stringResource(R.string.meshcore_code), Modifier.size(220.dp))
         Text(stringResource(R.string.meshcore_code_note), fontSize = 13.sp, color = t.tx2, textAlign = TextAlign.Center)
+    }
+}
+
+/** What the radio counted since it started (§16.4): one row per figure it reported, in a card,
+ * a note under it. */
+@Composable
+private fun SinceSection(r: RadioSettings) {
+    val res = LocalResources.current
+    CardList {
+        r.figures().forEachIndexed { i, f ->
+            if (i > 0) CardDivider(TileInset)
+            FigureRow(f.key, f.icon, stringResource(f.title), r.figureText(res, f))
+        }
+    }
+    Text(stringResource(R.string.figures_note), fontSize = 12.sp, color = lichen.tx2, modifier = Modifier.padding(horizontal = 4.dp))
+}
+
+private val RadioFigure.title: Int get() = when (this) {
+    RadioFigure.UPTIME -> R.string.fig_uptime
+    RadioFigure.RECEIVED -> R.string.fig_received
+    RadioFigure.SENT -> R.string.fig_sent
+    RadioFigure.ERRORS -> R.string.fig_errors
+    RadioFigure.AIRTIME_SENT -> R.string.fig_airtime_sent
+    RadioFigure.AIRTIME_RECEIVED -> R.string.fig_airtime_received
+    RadioFigure.LAST_PACKET -> R.string.fig_last_packet
+}
+
+private val RadioFigure.icon: ImageVector get() = when (this) {
+    RadioFigure.UPTIME -> Icons.Outlined.PowerSettingsNew
+    RadioFigure.RECEIVED -> Icons.Outlined.MoveToInbox
+    RadioFigure.SENT -> Icons.Outlined.Outbox
+    RadioFigure.ERRORS -> Icons.Outlined.ErrorOutline
+    RadioFigure.AIRTIME_SENT -> Icons.AutoMirrored.Outlined.CallMade
+    RadioFigure.AIRTIME_RECEIVED -> Icons.AutoMirrored.Outlined.CallReceived
+    RadioFigure.LAST_PACKET -> Icons.Outlined.Hearing
+}
+
+/** A figure's row: its tile and title, its value at the end in tabular digits, or under the
+ * title when both don't fit on one line; one element to TalkBack ("Packets received, 1,204"). */
+@Composable
+private fun FigureRow(key: String, icon: ImageVector, title: String, value: String) {
+    val t = lichen
+    Row(
+        Modifier.fillMaxWidth().landing(key).clearAndSetSemantics { contentDescription = "$title, $value" }
+            .heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        RowTile(icon)
+        TitleAndValue(
+            { Text(title, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = t.tx) },
+            { Text(value, fontSize = 15.sp, color = t.tx2, style = TextStyle(fontFeatureSettings = "tnum")) },
+            Modifier.weight(1f),
+        )
+    }
+}
+
+/** A title at the start and its value at the end of one line; the value under the title when
+ * the line can't hold both. */
+@Composable
+private fun TitleAndValue(title: @Composable () -> Unit, value: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    Layout(contents = listOf(title, value), modifier = modifier) { (titles, values), c ->
+        val gap = 12.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val tm = titles.first()
+        val vm = values.first()
+        if (tm.maxIntrinsicWidth(c.maxHeight) + gap + vm.maxIntrinsicWidth(c.maxHeight) <= c.maxWidth) {
+            val tp = tm.measure(loose)
+            val vp = vm.measure(loose)
+            val h = maxOf(tp.height, vp.height)
+            layout(c.maxWidth, h) {
+                tp.place(0, (h - tp.height) / 2)
+                vp.place(c.maxWidth - vp.width, (h - vp.height) / 2)
+            }
+        } else {
+            val tp = tm.measure(loose)
+            val vp = vm.measure(loose)
+            val space = 2.dp.roundToPx()
+            layout(c.maxWidth, tp.height + space + vp.height) {
+                tp.place(0, 0)
+                vp.place(0, tp.height + space)
+            }
+        }
     }
 }
 

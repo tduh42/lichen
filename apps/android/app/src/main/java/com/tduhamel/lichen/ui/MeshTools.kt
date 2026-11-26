@@ -75,10 +75,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -149,6 +151,7 @@ import com.tduhamel.lichen.model.ChatId
 import com.tduhamel.lichen.model.canSwitchTo
 import com.tduhamel.lichen.model.channelQr
 import com.tduhamel.lichen.model.display
+import com.tduhamel.lichen.model.duration
 import com.tduhamel.lichen.model.forgetRadio
 import com.tduhamel.lichen.model.heard
 import com.tduhamel.lichen.model.node
@@ -641,9 +644,21 @@ private fun RouteStopView(model: AppModel, stop: RouteStop, i: Int, last: Int, n
                 }
             }
         }
-        Text(name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+        // Their own line heights: the theme's (24 sp) left the caption far below the name.
+        Text(
+            name, fontSize = 12.sp, lineHeight = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx, maxLines = 2,
+            overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+        )
         if (i == 0 && model.nodeName.isNotEmpty()) {
-            Text(model.nodeName, fontSize = 11.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+            // On one line, centred under its stop: past the stop's width (into the leg beside it,
+            // whose line and figure sit higher) rather than wrapped; cut only when longer still.
+            Text(
+                model.nodeName,
+                // Just under the name, closer than the column's spacing.
+                Modifier.offset(y = (-3).dp).wrapContentWidth(unbounded = true).widthIn(max = 84.dp),
+                fontSize = 10.sp, lineHeight = 13.sp, color = t.tx2, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
         }
     }
 }
@@ -1112,12 +1127,6 @@ private fun StatusRows(s: ServerStats) {
         CardDivider()
         CardRow(stringResource(R.string.posts), stringResource(R.string.status_posts, it.toInt(), s.postPushes?.toInt() ?: 0))
     }
-}
-
-private fun duration(res: android.content.res.Resources, s: Long): String = when {
-    s >= 86_400 -> res.getString(R.string.duration_days, s / 86_400, s % 86_400 / 3_600)
-    s >= 3_600 -> res.getString(R.string.duration_hours, s / 3_600, s % 3_600 / 60)
-    else -> res.getString(R.string.duration_minutes, s / 60)
 }
 
 /** A repeater's command line: what was sent and what came back (§16.5). */

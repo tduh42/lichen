@@ -29,6 +29,11 @@ import com.tduhamel.lichen.core.meshcoreContactCode
 import com.tduhamel.lichen.core.readMeshcoreContactCode
 import com.tduhamel.lichen.model.AppModel
 import com.tduhamel.lichen.model.ChatId
+import com.tduhamel.lichen.model.RadioFigure
+import com.tduhamel.lichen.model.figureText
+import com.tduhamel.lichen.model.figures
+import com.tduhamel.lichen.model.shareOf
+import java.text.NumberFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -711,5 +716,154 @@ class RadioLinkTest : UiTest() {
         tab(R.string.tab_messages)
         text(R.string.available).assertIsDisplayed()
         text("SF${r.sf}", substring = true).assertIsDisplayed()
+    }
+
+    /** RL-7: the radio's own figures (§16.4) in Radio settings: its noise floor in the header,
+     * and "Since it started" at the bottom with every figure the demo radio reports, each row one
+     * element to TalkBack ("Packets received, 1,204"), and the note under the card. */
+    @Test
+    fun RL_7_radioFigures() = radioFigures()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_7_radioFigures_fr() = radioFigures()
+
+    @Test
+    @Config(qualifiers = "+night")
+    fun RL_7_radioFigures_dark() = radioFigures()
+
+    private fun radioFigures() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's figures") { model.radioSettings?.run { read && noiseFloorDbm != null && packetsReceived != null } == true }
+        val r = model.radioSettings!!
+        // The demo radio's noise floor, a third figure in the header.
+        assertEquals(-118, r.noiseFloorDbm!!.toInt())
+        text("−118 dBm").assertIsDisplayed()
+        see(R.string.noise_floor_stat)
+        // The card, last: the figures it reported, in their order, each said as one.
+        scrollTo(hasText(str(R.string.figures_note)))
+        see(R.string.since_started)
+        text(R.string.figures_note).assertIsDisplayed()
+        val now = model.radioSettings!!
+        val figures = now.figures()
+        // The demo radio reports every one (of the last packet, its SNR at least).
+        assertEquals(RadioFigure.entries.toList(), figures)
+        for (f in figures) {
+            val said = "${str(FIGURE_TITLES.getValue(f))}, ${now.figureText(context.resources, f)}"
+            scrollTo(hasContentDescription(said))
+            desc(said).assertIsDisplayed()
+        }
+        // In this language's figures: "1,204" ("1 204" in French); airtime and its share of the time on.
+        val received = NumberFormat.getIntegerInstance().format(now.packetsReceived!!.toLong())
+        assertTrue(hasDesc("${str(R.string.fig_received)}, $received"))
+        val share = shareOf(now.txAirtimeS!!.toLong(), now.uptimeS!!.toLong())!!
+        assertTrue(now.figureText(context.resources, RadioFigure.AIRTIME_SENT).endsWith(str(R.string.fig_airtime_share, "", share)))
+    }
+
+    /** RL-7: the figures are read again every minute while Radio settings is open, and no more
+     * once it closes (nothing else asks for them). */
+    @Test
+    fun RL_7_figuresReadAgainEveryMinute() {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's figures") { model.radioSettings?.run { read && uptimeS != null && packetsReceived != null } == true }
+        advance(2)
+        val first = model.radioSettings!!.uptimeS!!
+        // A minute later, on the demo's clock and the screen's: read again.
+        advance(61)
+        compose.mainClock.advanceTimeBy(60_000)
+        advanceUntil("the figures read again", 10) { (model.radioSettings?.uptimeS ?: 0u) >= first + 60u }
+        val uptime = model.radioSettings!!.figureText(context.resources, RadioFigure.UPTIME)
+        scrollTo(hasContentDescription("${str(R.string.fig_uptime)}, $uptime"))
+        desc("${str(R.string.fig_uptime)}, $uptime").assertIsDisplayed()
+        // Closed: not again.
+        tapDesc(R.string.back)
+        advance(2)
+        val second = model.radioSettings!!.uptimeS
+        advance(61)
+        compose.mainClock.advanceTimeBy(60_000)
+        advance(5)
+        assertEquals(second, model.radioSettings!!.uptimeS)
+    }
+
+    /** RL-7: a radio that reports none of these figures shows neither the header's noise floor
+     * nor the card (never a 0 standing for a figure it did not give). */
+    @Test
+    fun RL_7_noFiguresNoCard() {
+        launch("demo" to true, "screen" to "radio")
+        // Every answer in (the figures come in three), none still on its way.
+        advanceUntil("the radio's figures") { model.radioSettings?.run { read && noiseFloorDbm != null && uptimeS != null && packetsReceived != null } == true }
+        advance(2)
+        // The radio as one that reports none of them.
+        fun noFigures() {
+            model.radioSettings = model.radioSettings!!.copy(
+                noiseFloorDbm = null, lastRssiDbm = null, lastSnrDb = null, txAirtimeS = null, rxAirtimeS = null,
+                uptimeS = null, packetsReceived = null, packetsSent = null, receiveErrors = null,
+            )
+            compose.waitForIdle()
+            assertTrue(model.radioSettings!!.figures().isEmpty())
+        }
+        // At the bottom: the card goes.
+        scrollTo(hasText(str(R.string.meshcore_code_note)))
+        see(R.string.since_started)
+        noFigures()
+        assertFalse(has(R.string.since_started))
+        assertFalse(has(R.string.figures_note))
+        // On top: the header's noise floor goes.
+        scrollTo(hasText(str(R.string.airtime_left_stat)))
+        noFigures()
+        assertFalse(has(R.string.noise_floor_stat))
+        assertFalse(has(R.string.since_started))
+        // Searched, nothing of them either.
+        val field = compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.search_radio_settings)))
+        field.performTextInput(str(R.string.noise_floor).take(5))
+        compose.waitForIdle()
+        see(R.string.no_setting_matches)
+    }
+
+    /** RL-7: Search radio settings finds the figures: "noise" ("bruit") lands on the header's
+     * noise floor, "errors" ("erreurs") on the card's row. */
+    @Test
+    fun RL_7_searchFigures() = searchFigures("noise", "errors")
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_7_searchFigures_fr() = searchFigures("bruit", "erreurs")
+
+    private fun searchFigures(noise: String, errors: String) {
+        launch("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's figures") { model.radioSettings?.run { read && noiseFloorDbm != null && receiveErrors != null } == true }
+        // Far down first.
+        scrollTo(hasText(str(R.string.restart_radio)))
+        assertFalse(has("−118 dBm"))
+        val field = compose.onNode(hasSetTextAction() and hasContentDescription(str(R.string.search_radio_settings)))
+        field.performTextInput(noise)
+        compose.waitForIdle()
+        // The noise floor alone, in This radio.
+        see(R.string.noise_floor)
+        see(R.string.this_radio)
+        assertFalse(has(R.string.restart_radio))
+        tap(R.string.noise_floor)
+        advance(1)
+        text("−118 dBm").assertIsDisplayed()
+        // The errors' row, at the bottom.
+        field.performTextInput(errors)
+        compose.waitForIdle()
+        see(R.string.fig_errors)
+        tap(R.string.fig_errors)
+        advance(1)
+        val now = model.radioSettings!!
+        desc("${str(R.string.fig_errors)}, ${now.figureText(context.resources, RadioFigure.ERRORS)}").assertIsDisplayed()
+    }
+
+    private companion object {
+        val FIGURE_TITLES = mapOf(
+            RadioFigure.UPTIME to R.string.fig_uptime,
+            RadioFigure.RECEIVED to R.string.fig_received,
+            RadioFigure.SENT to R.string.fig_sent,
+            RadioFigure.ERRORS to R.string.fig_errors,
+            RadioFigure.AIRTIME_SENT to R.string.fig_airtime_sent,
+            RadioFigure.AIRTIME_RECEIVED to R.string.fig_airtime_received,
+            RadioFigure.LAST_PACKET to R.string.fig_last_packet,
+        )
     }
 }

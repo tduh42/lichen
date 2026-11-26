@@ -465,6 +465,8 @@ class ContactsTest : UiTest() {
         tab(R.string.tab_nodes)
         tap("crest")
         see(R.string.how_it_reaches_you)
+        // The radio's name under You on one line ("ThinkNode M5" wrapped after "ThinkNode").
+        assertEquals(1, lines(model.nodeName))
         val you = str(R.string.you)
         // You → hub → crest: the hub's leg from its own signal (about 7.5 dB, Good), the crest's
         // not measured (it is heard only through the hub).
