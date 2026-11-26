@@ -1258,6 +1258,7 @@
     <string name="channel_already_followed">Ta radio suit déjà ce canal.</string>
     <string name="channel_will_follow">Ta radio le suivra, en sourdine. Tous ceux qui ont ce code le lisent.</string>
     <string name="join_the_channel">Rejoindre le canal</string>
+    <string name="not_on_route">pas sur cette route</string>
     <string name="map_nodes">Nœuds MeshCore</string>
     <string name="room_details">Serveur de salon</string>
     <string name="plain_room_explainer">Un serveur de salon garde les messages de tous ceux qui y sont connectés et les envoie à chacun. Tes messages utilisent le chiffrement de MeshCore jusqu’au salon : le salon et tous ceux qui y sont connectés les lisent.</string>

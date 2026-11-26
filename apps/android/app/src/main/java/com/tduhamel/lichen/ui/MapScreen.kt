@@ -237,8 +237,9 @@ private fun PositionsMap(model: AppModel, sos: () -> Unit) {
     val nowS = nowSeconds()
     // A route's stops stay on the map whatever the filter (§16.3).
     val stops = model.mapRouteTo?.let { k -> model.nodeRoute(k.unhex())?.stops?.mapNotNull { it.key?.hex() } }.orEmpty().toSet()
-    val items = mapItems(model, showNodes, model.mapNodeFilter, nowS, stops)
     val route = model.mapRouteTo?.let { mapRoute(model, it) }
+    // A route drawn: the markers that are not its stops fade under it.
+    val items = mapItems(model, showNodes, model.mapNodeFilter, nowS, stops, dim = route?.lines?.isNotEmpty() == true)
     // The legs whose chip the map has no room for (a short leg between two markers): in the card.
     var hiddenLegs by remember(model.mapRouteTo) { mutableStateOf(emptyList<Int>()) }
     // Someone new on the map: reframe around everyone (nodes do not count). A place from a
@@ -559,9 +560,10 @@ private fun PinBar(model: AppModel, pin: com.tduhamel.lichen.model.MapPin) {
 }
 
 /** The markers: the nodes the layer's filter keeps (and a route's stops, whatever it keeps),
- * everyone's last position (SOS first in colour), ours, and a place from a message. */
+ * everyone's last position (SOS first in colour), ours, and a place from a message; with a
+ * route drawn ([dim]), all but its stops, us and anyone in SOS faded. */
 @Composable
-private fun mapItems(model: AppModel, showNodes: Boolean, filter: NodeFilter, nowS: Long, stops: Set<String>): List<MapItem> {
+private fun mapItems(model: AppModel, showNodes: Boolean, filter: NodeFilter, nowS: Long, stops: Set<String>, dim: Boolean): List<MapItem> {
     val t = lichen
     val out = mutableListOf<MapItem>()
     if (showNodes) {
@@ -589,6 +591,9 @@ private fun mapItems(model: AppModel, showNodes: Boolean, filter: NodeFilter, no
     model.myFix?.let { me ->
         out += MapItem("me", MapItem.Kind.ME, me.lat, me.lon, me.accuracyM, "", "", t.iroh.toArgb(), t.dark)
     }
+    // A route shown reads only its own nodes: the others fade (us, at its start, stays; so does
+    // whoever shares a position under a stop's key). An SOS never fades.
+    if (dim) return out.map { if (it.id == "me" || it.kind == MapItem.Kind.SOS || it.id.removePrefix("n:") in stops) it else it.copy(dimmed = true) }
     return out
 }
 
