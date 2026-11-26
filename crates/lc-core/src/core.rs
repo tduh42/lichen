@@ -445,6 +445,9 @@ pub enum Event {
         at_s: u64,
         data: Vec<u8>,
     },
+    /// The reading after `APP_START` moved (§1.1): read [`Core::radio_reading`]. At each step,
+    /// and while counting at most every 250 ms or 10 items.
+    RadioReading,
 }
 
 /// Why a request was refused right away.
@@ -881,6 +884,8 @@ pub struct Core {
     contact_resyncs: u8,
     /// The contact list being read: what `CONTACTS_START` announced, records received.
     contacts_reading: (Option<u32>, u32),
+    /// What is read from the radio after `APP_START`, while it lasts (§1.1).
+    pub(crate) reading: Option<crate::connecting::Reading>,
     /// The last contact list read, whole or not.
     contact_read: ContactRead,
     /// The radio's clock is still to be set for this connection, once ours is known (§1).
@@ -1020,6 +1025,7 @@ impl Core {
             commands: VecDeque::new(),
             contact_resyncs: 0,
             contacts_reading: (None, 0),
+            reading: None,
             contact_read: ContactRead::default(),
             radio_time_owed: false,
             radio_pending: Vec::new(),
@@ -1480,6 +1486,9 @@ impl Core {
 
     /// Starts the connection sequence (`APP_START`, `DEVICE_QUERY`, key export, contacts).
     pub fn connect(&mut self, now: Millis) {
+        // A list cut off by a lost connection is asked again from its start (§1.1).
+        self.contacts_reading = (None, 0);
+        self.reading_started(now);
         let name = self.app_name.clone();
         self.command(
             &Command::AppStart {
@@ -1508,6 +1517,7 @@ impl Core {
     /// progress resumes where it stopped (§6.1). Commands not answered yet are dropped.
     pub fn disconnect(&mut self, _now: Millis) {
         self.online = false;
+        self.reading = None;
         self.radio_time_owed = false;
         // Our adverts not answered yet were not sent (§1.1).
         let adverts: Vec<bool> = self
@@ -2045,6 +2055,12 @@ impl Core {
             if expect == Expect::Contacts {
                 self.contacts_cut_short(now);
             }
+            // The reading does not wait for an answer that will not come (§1.1).
+            match expect {
+                Expect::Channel(_) => self.reading_channels_given_up(now),
+                Expect::Sync => self.reading_drained(now),
+                _ => {}
+            }
             // A setting, or the read that tells what the radio kept, unanswered (§1.1).
             match expect {
                 Expect::Setting(s) => {
@@ -2109,6 +2125,8 @@ impl Core {
         if self.contact_resyncs < CONTACT_RESYNCS {
             self.contact_resyncs += 1;
             self.command(&Command::GetContacts { since: None }, Expect::Contacts);
+        } else {
+            self.reading_contacts_done(now);
         }
     }
 
@@ -2121,6 +2139,11 @@ impl Core {
             received,
             whole,
         };
+    }
+
+    /// The contacts the radio announced for the list being read, and how many came.
+    pub(crate) const fn contacts_count(&self) -> (Option<u32>, u32) {
+        self.contacts_reading
     }
 
     /// How the radio's contact list was last read.
@@ -2357,6 +2380,7 @@ impl Core {
                 if let Some((_, d)) = self.awaiting.as_mut() {
                     *d = now + COMMAND_TIMEOUT_MS;
                 }
+                self.reading_moved(now);
             }
             Response::Contact(c) => {
                 let key = *c.key;
@@ -2392,6 +2416,7 @@ impl Core {
                     if let Some((_, d)) = self.awaiting.as_mut() {
                         *d = now + COMMAND_TIMEOUT_MS;
                     }
+                    self.reading_moved(now);
                 } else {
                     self.events.push_back(Event::ContactsUpdated);
                 }
@@ -2406,6 +2431,7 @@ impl Core {
                     self.contact_resyncs = 0;
                     self.note_contact_read(true);
                     self.contacts_read(now);
+                    self.reading_contacts_done(now);
                 }
             }
             Response::DefaultFloodScope { key, .. } => self.scope = key.copied(),
@@ -2420,7 +2446,10 @@ impl Core {
             },
             Response::Err(_) => match expect {
                 Some(Expect::TxPower(dbm)) => self.search_power_refused(dbm),
-                Some(Expect::Channel(index)) => self.on_channel_info(index, None, now),
+                Some(Expect::Channel(index)) => {
+                    self.on_channel_info(index, None, now);
+                    self.reading_moved(now);
+                }
                 Some(Expect::ChannelSet(index)) => {
                     self.command(&Command::GetChannel { index }, Expect::Channel(index));
                 }
@@ -2429,7 +2458,10 @@ impl Core {
                     id,
                     reason: FailReason::Refused,
                 }),
-                Some(Expect::Sync) => self.plain.syncing = false,
+                Some(Expect::Sync) => {
+                    self.plain.syncing = false;
+                    self.reading_drained(now);
+                }
                 Some(Expect::Trace(tag)) => self.on_trace_refused(tag),
                 Some(Expect::Server) => self.on_server_refused(),
                 Some(Expect::Cli(node)) => self.on_cli_refused(&node),
@@ -2451,7 +2483,10 @@ impl Core {
                 Some(Expect::Server) => self.on_server_sent(tag, timeout_ms, now),
                 _ => {}
             },
-            Response::NoMoreMessages => self.plain.syncing = false,
+            Response::NoMoreMessages => {
+                self.plain.syncing = false;
+                self.reading_drained(now);
+            }
             Response::ContactMsg {
                 snr4,
                 prefix,
@@ -2464,6 +2499,7 @@ impl Core {
                 if expect == Some(Expect::Sync) {
                     self.plain.syncing = false;
                     self.plain_sync();
+                    self.reading_fetched(now);
                 }
             }
             Response::ChannelMsg {
@@ -2478,13 +2514,17 @@ impl Core {
                 if expect == Some(Expect::Sync) {
                     self.plain.syncing = false;
                     self.plain_sync();
+                    self.reading_fetched(now);
                 }
             }
             Response::ChannelInfo {
                 index,
                 name,
                 secret,
-            } => self.on_channel_info(index, Some((name, secret)), now),
+            } => {
+                self.on_channel_info(index, Some((name, secret)), now);
+                self.reading_moved(now);
+            }
             Response::DeviceInfo(d) => {
                 self.plain_set_max_channels(d.max_channels);
                 self.radio_device_info(&d);

@@ -491,6 +491,7 @@ fn describe(core: &Core, e: &Event) -> String {
             format!("{}: request accepted", name_of(core, node))
         }
         Event::RadioOutcome(o) => format!("radio setting {:?}: {:?}", o.setting, o.outcome),
+        Event::RadioReading => format!("reading the radio: {:?}", core.radio_reading()),
         Event::NodeReadings { node, data, .. } => {
             let r = lc_core::Readings::decode(data, 0);
             format!(
