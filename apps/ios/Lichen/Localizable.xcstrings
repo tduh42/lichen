@@ -311,6 +311,16 @@
         }
       }
     },
+    "%@ to %@, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ vers %2$@, %3$@"
+          }
+        }
+      }
+    },
     "%@ transmitting": {
       "localizations": {
         "fr": {
@@ -771,6 +781,46 @@
         }
       }
     },
+    "%lld heard in the last 2 h": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld heard in the last 2 h"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld heard in the last 2 h"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entendu ces 2 dernières heures"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld entendus ces 2 dernières heures"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld hops": {
       "localizations": {
         "en": {
@@ -817,6 +867,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld gardés · %lld envoyés aux clients"
+          }
+        }
+      }
+    },
+    "%lld known": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld known"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld known"
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld connu"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld connus"
+                }
+              }
+            }
           }
         }
       }
@@ -1691,6 +1781,16 @@
         }
       }
     },
+    "24 h ago": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "il y a 24 h"
+          }
+        }
+      }
+    },
     "24 words to write on paper": {
       "localizations": {
         "fr": {
@@ -1707,6 +1807,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "50 m"
+          }
+        }
+      }
+    },
+    "7 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "7 jours"
+          }
+        }
+      }
+    },
+    "7 days ago": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "il y a 7 jours"
           }
         }
       }
@@ -2517,16 +2637,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Joindre"
-          }
-        }
-      }
-    },
-    "Back in %@ s · SNR measured by each hop, out and back": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Revenu en %@ s · SNR mesuré par chaque saut, à l’aller et au retour"
           }
         }
       }
@@ -3671,16 +3781,6 @@
         }
       }
     },
-    "Direct": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Direct"
-          }
-        }
-      }
-    },
     "Direct only": {
       "localizations": {
         "fr": {
@@ -4811,6 +4911,26 @@
         }
       }
     },
+    "Heard in 2 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendus en 2 h"
+          }
+        }
+      }
+    },
+    "Heard only through repeaters: no signal of its own. The route above shows how it reaches you.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entendu seulement par des répéteurs : pas de signal propre. La route ci-dessus montre comment il t’atteint."
+          }
+        }
+      }
+    },
     "Heard, not in the radio’s contacts": {
       "localizations": {
         "fr": {
@@ -4891,16 +5011,6 @@
         }
       }
     },
-    "Hop %lld · %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Saut %lld · %@"
-          }
-        }
-      }
-    },
     "Hop limit": {
       "localizations": {
         "fr": {
@@ -4917,6 +5027,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Comment"
+          }
+        }
+      }
+    },
+    "How it reaches you": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comment il t’atteint"
           }
         }
       }
@@ -4987,6 +5107,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dans lichen : Ajouter un contact › Scanner. La personne rejoint %@ et tu deviens pour elle un contact vérifié."
+          }
+        }
+      }
+    },
+    "In reach · heard directly by your radio": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "À portée · entendus directement par ta radio"
           }
         }
       }
@@ -5357,16 +5487,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dernière position GPS"
-          }
-        }
-      }
-    },
-    "Last heard %@": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Entendu %@"
           }
         }
       }
@@ -6091,6 +6211,16 @@
         }
       }
     },
+    "MeshCore app": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App MeshCore"
+          }
+        }
+      }
+    },
     "MeshCore channel": {
       "localizations": {
         "fr": {
@@ -6407,6 +6537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mon code"
+          }
+        }
+      }
+    },
+    "N,NE,E,SE,S,SW,W,NW": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "N,NE,E,SE,S,SO,O,NO"
           }
         }
       }
@@ -6821,6 +6961,16 @@
         }
       }
     },
+    "No reading in this time.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune mesure sur cette durée."
+          }
+        }
+      }
+    },
     "No repeater answered the path discovery. Try again when you are closer or a relay is up.": {
       "localizations": {
         "fr": {
@@ -7167,6 +7317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Non signé : n’importe qui peut écrire un tel code."
+          }
+        }
+      }
+    },
+    "Not traced yet": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas encore tracé"
           }
         }
       }
@@ -7597,16 +7757,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Collé, pas scanné : %@ est ajouté sans être vérifié. Compare vos numéros de sécurité pour le vérifier. Tu liras ce que le groupe envoie à partir de maintenant, pas ce qui précède."
-          }
-        }
-      }
-    },
-    "Path": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chemin"
           }
         }
       }
@@ -9501,6 +9651,116 @@
         }
       }
     },
+    "Signal chart: %lld readings, now %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal chart: %#@r@, now %2$@"
+          },
+          "substitutions": {
+            "r": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg reading"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg readings"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Graphique du signal : %#@r@, maintenant %2$@"
+          },
+          "substitutions": {
+            "r": {
+              "argNum": 1,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mesure"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg mesures"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Signal fair, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal moyen, %@"
+          }
+        }
+      }
+    },
+    "Signal good, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal bon, %@"
+          }
+        }
+      }
+    },
+    "Signal weak, %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal faible, %@"
+          }
+        }
+      }
+    },
+    "Signal, last 24 h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal, dernières 24 h"
+          }
+        }
+      }
+    },
+    "Signal, last 7 days": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signal, 7 derniers jours"
+          }
+        }
+      }
+    },
     "Signed by its radio.": {
       "localizations": {
         "fr": {
@@ -10791,12 +11051,32 @@
         }
       }
     },
+    "Through repeaters": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Par des répéteurs"
+          }
+        }
+      }
+    },
     "Thumbnail now, full resolution later": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Miniature + pleine résolution plus tard"
+          }
+        }
+      }
+    },
+    "Time": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Heure"
           }
         }
       }
@@ -10861,12 +11141,42 @@
         }
       }
     },
+    "Trace again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracer à nouveau"
+          }
+        }
+      }
+    },
     "Trace the path": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Tracer le chemin"
+          }
+        }
+      }
+    },
+    "Traced %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracé %@"
+          }
+        }
+      }
+    },
+    "Traced %@ · back in %@ s · %@ s of airtime": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tracé %1$@ · retour en %2$@ s · %3$@ s de temps d’antenne"
           }
         }
       }
@@ -12181,26 +12491,6 @@
         }
       }
     },
-    "Your radio floods to reach it until it learns a path.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ta radio l’atteint par inondation tant qu’elle n’a pas appris de chemin."
-          }
-        }
-      }
-    },
-    "Your radio hears it without a repeater.": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ta radio l’entend sans répéteur."
-          }
-        }
-      }
-    },
     "Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.": {
       "localizations": {
         "fr": {
@@ -12321,6 +12611,16 @@
         }
       }
     },
+    "dB": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dB"
+          }
+        }
+      }
+    },
     "direct": {
       "localizations": {
         "fr": {
@@ -12407,16 +12707,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "micrologiciel"
-          }
-        }
-      }
-    },
-    "flood": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "inondation"
           }
         }
       }
@@ -12611,12 +12901,32 @@
         }
       }
     },
+    "not measured": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas mesuré"
+          }
+        }
+      }
+    },
     "now": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "à l’instant"
+          }
+        }
+      }
+    },
+    "now %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "maintenant %@"
           }
         }
       }
@@ -12647,6 +12957,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "partielle"
+          }
+        }
+      }
+    },
+    "path unknown": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "chemin inconnu"
           }
         }
       }
@@ -12767,6 +13087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "vérifié"
+          }
+        }
+      }
+    },
+    "via %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "via %@"
           }
         }
       }

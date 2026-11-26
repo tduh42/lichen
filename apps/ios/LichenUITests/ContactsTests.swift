@@ -95,37 +95,97 @@ final class ContactsTests: LichenUITest {
                        "Settings still lists the nodes")
     }
 
-    /// CT-3: the nodes the radio knows: repeaters and the room with their kind, the positions
-    /// they advertise and when they were last heard; Lucie, heard, not added.
+    /// A node's row in the Nodes tab.
+    private func nodeRow(_ name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH %@", name)).firstMatch
+    }
+
+    /// The part of a localized format before its first argument: "Signal good, ". As many
+    /// arguments as any of these formats takes (fewer would have it read past them).
+    private func prefix(_ key: String) -> String {
+        tr(key, "#", "#", "#", "#").components(separatedBy: "#")[0]
+    }
+
+    /// A filter chip ("Repeaters 2"), whatever its count.
+    private func chip(_ key: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND NOT identifier == 'node'", tr(key))).firstMatch
+    }
+
+    /// CT-3: the nodes the radio knows or heard, each with its kind and when last heard. In
+    /// reach (heard directly, ADR-0049), by rating, each with its meter: the hub Good, Lucie Fair,
+    /// the board Bad (the demo's SNRs drift a little: the rating is checked, the figure read).
+    /// Through repeaters: crest and Camille one hop away, in the singular. The filters.
     func testCT3_Nodes() {
         launch()
         tab(.nodes)
-        for (name, kind) in [("hub", "Repeater"), ("crest", "Repeater"), ("Refuge board", "Room server"), ("Lucie", "Companion")] {
-            let n = wait(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch, 20, "no node \(name)")
-            XCTAssertTrue(n.label.contains(tr(kind)), "\(name): \(n.label)")
+        let hub = nodeRow("hub"), lucie = nodeRow("Lucie"), board = nodeRow("Refuge board"), crest = nodeRow("crest")
+        for (row, rating) in [(hub, "Signal good, %@"), (lucie, "Signal fair, %@"), (board, "Signal weak, %@")] {
+            wait(row, 30, "no node")
+            waitLabel(row, contains: prefix(rating), 30)
+            XCTAssertTrue(row.label.contains(" dB"), row.label)
         }
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Lucie'")).firstMatch.label.contains(tr("heard")),
-                      "Lucie is not marked as heard")
+        XCTAssertTrue(element(tr("In reach · heard directly by your radio")).exists, "no In reach")
+        XCTAssertTrue(element(tr("Through repeaters")).exists, "no Through repeaters")
+        // By rating, then the nodes reached through repeaters.
+        XCTAssertLessThan(hub.frame.minY, lucie.frame.minY)
+        XCTAssertLessThan(lucie.frame.minY, board.frame.minY)
+        XCTAssertLessThan(board.frame.minY, crest.frame.minY)
+        for (row, kind) in [(hub, "Repeater"), (crest, "Repeater"), (board, "Room server"), (lucie, "MeshCore app")] {
+            XCTAssertTrue(row.label.contains(tr(kind)), row.label)
+        }
+        XCTAssertTrue(lucie.label.contains(tr("heard")), "Lucie is not marked as heard")
+        XCTAssertTrue(crest.label.contains(tr("%lld hops", 1)) && crest.label.contains(tr("via %@", "hub")), crest.label)
         // One hop is said in the singular.
-        let camille = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch.label
+        let camille = nodeRow("Camille").label
         XCTAssertTrue(camille.contains(tr("%lld hops", 1)), camille)
         XCTAssertFalse(camille.contains(tr("%lld hops", 2).replacingOccurrences(of: "2", with: "1")), camille)
         keep("ct-nodes")
-        // The filters.
-        app.buttons[tr("Repeaters")].tap()
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Refuge board'")).firstMatch.exists)
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'hub'")).firstMatch.exists)
-        app.buttons[tr("Rooms")].tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Refuge board'")).firstMatch.exists)
-        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'hub'")).firstMatch.exists)
-        app.buttons[tr("All")].tap()
-        // A repeater's page: kind, position, last heard, path.
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'crest'")).firstMatch.tap()
-        wait(containing(tr("Advertised position")), 5, "no position")
-        XCTAssertTrue(containing("44.90980, 5.46880").exists, "crest's position")
-        XCTAssertTrue(containing(tr("Last heard %@", "#").components(separatedBy: "#")[0]).exists, "no last heard")
-        XCTAssertTrue(containing("hub").exists, "the path to crest goes through hub")
-        keep("ct-node-crest")
+        // The filters, each with its count.
+        chip("Repeaters").tap()
+        XCTAssertFalse(board.exists)
+        XCTAssertTrue(hub.exists)
+        chip("Rooms").tap()
+        XCTAssertTrue(board.exists)
+        XCTAssertFalse(hub.exists)
+        // Heard in 2 h: as many nodes as the header says were heard lately.
+        chip("Heard in 2 h").tap()
+        let summary = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", " · ")).firstMatch
+        let heard = summary.label.components(separatedBy: " · ").last?.split(separator: " ").first.flatMap { Int($0) }
+        XCTAssertEqual(app.buttons.matching(identifier: "node").count, heard, summary.label)
+        chip("All").tap()
+        XCTAssertTrue(board.exists && hub.exists)
+    }
+
+    /// CT-3: a lichen user's row: once Camille's identity is known, the lichen badge, not
+    /// "MeshCore app" (the nodes are read again when an identity is learned).
+    func testCT3_LichenUserInTheNodes() {
+        launch()
+        wait(row("Camille"), Self.camilleTimeout, "no Camille")
+        tab(.nodes)
+        let camille = wait(nodeRow("Camille"), 10, "no node for Camille")
+        XCTAssertTrue(camille.label.contains("lichen"), camille.label)
+        XCTAssertFalse(camille.label.contains(tr("MeshCore app")), camille.label)
+    }
+
+    /// CT-3: the hub's page: its large meter, its signal over the last 24 h (a reading at
+    /// least), now; a week, then a day again.
+    func testCT3_HubPage() {
+        launch()
+        tab(.nodes)
+        waitLabel(wait(nodeRow("hub"), 30, "no hub"), contains: prefix("Signal good, %@"), 30)
+        openNode("hub")
+        wait(app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", prefix("Signal good, %@"))).firstMatch,
+             5, "no meter")
+        wait(element(tr("Signal, last 24 h")), 5, "no signal chart")
+        let chart = tr("Signal chart: %lld readings, now %@", 1, "#").components(separatedBy: ":")[0]
+        XCTAssertTrue(containing(chart).exists, "no chart")
+        XCTAssertTrue(containing(prefix("now %@")).exists, "no figure now")
+        keep("ct-node-hub")
+        button(tr("7 days")).tap()
+        wait(element(tr("Signal, last 7 days")), 5, "not a week")
+        button(tr("24 h")).tap()
+        wait(element(tr("Signal, last 24 h")), 5, "not a day")
+        XCTAssertFalse(containing(prefix("Heard only through repeaters: no signal of its own. The route above shows how it reaches you.")).exists)
     }
 
     /// CT-4: logged in to the board, its posts arrive in a row of its own, and a post goes out.
@@ -186,19 +246,37 @@ final class ContactsTests: LichenUITest {
         keep("ct-repeater-console")
     }
 
-    /// CT-7: a trace to crest, two hops: each leg's SNR, there and back.
+    /// CT-7: crest's route, You → hub → crest: the hub's leg from its own signal, crest's not
+    /// measured until a trace measures it; no signal of its own; its position; Show on the map.
     func testCT7_TraceToANode() {
         launch()
+        tab(.nodes)
+        waitLabel(wait(nodeRow("hub"), 30, "no hub"), contains: " dB", 30)
         openNode("crest")
-        let trace = button(tr("Trace the path"))
-        reveal(trace)
-        trace.tap()
-        wait(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", tr("Back in %@ s · SNR measured by each hop, out and back", "")
-            .components(separatedBy: " ").prefix(2).joined(separator: " "))).firstMatch, 30, "the trace did not come back")
-        // You → hub → crest → hub → You: four legs, each with an SNR.
-        let legs = app.staticTexts.matching(NSPredicate(format: "label MATCHES '-?[0-9]+[.,][0-9] dB'"))
-        XCTAssertEqual(legs.count, 4, "legs: \(legs.allElementsBoundByIndex.map(\.label))")
+        wait(element(tr("How it reaches you")), 5, "no route")
+        let you = tr("You")
+        let hubLeg = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", tr("%@ to %@, %@", you, "hub", ""))).firstMatch
+        let crestLeg = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", tr("%@ to %@, %@", "hub", "crest", ""))).firstMatch
+        wait(hubLeg, 5, "no leg to the hub")
+        XCTAssertTrue(hubLeg.label.hasSuffix(" dB"), hubLeg.label)
+        XCTAssertEqual(crestLeg.label, tr("%@ to %@, %@", "hub", "crest", tr("not measured")))
+        XCTAssertTrue(element(tr("Not traced yet")).exists, "said traced")
+        // Heard only through the hub: no signal of its own.
+        let noSignal = tr("Heard only through repeaters: no signal of its own. The route above shows how it reaches you.")
+        reveal(element(noSignal))
+        XCTAssertTrue(containing("44.90980, 5.46880").exists, "crest's position")
+        reveal(button(tr("Trace the path")), up: false)
+        button(tr("Trace the path")).tap()
+        // Crest's leg, measured now (about −3.0 dB).
+        waitLabel(crestLeg, contains: " dB", 30)
+        wait(containing(prefix("Traced %@ · back in %@ s · %@ s of airtime")), 5, "the trace's figures")
+        XCTAssertTrue(button(tr("Trace again")).exists, "no Trace again")
         keep("ct-trace")
+        // The map.
+        button(tr("Show on the map")).tap()
+        let map = app.tabBars.buttons.element(boundBy: Tab.map.rawValue)
+        wait(map, 5)
+        XCTAssertTrue(map.isSelected, "not on the map")
     }
 
     /// The request card's line, once Camille's first message arrived as a request and the card
