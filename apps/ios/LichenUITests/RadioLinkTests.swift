@@ -271,6 +271,28 @@ final class RadioLinkTests: LichenUITest {
         XCTAssertFalse(containing(tr("Reading the radio’s settings…")).exists, "still said to be reading")
     }
 
+    /// RL-5: Radio settings pushed at launch, while the app starts and the connection reads the
+    /// radio, is built a handful of times and shows its rows. The navigation used to build it
+    /// over and over while it pushed it, its whole body each time: in about half the launches
+    /// hundreds of times, on a busy Mac thousands, the screen blank for 20 s to minutes
+    /// (`-countBuilds`: the count).
+    func testRL5_RadioSettingsShowsAtOnce() {
+        let start = Date()
+        launch(["-tab", "settings", "-screen", "radio", "-countBuilds", "YES"], speed: 1)
+        let launched = Date().timeIntervalSince(start)
+        wait(frequencyLabel("869.618"), 60, "Radio settings did not show its rows")
+        let took = Date().timeIntervalSince(start)
+        // The count is read again twice a second.
+        usleep(700_000)
+        let builds = app.staticTexts["radio.builds"]
+        wait(builds, 5, "no count of the screen's builds")
+        let count = Int(builds.label) ?? -1
+        XCTContext.runActivity(named: String(format: "launched in %.1f s, rows after %.1f s, built %d times",
+                                             launched, took, count)) { _ in }
+        XCTAssertTrue((1...30).contains(count), "Radio settings was built \(count) times")
+        XCTAssertLessThan(took, 30, "Radio settings took \(Int(took)) s to show its rows")
+    }
+
     private static let noFixNote =
         "The radio’s GPS has no fix yet: it needs open sky. Until then, it can advertise this phone’s position."
 

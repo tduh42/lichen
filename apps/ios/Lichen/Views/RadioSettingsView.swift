@@ -33,7 +33,42 @@ enum RadioPreset: String, CaseIterable, Identifiable {
 
 /// The radio's own settings (protocol §1.1, ADR-0032): read from the radio at each connection
 /// and after each change; the radio keeps them, lichen stores none.
+///
+/// Nothing to compare, on purpose: pushed while the app starts (`-screen radio`, as the UI
+/// tests open it), the navigation stack built this view over and over, and SwiftUI found it
+/// changed every time: the whole screen's body, hundreds of times in about half the launches,
+/// thousands on a busy Mac, the screen blank for 20 s to minutes. This view is the same every
+/// time: `RadioSettingsContent` is built again only when what it reads changes.
 struct RadioSettingsView: View {
+    var body: some View {
+        RadioSettingsContent()
+            #if DEBUG
+            .overlay(alignment: .bottomLeading) { RadioSettingsBuilds() }
+            #endif
+    }
+}
+
+#if DEBUG
+/// How many times Radio settings' body ran since launch.
+@MainActor private var radioSettingsBuilds = 0
+
+/// UI tests (`-countBuilds YES`, RL-5): that count, read twice a second, nearly transparent:
+/// a handful of builds, not thousands.
+private struct RadioSettingsBuilds: View {
+    var body: some View {
+        if UserDefaults.standard.bool(forKey: "countBuilds") {
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                Text(verbatim: "\(radioSettingsBuilds)")
+                    .font(.caption)
+                    .opacity(0.01)
+                    .accessibilityIdentifier("radio.builds")
+            }
+        }
+    }
+}
+#endif
+
+private struct RadioSettingsContent: View {
     @Environment(AppModel.self) private var model
     @State private var preset = RadioPreset.custom
     @State private var freqText = ""
@@ -64,6 +99,9 @@ struct RadioSettingsView: View {
     }
 
     var body: some View {
+        #if DEBUG
+        let _ = radioSettingsBuilds += 1
+        #endif
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
