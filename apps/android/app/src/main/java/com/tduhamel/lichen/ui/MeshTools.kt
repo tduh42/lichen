@@ -1,5 +1,22 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import com.tduhamel.lichen.core.LichenException
+import com.tduhamel.lichen.core.NodeReading
+import com.tduhamel.lichen.core.ReadingKind
+import com.tduhamel.lichen.core.ReadingValue
+import com.tduhamel.lichen.core.ReadingsState
+import com.tduhamel.lichen.model.askReadings
+import com.tduhamel.lichen.model.hex
+import com.tduhamel.lichen.model.nodeReadings
+import com.tduhamel.lichen.model.nodeReadingsState
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -198,7 +215,12 @@ fun roomSubtitle(model: AppModel, chat: ChatId): String {
  * root (the Nodes tab). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ToolScreen(title: String, back: (() -> Unit)?, content: LazyListScope.() -> Unit) {
+private fun ToolScreen(
+    title: String,
+    back: (() -> Unit)?,
+    state: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
+    content: LazyListScope.() -> Unit,
+) {
     val t = lichen
     Column(Modifier.fillMaxSize().background(t.bg)) {
         TopAppBar(
@@ -211,6 +233,7 @@ private fun ToolScreen(title: String, back: (() -> Unit)?, content: LazyListScop
         LazyColumn(
             // A tab's root (no way back): the tab bar below takes the navigation bar.
             Modifier.weight(1f).then(if (back != null) Modifier.windowInsetsPadding(WindowInsets.navigationBars) else Modifier),
+            state = state,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             content = content,
@@ -431,11 +454,28 @@ fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () ->
     var error by remember { mutableStateOf<String?>(null) }
     UsesLocation(model, "node")
     val nowS = nowSeconds()
-    ToolScreen(n?.name ?: stringResource(R.string.node_kind_unknown), back) {
+    val list = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val password = remember { FocusRequester() }
+    // Readings' Log in: the list goes to the login card below (its index, counted as the items
+    // are laid out below) and its password field takes the keyboard.
+    val readings = n != null && !key.contentEquals(model.nodeKey)
+    val loginIndex = (if (n != null) 1 else 0) + 2 + (if (n != null) 2 else 0) + (if (readings) 1 else 0) +
+        (if (n?.kind == NodeKind.ROOM_SERVER) 2 else 1)
+    val toLogin: () -> Unit = {
+        scope.launch {
+            list.animateScrollToItem(loginIndex)
+            withFrameNanos { }
+            runCatching { password.requestFocus() }
+        }
+    }
+    ToolScreen(n?.name ?: stringResource(R.string.node_kind_unknown), back, list) {
         if (n != null) item { NodeHeader(model, n, nowS) }
         item { SectionLabel(stringResource(R.string.how_it_reaches_you), Modifier.padding(top = 10.dp)) }
         item { RouteCard(model, key) { error = it } }
         if (n != null) item { SignalSection(model, n, nowS) }
+        // What it sends: never for our own radio (Radio settings has its battery).
+        if (n != null && readings) item { ReadingsCard(model, n, nowS, toLogin) }
         if (n != null) item {
             CardList(Modifier.padding(top = 10.dp)) {
                 if (!n.onRadio) {
@@ -458,11 +498,11 @@ fun NodeScreen(model: AppModel, key: ByteArray, back: () -> Unit, console: () ->
                     }
                 }
             }
-            item { ServerLoginCard(model, key, room = true) }
+            item { ServerLoginCard(model, key, room = true, password) }
         }
         if (n?.kind == NodeKind.REPEATER) {
             item { SectionLabel(stringResource(R.string.administration), Modifier.padding(top = 10.dp)) }
-            item { ServerLoginCard(model, key, room = false) }
+            item { ServerLoginCard(model, key, room = false, password) }
             repeaterItems(model, key, console) { error = it }
         }
     }
@@ -717,9 +757,210 @@ private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long) {
     }
 }
 
+// ----- a node's readings (§16.7, ADR-0050) -----
+
+/** "Readings it sends" (mockup `NodePage`): its battery, its temperature and whatever else it
+ * sent, when it sent them, and Ask again; or why there is nothing yet. Only the buttons ask:
+ * opening the page never does. A repeater or a room answers only those logged in: Log in takes
+ * the user to its login card. */
+@Composable
+private fun ReadingsCard(model: AppModel, n: NodeInfo, nowS: Long, toLogin: () -> Unit) {
+    val t = lichen
+    val res = LocalResources.current
+    val readings = model.nodeReadings(n.key)
+    val state = model.nodeReadingsState(n.key)
+    val refusal = model.readingsRefusals[n.key.hex()]
+    val last = readings.lastOrNull()
+    val server = n.kind == NodeKind.REPEATER || n.kind == NodeKind.ROOM_SERVER
+    val loggedIn = !server || (model.server(n.key)?.login ?: ServerLogin.OUT).isIn
+    val refused = state == ReadingsState.REFUSED || refusal is LichenException.UnknownContact
+    val loginLine = stringResource(if (n.kind == NodeKind.ROOM_SERVER) R.string.readings_login_room else R.string.readings_login_repeater)
+    // What became of the last request, until the next one.
+    val outcome = when {
+        refused -> stringResource(R.string.readings_refused)
+        refusal != null -> refusal.display(res)
+        state == ReadingsState.ANSWERED_EMPTY -> stringResource(R.string.readings_empty)
+        state == ReadingsState.NO_ANSWER -> stringResource(if (server) R.string.readings_no_answer_server else R.string.readings_no_answer_person)
+        else -> null
+    }
+    val action: @Composable () -> Unit = {
+        when {
+            refused -> Unit
+            state == ReadingsState.ASKING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CircularProgressIndicator(Modifier.size(16.dp), color = t.tx2, strokeWidth = 2.dp)
+                Text(stringResource(R.string.asking), fontSize = 14.sp, color = t.tx2)
+            }
+            !loggedIn -> ReadingsButton(stringResource(R.string.log_in), toLogin)
+            else -> ReadingsButton(stringResource(if (last != null) R.string.readings_ask_again else R.string.readings_ask)) { model.askReadings(n.key) }
+        }
+    }
+    Column(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionLabel(stringResource(R.string.readings_title))
+        CardList {
+            if (last == null) {
+                // Nothing yet: what to do, or why it cannot be done.
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        outcome ?: if (loggedIn) stringResource(R.string.readings_none) else loginLine,
+                        fontSize = 15.sp, color = if (outcome != null) t.tx2 else t.tx, modifier = Modifier.weight(1f),
+                    )
+                    action()
+                }
+                return@CardList
+            }
+            last.batteryMv?.let { mv ->
+                val volts = "%.2f".format(mv.toDouble() / 1000)
+                ReadingRow(
+                    stringResource(R.string.battery),
+                    last.batteryPercent?.let { stringResource(R.string.readings_battery_value, volts, it.toInt()) } ?: "$volts V",
+                )
+                CardDivider()
+            }
+            last.temperatureC?.let {
+                ReadingRow(stringResource(R.string.readings_temperature), "${decimals(it, 1)} °C")
+                CardDivider()
+            }
+            last.values.forEach { v ->
+                val label = readingLabel(v.kind)
+                ReadingRow(if (v.channel.toInt() == 1) label else stringResource(R.string.readings_sensor, label, v.channel.toInt()), readingValue(v))
+                CardDivider()
+            }
+            // Its battery over the week, once there are two to join.
+            val battery = readings.filter { it.batteryMv != null && nowS - it.atS.toLong() <= 7 * 86_400L }
+            if (battery.size >= 2) {
+                BatteryChart(battery, nowS)
+                CardDivider()
+            }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(stringResource(R.string.readings_sent, model.heard(last.atS)), fontSize = 15.sp, color = t.tx2, modifier = Modifier.weight(1f))
+                action()
+            }
+            val note = outcome ?: loginLine.takeIf { !loggedIn }
+            if (note != null) {
+                Text(note, fontSize = 13.sp, color = t.tx2, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
+            }
+        }
+    }
+}
+
+/** A label and its value, read by TalkBack as one: "Battery, 3.92 V, about 69 %". */
+@Composable
+private fun ReadingRow(label: String, value: String) {
+    val t = lichen
+    val said = "$label, ${value.replace(" · ", ", ")}"
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp).clearAndSetSemantics { contentDescription = said },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontSize = 15.sp, color = t.tx2, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.tx, style = TextStyle(fontFeatureSettings = "tnum"))
+    }
+}
+
+@Composable
+private fun ReadingsButton(text: String, onClick: () -> Unit) {
+    val t = lichen
+    Button(
+        onClick,
+        colors = ButtonDefaults.buttonColors(containerColor = t.s2, contentColor = t.tx),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+    ) { Text(text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+}
+
+/** "11.5", "4": [max] decimals at most, none when it has none, in the phone's language. */
+private fun decimals(v: Double, max: Int): String {
+    val f = java.text.NumberFormat.getNumberInstance()
+    f.maximumFractionDigits = max
+    f.minimumFractionDigits = 0
+    f.isGroupingUsed = false
+    return f.format(v)
+}
+
+@Composable
+private fun readingLabel(kind: ReadingKind): String = stringResource(
+    when (kind) {
+        ReadingKind.ANALOG_INPUT -> R.string.reading_analog
+        ReadingKind.GENERIC -> R.string.reading_generic
+        ReadingKind.ILLUMINANCE -> R.string.reading_illuminance
+        ReadingKind.TEMPERATURE -> R.string.readings_temperature
+        ReadingKind.HUMIDITY -> R.string.reading_humidity
+        ReadingKind.PRESSURE -> R.string.reading_pressure
+        ReadingKind.VOLTAGE -> R.string.reading_voltage
+        ReadingKind.CURRENT -> R.string.reading_current
+        ReadingKind.FREQUENCY -> R.string.reading_frequency
+        ReadingKind.PERCENTAGE -> R.string.reading_percentage
+        ReadingKind.ALTITUDE -> R.string.reading_altitude
+        ReadingKind.POWER -> R.string.reading_power
+        ReadingKind.DISTANCE -> R.string.reading_distance
+        ReadingKind.LATITUDE -> R.string.reading_latitude
+        ReadingKind.LONGITUDE -> R.string.reading_longitude
+    },
+)
+
+/** A value with its unit, as many decimals as it needs: volts two, a position four. A position
+ * is only listed here, never put on the map. */
+private fun readingValue(v: ReadingValue): String {
+    val number = when (v.kind) {
+        ReadingKind.VOLTAGE -> "%.2f".format(v.value)
+        ReadingKind.LATITUDE, ReadingKind.LONGITUDE -> "%.4f".format(v.value)
+        ReadingKind.CURRENT -> decimals(v.value, 3)
+        else -> decimals(v.value, 2)
+    }
+    return when {
+        v.unit.isEmpty() -> number
+        v.unit == "°" -> "$number°"
+        else -> "$number ${v.unit}"
+    }
+}
+
+/** Its battery over 7 days: a dot per answer joined by a thin line, volts up the side, small. */
+@Composable
+private fun BatteryChart(points: List<NodeReading>, nowS: Long) {
+    val t = lichen
+    val measurer = rememberTextMeasurer()
+    val volts = points.map { it.batteryMv!!.toDouble() / 1000 }
+    val said = stringResource(R.string.readings_chart_said, "%.2f".format(volts.first()), "%.2f".format(volts.last()))
+    val lo = minOf(volts.min() - 0.02, volts.max() - 0.1)
+    val hi = maxOf(volts.max() + 0.02, lo + 0.1)
+    val window = 7 * 86_400L
+    val labelStyle = TextStyle(fontSize = 10.sp, color = t.tx2, fontFeatureSettings = "tnum")
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).clearAndSetSemantics { contentDescription = said }) {
+        Canvas(Modifier.fillMaxWidth().height(60.dp)) {
+            val left = 34.dp.toPx()
+            val w = size.width - left
+            val h = size.height
+            fun y(v: Double) = (h - (v - lo) / (hi - lo) * h).toFloat()
+            fun x(at: ULong) = left + ((at.toLong() - (nowS - window)).toFloat() / window) * w
+            for (v in listOf(hi, lo)) {
+                val yy = y(v).coerceIn(0f, h)
+                drawLine(t.line, Offset(left, yy), Offset(size.width, yy), strokeWidth = 1.dp.toPx())
+                val text = measurer.measure("%.2f".format(v), labelStyle)
+                drawText(text, topLeft = Offset(0f, (yy - text.size.height / 2).coerceIn(0f, h - text.size.height)))
+            }
+            val pts = points.mapIndexed { i, r -> Offset(x(r.atS).coerceIn(left, size.width), y(volts[i])) }
+            val path = Path().apply {
+                moveTo(pts.first().x, pts.first().y)
+                pts.drop(1).forEach { lineTo(it.x, it.y) }
+            }
+            drawPath(path, t.tx2.copy(alpha = 0.5f), style = Stroke(1.5.dp.toPx()))
+            pts.forEach { drawCircle(t.tx, 3.dp.toPx(), it) }
+        }
+        Text(stringResource(R.string.range_7d), fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
 /** Logging in to a room server or a repeater (§15.8, §16.5). */
 @Composable
-fun ServerLoginCard(model: AppModel, key: ByteArray, room: Boolean) {
+fun ServerLoginCard(model: AppModel, key: ByteArray, room: Boolean, focus: FocusRequester? = null) {
     val t = lichen
     val res = LocalResources.current
     val info = model.server(key)
@@ -742,7 +983,8 @@ fun ServerLoginCard(model: AppModel, key: ByteArray, room: Boolean) {
             } else {
                 CardDivider()
                 OutlinedTextField(
-                    password, { password = it }, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                    password, { password = it },
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).then(if (focus != null) Modifier.focusRequester(focus) else Modifier),
                     singleLine = true,
                     placeholder = { Text(stringResource(if (room) R.string.room_password else R.string.server_password)) },
                     visualTransformation = PasswordVisualTransformation(),
