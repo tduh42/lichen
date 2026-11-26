@@ -7,6 +7,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import com.tduhamel.lichen.core.SignalLimits
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.NodeReading
 import com.tduhamel.lichen.core.ReadingKind
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
@@ -35,6 +37,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.semantics.SemanticsPropertyKey
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.SpanStyle
@@ -63,6 +66,7 @@ import com.tduhamel.lichen.model.nodeSections
 import com.tduhamel.lichen.model.nodeSignalHistory
 import com.tduhamel.lichen.model.showNodeOnMap
 import com.tduhamel.lichen.model.wallNow
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlinx.coroutines.delay
@@ -721,7 +725,7 @@ private fun SignalSection(model: AppModel, n: NodeInfo, nowS: Long) {
             if (points.isEmpty()) {
                 Text(stringResource(R.string.no_reading_window), fontSize = 14.sp, color = t.tx2)
             } else {
-                SignalChart(points, nowS, window)
+                SignalChart(points, nowS, window, model.signalLimits)
             }
             val now = n.snrDb ?: history.last().snrDb
             Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
@@ -738,25 +742,61 @@ private fun SignalSection(model: AppModel, n: NodeInfo, nowS: Long) {
     }
 }
 
+/** The SNR limits the signal chart drew its bands at (Good, Fair), and its dB range (low,
+ * high): for the tests, which check them against the core's. */
+val ChartLimitsKey = SemanticsPropertyKey<Pair<Float, Float>>("ChartLimits")
+val ChartRangeKey = SemanticsPropertyKey<Pair<Float, Float>>("ChartRange")
+
 /** The readings in their window: a dot each, coloured by its rating, joined by a thin line; dB
- * up the side. */
+ * up the side. Behind them, faint bands at the preset's limits (ADR-0049): Good above the first,
+ * Fair down to the second, weak below; the dB range takes both in. None before a radio. */
 @Composable
-private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long) {
+private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long, limits: SignalLimits?) {
     val t = lichen
     val measurer = rememberTextMeasurer()
-    val said = pluralStringResource(R.plurals.chart_said, points.size, points.size, dbText(points.last().snrDb))
+    val said = pluralStringResource(R.plurals.chart_said, points.size, points.size, dbText(points.last().snrDb)) +
+        (limits?.let { ", " + stringResource(R.string.chart_limits, dbText(it.goodSnrDb), dbText(it.fairSnrDb)) } ?: "")
+    val goodLabel = stringResource(R.string.chart_good)
+    val fairLabel = stringResource(R.string.chart_fair)
     val colors = points.map { if (it.signal == SignalRating.NONE) t.tx2 else signalColor(it.signal) }
-    val lo = floor(minOf(points.minOf { it.snrDb } - 1f, points.maxOf { it.snrDb } - 6f))
-    val hi = ceil(maxOf(points.maxOf { it.snrDb } + 1f, lo + 6f))
+    val values = points.map { it.snrDb } + listOfNotNull(limits?.goodSnrDb, limits?.fairSnrDb)
+    val lo = floor(minOf(values.min() - 1f, values.max() - 6f))
+    // Room above the Good limit for its label, however low the readings.
+    val hi = ceil(maxOf(values.max() + 1f, lo + 6f, (limits?.goodSnrDb ?: Float.NEGATIVE_INFINITY) + 3f))
     val labelStyle = TextStyle(fontSize = 10.sp, color = t.tx2, fontFeatureSettings = "tnum")
-    Canvas(Modifier.fillMaxWidth().height(92.dp).clearAndSetSemantics { contentDescription = said }) {
+    Canvas(
+        Modifier.fillMaxWidth().height(92.dp).clearAndSetSemantics {
+            contentDescription = said
+            set(ChartRangeKey, lo to hi)
+            if (limits != null) set(ChartLimitsKey, limits.goodSnrDb to limits.fairSnrDb)
+        },
+    ) {
         val left = 34.dp.toPx()
         val w = size.width - left
         val h = size.height
         fun y(db: Float) = h - (db - lo) / (hi - lo) * h
         fun x(at: ULong) = left + ((at.toLong() - (nowS - window)).toFloat() / window) * w
-        // dB up the side, with faint lines.
-        for (db in listOf(hi, (hi + lo) / 2, lo)) {
+        // The bands first, faint: the dots stay the main thing.
+        if (limits != null) {
+            val good = y(limits.goodSnrDb).coerceIn(0f, h)
+            val fair = y(limits.fairSnrDb).coerceIn(good, h)
+            drawRect(t.okBg.copy(alpha = BAND_ALPHA), Offset(left, 0f), Size(w, good))
+            drawRect(t.warnBg.copy(alpha = BAND_ALPHA), Offset(left, good), Size(w, fair - good))
+            drawRect(t.sosBg.copy(alpha = BAND_ALPHA), Offset(left, fair), Size(w, h - fair))
+            // Each limit named at its left end, just above it.
+            val pad = 4.dp.toPx()
+            for ((text, at) in listOf(goodLabel to good, fairLabel to fair)) {
+                val l = measurer.measure(text, labelStyle)
+                drawText(l, topLeft = Offset(left + pad, (at - l.size.height).coerceIn(0f, h - l.size.height)))
+            }
+        }
+        // dB up the side, with faint lines: at the limits when there are some (then the top and
+        // the bottom where they leave room), else the top, middle and bottom.
+        val ticks = mutableListOf<Float>()
+        val room = 12.dp.toPx()
+        val wanted = if (limits != null) listOf(limits.goodSnrDb, limits.fairSnrDb, hi, lo) else listOf(hi, (hi + lo) / 2, lo)
+        for (db in wanted) if (ticks.none { abs(y(it) - y(db)) < room }) ticks += db
+        for (db in ticks) {
             val yy = y(db).coerceIn(0f, h)
             drawLine(t.line, Offset(left, yy), Offset(size.width, yy), strokeWidth = 1.dp.toPx())
             val text = measurer.measure(dbText(db).replace(" dB", ""), labelStyle)
@@ -974,6 +1014,8 @@ private fun BatteryChart(points: List<NodeReading>, nowS: Long) {
         Text(stringResource(R.string.range_7d), fontSize = 11.sp, color = t.tx2, modifier = Modifier.padding(top = 4.dp))
     }
 }
+
+private const val BAND_ALPHA = 0.6f
 
 /** Logging in to a room server or a repeater (§15.8, §16.5). */
 @Composable

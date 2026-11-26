@@ -272,13 +272,57 @@ class ContactsTest : UiTest() {
         val readings = model.nodeSignalHistory(hub.key)
         assertTrue("a reading at least", readings.isNotEmpty())
         val last = readings.last()
-        assertTrue(hasDesc(plural(R.plurals.chart_said, readings.size, readings.size, dbText(last.snrDb))))
+        val limits = model.core.signalLimits()!!
+        assertTrue(
+            hasDesc(
+                plural(R.plurals.chart_said, readings.size, readings.size, dbText(last.snrDb)) + ", " +
+                    str(R.string.chart_limits, dbText(limits.goodSnrDb), dbText(limits.fairSnrDb)),
+            ),
+        )
         see(str(R.string.signal_now, dbText(hub.snrDb!!)))
         // A week, then a day again.
         tab(R.string.range_7d)
         see(R.string.signal_7d)
         tab(R.string.range_24h)
         assertFalse(has(R.string.no_own_signal))
+    }
+
+    /** CT-3: the signal chart's bands at the preset's limits (ADR-0049), as the core gives them:
+     * the hub's readings in the Good band, the Refuge board's below Fair; the chart's range takes
+     * both limits in; TalkBack hears them. */
+    @Test
+    fun CT_3_chartBands() = chartBands()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_3_chartBands_fr() = chartBands()
+
+    private fun chartBands() {
+        launch("demo" to true)
+        nodesHeard()
+        val limits = model.core.signalLimits()!!
+        assertEquals(limits, model.signalLimits)
+        tab(R.string.tab_nodes)
+        for ((name, band) in listOf("hub" to "good", "Refuge board" to "weak")) {
+            tap(name)
+            scrollTo(SemanticsMatcher.keyIsDefined(ChartLimitsKey))
+            val chart = compose.onNode(SemanticsMatcher.keyIsDefined(ChartLimitsKey), useUnmergedTree = true)
+            val config = chart.fetchSemanticsNode().config
+            // The limits drawn are the core's, inside the chart's range.
+            assertEquals(limits.goodSnrDb to limits.fairSnrDb, config[ChartLimitsKey])
+            val (lo, hi) = config[ChartRangeKey]
+            assertTrue("$lo..$hi takes in both limits", lo < limits.fairSnrDb && limits.goodSnrDb < hi)
+            assertTrue(config[SemanticsProperties.ContentDescription].first().endsWith(str(R.string.chart_limits, dbText(limits.goodSnrDb), dbText(limits.fairSnrDb))))
+            // Its readings in their band: the hub's above Good, the board's below Fair.
+            val node = model.nodes.first { it.name == name }
+            val readings = model.nodeSignalHistory(node.key)
+            assertTrue("$name: a reading at least", readings.isNotEmpty())
+            for (r in readings) {
+                if (band == "good") assertTrue("$name ${r.snrDb} dB", r.snrDb >= limits.goodSnrDb)
+                else assertTrue("$name ${r.snrDb} dB", r.snrDb < limits.fairSnrDb)
+            }
+            tapDesc(R.string.back)
+        }
     }
 
     /** CT-3: the Nodes tab opens on the node list (from the debug extra `tab nodes` and from the
