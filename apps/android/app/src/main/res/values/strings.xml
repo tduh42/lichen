@@ -932,6 +932,22 @@
     <string name="higher">Higher</string>
     <!-- Settings' radio card: "Bluetooth · 69 % · 357 s of airtime left". -->
     <string name="airtime_left_s">%1$d s of airtime left</string>
+    <!-- The radio's own figures (GET_STATS, §16.4) in Radio settings. -->
+    <string name="noise_floor_stat">noise floor</string>
+    <string name="noise_floor">Noise floor</string>
+    <string name="since_started">Since it started</string>
+    <string name="fig_uptime">On for</string>
+    <string name="fig_received">Packets received</string>
+    <string name="fig_sent">Packets sent</string>
+    <string name="fig_errors">Received with errors</string>
+    <string name="fig_errors_share">%1$s · %2$s %% of received</string>
+    <string name="fig_airtime_sent">Airtime sent</string>
+    <string name="fig_airtime_received">Airtime received</string>
+    <string name="fig_airtime_share">%1$s · %2$s %% of the time</string>
+    <string name="fig_last_packet">Last packet heard</string>
+    <string name="figures_note">Counted by your radio since it started. Read again every minute while this screen is open.</string>
+    <string name="duration_seconds">%1$d s</string>
+    <string name="duration_minutes_seconds">%1$d min %2$d s</string>
     <string name="transmit_power">Transmit power</string>
     <string name="delivery">Delivery</string>
     <string name="new_contacts">New contacts</string>
