@@ -44,6 +44,7 @@ OTHER = [
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "a_direct_advert_is_attributed_and_a_relayed_one_is_not"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "a_one_byte_hash_is_attributed_only_when_unique"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "ratings_match_the_vectors"),
+    ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "the_limits_are_where_the_ratings_change"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "the_history_is_capped_by_count_and_by_age"),
     ("CT-3", "lc-core", "crates/lc-core/tests/search.rs", "group_envelopes_stay_with_locate"),
     ("CT-7", "lc-core", "crates/lc-core/tests/signal.rs", "the_route_joins_the_path_the_readings_and_the_trace"),

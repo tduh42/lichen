@@ -215,6 +215,37 @@ fn ct_3_node_signal() {
     assert_eq!(again.signal, SignalRating::Good);
 }
 
+/// CT-3: the limits of the ratings, for the signal chart's bands (§16.1): none before a radio;
+/// then those of the demo radio's preset (SF8: Good from 0 dB, Fair from −5 dB), with the hub
+/// above Good, Lucie between Fair and Good, the board below Fair.
+#[test]
+fn ct_3_signal_limits() {
+    let before = common::new_core(96, 1, None);
+    assert_eq!(before.signal_limits(), None, "no radio yet");
+    let mut sim = Sim::new(96);
+    sim.until("the hub, Lucie and the board heard", 30, |c| {
+        let nodes = c.nodes();
+        ["hub", "Lucie", "Refuge board"]
+            .iter()
+            .all(|n| nodes.iter().any(|x| x.name == *n && x.snr_db.is_some()))
+    });
+    let l = sim.core.signal_limits().expect("the radio's preset");
+    assert_eq!(sim.core.radio_settings().sf, 8);
+    assert!(l.good_snr_db > l.fair_snr_db, "{l:?}");
+    assert!(l.good_rssi_dbm > l.fair_rssi_dbm, "{l:?}");
+    let snr = |name: &str| node(&sim, name).snr_db.unwrap();
+    assert!(snr("hub") >= l.good_snr_db, "{l:?}");
+    assert!(
+        (l.fair_snr_db..l.good_snr_db).contains(&snr("Lucie")),
+        "{l:?}"
+    );
+    assert!(snr("Refuge board") < l.fair_snr_db, "{l:?}");
+    // The ratings agree with the bands.
+    assert_eq!(node(&sim, "hub").signal, SignalRating::Good);
+    assert_eq!(node(&sim, "Lucie").signal, SignalRating::Fair);
+    assert_eq!(node(&sim, "Refuge board").signal, SignalRating::Bad);
+}
+
 /// CT-4: the refuge board: logged in, its posts arrive with their authors, its row is in
 /// Messages, a later post comes (200 s), and ours goes out.
 #[test]
