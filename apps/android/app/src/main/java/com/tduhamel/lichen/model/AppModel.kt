@@ -478,6 +478,10 @@ class AppModel(val app: Application) {
      * when closed. */
     var mapRouteTo by mutableStateOf<String?>(null)
 
+    /** Why the radio would not ask a node (hex) for its readings (§16.7): not one of its
+     * contacts, not enough airtime. Said on the node's page until the next request. */
+    var readingsRefusals by mutableStateOf(mapOf<String, LichenException>())
+
     /** Shows a place from a message's text on lichen's own map: nothing is fetched but its
      * tiles (offline areas included). */
     fun showOnMap(lat: Double, lon: Double) {

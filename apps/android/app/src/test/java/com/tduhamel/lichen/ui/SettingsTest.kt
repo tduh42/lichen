@@ -1,5 +1,11 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.performClick
+import com.tduhamel.lichen.core.ReadingsState
+import com.tduhamel.lichen.core.ServerLogin
+import com.tduhamel.lichen.model.nodeReadingsState
+import com.tduhamel.lichen.model.server
+import androidx.compose.ui.test.onAllNodesWithText
 import com.tduhamel.lichen.core.SignalRating
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasContentDescription
@@ -375,6 +381,16 @@ class SettingsTest : UiTest() {
         tapDesc(R.string.back)
         tap("crest")
         audit("crest")
+        // Its readings card filled: logged in as a guest, asked.
+        val crest = model.nodes.first { it.name == "crest" }.key
+        tap(R.string.log_in)
+        compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("hello")
+        compose.onAllNodesWithText(str(R.string.log_in)).onLast().performClick()
+        advanceUntil("logged in", 30) { model.server(crest)?.login in setOf(ServerLogin.GUEST, ServerLogin.READ_ONLY, ServerLogin.READ_WRITE, ServerLogin.ADMIN) }
+        tap(R.string.readings_ask)
+        advanceUntil("its readings", 60) { model.nodeReadingsState(crest) == ReadingsState.ANSWERED }
+        see(R.string.readings_title)
+        audit("crest, readings")
         // Radio settings: the radio on top, the search, the sections (down to the last); a search.
         restart("demo" to true, "screen" to "radio")
         advanceUntil("the radio's settings") { model.radioSettings?.read == true }

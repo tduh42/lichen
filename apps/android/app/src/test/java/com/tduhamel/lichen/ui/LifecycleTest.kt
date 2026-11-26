@@ -75,7 +75,7 @@ class LifecycleTest : UiTest() {
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("hello")
-        tap(R.string.log_in)
+        tapLogIn()
         advanceUntil("logged in", 30) { model.server(board.key)?.login == ServerLogin.READ_WRITE }
         tapDesc(R.string.back)
         tab(R.string.tab_messages)

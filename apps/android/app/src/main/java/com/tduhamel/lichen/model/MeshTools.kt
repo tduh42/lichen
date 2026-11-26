@@ -5,6 +5,8 @@ import com.tduhamel.lichen.core.ChannelCode
 import com.tduhamel.lichen.core.LichenException
 import com.tduhamel.lichen.core.LinkKind
 import com.tduhamel.lichen.core.NodeInfo
+import com.tduhamel.lichen.core.NodeReading
+import com.tduhamel.lichen.core.ReadingsState
 import com.tduhamel.lichen.core.NodeRoute
 import com.tduhamel.lichen.core.SignalRating
 import com.tduhamel.lichen.core.SignalReading
@@ -124,6 +126,35 @@ private fun AppModel.meshCall(f: () -> Unit): String? = try {
 }
 
 fun AppModel.startTrace(key: ByteArray): String? = meshCall { core.startTrace(key, now()) }
+
+// ----- a node's readings (§16.7, ADR-0050) -----
+
+/** What [key] answered this radio over the last 7 days, oldest first. */
+fun AppModel.nodeReadings(key: ByteArray): List<NodeReading> {
+    meshToolsVersion
+    nodes
+    return runCatching { core.nodeReadings(key) }.getOrDefault(emptyList())
+}
+
+/** Where asking [key] for its readings stands (`NodeUpdated` follows each change). */
+fun AppModel.nodeReadingsState(key: ByteArray): ReadingsState {
+    meshToolsVersion
+    return runCatching { core.nodeReadingsState(key) }.getOrDefault(ReadingsState.IDLE)
+}
+
+/** Asks [key] for its readings, by hand only (§16.7: nothing is asked by itself). Why the
+ * radio would not is kept for the page until the next request ([AppModel.readingsRefusals]). */
+fun AppModel.askReadings(key: ByteArray) {
+    val k = key.hex()
+    readingsRefusals = readingsRefusals - k
+    try {
+        core.requestNodeReadings(key, now())
+        meshToolsVersion++
+        pump()
+    } catch (e: LichenException) {
+        readingsRefusals = readingsRefusals + (k to e)
+    }
+}
 
 fun AppModel.serverLogin(key: ByteArray, password: String, remember: Boolean): String? =
     meshCall { core.serverLogin(key, password, remember, now()) }

@@ -1,7 +1,12 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasClickAction
+import com.tduhamel.lichen.core.ReadingsState
+import com.tduhamel.lichen.model.nodeReadings
+import com.tduhamel.lichen.model.nodeReadingsState
+import androidx.compose.ui.test.assertIsFocused
 import com.tduhamel.lichen.model.nodeRoute
 import org.junit.Assert.assertNull
 import com.tduhamel.lichen.core.SignalRating
@@ -373,7 +378,7 @@ class ContactsTest : UiTest() {
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("hello")
-        tap(R.string.log_in)
+        tapLogIn()
         advanceUntil("logged in to the board", 30) { model.server(board.key)?.login?.let { it != ServerLogin.PENDING && it != ServerLogin.OUT } == true }
         assertEquals(ServerLogin.READ_WRITE, model.server(board.key)?.login)
         see(R.string.login_read_write)
@@ -407,7 +412,7 @@ class ContactsTest : UiTest() {
         tap("Refuge board")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("wrong")
-        tap(R.string.log_in)
+        tapLogIn()
         // A room server does not answer a wrong password (MeshCore): no answer, and why.
         advanceUntil("the login given up", 120) { model.server(board.key)?.login.let { it != null && it != ServerLogin.PENDING && it != ServerLogin.OUT } }
         assertEquals(ServerLogin.NO_ANSWER, model.server(board.key)?.login)
@@ -430,7 +435,7 @@ class ContactsTest : UiTest() {
         tap("hub")
         scrollTo(hasSetTextAction())
         compose.onAllNodes(hasSetTextAction()).onLast().performTextInput("password")
-        tap(R.string.log_in)
+        tapLogIn()
         advanceUntil("logged in as admin", 30) { model.server(hub.key)?.login == ServerLogin.ADMIN }
         see(R.string.login_admin)
         tap(R.string.read_status)
@@ -487,6 +492,108 @@ class ContactsTest : UiTest() {
         assertEquals(com.tduhamel.lichen.model.AppModel.Tab.MAP, model.tab)
         assertEquals(com.tduhamel.lichen.model.AppModel.MapMode.POSITIONS, model.mapMode)
         see(str(R.string.route_to, "crest"))
+    }
+
+    /** Logged in to [key] from its page, through its readings card's Log in: the list goes to its
+     * login card, its password field ready. */
+    private fun logInFromReadings(key: ByteArray, password: String) {
+        tap(R.string.log_in)
+        val field = compose.onAllNodes(hasSetTextAction()).onLast()
+        field.assertIsFocused()
+        field.performTextInput(password)
+        compose.onAllNodesWithText(str(R.string.log_in)).onLast().performClick()
+        compose.waitForIdle()
+        advanceUntil("logged in", 30) {
+            model.server(key)?.login in setOf(ServerLogin.GUEST, ServerLogin.READ_ONLY, ServerLogin.READ_WRITE, ServerLogin.ADMIN)
+        }
+    }
+
+    /** CT-14: the crest's readings (§16.7): nothing asked by opening its page; a repeater answers
+     * only those logged in, so Log in first (its login card, as a guest); Ask gives its battery
+     * and temperature and when they came; Ask again a second answer, and the battery's line over
+     * the week. */
+    @Test
+    fun CT_14_crestReadings() = crestReadings("3.92 V · about 69 %")
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_14_crestReadings_fr() = crestReadings("3,92 V · environ 69 %")
+
+    @Test
+    @Config(qualifiers = "+night")
+    fun CT_14_crestReadings_dark() = crestReadings("3.92 V · about 69 %")
+
+    private fun crestReadings(battery: String) {
+        launch("demo" to true)
+        advanceUntil("the crest") { model.nodes.any { it.name == "crest" } }
+        val crest = model.nodes.first { it.name == "crest" }.key
+        tab(R.string.tab_nodes)
+        tap("crest")
+        see(R.string.readings_title)
+        see(R.string.readings_login_repeater)
+        assertEquals(ReadingsState.IDLE, model.nodeReadingsState(crest))
+        assertFalse(has(R.string.readings_ask))
+        logInFromReadings(crest, "hello")
+        // Logged in: Ask.
+        tap(R.string.readings_ask)
+        advanceUntil("its readings", 60) { model.nodeReadingsState(crest) == ReadingsState.ANSWERED }
+        // Each row is one element, read as TalkBack reads it ("Battery, 3.92 V, about 69 %"): the
+        // card's last row in view, the rest above it.
+        scrollTo(hasText(str(R.string.readings_ask_again)))
+        desc(str(R.string.battery) + ", " + battery.replace(" · ", ", ")).assertIsDisplayed()
+        desc(str(R.string.readings_temperature) + ", 4 °C").assertIsDisplayed()
+        see(str(R.string.readings_sent, model.heard(model.nodeReadings(crest).last().atS)))
+        // Ask again: a second answer, and the line of the battery over the week.
+        tap(R.string.readings_ask_again)
+        advanceUntil("its readings again", 60) {
+            model.nodeReadings(crest).size == 2 && model.nodeReadingsState(crest) == ReadingsState.ANSWERED
+        }
+        val volts = "%.2f".format(3.92)
+        assertTrue(hasDesc(str(R.string.readings_chart_said, volts, volts)))
+        see(R.string.readings_ask_again)
+    }
+
+    /** CT-14: Marc, with the stock MeshCore app, never answers: Asking…, then after its wait the
+     * no-answer line for a person; Ask stays. */
+    @Test
+    fun CT_14_marcNeverAnswers() = marcNeverAnswers()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_14_marcNeverAnswers_fr() = marcNeverAnswers()
+
+    private fun marcNeverAnswers() {
+        launch("demo" to true)
+        advanceUntil("Marc's node") { model.nodes.any { it.name == "Marc" } }
+        val marc = model.nodes.first { it.name == "Marc" }.key
+        tab(R.string.tab_nodes)
+        tap("Marc")
+        see(R.string.readings_none)
+        tap(R.string.readings_ask)
+        see(R.string.asking)
+        advanceUntil("no answer", 60) { model.nodeReadingsState(marc) == ReadingsState.NO_ANSWER }
+        see(R.string.readings_no_answer_person)
+        see(R.string.readings_ask)
+    }
+
+    /** CT-14: Lucie, heard but not one of the radio's contacts: Ask is refused at once, said so,
+     * and no button is left. */
+    @Test
+    fun CT_14_lucieIsNotAContact() = lucieRefused()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun CT_14_lucieIsNotAContact_fr() = lucieRefused()
+
+    private fun lucieRefused() {
+        launch("demo" to true)
+        advanceUntil("Lucie's advert") { model.nodes.any { it.name == "Lucie" } }
+        tab(R.string.tab_nodes)
+        tap("Lucie")
+        tap(R.string.readings_ask)
+        see(R.string.readings_refused)
+        assertFalse(has(R.string.readings_ask))
+        assertFalse(has(R.string.readings_ask_again))
     }
 
     /** CT-8: Camille's first message, a request: accepted, her chat opens with it. */

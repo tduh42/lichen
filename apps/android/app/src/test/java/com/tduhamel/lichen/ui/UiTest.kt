@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.test.onLast
 import android.content.Context
 import android.graphics.Bitmap
 import android.content.Intent
@@ -340,6 +341,13 @@ abstract class UiTest {
             why += "list $i: " + r.exceptionOrNull()?.message?.lineSequence()?.firstOrNull()
         }
         scrollFailure(matcher, why)
+    }
+
+    /** A node's login card's Log in, the last of the page's: the readings card's, above it, only
+     * takes the page there (§16.7). */
+    fun tapLogIn() {
+        compose.onAllNodesWithText(str(com.tduhamel.lichen.R.string.log_in)).onLast().also { runCatching { it.performScrollTo() } }.performClick()
+        compose.waitForIdle()
     }
 
     /** One of the four tabs, or of the Map's two modes (Positions, Locate): a tab of that
