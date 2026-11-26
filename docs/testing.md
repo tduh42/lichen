@@ -152,7 +152,7 @@ stock-client people send reaches the radio even when the busy air loses it), `Li
 | ST-6 | French throughout | No English left on any screen | Android `cmd locale …` | iOS SettingsTests.testST6_FiguresOfTheLanguage; StringsTests.testD6_NoEnglishWordsLeftInFrench<br>Android SettingsTest: ST_6_frenchThroughout, ST_6_frenchFigures_fr |
 | ST-7 | Dark mode throughout | Every screen readable | Android `cmd uimode night yes` | not automated: readability is judged by eye (Android's dark variants and `scripts/ui-tests-ios.sh --dark` run the screens in dark) |
 | ST-8 | Bridge settings (iroh, Tor, relay only) | Applied; Tor starts and stops | `-lichen.tor YES` | FFI st_8_bridge_settings<br>iOS SettingsTests.testST8_BridgeSettings<br>Android SettingsTest.ST_8_bridgeSettings (+fr)<br>· not automated: Tor reaching "reachable" (Internet; by hand: `cargo test -p lc-bridge --release -- --ignored tor`) |
-| ST-9 | Accessibility | Every screen passes the audit | | iOS AccessibilityAuditTests<br>Android SettingsTest.ST_9_accessibility |
+| ST-9 | Accessibility | Every screen passes the audit; the radio screens at twice the text size, in French too: the tabs' names on one line, the Map's modes, a route's legend and Radio settings' figures whole, a figure and its unit never apart | | iOS AccessibilityAuditTests<br>Android SettingsTest: ST_9_radioScreensAtLargeText (+fr), ST_9_accessibility |
 
 ## 10. Lifecycle
 

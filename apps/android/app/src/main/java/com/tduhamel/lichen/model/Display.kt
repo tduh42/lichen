@@ -173,7 +173,7 @@ fun secondsText(ms: ULong): String = "%.1f".format(ms.toDouble() / 1000)
 /** "62.5 kHz", "62,5 kHz" in French. */
 fun bandwidth(hz: UInt): String {
     val khz = hz.toDouble() / 1000
-    return (if (khz % 1.0 == 0.0) "%.0f" else "%.1f").format(khz) + " kHz"
+    return (if (khz % 1.0 == 0.0) "%.0f" else "%.1f").format(khz) + "\u00A0kHz"
 }
 
 /** "CA" for "Camille", "RV" for "Rando Vercors". */

@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -640,7 +641,11 @@ private fun RouteStopView(model: AppModel, stop: RouteStop, i: Int, last: Int, n
             when {
                 // Our radio: its initials on a dark disc.
                 i == 0 -> Box(Modifier.size(34.dp).background(t.actBg, CircleShape), contentAlignment = Alignment.Center) {
-                    Text(initials(model.nodeName.ifEmpty { name }), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = t.actFg)
+                    // Sized by the disc, not the font scale: larger text would not fit it.
+                    Text(
+                        initials(model.nodeName.ifEmpty { name }), fontSize = with(LocalDensity.current) { 12.dp.toSp() },
+                        fontWeight = FontWeight.Bold, color = t.actFg, maxLines = 1,
+                    )
                 }
                 i == last && node != null -> Box(Modifier.border(2.dp, t.tx2, if (node.kind == NodeKind.COMPANION) CircleShape else RoundedCornerShape(11.dp)).padding(3.dp)) {
                     NodeLeading(node, 30.dp)
@@ -657,14 +662,18 @@ private fun RouteStopView(model: AppModel, stop: RouteStop, i: Int, last: Int, n
         )
         if (i == 0 && model.nodeName.isNotEmpty()) {
             // On one line, centred under its stop: past the stop's width (into the leg beside it,
-            // whose line and figure sit higher) rather than wrapped; cut only when longer still.
-            Text(
-                model.nodeName,
-                // Just under the name, closer than the column's spacing.
-                Modifier.offset(y = (-3).dp).wrapContentWidth(unbounded = true).widthIn(max = 84.dp),
-                fontSize = 10.sp, lineHeight = 13.sp, color = t.tx2, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-            )
+            // whose line and figure sit higher) rather than wrapped. Up to 1.3 times larger,
+            // within the card's margin either side of its stop; on a second line only when even
+            // that is too narrow.
+            CappedFontScale(1.3f) {
+                Text(
+                    model.nodeName,
+                    // Just under the name, closer than the column's spacing.
+                    Modifier.offset(y = (-3).dp).wrapContentWidth(unbounded = true).widthIn(max = 92.dp),
+                    fontSize = 10.sp, lineHeight = 13.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
         }
     }
 }
@@ -693,11 +702,15 @@ private fun RouteLegView(leg: RouteLeg?, from: String, to: String, modifier: Mod
                 )
             }
         }
-        Text(
-            label, fontSize = if (snr != null) 12.sp else 11.sp, fontWeight = if (snr != null) FontWeight.SemiBold else FontWeight.Normal,
-            color = if (snr != null && rating != SignalRating.NONE) signalColor(rating) else t.tx2,
-            style = TextStyle(fontFeatureSettings = "tnum"), maxLines = 1, textAlign = TextAlign.Center,
-        )
+        // Up to 1.3 times larger in the leg's narrow room, on two lines rather than cut ("not
+        // measured"; a word wider than the leg would be).
+        CappedFontScale(1.3f) {
+            Text(
+                label, fontSize = if (snr != null) 12.sp else 11.sp, fontWeight = if (snr != null) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (snr != null && rating != SignalRating.NONE) signalColor(rating) else t.tx2,
+                style = TextStyle(fontFeatureSettings = "tnum"), maxLines = 2, textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 
@@ -764,17 +777,27 @@ private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long, l
     // Room above the Good limit for its label, however low the readings.
     val hi = ceil(maxOf(values.max() + 1f, lo + 6f, (limits?.goodSnrDb ?: Float.NEGATIVE_INFINITY) + 3f))
     val labelStyle = TextStyle(fontSize = 10.sp, color = t.tx2, fontFeatureSettings = "tnum")
+    // Taller with larger text, so that its labels keep their room.
+    val tall = 92.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f)
     Canvas(
-        Modifier.fillMaxWidth().height(92.dp).clearAndSetSemantics {
+        Modifier.fillMaxWidth().height(tall).clearAndSetSemantics {
             contentDescription = said
             set(ChartRangeKey, lo to hi)
             if (limits != null) set(ChartLimitsKey, limits.goodSnrDb to limits.fairSnrDb)
         },
     ) {
-        val left = 34.dp.toPx()
-        val w = size.width - left
         val h = size.height
         fun y(db: Float) = h - (db - lo) / (hi - lo) * h
+        // dB up the side, with faint lines: at the limits when there are some (then the top and
+        // the bottom where they leave room), else the top, middle and bottom; as many as their
+        // labels leave room for, the side as wide as the widest.
+        val ticks = mutableListOf<Float>()
+        val room = measurer.measure("0", labelStyle).size.height + 2.dp.toPx()
+        val wanted = if (limits != null) listOf(limits.goodSnrDb, limits.fairSnrDb, hi, lo) else listOf(hi, (hi + lo) / 2, lo)
+        for (db in wanted) if (ticks.none { abs(y(it) - y(db)) < room }) ticks += db
+        val tickLabels = ticks.map { it to measurer.measure(dbText(it).replace(" dB", ""), labelStyle) }
+        val left = maxOf(34.dp.toPx(), (tickLabels.maxOfOrNull { it.second.size.width } ?: 0) + 6.dp.toPx())
+        val w = size.width - left
         fun x(at: ULong) = left + ((at.toLong() - (nowS - window)).toFloat() / window) * w
         // The bands first, faint: the dots stay the main thing.
         if (limits != null) {
@@ -790,16 +813,9 @@ private fun SignalChart(points: List<SignalReading>, nowS: Long, window: Long, l
                 drawText(l, topLeft = Offset(left + pad, (at - l.size.height).coerceIn(0f, h - l.size.height)))
             }
         }
-        // dB up the side, with faint lines: at the limits when there are some (then the top and
-        // the bottom where they leave room), else the top, middle and bottom.
-        val ticks = mutableListOf<Float>()
-        val room = 12.dp.toPx()
-        val wanted = if (limits != null) listOf(limits.goodSnrDb, limits.fairSnrDb, hi, lo) else listOf(hi, (hi + lo) / 2, lo)
-        for (db in wanted) if (ticks.none { abs(y(it) - y(db)) < room }) ticks += db
-        for (db in ticks) {
+        for ((db, text) in tickLabels) {
             val yy = y(db).coerceIn(0f, h)
             drawLine(t.line, Offset(left, yy), Offset(size.width, yy), strokeWidth = 1.dp.toPx())
-            val text = measurer.measure(dbText(db).replace(" dB", ""), labelStyle)
             drawText(text, topLeft = Offset(0f, (yy - text.size.height / 2).coerceIn(0f, h - text.size.height)))
         }
         val pts = points.map { Offset(x(it.atS).coerceIn(left, size.width), y(it.snrDb)) }
@@ -856,17 +872,16 @@ private fun ReadingsCard(model: AppModel, n: NodeInfo, nowS: Long, toLogin: () -
         CardList {
             if (last == null) {
                 // Nothing yet: what to do, or why it cannot be done.
-                Row(
+                SideOrUnder(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        outcome ?: if (loggedIn) stringResource(R.string.readings_none) else loginLine,
-                        fontSize = 15.sp, color = if (outcome != null) t.tx2 else t.tx, modifier = Modifier.weight(1f),
-                    )
-                    action()
-                }
+                    text = {
+                        Text(
+                            outcome ?: if (loggedIn) stringResource(R.string.readings_none) else loginLine,
+                            fontSize = 15.sp, color = if (outcome != null) t.tx2 else t.tx,
+                        )
+                    },
+                    action = action,
+                )
                 return@CardList
             }
             last.batteryMv?.let { mv ->
@@ -892,14 +907,11 @@ private fun ReadingsCard(model: AppModel, n: NodeInfo, nowS: Long, toLogin: () -
                 BatteryChart(battery, nowS)
                 CardDivider()
             }
-            Row(
+            SideOrUnder(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(stringResource(R.string.readings_sent, model.heard(last.atS)), fontSize = 15.sp, color = t.tx2, modifier = Modifier.weight(1f))
-                action()
-            }
+                text = { Text(stringResource(R.string.readings_sent, model.heard(last.atS)), fontSize = 15.sp, color = t.tx2) },
+                action = action,
+            )
             val note = outcome ?: loginLine.takeIf { !loggedIn }
             if (note != null) {
                 Text(note, fontSize = 13.sp, color = t.tx2, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
@@ -913,13 +925,12 @@ private fun ReadingsCard(model: AppModel, n: NodeInfo, nowS: Long, toLogin: () -
 private fun ReadingRow(label: String, value: String) {
     val t = lichen
     val said = "$label, ${value.replace(" · ", ", ")}"
-    Row(
+    // The value at the end, or under its label when the line can't hold both.
+    TitleAndValue(
+        { Text(label, fontSize = 15.sp, color = t.tx2) },
+        { Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.tx, style = TextStyle(fontFeatureSettings = "tnum")) },
         Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 16.dp, vertical = 10.dp).clearAndSetSemantics { contentDescription = said },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, fontSize = 15.sp, color = t.tx2, modifier = Modifier.weight(1f))
-        Text(value, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = t.tx, style = TextStyle(fontFeatureSettings = "tnum"))
-    }
+    )
 }
 
 @Composable
@@ -991,8 +1002,9 @@ private fun BatteryChart(points: List<NodeReading>, nowS: Long) {
     val window = 7 * 86_400L
     val labelStyle = TextStyle(fontSize = 10.sp, color = t.tx2, fontFeatureSettings = "tnum")
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp).clearAndSetSemantics { contentDescription = said }) {
-        Canvas(Modifier.fillMaxWidth().height(60.dp)) {
-            val left = 34.dp.toPx()
+        Canvas(Modifier.fillMaxWidth().height(60.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.5f))) {
+            // The side as wide as its widest label (larger text).
+            val left = maxOf(34.dp.toPx(), listOf(hi, lo).maxOf { measurer.measure("%.2f".format(it), labelStyle).size.width } + 6.dp.toPx())
             val w = size.width - left
             val h = size.height
             fun y(v: Double) = (h - (v - lo) / (hi - lo) * h).toFloat()

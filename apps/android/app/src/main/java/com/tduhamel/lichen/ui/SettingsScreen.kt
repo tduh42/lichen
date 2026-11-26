@@ -174,7 +174,7 @@ fun SettingsScreen(
                         CardRow(
                             stringResource(R.string.radio_settings),
                             if (r != null) {
-                                "SF${r.sf} / ${bandwidth(r.bwHz)} · CR 4/${r.cr} · ${"%.3f".format(r.freqKhz.toDouble() / 1000)} MHz"
+                                "SF${r.sf} / ${bandwidth(r.bwHz)} · CR\u00A04/${r.cr} · ${"%.3f".format(r.freqKhz.toDouble() / 1000)}\u00A0MHz"
                             } else {
                                 stringResource(R.string.read_from_radio)
                             },

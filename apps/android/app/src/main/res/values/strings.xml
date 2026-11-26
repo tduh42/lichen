@@ -1062,8 +1062,8 @@
         <item quantity="other">%1$d known</item>
     </plurals>
     <plurals name="nodes_heard_2h">
-        <item quantity="one">%1$d heard in the last 2 h</item>
-        <item quantity="other">%1$d heard in the last 2 h</item>
+        <item quantity="one">%1$d heard in the last 2&#160;h</item>
+        <item quantity="other">%1$d heard in the last 2&#160;h</item>
     </plurals>
     <string name="filter_heard_2h">Heard in 2 h</string>
     <string name="nodes_in_reach">In reach · heard directly by your radio</string>

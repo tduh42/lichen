@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Density
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.semantics.Role
@@ -241,7 +243,8 @@ fun Avatar(name: String, key: ByteArray, size: Dp = 44.dp) {
             .clearAndSetSemantics {},
         contentAlignment = Alignment.Center,
     ) {
-        Text(initials(name), color = fg, fontSize = (size.value * 0.32f).sp, fontWeight = FontWeight.SemiBold)
+        // Sized by the circle, not the font scale: larger text would not fit it.
+        Text(initials(name), color = fg, fontSize = with(LocalDensity.current) { (size * 0.32f).toSp() }, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }
 }
 
@@ -470,14 +473,22 @@ fun MeshCoreKeyRow(key: ByteArray, share: Boolean = false, tile: (@Composable ()
 /** A section label above a card ("Radio", "Members"). */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    // On more lines with larger text rather than cut.
     Text(
         text,
         fontSize = 13.sp,
         color = lichen.tx2,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
         modifier = modifier.fillMaxWidth().padding(horizontal = 4.dp),
     )
+}
+
+/** Text in [content] grows with the system's font size up to [max] times, no further: short
+ * labels in a bar of fixed width (the tabs, the Map's modes), which would be cut or broken in
+ * the middle of a word beyond it. */
+@Composable
+fun CappedFontScale(max: Float, content: @Composable () -> Unit) {
+    val d = LocalDensity.current
+    if (d.fontScale <= max) content() else CompositionLocalProvider(LocalDensity provides Density(d.density, max), content = content)
 }
 
 /** Primary button: `actBg` / `actFg`, pill, 48 high (Android). */
@@ -538,4 +549,61 @@ fun mediaWidth(base: Dp = 250.dp): Dp {
     val density = LocalDensity.current
     val room = with(density) { LocalWindowInfo.current.containerSize.width.toDp() } - 92.dp
     return minOf(base * density.fontScale.coerceAtLeast(1f), room.coerceAtLeast(base))
+}
+
+/** A title at the start and its value at the end of one line; the value under the title when
+ * the line can't hold both. */
+@Composable
+fun TitleAndValue(title: @Composable () -> Unit, value: @Composable () -> Unit, modifier: Modifier = Modifier) {
+    Layout(contents = listOf(title, value), modifier = modifier) { (titles, values), c ->
+        val gap = 12.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val tm = titles.first()
+        val vm = values.first()
+        if (tm.maxIntrinsicWidth(c.maxHeight) + gap + vm.maxIntrinsicWidth(c.maxHeight) <= c.maxWidth) {
+            val tp = tm.measure(loose)
+            val vp = vm.measure(loose)
+            val h = maxOf(tp.height, vp.height)
+            layout(c.maxWidth, h) {
+                tp.place(0, (h - tp.height) / 2)
+                vp.place(c.maxWidth - vp.width, (h - vp.height) / 2)
+            }
+        } else {
+            val tp = tm.measure(loose)
+            val vp = vm.measure(loose)
+            val space = 2.dp.roundToPx()
+            layout(c.maxWidth, tp.height + space + vp.height) {
+                tp.place(0, 0)
+                vp.place(0, tp.height + space)
+            }
+        }
+    }
+}
+
+/** A text and the button that goes with it, side by side, the button at the end; the button
+ * under the text when beside it the text would keep less than about half the width (larger
+ * text, French), which a column of a word or two per line reads badly. */
+@Composable
+fun SideOrUnder(modifier: Modifier = Modifier, text: @Composable () -> Unit, action: @Composable () -> Unit) {
+    Layout(contents = listOf(text, action), modifier = modifier) { (texts, actions), c ->
+        val gap = 12.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val button = actions.firstOrNull()?.measure(loose)
+        val room = c.maxWidth - (button?.width ?: 0) - gap
+        if (button == null || room >= c.maxWidth * 0.55f) {
+            val words = texts.first().measure(loose.copy(maxWidth = if (button == null) c.maxWidth else room))
+            val h = maxOf(words.height, button?.height ?: 0)
+            layout(c.maxWidth, h) {
+                words.place(0, (h - words.height) / 2)
+                button?.place(c.maxWidth - button.width, (h - button.height) / 2)
+            }
+        } else {
+            val words = texts.first().measure(loose)
+            val between = 8.dp.roundToPx()
+            layout(c.maxWidth, words.height + between + button.height) {
+                words.place(0, 0)
+                button.place(0, words.height + between)
+            }
+        }
+    }
 }
