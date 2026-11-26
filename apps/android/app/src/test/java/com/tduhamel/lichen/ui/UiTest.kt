@@ -169,12 +169,52 @@ abstract class UiTest {
     fun clipboardText(): String? =
         context.getSystemService(android.content.ClipboardManager::class.java).primaryClip?.getItemAt(0)?.text?.toString()
 
-    /** What a QR code on screen says (zxing). */
+    /** What the QR code in the node labelled [label] says, read off the screen as a camera
+     * would: once the screen is idle, and captured again a few frames later if a capture can't
+     * be read (F-ON7). */
+    fun readQr(label: String): String {
+        var failure: Throwable? = null
+        var image: Bitmap? = null
+        repeat(4) { attempt ->
+            if (attempt > 0) compose.mainClock.advanceTimeBy(250)
+            compose.waitForIdle()
+            image = desc(label).captureToImage().asAndroidBitmap()
+            runCatching { return readQr(image!!) }.onFailure { failure = it }
+        }
+        // What the last capture held, to tell a blank one from a cut or covered code; kept as a
+        // file for a look.
+        val last = image!!
+        val px = IntArray(last.width * last.height)
+        last.getPixels(px, 0, last.width, 0, 0, last.width, last.height)
+        val dark = px.count { (it and 0xFF) < 128 } * 100 / maxOf(px.size, 1)
+        val file = File("build/qr-failures").apply { mkdirs() }.let { File(it, "${label.hashCode()}-${System.currentTimeMillis()}.png") }
+        FileOutputStream(file).use { last.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        throw AssertionError("no QR code read in \"$label\" after 4 captures: ${last.width}×${last.height}, $dark % dark, kept as $file", failure)
+    }
+
+    /** What a QR code in [image] says (zxing): with a white margin around it, as a camera sees
+     * one on a page, and trying harder with both of zxing's binarizers. A code whose modules
+     * fall between pixels can defeat a single plain read (F-ON7: a card is random each run). */
     fun readQr(image: Bitmap): String {
-        val px = IntArray(image.width * image.height)
-        image.getPixels(px, 0, image.width, 0, 0, image.width, image.height)
-        val source = com.google.zxing.RGBLuminanceSource(image.width, image.height, px)
-        return com.google.zxing.qrcode.QRCodeReader().decode(com.google.zxing.BinaryBitmap(com.google.zxing.common.HybridBinarizer(source))).text
+        val m = maxOf(image.width, image.height) / 8
+        val w = image.width + 2 * m
+        val h = image.height + 2 * m
+        val px = IntArray(w * h) { 0xFFFFFFFF.toInt() }
+        image.getPixels(px, m * w + m, w, 0, 0, image.width, image.height)
+        val source = com.google.zxing.RGBLuminanceSource(w, h, px)
+        val hints = mapOf(com.google.zxing.DecodeHintType.TRY_HARDER to true)
+        var failure: Exception? = null
+        for (binarizer in listOf<(com.google.zxing.LuminanceSource) -> com.google.zxing.Binarizer>(
+            { com.google.zxing.common.HybridBinarizer(it) },
+            { com.google.zxing.common.GlobalHistogramBinarizer(it) },
+        )) {
+            try {
+                return com.google.zxing.qrcode.QRCodeReader().decode(com.google.zxing.BinaryBitmap(binarizer(source)), hints).text
+            } catch (e: com.google.zxing.ReaderException) {
+                failure = e
+            }
+        }
+        throw failure ?: com.google.zxing.NotFoundException.getNotFoundInstance()
     }
 
     /** The system's back: closes the sheet or dialog on top, else goes back a screen. */
