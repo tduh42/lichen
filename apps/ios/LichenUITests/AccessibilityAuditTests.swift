@@ -40,8 +40,9 @@ final class AccessibilityAuditTests: XCTestCase {
     /// - contrast off screen (the audit measures a black screenshot there; those elements are
     ///   audited once scrolled into view) and of disabled controls (WCAG leaves them out);
     /// - contrast the text's own pixels pass: the audit flags plain text in bubbles and notes
-    ///   whose screenshots measure 7:1 to 16:1 (2026-11-17, iOS 27.2 simulator); it is measured
-    ///   again here, WCAG's formula on the element's screenshot, against 4.5:1;
+    ///   whose screenshots measure 7:1 to 16:1 (2026-11-17, iOS 27.2 simulator), and a button's
+    ///   dark words on its light grey (a node's readings, 2026-11-26); it is measured again here,
+    ///   WCAG's formula on the element's screenshot, against 4.5:1;
     /// - Dynamic Type and clipping inside the navigation bar: the system caps the bar's text
     ///   and shows it whole in the Large Content Viewer;
     /// - Dynamic Type of the top of a chat that shows its end (its session line, its day
@@ -92,7 +93,7 @@ final class AccessibilityAuditTests: XCTestCase {
                 // Off screen (its screenshot is black: it is audited once scrolled into view) or
                 // disabled (WCAG leaves inactive controls out).
                 ignored = underBars || !app.frame.intersects(frame) || !element.isEnabled
-                    || (element.elementType == .staticText && (Self.contrast(of: element) ?? 0) >= 4.5)
+                    || ([.staticText, .button].contains(element.elementType) && (Self.contrast(of: element) ?? 0) >= 4.5)
             case .dynamicType, .textClipped:
                 ignored = inNavigationBar || squeezedBelow.map { frame.minY >= $0 } == true
                     || issue.auditType == .dynamicType && Self.chatTop.contains(element.identifier)
@@ -197,6 +198,30 @@ final class AccessibilityAuditTests: XCTestCase {
         print("Top of a chat, heights at the default and the largest size: \(normal) → \(largest)")
         XCTAssertGreaterThan(largest.session, normal.session * 1.8, "the session line does not grow: \(normal) → \(largest)")
         XCTAssertGreaterThan(largest.day, normal.day * 1.8, "the day separator does not grow: \(normal) → \(largest)")
+    }
+
+    /// Crest's page with its readings: logged in as a guest, asked once.
+    func testNodeReadings() throws {
+        let app = launch(["-tab", "nodes", "-quietDemo", "YES"])
+        let crest = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'crest'")).firstMatch
+        XCTAssertTrue(crest.waitForExistence(timeout: 30), "no crest")
+        crest.tap()
+        let action = app.buttons["readingsAction"]
+        XCTAssertTrue(action.waitForExistence(timeout: 10), "no readings card")
+        action.tap()
+        let field = app.secureTextFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "no password field")
+        sleep(1)
+        field.tap()
+        field.typeText("hello")
+        app.buttons["serverLogin"].tap()
+        sleep(3)
+        // Back to the card, clear of the navigation bar (a tap under it goes to the bar).
+        for _ in 0..<3 { app.swipeDown() }
+        sleep(1)
+        action.tap()
+        sleep(8)
+        try audit(app, "crest's readings")
     }
 
     func testGroup() throws {

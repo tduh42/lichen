@@ -2283,6 +2283,9 @@ final class AppModel {
     /// The node whose route the map draws (§16.3): from its page's Show on the map, or the node
     /// tapped on the map; until the route's card is closed.
     var mapRouteTo: Data?
+    /// Why the radio would not ask a node for its readings (§16.7), kept for its page until the
+    /// next request.
+    var readingsRefusals: [Data: LichenError] = [:]
 
     /// Shows a place from a message's text on the map: lichen's own map, nothing fetched but
     /// its tiles (offline areas included).

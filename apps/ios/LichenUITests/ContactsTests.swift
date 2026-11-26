@@ -210,7 +210,7 @@ final class ContactsTests: LichenUITest {
         reveal(field)
         field.tap()
         field.typeText("wrong")
-        button(tr("Log in")).tap()
+        app.buttons["serverLogin"].tap()
         let said = app.staticTexts.matching(NSPredicate(format: "label IN %@",
             [tr("Refused"), tr("No answer: a wrong password, or out of reach")])).firstMatch
         wait(said, 30, "a wrong password is not said")
@@ -226,7 +226,7 @@ final class ContactsTests: LichenUITest {
         reveal(field)
         field.tap()
         field.typeText("password")
-        button(tr("Log in")).tap()
+        app.buttons["serverLogin"].tap()
         wait(element(tr("Logged in as admin")), 30, "not logged in as admin")
         let status = button(tr("Read the status"))
         reveal(status)
@@ -277,6 +277,91 @@ final class ContactsTests: LichenUITest {
         let map = app.tabBars.buttons.element(boundBy: Tab.map.rawValue)
         wait(map, 5)
         XCTAssertTrue(map.isSelected, "not on the map")
+    }
+
+    // MARK: CT-14, a node's readings (§16.7)
+
+    /// The readings card's button: Ask, Ask again or Log in.
+    private var readingsAction: XCUIElement { app.buttons["readingsAction"] }
+
+    /// A row of the readings card, read as one: "Battery, 3.92 V, about 69 %".
+    private func readingRow(_ label: String, _ value: String) -> XCUIElement {
+        element(label + ", " + value.replacingOccurrences(of: " · ", with: ", "))
+    }
+
+    /// Scrolls until `e` is clear of the navigation bar and the tab bar: under them it counts as
+    /// hittable, but a tap goes to the bar.
+    private func clearOfBars(_ e: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        let top = app.navigationBars.firstMatch.frame.maxY + 8
+        let bottom = (app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.frame.maxY) - 8
+        for _ in 0..<8 {
+            let f = e.frame
+            if f.minY >= top && f.maxY <= bottom { return }
+            let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: f.minY < top ? 160 : -160)))
+            pause(0.5)
+        }
+        XCTAssertTrue(e.frame.minY >= top && e.frame.maxY <= bottom, "\(e) under a bar", file: file, line: line)
+    }
+
+    /// A decimal as the run's language writes it: "3,92" in French.
+    private func num(_ text: String) -> String { french ? text.replacingOccurrences(of: ".", with: ",") : text }
+
+    /// CT-14: crest answers only those logged in: its card says so and Log in goes to its login
+    /// card; logged in as a guest, Ask gives its battery and temperature with when they came;
+    /// Ask again too, and two readings draw the battery's line over 7 days.
+    func testCT14_CrestReadings() {
+        launch(["-quietDemo", "YES"])
+        openNode("crest")
+        wait(element(tr("A repeater answers only those logged in, as a guest at least.")), 10, "not said to log in")
+        XCTAssertEqual(readingsAction.label, tr("Log in"))
+        XCTAssertFalse(containing(prefix("Sent %@")).exists, "asked by opening the page")
+        clearOfBars(readingsAction)
+        keep("ct-readings-login")
+        readingsAction.tap()
+        let field = app.secureTextFields[tr("Admin or guest password")]
+        focus(field)
+        field.typeText("hello")
+        app.buttons["serverLogin"].tap()
+        wait(element(tr("Logged in as a guest")), 30, "not logged in as a guest")
+        waitLabel(readingsAction, contains: tr("Ask"), 10)
+        clearOfBars(readingsAction)
+        readingsAction.tap()
+        let battery = readingRow(tr("Battery"), tr("%@ V · about %lld %%", num("3.92"), 69))
+        wait(battery, 30, "no battery")
+        XCTAssertTrue(readingRow(tr("Temperature"), "4 °C").exists, "no temperature")
+        XCTAssertTrue(containing(prefix("Sent %@")).exists, "not said when")
+        keep("ct-readings")
+        // Again: two readings, the battery's line.
+        waitLabel(readingsAction, contains: tr("Ask again"), 10)
+        clearOfBars(readingsAction)
+        readingsAction.tap()
+        let chart = tr("Battery over 7 days, from %@ to %@ V", "#", "#").components(separatedBy: "#")[0]
+        wait(containing(chart), 30, "no battery line after a second reading")
+        clearOfBars(element(tr("Readings it sends")))
+        keep("ct-readings-chart")
+    }
+
+    /// CT-14: Marc, with the stock app, never answers: "no answer", said for a person.
+    func testCT14_MarcNeverAnswers() {
+        launch(["-quietDemo", "YES"])
+        openNode("Marc")
+        wait(element(tr("Ask it for its battery and temperature.")), 10, "nothing to ask")
+        clearOfBars(readingsAction)
+        readingsAction.tap()
+        wait(element(tr("No answer. Someone with the MeshCore app answers only if they allow it.")), 40, "no answer not said")
+        clearOfBars(readingsAction)
+        keep("ct-readings-no-answer")
+    }
+
+    /// CT-14: Lucie, heard but not on the radio, cannot be asked: said, and no button.
+    func testCT14_LucieCannotBeAsked() {
+        launch(["-quietDemo", "YES"])
+        openNode("Lucie")
+        clearOfBars(wait(readingsAction, 10, "nothing to ask"))
+        readingsAction.tap()
+        wait(element(tr("Your radio can’t ask it: it isn’t one of its contacts.")), 10, "not said")
+        XCTAssertFalse(readingsAction.exists, "a button to ask again")
     }
 
     /// The request card's line, once Camille's first message arrived as a request and the card
