@@ -16,6 +16,10 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
+import com.tduhamel.lichen.core.RadioReading
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
@@ -100,6 +104,8 @@ class RadioLinkTest : UiTest() {
         assertTrue(model.last(camille)!!.status is MessageStatus.Waiting)
 
         advanceUntil("the radio is back", 70) { model.isConnected }
+        // The radio read again first (RL-12), then the usual line.
+        advanceUntil("the radio read again", 30, { model.radioReading }) { model.radioReading == null }
         text(R.string.radio_connected, "ThinkNode M5").assertIsDisplayed()
         assertFalse(has(R.string.radio_disconnected))
         advanceUntil("the text to Camille delivered", 400, { model.chats[camille].orEmpty().filter { it.outgoing }.map { it.status } + " last=" + model.last(camille)?.status }) {
@@ -114,6 +120,72 @@ class RadioLinkTest : UiTest() {
         tap("Camille")
         assertEquals(1, compose.onAllNodesWithText(str(R.string.debug_offline_text)).fetchSemanticsNodes().size)
         see(str(R.string.state_delivered), substring = true)
+    }
+
+    /** RL-12: the radio line while a connection reads (§1.1): with 200 more contacts on the
+     * demo radio, "Reading the radio · contacts … of 206" with its bar, said as one line; the
+     * Messages list says it is reading rather than "No conversations yet"; then the usual
+     * connected line, no bar. */
+    @Test
+    fun RL_12_radioLineWhileReading() = readingLine()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_12_radioLineWhileReading_fr() = readingLine()
+
+    private fun readingLine() {
+        launch("demo" to true, "manyContacts" to 200)
+        advanceUntil("the contacts counted", 10, { model.radioReading }) {
+            val r = model.radioReading
+            r is RadioReading.Contacts && r.done > 0u && r.done < r.total
+        }
+        assertEquals(206u, (model.radioReading as RadioReading.Contacts).total)
+        // The count goes on as the screen settles: the line as it reads, whatever count it is at.
+        lineSaying(R.string.reading_radio_contacts, 206).assertIsDisplayed()
+        compose.onNodeWithTag(READING_BAR, useUnmergedTree = true).assertIsDisplayed()
+        // Not "no conversations" while the radio's lists come in.
+        assertFalse(has(R.string.no_conversations))
+        if (model.conversations.isEmpty()) text(R.string.reading_radio).assertIsDisplayed()
+        // Over: the usual line.
+        advanceUntil("the reading over", 30, { model.radioReading }) { model.radioReading == null }
+        text(str(R.string.radio_connected, model.nodeName)).assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag(READING_BAR, useUnmergedTree = true).fetchSemanticsNodes().isEmpty())
+        assertTrue(model.contacts.size >= 200)
+    }
+
+    /** RL-12: switched off, then on again: the messages that waited on the radio are fetched,
+     * "Fetching waiting messages · n" on the radio line meanwhile, and they arrive. */
+    @Test
+    fun RL_12_fetchingWaitingMessages() = fetchingWaiting()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun RL_12_fetchingWaitingMessages_fr() = fetchingWaiting()
+
+    /** The radio line said as [id] with any count in place of its first number (and [args]
+     * after it): "Reading the radio, contacts 34 of 206". */
+    private fun lineSaying(@androidx.annotation.StringRes id: Int, vararg args: Any): androidx.compose.ui.test.SemanticsNodeInteraction {
+        val said = Regex(Regex.escape(said(str(id, 999_999, *args))).replace("999999", "\\E\\d+\\Q"))
+        return compose.onNode(
+            androidx.compose.ui.test.SemanticsMatcher("the radio line: $said") { n ->
+                n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.any { said.matches(it) } == true
+            },
+            useUnmergedTree = true,
+        )
+    }
+
+    private fun fetchingWaiting() {
+        launch("demo" to true, "offline" to 40, "online" to 150)
+        advanceUntil("the radio off", 60) { !model.isConnected }
+        // Back on: the reading again, from the radio's settings to what waited on it.
+        advanceUntil("back on", 130) { model.isConnected }
+        val unread = model.conversations.sumOf { it.unread.toInt() }
+        advanceUntil("the waiting messages fetched", 20, { model.radioReading }) { model.radioReading is RadioReading.Messages }
+        lineSaying(R.string.fetching_waiting).assertIsDisplayed()
+        advanceUntil("the reading over", 30, { model.radioReading }) { model.radioReading == null }
+        text(str(R.string.radio_connected, model.nodeName)).assertIsDisplayed()
+        // They arrived.
+        assertTrue(model.conversations.sumOf { it.unread.toInt() } > unread)
     }
 
     /** RL-2: in the demo, the banner's button switches the simulated radio back on. */

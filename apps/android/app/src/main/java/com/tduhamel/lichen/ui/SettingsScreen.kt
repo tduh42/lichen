@@ -585,14 +585,17 @@ private fun RadioCard(model: AppModel, pair: () -> Unit) {
                         model.nodeName.ifEmpty { stringResource(R.string.radio) },
                         fontSize = 17.sp, fontWeight = FontWeight.Bold, color = t.tx, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
+                    // While a connection still reads the radio, what it reads, and how far.
+                    val reading = radioReadingText(model)
                     Text(
-                        listOfNotNull(
+                        if (reading != null) radioLink(model) + " · " + reading else listOfNotNull(
                             radioLink(model),
                             model.radioSettings?.batteryPercent?.let { "$it %" },
                             stringResource(R.string.airtime_left_s, (left / 1000u).toInt()),
                         ).joinToString(" · "),
                         fontSize = 13.sp, color = t.tx2,
                     )
+                    RadioReadingBar(model, Modifier.padding(top = 4.dp))
                 }
                 Badge(stringResource(R.string.radio_connected_short), t.okBg, t.okFg)
             }

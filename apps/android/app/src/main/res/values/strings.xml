@@ -40,6 +40,12 @@
     <!-- Radio card and banners -->
     <string name="radio_connected">%1$s connected</string>
     <string name="radio_connecting">Connecting to %1$s…</string>
+    <!-- What a connection is still reading (§1.1): the radio line, then the usual one. -->
+    <string name="reading_radio">Reading the radio…</string>
+    <string name="reading_radio_contacts">Reading the radio · contacts %1$d of %2$d</string>
+    <string name="reading_radio_channels">Reading the radio · channels</string>
+    <string name="fetching_waiting">Fetching waiting messages · %1$d</string>
+    <string name="fetching_waiting_said">Fetching waiting messages</string>
     <string name="radio_scanning">Looking for nodes…</string>
     <string name="bluetooth_off">Bluetooth is off</string>
     <string name="no_radio">No radio connected</string>

@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.model
 
+import com.tduhamel.lichen.core.RadioReading
 import android.app.Application
 import android.content.Context
 import android.hardware.usb.UsbDevice
@@ -258,6 +259,10 @@ class AppModel(val app: Application) {
     /** The radio's settings with the values asked for while they wait, else null: the screen
      * shows these until the radio's come back (B-user-5). */
     var radioAsked by mutableStateOf<RadioSettings?>(null)
+    /** What a connection is still reading after `APP_START` (§1.1): its settings, its contacts
+     * n of m, its channels, the messages that waited; null once it is over. Read again with the
+     * radio's settings (the same event). */
+    var radioReading by mutableStateOf<RadioReading?>(null)
     /** The row each kind of setting was last changed from. */
     private val radioRowOf = mutableMapOf<RadioSetting, String>()
 
@@ -986,12 +991,29 @@ class AppModel(val app: Application) {
         demoReading = true
         val t = now()
         scope.launch {
-            val frames = withContext(demoContext) { d.read(t) }
-            demoReading = false
-            if (demo !== d) return@launch
-            // Radio off: the network goes on, and what it pushes is lost.
-            for (f in frames) if (!demoRadioOff) core.onCompanionFrame(f, t)
-            pump()
+            try {
+                val frames = withContext(demoContext) { d.read(t) }
+                if (demo !== d) return@launch
+                // Radio off: the network goes on, and what it pushes is lost.
+                var shown = 0u
+                for (f in frames) {
+                    if (demoRadioOff) continue
+                    core.onCompanionFrame(f, t)
+                    // A long contact list comes in one batch from the demo radio: its count shown
+                    // as it goes, every tenth, as a radio's frames one by one show it (§1.1). A
+                    // short one (the usual demo) keeps its timing.
+                    val r = core.radioReading()
+                    if (r is RadioReading.Contacts && r.total >= 50u && r.done >= shown + 10u) {
+                        shown = r.done
+                        radioReading = r
+                        delay(16)
+                        if (demo !== d) return@launch
+                    }
+                }
+                pump()
+            } finally {
+                demoReading = false
+            }
         }
     }
 
@@ -1175,6 +1197,7 @@ class AppModel(val app: Application) {
                 radio = e.radio
                 radioSettings = core.radioSettings()
                 radioConnected()
+                radioReading = core.radioReading()
                 // The ongoing notification names the node, not the link's address.
                 if (!isDemo) RadioService.start(app, e.name, shares.isNotEmpty() || sos)
             }
@@ -1210,6 +1233,7 @@ class AppModel(val app: Application) {
                 // Read again after a change (ADR-0032): the header follows the radio's parameters.
                 val r = core.radioSettings()
                 radioSettings = r
+                radioReading = core.radioReading()
                 radio = core.radio()
                 if (r.name.isNotEmpty()) nodeName = r.name
             }

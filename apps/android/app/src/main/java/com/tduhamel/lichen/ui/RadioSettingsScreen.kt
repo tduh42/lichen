@@ -525,7 +525,11 @@ private fun RadioHeader(model: AppModel, r: RadioSettings) {
                 // The dot on the first line, however many the link takes.
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Box(Modifier.padding(top = 6.dp).size(7.dp).background(t.ok, CircleShape))
-                    Text(radioLink(model) + " · " + connectedFor(model), fontSize = 13.sp, color = t.tx2)
+                    // While a connection still reads the radio, what it reads, and how far.
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(radioLink(model) + " · " + (radioReadingText(model) ?: connectedFor(model)), fontSize = 13.sp, color = t.tx2)
+                        RadioReadingBar(model)
+                    }
                 }
             }
             r.batteryMv?.let { mv -> BatteryRing(r.batteryPercent?.toInt() ?: batteryPercent(mv), mv) }
