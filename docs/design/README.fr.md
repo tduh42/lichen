@@ -23,8 +23,9 @@ Les maquettes dans `mockups/` font foi pour la mise en page. Ce fichier donne le
 3. **Le transport est toujours écrit**, jamais porté par la seule couleur : badge « LoRa · 2 sauts », « iroh », « Tor ».
 4. **Tout envoi radio affiche son coût avant d'être lancé** : nombre de fragments et secondes d'antenne. Le budget d'antenne restant est toujours à un geste : la ligne radio de Messages ouvre la carte radio, les Réglages l'affichent, et un bandeau prévient quand il est épuisé.
 5. **Typographie** : police système pour l'interface (SF Pro, Roboto). Space Grotesk 700 pour le wordmark et les grands chiffres (budget, cap, distance, empreintes, numéros de sécurité), en chiffres tabulaires.
-6. **Calme par défaut** : un message montre son heure et un mot d'état (« Remis ») ; ses fragments, son temps d'antenne et son signal sont dans appui long › Infos, ou sous chaque message avec Réglages › Afficher les détails radio (désactivé par défaut).
-7. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
+6. **Des conversations calmes** : un message montre son heure et un mot d'état (« Remis ») ; ses fragments, son temps d'antenne et son signal sont dans appui long › Infos, ou sous chaque message avec Réglages › Afficher les détails radio (désactivé par défaut).
+7. **Des écrans radio riches** (2026-11-25) : l'onglet Nœuds, la page d'un nœud, la Carte et les Réglages radio montrent d'un coup d'œil les données de la radio. Chaque nœud entendu directement porte son signal, noté par rapport à ton propre préréglage (`SignalMeter`) ; les autres disent par combien de répéteurs ils passent ; la page d'un nœud dessine la route qui t'atteint, tronçon par tronçon (`RouteRibbon`), son signal sur 24 heures ou 7 jours sur les bandes Bon et Moyen de ton préréglage, et ce qu'il envoie (`ReadingsCard`) ; la Carte trace cette route entre les positions des répéteurs ; les Réglages radio s'ouvrent sur la radio elle-même (nom, modèle, liaison, batterie, temps d'antenne restant, bruit de fond, firmware) et finissent par ce qu'elle a compté depuis son démarrage ; pendant qu'une connexion lit la radio, la ligne radio dit à quelle étape elle en est. Une valeur que rien n'a mesurée n'est jamais affichée : un tronçon non mesuré dit « pas mesuré », une valeur que la radio n'a pas donnée n'a pas de ligne. Ce qu'envoie un nœud ne se demande qu'à la main : ouvrir sa page ne demande rien. Les conversations restent calmes (6).
+8. **Accessibilité** : cibles ≥ 44 pt (iOS) / 48 dp (Android), contraste texte ≥ 4,5:1, libellés d'accessibilité sur tous les boutons icône.
 
 ## Couleurs (résumé, détail dans `tokens.json`)
 
@@ -39,9 +40,9 @@ Les maquettes dans `mockups/` font foi pour la mise en page. Ce fichier donne le
 | `lora` | #FB923C | #C2410C | Transport LoRa et marque |
 | `iroh` | #60A5FA | #1D4ED8 | Transport iroh |
 | `tor` | #A78BFA | #6D28D9 | Transport Tor |
-| `sos` | #EF4444 | #B91C1C | Détresse, action destructrice |
-| `ok` | #4ADE80 | #15803D | Clé vérifiée, remis |
-| `warn` | #FACC15 | #A16207 | Attention, à vérifier |
+| `sos` | #EF4444 | #B91C1C | Détresse, action destructrice, signal faible |
+| `ok` | #4ADE80 | #15803D | Clé vérifiée, remis, bon signal, entendu ces 2 h |
+| `warn` | #FACC15 | #A16207 | Attention, à vérifier, signal moyen |
 
 Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) et `_fg` (texte dessus).
 
@@ -60,13 +61,16 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 | Appairage | `appairage` | Scan BLE, liste des radios (nom, RSSI, version companion), saisie du code à 6 chiffres affiché sur la radio |
 | Identité et clés | `identite` | Pseudo, empreinte de clé (6 groupes de 4 hex), alerte sauvegarde, phrase 24 mots, fichier chiffré |
 | Ajouter un contact | `contact` | Onglets Mon code / Scanner, QR, numéro de sécurité (6 groupes de 5 chiffres), « correspondent » / « différents » |
-| Conversations | `conversations` | État radio sur une ligne (un geste : budget d'antenne, transports disponibles), liste avec badge de transport et non-lus |
+| Conversations | `conversations` | État radio sur une ligne (un geste : budget d'antenne, transports disponibles) ; pendant qu'une connexion lit la radio, l'étape où elle en est : ses réglages, ses contacts (« contacts 34 sur 120 », le nombre annoncé par la radio), ses canaux, puis les messages qui l'attendaient (tant jusqu'ici), sans deviner le temps restant ; liste avec badge de transport et non-lus |
 | Discussion | `chat` | Texte, envoi fragmenté avec progression et ACK, photo annoncée (aperçu LoRa + téléchargement iroh/Tor), vocal Codec2, coût estimé dans la zone de saisie |
 | Envoi de photo | `media` | Choix du mode : aperçu LoRa, iroh, Tor, différé. Coût par option |
-| Carte et position | `carte` | Membres et précision partagée, partage limité dans le temps, bouton SOS |
-| Localiser (mode recherche) | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
+| Nœuds | (dans les apps) | Les nœuds que la radio connaît : « À portée », entendus directement, chacun avec son `SignalMeter`, triés par signal ; « Par des répéteurs », chacun avec ses sauts, ou « chemin inconnu » en dernier ; filtres (Tous, Personnes, Répéteurs, Salons, Entendus en 2 h) ; distance et direction ; dernière écoute |
+| Page d'un nœud | (dans les apps) | En-tête avec la grande jauge ou les sauts ; « Comment il t'atteint » (`RouteRibbon`, Tracer à nouveau, Voir sur la carte) ; son signal sur 24 h / 7 jours, un point par mesure de la couleur de sa note, sur les bandes Bon et Moyen de ton propre préréglage (`signal_limits()` du cœur, aucune tant que les réglages de la radio ne sont pas lus) ; « Ce qu'il envoie » (`ReadingsCard`), sauf sur la page de ta propre radio ; puis les cartes salon, administration du répéteur et clé MeshCore |
+| Carte et position | `carte` | Membres et précision partagée, partage limité dans le temps, bouton SOS ; Positions ou Localiser en haut ; la couche des nœuds, avec un anneau de la couleur de sa note autour de chaque nœud entendu directement ; la route d'un nœud, chaque tronçon de la couleur de son dernier signal, avec une légende ; tant qu'une route est tracée, ses étapes restent visibles et les autres marqueurs s'estompent, lus « pas sur cette route », jusqu'à ce que sa carte se ferme ; le menu des couches filtre les nœuds avec les puces de l'onglet Nœuds et leurs nombres, le choix de la Carte à part de celui de l'onglet Nœuds |
+| Localiser (mode recherche, un mode de la Carte) | `recherche` | Bannière SOS, zone probable, caps des chercheurs, flèche cap + distance + incertitude, mesures, actions Pinger / Ajouter un cap / Baisser sa puissance |
 | Groupe | `groupe` | Membres et état de leur clé, rotation des clés après un départ, consentement à être localisé, limite de sauts |
-| Réglages | `reglages` | Radio connectée, budget, preset, mode répéteur, iroh / Tor / relais uniquement, précision par défaut |
+| Réglages | `reglages` | Radio connectée, budget, preset, mode répéteur, iroh / Tor / relais uniquement, précision par défaut ; une tuile sur chaque ligne |
+| Réglages radio | (dans les apps) | La radio en haut (nom, modèle, liaison, batterie, temps d'antenne restant, bruit de fond « −118 dBm », firmware) ; une recherche qui va droit à un réglage ou à une valeur ; des sections en cartes ; chaque changement dit sur sa ligne si la radio l'a enregistré ; en dernier, « Depuis son démarrage » : allumée depuis, paquets reçus et envoyés, reçus avec erreurs (et leur part des reçus), temps d'antenne en émission et en réception (et sa part du temps), dernier paquet entendu (dBm · dB, sans couleur de note : il peut venir de n'importe qui), chaque ligne seulement une fois que la radio l'a donnée, relus chaque minute tant que l'écran est ouvert |
 | SOS | `sos` | Bouton à maintenir 3 s, contenu envoyé, destinataires, mode d'envoi |
 | SOS reçu | `sos-recu` | Alerte plein écran, dernière position, batterie, lancer la recherche |
 | États dégradés | `etats` | Bannières : radio déconnectée, budget épuisé, pas de chemin, envoi abandonné, pair injoignable, remis. État vide |
@@ -75,8 +79,8 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 ## Navigation
 
 - Premier lancement : Accueil → Appairage → Identité → Ajouter un contact → Conversations.
-- Onglets : Messages, Carte, Localiser, Réglages (« Localiser » est le mode recherche radio : « Rechercher » ne sert qu'aux messages).
-- SOS depuis la Carte. SOS reçu → Localiser.
+- Onglets : Messages, Nœuds, Carte, Réglages. Localiser (le mode recherche radio : « Rechercher » ne sert qu'aux messages) est un mode de la Carte, Positions | Localiser en haut, à côté du bouton SOS.
+- SOS reçu → la Carte en mode Localiser.
 - Discussion → Envoi de photo en feuille modale (`.sheet` sur iOS, `ModalBottomSheet` sur Android).
 
 ## Composants partagés
@@ -95,6 +99,10 @@ Chaque couleur sémantique a une variante `_bg` (fond de badge ou de bannière) 
 | `SafetyNumber` | 6 groupes de 5 chiffres |
 | `KeyFingerprint` | 6 groupes de 4 hex |
 | `SosHoldButton` | holdMs = 3000, progression circulaire |
+| `SignalMeter` | rating (bon, moyen, faible, aucun), snrDb : trois barres en `ok`, deux en `warn` ou une en `sos`, le reste en `line`, et « 7,5 dB » en chiffres tabulaires ; aucun ne montre rien ; petit dans les lignes, grand dans les en-têtes ; lu « Signal bon, 7,5 dB » |
+| `HopPill` | « 1 saut », « 2 sauts » |
+| `RouteRibbon` | stops (toi, chaque répéteur, le nœud ; un hash partagé montre ses noms joints par « / »), legs (un trait de la couleur de son dernier signal, son SNR au-dessus ; en pointillé `line` et « pas mesuré » quand rien ne l'a mesuré) |
+| `ReadingsCard` | lignes : batterie « 3,92 V · environ 69 % », température « 4 °C », chaque autre valeur selon son type, « Humidité · capteur 2 » quand elle ne vient pas du nœud lui-même, chaque ligne lue d'un bloc ; « Envoyé il y a 18 min » et Redemander ; la courbe de sa batterie sur 7 jours dès que deux mesures en ont une ; sans mesure encore, quoi faire et Demander, ou pour un répéteur ou un salon où tu n'es pas connecté, qu'il ne répond qu'à ceux qui sont connectés, au moins en invité, et Se connecter ; « Demande en cours… » ; puis, jusqu'à la demande suivante, ce qu'elle a donné : pas de réponse, dit pour une personne, qui ne répond que si elle l'autorise, ou pour un serveur, peut-être hors de portée ; une réponse sans rien que lichen lit ; la radio ne peut pas le lui demander, il n'est pas dans ses contacts, sans bouton ; une position qu'il envoie est listée, jamais mise sur la carte |
 
 ## Notes d'implémentation
 

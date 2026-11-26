@@ -6,7 +6,7 @@ Run it again before each release, on real radios, with the build that will be pu
 
 - **Two phones with lichen**, A and B, ideally one iPhone and one Android phone, each with its own stock MeshCore companion radio (firmware v1.18 or later), paired over Bluetooth. Both on the same LoRa preset (Settings › Radio settings).
 - **A third radio with the official MeshCore app** (phone or web client), C, on the same preset.
-- For 5.6–5.8, optional: **a stock MeshCore repeater and a room server** in range, whose passwords you hold (yours, or lent for the test). For 6.5, optional: **a second companion radio** for A.
+- For 5.6–5.8 and 5.12, optional: **a stock MeshCore repeater and a room server** in range, whose passwords you hold (yours, or lent for the test); for 5.12 a guest password is enough. For 6.5, optional: **a second companion radio** for A.
 - Both lichen apps freshly installed, or with the history of the previous run deleted, so that "new contact" steps start from nothing.
 - Start the run in the same room (one hop, radio to radio), except where a line says otherwise.
 - Note at the top of the run: date, lichen version and commit, phones and systems, radios, firmware versions, preset. Each line below passes or fails; a failure gets a problem report (Settings › About › Report a problem) from both phones, and an issue.
@@ -89,10 +89,14 @@ A and B exchange their contact codes in person first (Add a contact › My code 
 | 5.3 | C sends A a direct message from the official app. | A shows it in a MeshCore chat with C, marked not lichen-encrypted. |
 | 5.4 | A answers C. | C receives it in the official app; A shows it delivered. |
 | 5.5 | A shares `#lichen-test` by QR code (the channel's info › Share the channel); B scans it, and C scans it in the official app if it can. | A warns that whoever scans can read and post; B and C join the channel by its name. |
-| 5.6 | A: Settings › Nodes, the room server › Log in, password kept. Read its posts, post one. Disconnect the radio, wait for a post from someone else, reconnect. | The room's posts show in a room chat marked as not lichen-encrypted; A's post appears on the server; after reconnecting, A logs in by itself and the new post arrives. |
-| 5.7 | A: Settings › Nodes, the repeater › Log in with its admin password; Status, Neighbours, then `ver` in the Console. Quit and reopen lichen. | Status and neighbours match what the official app shows; the console prints the firmware's answer; after reopening, the admin password has to be typed again. |
-| 5.8 | A: Settings › Nodes, a contact two hops away or more › Trace the path. | The path shows hop by hop, named where the radio knows the repeaters; the trace comes back with an SNR per hop each way, or says that no answer came. |
-| 5.9 | A: Settings › Nodes, then the map's nodes layer. | The repeaters and companions the radio heard are listed with their type and last heard; those that advertise a position show on the map, nothing else. |
+| 5.6 | A: the Nodes tab, the room server › Log in, password kept. Read its posts, post one. Disconnect the radio, wait for a post from someone else, reconnect. | The room's posts show in a room chat marked as not lichen-encrypted; A's post appears on the server; after reconnecting, A logs in by itself and the new post arrives. |
+| 5.7 | A: the Nodes tab, the repeater › Log in with its admin password; Status, Neighbours, then `ver` in the Console. Quit and reopen lichen. | Status and neighbours match what the official app shows; the console prints the firmware's answer; after reopening, the admin password has to be typed again. |
+| 5.8 | A: the Nodes tab, a contact two hops away or more › Trace again. | The route shows hop by hop, named where the radio knows the repeaters; the trace comes back with an SNR per hop each way, each leg coloured by its rating, or says that no answer came. |
+| 5.9 | A: the Nodes tab, then the map's nodes layer. | The repeaters and companions the radio heard are listed with their type and last heard; those heard directly are under "In reach" with a signal meter, the others under "Through repeaters" with their hops; those that advertise a position show on the map, nothing else. |
+| 5.10 | A, next to C's radio, then 1 km away: the Nodes tab, C's node › its page. | Next to it, C is in reach with a Good meter; far away, the meter drops or C moves to "Through repeaters"; the signal chart shows both readings; nothing shows a signal for a node heard only through a repeater. |
+| 5.11 | A: the Nodes tab, a node through a repeater that advertises a position › Show on the map. | The map draws the route through the repeater, each leg in its rating's colour with its SNR, or dashed and "not measured"; the card names the hops. |
+| 5.12 | A: the Nodes tab, the repeater › its page, before logging in; then Log in as a guest, "Readings it sends" › Ask; a few minutes later, Ask again. | Opening the page asks nothing (no "Asking…"); before logging in, the card says a repeater answers only those logged in, with Log in; once in, Ask brings its battery in volts with about how many percent, plausible for its battery, and its temperature if its board measures one, with "Sent … ago"; Ask again adds the battery's line. |
+| 5.13 | After 5.4: A, C's node › its page › "Readings it sends" › Ask. Then, if the official app lets C allow its telemetry (to everyone, or to A's contact), C allows it and A asks again. | First "No answer", with the line that someone with the MeshCore app answers only if they allow it; once C allows it, C's battery, and its radio's temperature if it measures one. |
 
 ## Radio settings
 
@@ -103,6 +107,7 @@ A and B exchange their contact codes in person first (Add a contact › My code 
 | 6.3 | Turn "Position in adverts" on, send an advert, check on C; then off. | C sees the position only while it is on (and the warning was shown before). |
 | 6.4 | Change the preset to another one, then back (the app asks first). | The radio reboots or reconnects with the new settings, then the old ones; 2.1 still passes. |
 | 6.5 | A pairs its second radio, then switches back to the first in Settings › Radios. | Both radios are listed, the connected one marked; the conversations, contacts and groups are the same with either radio; each radio keeps its own MeshCore contacts and channels. |
+| 6.6 | A: Settings › Radio settings, the radio where it usually sits. | The header shows a noise floor in dBm, plausible for the place (around −120 to −105 dBm somewhere quiet, higher in town or next to electronics), never 0. |
 
 ## History import
 
@@ -125,7 +130,7 @@ Never trigger an SOS or a search towards anyone who has not agreed to the test. 
 
 | # | Do | Passes when |
 |---|---|---|
-| 9.1 | On B: the group's "Let this group locate me" on. A: the Locate tab, B. | A shows measurements from B's answers and an estimate that narrows while A moves. |
+| 9.1 | On B: the group's "Let this group locate me" on. A: the Map in Locate, B. | A shows measurements from B's answers and an estimate that narrows while A moves. |
 | 9.2 | B: SOS on (with GPS). | A gets the full-screen SOS alert with B's exact position, again every 2 minutes. |
 | 9.3 | B: SOS on without a GPS fix (indoors, or location off). | A's alert says there is no position and offers to search by radio (Locate); B's beacons arrive every 2 minutes. |
 | 9.4 | B: SOS off. | A shows "SOS ended"; B's TX power, if a search lowered it, is back to what it was. |
