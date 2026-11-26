@@ -470,3 +470,99 @@ func decimal(_ x: Double, _ digits: Int) -> String {
 func bandwidth(_ hz: UInt32) -> String {
     (Double(hz) / 1000).formatted(.number.precision(.fractionLength(0...1))) + " kHz"
 }
+
+// MARK: - a node's signal (ADR-0049)
+
+extension SignalRating {
+    /// `ok` Good, `warn` Fair, `sos` Bad; `line` without a reading.
+    var color: Color {
+        switch self {
+        case .good: Theme.ok
+        case .fair: Theme.warn
+        case .bad: Theme.sos
+        case .none: Theme.line
+        }
+    }
+
+    /// "Signal good, 7.5 dB", as VoiceOver reads a meter; nil without a reading.
+    func said(_ snr: Float?) -> String? {
+        guard let snr else { return nil }
+        switch self {
+        case .good: return String(localized: "Signal good, \(dbText(snr))")
+        case .fair: return String(localized: "Signal fair, \(dbText(snr))")
+        case .bad: return String(localized: "Signal weak, \(dbText(snr))")
+        case .none: return nil
+        }
+    }
+}
+
+/// A node's signal: three bars (Good 3 in `ok`, Fair 2 in `warn`, Bad 1 in `sos`, the rest in
+/// `line`) over the SNR in tabular digits; nothing without a reading. Large on a node's page,
+/// small in a row.
+struct SignalMeter: View {
+    let rating: SignalRating
+    let snr: Float?
+    var large = false
+    @ScaledMetric(relativeTo: .footnote) private var scale: CGFloat = 1
+
+    var body: some View {
+        if let said = rating.said(snr), let snr {
+            let lit = rating == .good ? 3 : rating == .fair ? 2 : 1
+            let unit = (large ? 7 : 4.6) * scale
+            VStack(alignment: .trailing, spacing: large ? 4 : 3) {
+                HStack(alignment: .bottom, spacing: large ? 3 : 2) {
+                    ForEach(1...3, id: \.self) { i in
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(i <= lit ? rating.color : Theme.line)
+                            .frame(width: (large ? 6 : 4) * scale, height: unit * (CGFloat(i) + 0.3))
+                    }
+                }
+                Text(verbatim: dbText(snr))
+                    .font(.system(large ? .subheadline : .footnote, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(Theme.tx)
+                    .fixedSize()
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(said)
+        }
+    }
+}
+
+/// "1 hop", "2 hops", "path unknown": how far a node is through repeaters.
+struct HopPill: View {
+    let hops: UInt8?
+
+    var body: some View {
+        Text(text)
+            .font(.system(.caption, weight: .semibold))
+            .foregroundStyle(Theme.tx2)
+            .fixedSize()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Theme.s2, in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var text: String {
+        switch hops {
+        case nil: String(localized: "path unknown")
+        case 0?: String(localized: "direct")
+        case let h?: String(localized: "\(Int(h)) hops")
+        }
+    }
+}
+
+/// "lichen", with a lock: a node whose identity is known (a lichen user).
+struct LichenBadge: View {
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: "lock").font(.system(.caption2, weight: .semibold)).accessibilityHidden(true)
+            // Caption, not caption2: caption2 stays 11 pt at the smaller text sizes.
+            Text(verbatim: "lichen").font(.system(.caption, weight: .semibold))
+        }
+        .foregroundStyle(Theme.tx2)
+        .fixedSize()
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(Theme.s2, in: RoundedRectangle(cornerRadius: 6))
+    }
+}

@@ -1023,6 +1023,8 @@ final class AppModel {
             radioConnected()
         case let .identityLearned(node, _, _):
             coreContacts = core.contacts()
+            // A node row's lichen badge comes from its contact's identity.
+            nodes = core.nodes()
             #if DEBUG
             // -open <name>: opened before their identity arrived, as a MeshCore chat; now that
             // they turn out to have lichen, their conversation. Only for the launch argument.
@@ -2275,6 +2277,9 @@ final class AppModel {
 
     /// A place written in a message (ADR-0034), on the map until dismissed.
     var mapPin: MapPin?
+    /// Where the map centres next, without a pin (a node's page's Show on the map); the later
+    /// of this and `mapPin` wins.
+    var mapFocus: MapPin?
 
     /// Shows a place from a message's text on the map: lichen's own map, nothing fetched but
     /// its tiles (offline areas included).

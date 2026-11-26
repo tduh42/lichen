@@ -37,7 +37,7 @@ struct MapScreen: View {
                 MapGate {
                     MapLibreView(items: items, style: style.resolved(dark: dark), recenter: recenter, onCamera: { bounds, zoom in
                         camera = (bounds, zoom)
-                    }, focus: model.mapPin)
+                    }, focus: focus)
                 }
                 .ignoresSafeArea(edges: .top)
                 VStack(spacing: 8) {
@@ -68,8 +68,8 @@ struct MapScreen: View {
                 MainActor.assumeIsolated { model.refreshPositions() }
             }
             seen = Set(items.map(\.id))
-            // A place from a message keeps the map on itself.
-            if !items.isEmpty, model.mapPin == nil { recenter += 1 }
+            // A place from a message, or a node shown from its page, keeps the map on itself.
+            if !items.isEmpty, model.mapPin == nil, model.mapFocus == nil { recenter += 1 }
             #if DEBUG
             if model.debugScreen == "sos" { showingSos = true }
             #endif
@@ -77,6 +77,8 @@ struct MapScreen: View {
         .onDisappear {
             model.needsLocation("map", false)
             refresh?.invalidate()
+            // Shown once: the map frames everyone again next time.
+            model.mapFocus = nil
         }
         .onChange(of: items.filter { $0.kind != .node }.map(\.id)) { _, ids in
             // A place from a message is centred on by itself (`focus`).
@@ -89,6 +91,12 @@ struct MapScreen: View {
     }
 
     private var dark: Bool { scheme == .dark }
+
+    /// Where the map centres: the later of a place from a message and a node shown from its
+    /// page.
+    private var focus: MapPin? {
+        [model.mapPin, model.mapFocus].compactMap { $0 }.max { $0.version < $1.version }
+    }
 
     /// SOS, Positions | Locate, the map's buttons: in one row, or with larger text the modes
     /// under the SOS button, their words whole. The same views either way (`SosAndModes`), so
@@ -104,7 +112,16 @@ struct MapScreen: View {
     }
 
     private var sosButton: some View {
-        Button { showingSos = true } label: {
+        Button {
+            // Still true after a presentation that failed (tapped while an SOS alert was going
+            // away): the button would do nothing. Reset first, then present.
+            if showingSos {
+                showingSos = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { showingSos = true }
+            } else {
+                showingSos = true
+            }
+        } label: {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                 Text(model.sos ? "SOS on" : "SOS").fixedSize(horizontal: false, vertical: true)

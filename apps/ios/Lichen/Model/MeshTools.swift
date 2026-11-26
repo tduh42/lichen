@@ -54,8 +54,112 @@ extension PathHop {
     }
 }
 
+extension SignalRating {
+    /// Good first: the Nodes tab's order.
+    var rank: Int {
+        switch self {
+        case .good: 0
+        case .fair: 1
+        case .bad: 2
+        case .none: 3
+        }
+    }
+}
+
+extension NodeInfo {
+    /// Heard directly in the last 24 h (ADR-0049): the Nodes tab's "In reach".
+    func inReach(now: UInt64) -> Bool {
+        guard signal != .none, let at = signalAtS else { return false }
+        return now <= at || now - at <= 86_400
+    }
+
+    /// Heard at all, directly or not, in the last `seconds`.
+    func heard(within seconds: UInt64, now: UInt64) -> Bool {
+        guard let at = lastHeardS else { return false }
+        return now <= at || now - at <= seconds
+    }
+
+    /// The Nodes tab's two sections: in reach, by rating then SNR; through repeaters, by hops
+    /// then the last heard, the nodes with no known path last.
+    static func sections(_ nodes: [NodeInfo], now: UInt64) -> (reach: [NodeInfo], through: [NodeInfo]) {
+        let reach = nodes.filter { $0.inReach(now: now) }
+            .sorted { a, b in
+                a.signal.rank != b.signal.rank ? a.signal.rank < b.signal.rank : (a.snrDb ?? -.infinity) > (b.snrDb ?? -.infinity)
+            }
+        let through = nodes.filter { !$0.inReach(now: now) }
+            .sorted { a, b in
+                if (a.hops == nil) != (b.hops == nil) { return b.hops == nil }
+                if a.hops != b.hops { return (a.hops ?? 0) < (b.hops ?? 0) }
+                return (a.lastHeardS ?? 0) > (b.lastHeardS ?? 0)
+            }
+        return (reach, through)
+    }
+}
+
+extension RouteStop {
+    /// Its names joined (a hash several repeaters share), else its hash.
+    var display: String {
+        names.isEmpty ? (hash?.uppercased() ?? "?") : names.joined(separator: " / ")
+    }
+}
+
+extension NodeRoute {
+    /// The repeaters it goes through ("hub, crest"), when its path names them.
+    var via: String? {
+        let names = stops.dropFirst().dropLast().map { $0.names.joined(separator: " / ") }.filter { !$0.isEmpty }
+        return names.isEmpty ? nil : names.joined(separator: ", ")
+    }
+
+    /// When the last trace measured its legs.
+    var tracedAt: UInt64? { legs.filter(\.traced).compactMap(\.atS).max() }
+}
+
+/// An SNR as people read it: "7.5 dB", "−3.0 dB" (a true minus), the decimal of the language.
+func dbText(_ snr: Float) -> String {
+    (snr <= -0.05 ? "−" : "") + decimal(Double(abs(snr)), 1) + " dB"
+}
+
 extension AppModel {
     func node(_ key: Data) -> NodeInfo? { nodes.first { $0.key == key } }
+
+    /// The route to `key` (protocol §16.3): our radio, the repeaters of its path, the node; each
+    /// leg's last SNR towards us, or none when nothing measured it. Read again when the nodes or
+    /// a trace change.
+    func nodeRoute(_ key: Data) -> NodeRoute? {
+        _ = meshToolsVersion
+        _ = nodes
+        return core.nodeRoute(node: key)
+    }
+
+    /// What our radio heard of `key` directly, the last 7 days (ADR-0049), oldest first.
+    func nodeSignalHistory(_ key: Data) -> [SignalReading] {
+        _ = meshToolsVersion
+        _ = nodes
+        return core.nodeSignalHistory(node: key).sorted { $0.atS < $1.atS }
+    }
+
+    /// Where `key` shows on the map: its advertised position, else the farthest stop of its
+    /// route that advertises one; nil when none does.
+    func nodePlace(_ key: Data) -> (lat: Double, lon: Double)? {
+        if let n = node(key), let lat = n.lat, let lon = n.lon { return (lat, lon) }
+        return nodeRoute(key)?.stops.dropFirst().last { $0.lat != nil && $0.lon != nil }.map { ($0.lat ?? 0, $0.lon ?? 0) }
+    }
+
+    /// The Map tab, in Positions mode, centred on `key` (a node's page's Show on the map).
+    func showNodeOnMap(_ key: Data) {
+        guard let (lat, lon) = nodePlace(key) else { return }
+        mapFocus = MapPin(lat: lat, lon: lon, version: max(mapFocus?.version ?? 0, mapPin?.version ?? 0) + 1)
+        openMap()
+    }
+
+    /// "1.2 km NE", "300 m S" from the phone, when both positions are known.
+    func distanceBearing(lat: Double?, lon: Double?) -> String? {
+        guard let lat, let lon, let d = distanceTo(lat: lat, lon: lon) else { return nil }
+        let points = String(localized: "N,NE,E,SE,S,SW,W,NW").split(separator: ",").map(String.init)
+        guard points.count == 8 else { return distanceText(d.meters) }
+        let point = points[Int(((d.bearing + 22.5) / 45).rounded(.down)) % 8]
+        return "\(distanceText(d.meters)) \(point)"
+    }
 
     /// "5 min ago", from a Unix time in seconds.
     func heard(_ unixS: UInt64?) -> String {

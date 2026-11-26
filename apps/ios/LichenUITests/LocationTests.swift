@@ -102,8 +102,18 @@ final class LocationTests: LichenUITest {
         launch(["-tab", "locate", "-sosdemo", "YES"])
         wait(button(tr("Dismiss")), 90, "no SOS alert over Locate").tap()
         XCTAssertTrue(button(tr("Positions")).exists, "not on the Map's Locate")
-        button(tr("SOS")).tap()
-        let hold = wait(button(tr("Send an SOS")), 5, "no SOS from Locate")
+        // Julien's alert can come back a moment after it was dismissed and cover the map; a tap
+        // while it goes away can be lost: dismissed again, then SOS again, until its sheet shows.
+        let send = button(tr("Send an SOS"))
+        for _ in 0..<5 where !send.exists {
+            if button(tr("Dismiss")).exists {
+                button(tr("Dismiss")).tap()
+                pause(1)
+            }
+            button(tr("SOS")).tap()
+            _ = send.waitForExistence(timeout: 3)
+        }
+        let hold = wait(send, 5, "no SOS from Locate")
         hold.press(forDuration: 3.5)
         let stop = wait(button(tr("Stop the SOS")), 5, "the SOS did not start")
         keep("mp-sos-from-locate")

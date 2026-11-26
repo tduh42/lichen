@@ -1,46 +1,71 @@
+import Charts
 import SwiftUI
 
 // Mesh tools (protocol.md §15.8, §16; ADR-0041 to ADR-0044): the nodes the radio knows, a
 // node's path and trace, room servers and repeaters, saved radios.
 
-/// The Nodes tab: what the radio knows or heard, the most recently heard first (§16.1).
+/// The Nodes tab (mockup `Main`): who the radio hears directly and how well, then those it
+/// reaches through repeaters (§16.1, ADR-0049).
 struct NodesView: View {
     @Environment(AppModel.self) private var model
     @State private var filter = Filter.all
     @State private var query = ""
 
     enum Filter: CaseIterable, Identifiable {
-        case all, repeaters, rooms, people
+        case all, people, repeaters, rooms, heard
         var id: Self { self }
+
         var label: String {
             switch self {
             case .all: String(localized: "All")
+            case .people: String(localized: "People")
             case .repeaters: String(localized: "Repeaters")
             case .rooms: String(localized: "Rooms")
-            case .people: String(localized: "People")
+            case .heard: String(localized: "Heard in 2 h")
             }
         }
-    }
 
-    private var shown: [NodeInfo] {
-        model.nodes.filter { n in
-            let kind: Bool = switch filter {
+        func keeps(_ n: NodeInfo, now: UInt64) -> Bool {
+            switch self {
             case .all: true
+            case .people: n.kind == .companion || n.kind == .unknown
             case .repeaters: n.kind == .repeater
             case .rooms: n.kind == .roomServer
-            case .people: n.kind == .companion || n.kind == .unknown
+            case .heard: n.heard(within: NodesView.twoHours, now: now)
             }
-            return kind && (query.isEmpty || n.name.localizedCaseInsensitiveContains(query))
         }
     }
 
+    static let twoHours: UInt64 = 7_200
+
     var body: some View {
-        ScrollView {
+        // Now, read again every 30 s: the "heard" times and the 2 h and 24 h limits move on.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            content(now: UInt64(context.date.timeIntervalSince1970))
+        }
+        .screen()
+        .navigationTitle("Nodes")
+        .navigationBarTitleDisplayMode(.large)
+        // Each node's distance and bearing from the phone.
+        .onAppear { model.needsLocation("nodes", true) }
+        .onDisappear { model.needsLocation("nodes", false) }
+    }
+
+    private func content(now: UInt64) -> some View {
+        let shown = model.nodes.filter { n in
+            filter.keeps(n, now: now) && (query.isEmpty || n.name.localizedCaseInsensitiveContains(query))
+        }
+        let sections = NodeInfo.sections(shown, now: now)
+        let heard = model.nodes.filter { $0.heard(within: Self.twoHours, now: now) }.count
+        return ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                Picker("Show", selection: $filter) {
-                    ForEach(Filter.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
+                Text(verbatim: String(localized: "\(model.nodes.count) known") + " · "
+                     + String(localized: "\(heard) heard in the last 2 h"))
+                    .font(.system(.footnote))
+                    .foregroundStyle(Theme.tx2)
+                    .padding(.horizontal, 4)
+                chips(now: now)
+                search
                 if model.nodes.isEmpty {
                     Text(model.isConnected ? String(localized: "The radio has not reported any node yet.")
                                            : String(localized: "Connect your radio to see the nodes it knows."))
@@ -49,16 +74,13 @@ struct NodesView: View {
                         .padding(.top, 20)
                         .frame(maxWidth: .infinity)
                 } else {
-                    CardList {
-                        ForEach(Array(shown.enumerated()), id: \.element.key) { i, n in
-                            if i > 0 { CardDivider() }
-                            NavigationLink {
-                                NodeDetailView(key: n.key)
-                            } label: {
-                                NodeRow(node: n)
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    if !sections.reach.isEmpty {
+                        SectionLabel("In reach · heard directly by your radio").padding(.top, 6)
+                        list(sections.reach, inReach: true, now: now)
+                    }
+                    if !sections.through.isEmpty {
+                        SectionLabel("Through repeaters").padding(.top, 6)
+                        list(sections.through, inReach: false, now: now)
                     }
                     Text("Repeaters, room servers and people’s radios, as your radio knows them. Those it heard without adding are marked; positions come from the nodes’ own adverts.")
                         .font(.system(.caption))
@@ -69,53 +91,163 @@ struct NodesView: View {
             }
             .padding(16)
         }
-        .screen()
-        .searchable(text: $query, prompt: Text("Name"))
-        .navigationTitle("Nodes")
-        .navigationBarTitleDisplayMode(.large)
+    }
+
+    /// A node by its name: on more lines with larger text rather than cut.
+    private var search: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(Theme.tx2).accessibilityHidden(true)
+            TextField("Name", text: $query, axis: .vertical)
+                .lineLimit(1...3)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .onChange(of: query) { _, q in
+                    if q.contains("\n") { query = q.replacingOccurrences(of: "\n", with: "") }
+                }
+        }
+        .padding(.horizontal, 12)
+        .frame(minHeight: 44)
+        .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// The filters, each with its count (Heard in 2 h without).
+    private func chips(now: UInt64) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Filter.allCases) { f in
+                    let on = filter == f
+                    let label = f == .heard ? f.label : "\(f.label) \(model.nodes.filter { f.keeps($0, now: now) }.count)"
+                    Button { filter = f } label: {
+                        Text(verbatim: label)
+                            .font(.system(.subheadline, weight: .semibold))
+                            .foregroundStyle(on ? Theme.actFg : Theme.tx)
+                            .fixedSize()
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(on ? Theme.actBg : Theme.s1, in: Capsule())
+                            .overlay(Capsule().stroke(on ? Color.clear : Theme.line, lineWidth: 1))
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
+            }
+        }
+    }
+
+    private func list(_ nodes: [NodeInfo], inReach: Bool, now: UInt64) -> some View {
+        CardList {
+            ForEach(Array(nodes.enumerated()), id: \.element.key) { i, n in
+                if i > 0 { CardDivider(inset: 68) }
+                NavigationLink {
+                    NodeDetailView(key: n.key)
+                } label: {
+                    NodeRow(node: n, inReach: inReach, now: now)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("node")
+            }
+        }
     }
 }
 
-/// A node in a list: its type, name, hops and when it was last heard.
+/// A person's initials, or a node's kind on its tile (a repeater's in `lora`); larger with the
+/// text.
+struct NodeLeading: View {
+    let node: NodeInfo
+    var base: CGFloat = 40
+    @ScaledMetric(relativeTo: .callout) private var scale: CGFloat = 1
+
+    var body: some View {
+        let size = base * scale
+        if node.kind == .companion {
+            // Initials in a text style (a fixed size does not follow the text size).
+            let (bg, fg) = Theme.avatar(for: node.key)
+            Text(initials(node.name))
+                .font(.system(base >= 50 ? .headline : base >= 36 ? .footnote : .caption, weight: .semibold))
+                .frame(width: size, height: size)
+                .background(bg, in: Circle())
+                .foregroundStyle(fg)
+                .accessibilityHidden(true)
+        } else {
+            let repeater = node.kind == .repeater
+            Image(systemName: node.kind.symbol)
+                .font(.system(size: size * 0.45, weight: .medium))
+                .foregroundStyle(repeater ? Theme.loraFg : Theme.tx)
+                .frame(width: size, height: size)
+                .background(repeater ? Theme.loraBg : Theme.s2, in: RoundedRectangle(cornerRadius: size * 0.27))
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// A node in the list: its name, kind, the repeaters it comes through, where it is, when it was
+/// last heard; its signal (in reach) or how many repeaters away.
 struct NodeRow: View {
     let node: NodeInfo
+    var inReach = false
+    var now = UInt64(Date().timeIntervalSince1970)
     @Environment(AppModel.self) private var model
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: node.kind.symbol)
-                .foregroundStyle(node.kind == .repeater ? Theme.lora : Theme.tx2)
-                .frame(width: 36, height: 36)
-                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 9))
+            NodeLeading(node: node)
             VStack(alignment: .leading, spacing: 2) {
-                Text(node.name).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
-                Text(detail).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                HStack(spacing: 6) {
+                    Text(node.name)
+                        .font(.system(.callout, weight: .semibold))
+                        .foregroundStyle(Theme.tx)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if node.lichen { LichenBadge() }
+                    if !node.onRadio {
+                        Badge(text: String(localized: "heard"), background: Theme.s2, foreground: Theme.tx2)
+                    }
+                }
+                subtitle
+                    .font(.system(.footnote))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
-            if !node.onRadio {
-                Badge(text: String(localized: "heard"), background: Theme.s2, foreground: Theme.tx2)
+            if inReach {
+                SignalMeter(rating: node.signal, snr: node.snrDb)
+            } else {
+                HopPill(hops: node.hops)
             }
-            Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
+        .frame(minHeight: 44)
         .contentShape(Rectangle())
     }
 
-    private var detail: String {
-        [node.kind.label, NodeRow.hops(node.hops), model.heard(node.lastHeardS)].joined(separator: " · ")
+    /// "Repeater · via hub · 1.2 km NE · 2 min ago", the last heard in `ok` within 2 h.
+    private var subtitle: Text {
+        let route = inReach ? nil : model.nodeRoute(node.key)
+        let parts = [node.kindWord, route?.via.map { String(localized: "via \($0)") },
+                     model.distanceBearing(lat: node.lat, lon: node.lon)].compactMap { $0 }
+        let recent = node.heard(within: NodesView.twoHours, now: now)
+        return Text(verbatim: parts.map { $0 + " · " }.joined()).foregroundStyle(Theme.tx2)
+            + Text(verbatim: model.heard(node.lastHeardS)).foregroundStyle(recent ? Theme.ok : Theme.tx2)
     }
+}
 
-    static func hops(_ hops: UInt8?) -> String {
-        switch hops {
-        case nil: String(localized: "flood")
-        case 0?: String(localized: "direct")
-        case let h?: String(localized: "\(Int(h)) hops")
+extension NodeInfo {
+    /// What a node is, in a word: its kind; "MeshCore app" for someone with the stock app;
+    /// nothing for a lichen user (the badge says it).
+    var kindWord: String? {
+        switch kind {
+        case .companion where lichen: nil
+        case .companion: String(localized: "MeshCore app")
+        default: kind.label
         }
     }
 }
 
-/// One node: its path and trace; a room's login; a repeater's administration (§16).
+/// One node (mockup `NodePage`): who it is and how well it is heard, how it reaches us (its
+/// route, a trace), its signal over a day or a week; a room's login, a repeater's
+/// administration (§16, ADR-0049).
 struct NodeDetailView: View {
     let key: Data
     @Environment(AppModel.self) private var model
@@ -123,38 +255,45 @@ struct NodeDetailView: View {
 
     var body: some View {
         let node = model.node(key)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                if let node { header(node) }
-                SectionLabel("Path").padding(.top, 10)
-                PathCard(key: key)
-                TraceCard(key: key, error: $error)
-                if node?.kind == .roomServer {
-                    SectionLabel("Room").padding(.top, 10)
-                    Button {
-                        model.openRequest = .room(key: key)
-                    } label: {
-                        CardRow(title: String(localized: "Open the room"),
-                                subtitle: String(localized: "Its posts, and yours")) {
-                            Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let now = UInt64(context.date.timeIntervalSince1970)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let node { header(node, now: now) }
+                    SectionLabel("How it reaches you").padding(.top, 10)
+                    RouteCard(key: key, error: $error)
+                    if let node { SignalSection(node: node, now: now).padding(.top, 10) }
+                    if let node { details(node).padding(.top, 10) }
+                    if node?.kind == .roomServer {
+                        SectionLabel("Room").padding(.top, 10)
+                        Button {
+                            model.openRequest = .room(key: key)
+                        } label: {
+                            CardRow(title: String(localized: "Open the room"),
+                                    subtitle: String(localized: "Its posts, and yours")) {
+                                Image(systemName: "chevron.right").foregroundStyle(Theme.tx2)
+                            }
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        .card(padding: 0)
+                        ServerLoginCard(key: key, room: true)
                     }
-                    .buttonStyle(.plain)
-                    .card(padding: 0)
-                    ServerLoginCard(key: key, room: true)
+                    if node?.kind == .repeater {
+                        SectionLabel("Administration").padding(.top, 10)
+                        ServerLoginCard(key: key, room: false)
+                        RepeaterCards(key: key, error: $error)
+                    }
                 }
-                if node?.kind == .repeater {
-                    SectionLabel("Administration").padding(.top, 10)
-                    ServerLoginCard(key: key, room: false)
-                    RepeaterCards(key: key, error: $error)
-                }
+                .padding(16)
             }
-            .padding(16)
         }
         .screen()
         .navigationTitle(node?.name ?? String(localized: "Node"))
         .navigationBarTitleDisplayMode(.inline)
+        // Its distance and bearing from the phone.
+        .onAppear { model.needsLocation("node", true) }
+        .onDisappear { model.needsLocation("node", false) }
         .alert("Not sent", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -162,100 +301,347 @@ struct NodeDetailView: View {
         }
     }
 
-    private func header(_ n: NodeInfo) -> some View {
+    /// The node on top: its tile, name, kind and distance, when last heard; its signal (heard
+    /// directly) or how many repeaters away.
+    private func header(_ n: NodeInfo, now: UInt64) -> some View {
+        HStack(spacing: 14) {
+            NodeLeading(node: n, base: 56)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(n.name).font(.system(.title3, weight: .bold)).foregroundStyle(Theme.tx)
+                    if n.lichen { LichenBadge() }
+                }
+                let what = [n.kindWord, model.distanceBearing(lat: n.lat, lon: n.lon)].compactMap { $0 }
+                if !what.isEmpty {
+                    Text(verbatim: what.joined(separator: " · ")).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                }
+                Text(String(localized: "Heard \(model.heard(n.lastHeardS))"))
+                    .font(.system(.footnote, weight: .semibold))
+                    .foregroundStyle(n.heard(within: NodesView.twoHours, now: now) ? Theme.ok : Theme.tx2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if n.signal != .none {
+                SignalMeter(rating: n.signal, snr: n.snrDb, large: true)
+            } else {
+                HopPill(hops: n.hops)
+            }
+        }
+        .padding(.horizontal, 2)
+        .card(padding: 14)
+    }
+
+    /// Heard without being added, its advertised position, its MeshCore key.
+    private func details(_ n: NodeInfo) -> some View {
         CardList {
-            CardRow(title: n.kind.label, subtitle: [n.onRadio ? nil : String(localized: "Heard, not in the radio’s contacts"),
-                                                    String(localized: "Last heard \(model.heard(n.lastHeardS))")]
-                .compactMap { $0 }.joined(separator: " · "))
-            if let lat = n.lat, let lon = n.lon {
+            if !n.onRadio {
+                CardRow(title: String(localized: "Heard, not in the radio’s contacts"))
                 CardDivider()
+            }
+            if let lat = n.lat, let lon = n.lon {
                 CardRow(title: String(localized: "Advertised position"),
                         subtitle: String(format: "%.5f, %.5f", lat, lon))
+                CardDivider()
             }
-            CardDivider()
             MeshCoreKeyRow(key: n.key)
         }
     }
 }
 
-/// The radio's path to a node, hop by hop (§16.2).
-struct PathCard: View {
-    let key: Data
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        CardList {
-            if let path = model.nodePath(key) {
-                if path.isEmpty {
-                    CardRow(title: String(localized: "Direct"), subtitle: String(localized: "Your radio hears it without a repeater."))
-                } else {
-                    ForEach(Array(path.enumerated()), id: \.offset) { i, hop in
-                        if i > 0 { CardDivider() }
-                        CardRow(title: hop.display, subtitle: String(localized: "Hop \(i + 1) · \(hop.hash.uppercased())"))
-                    }
-                }
-            } else {
-                CardRow(title: String(localized: "No path known"),
-                        subtitle: String(localized: "Your radio floods to reach it until it learns a path."))
-            }
-        }
-    }
-}
-
-/// Traces the path there and back, and shows each hop's SNR (§16.3).
-struct TraceCard: View {
+/// How a node reaches us (§16.3): its route stop by stop, each leg's last signal; the last
+/// trace, Trace again, Show on the map.
+struct RouteCard: View {
     let key: Data
     @Binding var error: String?
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        let route = model.nodeRoute(key)
         let trace = model.trace(key)
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                error = model.startTrace(key)
-            } label: {
-                Label(trace?.state == .sending ? String(localized: "Tracing…") : String(localized: "Trace the path"),
-                      systemImage: "point.topleft.down.to.point.bottomright.curvepath")
-                    .frame(maxWidth: .infinity, minHeight: 44)
+        let tracedAt = route?.tracedAt
+        VStack(alignment: .leading, spacing: 12) {
+            if let route, route.stops.count >= 2 {
+                RouteRibbon(route: route)
+            } else {
+                Text("No path known").font(.system(.subheadline)).foregroundStyle(Theme.tx)
             }
-            .buttonStyle(.secondary)
-            .disabled(!model.isConnected || trace?.state == .sending)
-            if let trace {
-                CardList {
-                    ForEach(Array(trace.legs.enumerated()), id: \.offset) { i, leg in
-                        if i > 0 { CardDivider() }
-                        CardRow(title: "\(end(leg.from)) → \(end(leg.to))") {
-                            Text(verbatim: leg.snrDb.map { "\(decimal(Double($0), 1)) dB" } ?? "–")
-                                .font(.system(.callout, design: .monospaced))
-                                .foregroundStyle(color(leg.snrDb))
-                        }
+            Text(status(trace, tracedAt: tracedAt))
+                .font(.system(.footnote))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button {
+                    error = model.startTrace(key)
+                } label: {
+                    Label(trace?.state == .sending ? String(localized: "Tracing…")
+                          : trace != nil || tracedAt != nil ? String(localized: "Trace again")
+                          : String(localized: "Trace the path"),
+                          systemImage: "arrow.clockwise")
+                        .padding(.horizontal, 8)
+                }
+                .buttonStyle(.primary)
+                .disabled(!model.isConnected || trace?.state == .sending)
+                // Where the node, or a repeater on the way, advertises a position.
+                if model.nodePlace(key) != nil {
+                    Button {
+                        model.showNodeOnMap(key)
+                    } label: {
+                        Label("Show on the map", systemImage: "map")
+                    }
+                    .buttonStyle(.secondary)
+                }
+            }
+        }
+        .card(padding: 16)
+    }
+
+    /// When the legs were traced, and today's trace's figures; or what the trace is doing.
+    private func status(_ trace: TraceInfo?, tracedAt: UInt64?) -> String {
+        switch trace?.state {
+        case .sending?: return String(localized: "On its way through the repeaters and back.")
+        case .noAnswer?: return String(localized: "No answer: a hop did not hear it, or the radio was disconnected.")
+        case .refused?: return String(localized: "The radio refused the trace.")
+        case .done?:
+            let when = model.heard(tracedAt ?? UInt64(Date().timeIntervalSince1970))
+            let back = decimal(Double(trace?.rttMs ?? 0) / 1000, 1)
+            let airtime = decimal(Double(trace?.airtimeMs ?? 0) / 1000, 1)
+            return String(localized: "Traced \(when) · back in \(back) s · \(airtime) s of airtime")
+        case nil:
+            return tracedAt.map { String(localized: "Traced \(model.heard($0))") } ?? String(localized: "Not traced yet")
+        }
+    }
+}
+
+/// You → each repeater → the node, a leg between each two: its colour by rating and its SNR,
+/// or a dashed `line` "not measured". Scrolls sideways when the stops do not fit.
+struct RouteRibbon: View {
+    let route: NodeRoute
+    @Environment(AppModel.self) private var model
+    @ScaledMetric(relativeTo: .caption) private var stopWidth: CGFloat = 62
+    @ScaledMetric(relativeTo: .caption) private var minLeg: CGFloat = 56
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        let you = String(localized: "You")
+        let names = route.stops.enumerated().map { i, s in i == 0 ? you : s.display }
+        let last = route.stops.count - 1
+        // The legs share the room the stops leave, never narrower than `minLeg`.
+        let legWidth = last > 0 ? max(minLeg, (width - stopWidth * CGFloat(last + 1)) / CGFloat(last)) : minLeg
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(route.stops.enumerated()), id: \.offset) { i, stop in
+                    RouteStopView(stop: stop, first: i == 0, last: i == last, name: names[i])
+                        .frame(width: stopWidth)
+                    if i < last {
+                        RouteLegView(leg: i < route.legs.count ? route.legs[i] : nil, from: names[i], to: names[i + 1])
+                            .frame(width: legWidth)
                     }
                 }
-                Text(summary(trace))
-                    .font(.system(.caption))
-                    .foregroundStyle(Theme.tx2)
-                    .padding(.horizontal, 4)
             }
         }
-        .padding(.top, 6)
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
+}
 
-    private func end(_ hop: PathHop?) -> String {
-        hop?.display ?? String(localized: "You")
-    }
+/// A stop: our radio (its initials on a dark disc, "You" and its name), a repeater (on its
+/// `lora` tile), or the node (its own tile or avatar, ringed).
+struct RouteStopView: View {
+    let stop: RouteStop
+    let first: Bool
+    let last: Bool
+    let name: String
+    @Environment(AppModel.self) private var model
+    @ScaledMetric(relativeTo: .caption) private var side: CGFloat = 40
 
-    private func color(_ snr: Float?) -> Color {
-        guard let snr else { return Theme.tx2 }
-        return snr >= 0 ? Theme.ok : snr >= -7 ? Theme.warn : Theme.sos
-    }
-
-    private func summary(_ t: TraceInfo) -> String {
-        switch t.state {
-        case .sending: String(localized: "On its way through the repeaters and back.")
-        case .done: String(localized: "Back in \(decimal(Double(t.rttMs ?? 0) / 1000, 1)) s · SNR measured by each hop, out and back")
-        case .noAnswer: String(localized: "No answer: a hop did not hear it, or the radio was disconnected.")
-        case .refused: String(localized: "The radio refused the trace.")
+    var body: some View {
+        VStack(spacing: 5) {
+            ZStack {
+                if first {
+                    Text(initials(model.nodeName.isEmpty ? name : model.nodeName))
+                        .font(.system(.caption, weight: .bold))
+                        .foregroundStyle(Theme.actFg)
+                        .frame(width: side * 0.85, height: side * 0.85)
+                        .background(Theme.actBg, in: Circle())
+                } else if last, let key = stop.key, let node = model.node(key) {
+                    NodeLeading(node: node, base: 30)
+                        .padding(3)
+                        .overlay {
+                            if node.kind == .companion {
+                                Circle().stroke(Theme.tx2, lineWidth: 2)
+                            } else {
+                                RoundedRectangle(cornerRadius: side * 0.27).stroke(Theme.tx2, lineWidth: 2)
+                            }
+                        }
+                } else {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: side * 0.4, weight: .medium))
+                        .foregroundStyle(Theme.loraFg)
+                        .frame(width: side * 0.85, height: side * 0.85)
+                        .background(Theme.loraBg, in: RoundedRectangle(cornerRadius: side * 0.22))
+                }
+            }
+            .frame(width: side, height: side)
+            .accessibilityHidden(true)
+            Text(verbatim: name)
+                .font(.system(.caption, weight: .semibold))
+                .foregroundStyle(Theme.tx)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            if first && !model.nodeName.isEmpty {
+                Text(verbatim: model.nodeName)
+                    .font(.system(.caption))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+    }
+}
+
+/// A leg: a line in its rating's colour with its SNR under it, or a dashed `line` "not
+/// measured"; read as "hub to crest, −3.0 dB".
+struct RouteLegView: View {
+    let leg: RouteLeg?
+    let from: String
+    let to: String
+    @ScaledMetric(relativeTo: .caption) private var top: CGFloat = 18
+
+    var body: some View {
+        let snr = leg?.snrDb
+        let rating = leg?.signal ?? .none
+        let label = snr.map(dbText) ?? String(localized: "not measured")
+        VStack(spacing: 4) {
+            if snr != nil {
+                Capsule().fill(rating != .none ? rating.color : Theme.tx2).frame(height: 4)
+            } else {
+                // Nothing measured it: dashed, in `line`.
+                HorizontalLine()
+                    .stroke(Theme.line, style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [8, 5]))
+                    .frame(height: 4)
+            }
+            Text(verbatim: label)
+                .font(.system(.caption, weight: snr != nil ? .semibold : .regular).monospacedDigit())
+                .foregroundStyle(snr != nil && rating != .none ? rating.color : Theme.tx2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, top)
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "\(from) to \(to), \(label)"))
+    }
+}
+
+/// A horizontal line through the middle of its frame.
+struct HorizontalLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return p
+    }
+}
+
+/// A node's signal over the last 24 h or 7 days (ADR-0049); for a node heard only through
+/// repeaters, why there is none.
+struct SignalSection: View {
+    let node: NodeInfo
+    let now: UInt64
+    @Environment(AppModel.self) private var model
+    @State private var week = false
+
+    var body: some View {
+        let history = model.nodeSignalHistory(node.key)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionLabel(week ? "Signal, last 7 days" : "Signal, last 24 h")
+                if !history.isEmpty {
+                    Picker(selection: $week) {
+                        Text("24 h").tag(false)
+                        Text("7 days").tag(true)
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if history.isEmpty {
+                    Text("Heard only through repeaters: no signal of its own. The route above shows how it reaches you.")
+                        .font(.system(.subheadline))
+                        .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    let window: UInt64 = week ? 7 * 86_400 : 86_400
+                    let points = history.filter { now <= $0.atS || now - $0.atS <= window }
+                    if points.isEmpty {
+                        Text("No reading in this time.").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
+                    } else {
+                        SignalChart(points: points, now: now, window: window)
+                    }
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(week ? "7 days ago" : "24 h ago")
+                        Spacer(minLength: 8)
+                        Text(String(localized: "now \(dbText(node.snrDb ?? history[history.count - 1].snrDb))"))
+                            .monospacedDigit()
+                    }
+                    .font(.system(.caption))
+                    .foregroundStyle(Theme.tx2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .card(padding: 14)
+        }
+    }
+}
+
+/// The readings in their window: a dot each, coloured by its rating, joined by a thin line; dB
+/// up the side.
+struct SignalChart: View {
+    let points: [SignalReading]
+    let now: UInt64
+    let window: UInt64
+
+    var body: some View {
+        let snrs = points.map { Double($0.snrDb) }
+        // At least 6 dB tall, a decibel of room above and below.
+        let lo = min((snrs.min() ?? 0) - 1, (snrs.max() ?? 0) - 6).rounded(.down)
+        let hi = max((snrs.max() ?? 0) + 1, lo + 6).rounded(.up)
+        let start = Date(timeIntervalSince1970: TimeInterval(now > window ? now - window : 0))
+        let end = Date(timeIntervalSince1970: TimeInterval(now))
+        Chart {
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                LineMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(p.atS))),
+                         y: .value("dB", Double(p.snrDb)))
+                    .foregroundStyle(Theme.tx2.opacity(0.5))
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+            }
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                PointMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(p.atS))),
+                          y: .value("dB", Double(p.snrDb)))
+                    .foregroundStyle(p.signal == .none ? Theme.tx2 : p.signal.color)
+                    .symbolSize(36)
+            }
+        }
+        .chartXScale(domain: start...max(end, start.addingTimeInterval(1)))
+        .chartYScale(domain: lo...hi)
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [lo, (lo + hi) / 2, hi]) { value in
+                AxisGridLine().foregroundStyle(Theme.line)
+                AxisValueLabel {
+                    if let db = value.as(Double.self) {
+                        Text(verbatim: dbText(Float(db)).replacingOccurrences(of: " dB", with: ""))
+                            .font(.system(.caption).monospacedDigit())
+                            .foregroundStyle(Theme.tx2)
+                    }
+                }
+            }
+        }
+        .frame(height: 92)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Signal chart: \(points.count) readings, now \(dbText(points[points.count - 1].snrDb))"))
     }
 }
 

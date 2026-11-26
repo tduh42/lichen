@@ -1,8 +1,8 @@
 import XCTest
 
 /// The system's accessibility audit (`performAccessibilityAudit`, Xcode 15) on the main screens
-/// of the demo network: Messages, a conversation, a group, the map, Locate, Settings and Radio
-/// settings.
+/// of the demo network: Messages, a conversation, a group, the map, Locate, the Nodes tab, a
+/// node's page, Settings and Radio settings.
 /// Contrast, element labels, hit regions, Dynamic Type, clipped text and traits.
 final class AccessibilityAuditTests: XCTestCase {
     override func setUp() {
@@ -216,6 +216,28 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = launch(["-tab", "locate", "-sosdemo", "YES"])
         sleep(10)
         try audit(app, "locate")
+    }
+
+    /// The Nodes tab with each node's signal, then a node's page (its route and signal chart),
+    /// and crest's (a route with a leg nothing measured).
+    func testNodes() throws {
+        let app = launch(["-tab", "nodes"])
+        let hub = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'hub'")).firstMatch
+        XCTAssertTrue(hub.waitForExistence(timeout: 30), "no hub")
+        sleep(8)
+        try audit(app, "nodes")
+        hub.tap()
+        XCTAssertTrue(app.navigationBars["hub"].waitForExistence(timeout: 5), "the hub's page did not open")
+        sleep(2)
+        try audit(app, "node page")
+        app.swipeUp()
+        sleep(1)
+        try audit(app, "node page, lower")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'crest'")).firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["crest"].waitForExistence(timeout: 5), "crest's page did not open")
+        sleep(2)
+        try audit(app, "crest's page")
     }
 
     func testSettings() throws {
