@@ -26,6 +26,8 @@ pub struct Sim {
     pub wall0: u64,
     /// Every event the app polled, with when.
     pub events: Vec<(u64, LichenEvent)>,
+    /// The radio's reading step after each frame it sent (`radio_reading`), each change once.
+    pub readings: Vec<Option<lc_ffi::RadioReading>>,
     /// The identity seed and store folder, to restart the app on them.
     pub seed: u8,
     pub dir: Option<TempDir>,
@@ -139,6 +141,7 @@ impl Sim {
             now: connect_ms,
             wall0,
             events: Vec::new(),
+            readings: Vec::new(),
             seed,
             dir: Some(dir),
             radio_off: false,
@@ -164,6 +167,7 @@ impl Sim {
             now: 0,
             wall0,
             events: Vec::new(),
+            readings: Vec::new(),
             seed,
             dir,
             radio_off: false,
@@ -191,6 +195,10 @@ impl Sim {
         for f in self.demo.read(now) {
             if !self.radio_off {
                 self.core.on_companion_frame(f, now);
+                let r = self.core.radio_reading();
+                if self.readings.last() != Some(&r) {
+                    self.readings.push(r);
+                }
             }
         }
         self.core.set_clock(self.wall0 + now, now);

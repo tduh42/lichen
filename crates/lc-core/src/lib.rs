@@ -8,6 +8,7 @@
 pub mod backup;
 pub mod budget;
 pub mod cipher;
+pub mod connecting;
 pub mod content;
 pub mod core;
 pub mod fakenet;
@@ -32,6 +33,7 @@ pub use crate::core::{
     BlockPeriod, Config, Contact, ContactRead, Core, Error, Event, FailReason, MsgId, Outbound,
     OwnedPath, PubKey, Stage, contact_kind,
 };
+pub use connecting::RadioReading;
 pub use content::{Announce, Content};
 pub use group::{Group, GroupId, Member};
 pub use lc_proto::Millis;

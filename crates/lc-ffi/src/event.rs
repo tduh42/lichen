@@ -53,7 +53,9 @@ pub enum LichenEvent {
         identity: Vec<u8>,
     },
     ContactsUpdated,
-    /// The radio's settings changed, or were read again: read `radio_settings()`.
+    /// The radio's settings changed, or were read again: read `radio_settings()`. Also as
+    /// the reading after a connection moves: read `radio_reading()` (at each step, and while
+    /// counting at most every 250 ms or 10 items).
     RadioSettings,
     /// What became of a setting sent to the radio (§1.1, B-user-5); also in
     /// `take_radio_outcomes()`.
@@ -266,7 +268,9 @@ impl LichenEvent {
                 identity: identity.to_vec(),
             },
             Event::ContactsUpdated => Self::ContactsUpdated,
-            Event::RadioSettings => Self::RadioSettings,
+            // The apps read the radio's state again: its settings, and the step of its reading
+            // (`radio_reading`) while a connection fills its lists.
+            Event::RadioSettings | Event::RadioReading => Self::RadioSettings,
             Event::RadioOutcome(o) => Self::RadioOutcome { outcome: o.into() },
             Event::SessionEstablished { peer } => Self::SessionEstablished {
                 peer: peer.to_vec(),

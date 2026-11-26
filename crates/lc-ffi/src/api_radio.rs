@@ -20,6 +20,19 @@ pub struct Telemetry {
     pub environment: u8,
 }
 
+/// A step of what is read from the radio after a connection (§1.1), in the order it goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum RadioReading {
+    /// Its identity and settings.
+    Settings,
+    /// Its contacts: `done` of the `total` it announced.
+    Contacts { done: u32, total: u32 },
+    /// Its channels (read until an empty slot: no total).
+    Channels,
+    /// The messages that waited on it, `fetched` so far.
+    Messages { fetched: u32 },
+}
+
 /// What the radio reported of its settings; an empty field was not reported.
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct RadioSettings {
@@ -240,6 +253,21 @@ impl LichenCore {
     /// What the radio reported of its settings (a `RadioSettings` event follows each change).
     pub fn radio_settings(&self) -> RadioSettings {
         RadioSettings::from(self.lock().core.radio_settings())
+    }
+
+    /// What is being read from the radio after a connection (§1.1), for the radio line:
+    /// "Reading the radio · contacts 34 of 120", "Fetching waiting messages · 3"; `None` once
+    /// it is over. `RadioSettings` follows each step, and the count at most every 250 ms or 10
+    /// items.
+    pub fn radio_reading(&self) -> Option<RadioReading> {
+        self.lock().core.radio_reading().map(|r| match r {
+            lc_core::RadioReading::Settings => RadioReading::Settings,
+            lc_core::RadioReading::Contacts { done, total } => {
+                RadioReading::Contacts { done, total }
+            }
+            lc_core::RadioReading::Channels => RadioReading::Channels,
+            lc_core::RadioReading::Messages { fetched } => RadioReading::Messages { fetched },
+        })
     }
 
     /// Reads the battery and storage again.

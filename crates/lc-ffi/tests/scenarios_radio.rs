@@ -639,3 +639,69 @@ fn rl_11_each_setting_says_what_happened() {
     );
     assert!(sim.core.take_radio_outcomes().is_empty());
 }
+
+/// RL-12: the radio line names the reading after a connection (§1.1): the demo radio, with
+/// 200 more contacts, goes through its settings, each of its contacts (its own count), its
+/// channels, then nothing; the apps hear of it a bounded number of times, the count every 10
+/// at most. Switched off while Marc and Lucie write, it gives what waited at the next
+/// connection, as waiting messages fetched.
+#[test]
+fn rl_12_the_reading_after_a_connection() {
+    use lc_ffi::RadioReading::{Channels, Contacts, Messages, Settings};
+    let demo = lc_ffi::DemoNetwork::new();
+    demo.many_contacts(200);
+    let mut sim = Sim::on(98, demo, false);
+    sim.until("the reading over", 30, |c| {
+        c.radio_reading().is_none() && c.radio_settings().read
+    });
+    let steps = sim.readings.clone();
+    let on_radio = sim.core.nodes().iter().filter(|n| n.on_radio).count();
+    let total = u32::try_from(on_radio).unwrap();
+    assert!(total > 200, "{total}");
+    let at = |s: lc_ffi::RadioReading| steps.iter().position(|x| *x == Some(s));
+    let settings = at(Settings).expect("settings");
+    let first = at(Contacts { done: 0, total }).expect("the count announced");
+    let last = at(Contacts { done: total, total }).expect("every contact");
+    let channels = at(Channels).expect("channels");
+    assert!(
+        settings < first && first < last && last < channels,
+        "{steps:?}"
+    );
+    assert_eq!(steps.last(), Some(&None), "over");
+    // Counted one by one, told every 10 at most (the event: RadioSettings).
+    let told = sim
+        .events
+        .iter()
+        .filter(|(_, e)| *e == LichenEvent::RadioSettings)
+        .count();
+    assert!(
+        told <= usize::try_from(total / 10).unwrap() + 20,
+        "{told} for {total}"
+    );
+
+    // Off from 40 s to 150 s, while Marc writes and Lucie posts on Public: what reaches the
+    // radio meanwhile waits on it.
+    sim.run_to(40_000);
+    sim.set_radio(false);
+    sim.run_to(150_000);
+    sim.readings.clear();
+    let from = sim.events.len();
+    sim.set_radio(true);
+    sim.until("the second reading over", 30, |c| {
+        c.radio_reading().is_none() && c.radio_settings().read
+    });
+    let steps = sim.readings.clone();
+    assert!(
+        steps
+            .iter()
+            .any(|s| matches!(s, Some(Messages { fetched }) if *fetched >= 1)),
+        "{steps:?}"
+    );
+    assert!(steps.contains(&Some(Contacts { done: total, total })));
+    assert_eq!(steps.last(), Some(&None));
+    assert!(
+        sim.since(from)
+            .any(|e| matches!(e, LichenEvent::PlainReceived { .. })),
+        "what waited is shown"
+    );
+}

@@ -112,7 +112,7 @@ impl Diag {
     pub(crate) fn event(&mut self, at_ms: u64, e: &Event) {
         let snr = |snr4: i8| Some((i64::from(snr4) / 4, "dB SNR"));
         let (what, value): (&'static str, _) = match e {
-            Event::Progress { .. } => return,
+            Event::Progress { .. } | Event::RadioReading => return,
             Event::RadioSettings => ("radio settings read", None),
             Event::RadioOutcome(o) => {
                 let what = match o.outcome {

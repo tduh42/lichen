@@ -41,6 +41,8 @@ OTHER = [
     ("RL-7", "lc-core", "crates/lc-core/tests/radio.rs", "the_radio_s_board_and_figures"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "a_contact_list_cut_short_still_counts"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "records_lost_before_the_end_are_asked_for_again"),
+    ("RL-12", "lc-core", "crates/lc-core/src/plain.rs", "the_reading_goes_through_its_steps"),
+    ("RL-12", "lc-core", "crates/lc-core/src/plain.rs", "a_disconnection_clears_the_reading"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "a_direct_advert_is_attributed_and_a_relayed_one_is_not"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "a_one_byte_hash_is_attributed_only_when_unique"),
     ("CT-3", "lc-core", "crates/lc-core/tests/signal.rs", "ratings_match_the_vectors"),

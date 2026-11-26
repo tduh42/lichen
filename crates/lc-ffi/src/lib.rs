@@ -75,7 +75,7 @@ pub use api_mesh::{
 };
 pub use api_plain::hashtag_channel_name;
 pub use api_radio::{
-    RadioOutcome, RadioSetting, RadioSettings, RadioVar, SettingOutcome, Telemetry,
+    RadioOutcome, RadioReading, RadioSetting, RadioSettings, RadioVar, SettingOutcome, Telemetry,
 };
 pub use api_radios::{LinkKind, SavedRadio};
 pub use api_requests::{IdentityRequest, RequestLine};

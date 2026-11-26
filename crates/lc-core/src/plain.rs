@@ -1135,6 +1135,150 @@ mod tests {
         (core, events)
     }
 
+    /// A radio with `contacts` contacts (`announced` in `CONTACTS_START`), Public in slot 0 and
+    /// `queue` waiting, answering each command as `connected`'s does; it stops answering after
+    /// `stop` frames. The core's reading step after each frame (the same one only once), and
+    /// how many times the reading was told to the apps.
+    fn reading_of(
+        contacts: u32,
+        announced: u32,
+        queue: Vec<Vec<u8>>,
+        stop: Option<usize>,
+    ) -> (Core, Vec<Option<crate::RadioReading>>, usize) {
+        let mut core = Core::new(Config::new("t", [200; 32], [1; 32]));
+        let mut queue: VecDeque<Vec<u8>> = queue.into();
+        let mut steps = vec![core.radio_reading()];
+        core.connect(0);
+        let mut sent = 0;
+        let mut now = 0;
+        while let Some(cmd) = core.poll_companion(now) {
+            let replies = match cmd[0] {
+                1 => vec![frame(
+                    "05011616101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f000000000000000000000000f2440d0024f4000008084d657368436f72652d63646466",
+                )],
+                22 => vec![vec![0x0d, 0x0e]],
+                64 => vec![vec![0x1c]],
+                40 => vec![vec![21]],
+                59 => vec![vec![25, 0, 0]],
+                20 => vec![vec![12, 0xAC, 0x0F]],
+                56 => vec![vec![1, 1]],
+                4 => {
+                    let mut v = vec![{
+                        let mut f = vec![2];
+                        f.extend_from_slice(&announced.to_le_bytes());
+                        f
+                    }];
+                    for i in 0..contacts {
+                        let mut k = [0x40; 32];
+                        k[0] = 0x10 + i as u8;
+                        v.push(contact(k, &format!("Node {i}")));
+                    }
+                    v.push(vec![4, 0, 0, 0, 0]);
+                    v
+                }
+                31 if cmd[1] == 0 => vec![channel_info(0, PUBLIC_NAME, &PUBLIC_SECRET)],
+                31 => vec![channel_info(cmd[1], "", &[0; 16])],
+                10 => vec![queue.pop_front().unwrap_or_else(|| vec![10])],
+                _ => vec![vec![0]],
+            };
+            for r in replies {
+                if stop.is_some_and(|n| sent >= n) {
+                    break;
+                }
+                sent += 1;
+                now += 10;
+                core.on_companion_frame(&r, now);
+                let step = core.radio_reading();
+                if steps.last() != Some(&step) {
+                    steps.push(step);
+                }
+            }
+            if stop.is_some_and(|n| sent >= n) {
+                break;
+            }
+        }
+        let told = std::iter::from_fn(|| core.poll_event())
+            .filter(|e| *e == Event::RadioReading)
+            .count();
+        (core, steps, told)
+    }
+
+    /// The reading goes through its steps in order: the settings, each contact of the five
+    /// announced, the channels, the waiting messages, then nothing (§1.1).
+    #[test]
+    fn the_reading_goes_through_its_steps() {
+        use crate::RadioReading::{Channels, Contacts, Messages, Settings};
+        let post = frame("111400000000004002df6a616c6963653a206869");
+        let msg = frame("10280000808182838485ff004002df6a68656c6c6f");
+        let (_, steps, told) = reading_of(5, 5, vec![msg, post], None);
+        let mut want = vec![None, Some(Settings)];
+        want.extend((0..=5).map(|done| Some(Contacts { done, total: 5 })));
+        want.extend([Some(Channels), Some(Messages { fetched: 1 })]);
+        assert_eq!(steps[..want.len()], want, "{steps:?}");
+        // The channel slots and the queue are read in turn: the messages while they come, the
+        // channels again while empty slots are read, then nothing.
+        let rest = &steps[want.len()..];
+        assert_eq!(
+            rest.first(),
+            Some(&Some(Messages { fetched: 2 })),
+            "{steps:?}"
+        );
+        assert!(
+            rest.iter()
+                .all(|s| matches!(s, Some(Messages { .. } | Channels) | None)),
+            "{steps:?}"
+        );
+        assert_eq!(steps.last(), Some(&None), "{steps:?}");
+        // Each step told once, the count every 10 at most: here a step at a time.
+        assert!((4..=12).contains(&told), "{told}");
+    }
+
+    /// A radio that announces no contacts goes straight past them; one without waiting
+    /// messages straight past those.
+    #[test]
+    fn no_contacts_and_no_messages() {
+        use crate::RadioReading::{Channels, Contacts, Settings};
+        let (_, steps, _) = reading_of(0, 0, Vec::new(), None);
+        assert!(
+            steps
+                .iter()
+                .all(|s| !matches!(s, Some(Contacts { total, .. }) if *total > 0)),
+            "{steps:?}"
+        );
+        let after = steps.iter().position(|s| *s == Some(Channels)).unwrap();
+        assert_eq!(steps[after..], [Some(Channels), None], "{steps:?}");
+        assert!(steps.contains(&Some(Settings)));
+    }
+
+    /// Cut off in the middle of the contacts, the reading is cleared; the next connection
+    /// starts it again.
+    #[test]
+    fn a_disconnection_clears_the_reading() {
+        use crate::RadioReading::{Contacts, Settings};
+        // APP_START … battery: 6 answers, then CONTACTS_START and two contacts.
+        let (mut core, steps, _) = reading_of(5, 5, Vec::new(), Some(9));
+        assert_eq!(
+            steps.last(),
+            Some(&Some(Contacts { done: 2, total: 5 })),
+            "{steps:?}"
+        );
+        core.disconnect(500);
+        assert_eq!(core.radio_reading(), None);
+        core.connect(600);
+        assert_eq!(core.radio_reading(), Some(Settings));
+    }
+
+    /// Hundreds of contacts are told to the apps every 10, not one by one.
+    #[test]
+    fn a_long_list_is_told_every_ten() {
+        let (_, steps, told) = reading_of(200, 200, Vec::new(), None);
+        assert!(steps.contains(&Some(crate::RadioReading::Contacts {
+            done: 200,
+            total: 200
+        })));
+        assert!((20..=30).contains(&told), "{told}");
+    }
+
     fn received(events: &[Event]) -> Vec<&PlainMessage> {
         events
             .iter()
