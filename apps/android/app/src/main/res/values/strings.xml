@@ -1254,6 +1254,8 @@
     <string name="channel_already_followed">Your radio already follows this channel.</string>
     <string name="channel_will_follow">Your radio will follow it, muted. Everyone who has this code reads it.</string>
     <string name="join_the_channel">Join the channel</string>
+    <!-- A marker on the map that is not a stop of the route shown (faded). -->
+    <string name="not_on_route">not on this route</string>
     <string name="map_nodes">MeshCore nodes</string>
     <string name="room_details">Room server</string>
     <string name="plain_room_explainer">A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore’s own encryption to the room: the room and everyone logged in read them.</string>

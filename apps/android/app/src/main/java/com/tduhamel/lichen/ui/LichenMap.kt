@@ -1,5 +1,8 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -100,6 +103,9 @@ data class MapItem(
     val dark: Boolean,
     /** A node heard directly: a thin ring in its rating's colour (ARGB, ADR-0049). */
     val ring: Int? = null,
+    /** Not a stop of the route shown: faded under it ("not on this route"), so that the route
+     * reads only its own nodes. Never an SOS. */
+    val dimmed: Boolean = false,
 ) {
     /** `NODE`: a mesh node (ADR-0041 to ADR-0044); `PLACE`: coordinates from a message (ADR-0034). */
     enum class Kind { ME, PEER, SOS, NODE, PLACE }
@@ -255,11 +261,16 @@ fun LichenMap(
                 )
             }
         }
+        val notOnRoute = stringResource(R.string.not_on_route)
         Column(modifier.background(lichen.s1)) {
             for (item in items) {
                 if (item.label.isEmpty()) continue
                 val tap = onTap?.takeIf { item.kind == MapItem.Kind.NODE }
-                Text(item.label, color = lichen.tx2, modifier = if (tap != null) Modifier.clickable { tap(item.id) } else Modifier)
+                Text(
+                    item.label, color = lichen.tx2,
+                    modifier = (if (tap != null) Modifier.clickable { tap(item.id) } else Modifier)
+                        .then(if (item.dimmed) Modifier.alpha(DIMMED).semantics { stateDescription = notOnRoute } else Modifier),
+                )
             }
             // The route's chips, as on the map.
             route?.lines?.forEach { RouteChip(it) }
@@ -315,7 +326,7 @@ fun LichenMap(
             // A marker tapped: the item it shows; a node first where markers overlap (only a node
             // does something when tapped, its route).
             m.addOnMapClickListener { at ->
-                val ids = m.queryRenderedFeatures(m.projection.toScreenLocation(at), ITEMS).mapNotNull { it.getStringProperty("id") }
+                val ids = m.queryRenderedFeatures(m.projection.toScreenLocation(at), ITEMS, ITEMS_DIMMED).mapNotNull { it.getStringProperty("id") }
                 val id = ids.firstOrNull { it.startsWith("n:") } ?: ids.firstOrNull()
                 if (id != null) tapNow?.invoke(id)
                 id != null
@@ -340,14 +351,25 @@ fun LichenMap(
             s.addLayer(
                 FillLayer("$CIRCLES-fill", CIRCLES).withProperties(
                     PropertyFactory.fillColor(Expression.toColor(Expression.get("color"))),
-                    PropertyFactory.fillOpacity(0.12f),
+                    PropertyFactory.fillOpacity(Expression.switchCase(Expression.eq(Expression.get("dim"), Expression.literal(true)), Expression.literal(0.12f * DIMMED), Expression.literal(0.12f))),
                 ),
             )
             s.addLayer(
                 LineLayer("$CIRCLES-line", CIRCLES).withProperties(
                     PropertyFactory.lineColor(Expression.toColor(Expression.get("color"))),
                     PropertyFactory.lineWidth(1.2f),
+                    PropertyFactory.lineOpacity(Expression.switchCase(Expression.eq(Expression.get("dim"), Expression.literal(true)), Expression.literal(DIMMED), Expression.literal(1f))),
                 ),
+            )
+            // The markers a route shown leaves out, faded and under it.
+            s.addLayer(
+                SymbolLayer(ITEMS_DIMMED, ITEMS).withProperties(
+                    PropertyFactory.iconImage(Expression.get("icon")),
+                    PropertyFactory.iconAllowOverlap(true),
+                    PropertyFactory.iconIgnorePlacement(true),
+                    PropertyFactory.iconOpacity(DIMMED),
+                    PropertyFactory.symbolSortKey(Expression.get("z")),
+                ).withFilter(Expression.eq(Expression.get("dim"), Expression.literal(true))),
             )
             // A route under the markers: a casing, then the measured legs, then the dashed ones.
             s.addLayer(
@@ -377,7 +399,7 @@ fun LichenMap(
                     PropertyFactory.iconAllowOverlap(true),
                     PropertyFactory.iconIgnorePlacement(true),
                     PropertyFactory.symbolSortKey(Expression.get("z")),
-                ),
+                ).withFilter(Expression.eq(Expression.get("dim"), Expression.literal(false))),
             )
             loaded = s
         }
@@ -391,6 +413,7 @@ fun LichenMap(
             Feature.fromGeometry(Point.fromLngLat(item.lon, item.lat)).apply {
                 addStringProperty("icon", icon)
                 addStringProperty("id", item.id)
+                addBooleanProperty("dim", item.dimmed)
                 addNumberProperty("z", when (item.kind) { MapItem.Kind.SOS -> 3; MapItem.Kind.PLACE -> 2; MapItem.Kind.ME -> 1; MapItem.Kind.PEER -> 0; MapItem.Kind.NODE -> -1 })
             }
         }
@@ -403,6 +426,7 @@ fun LichenMap(
             }
             Feature.fromGeometry(Polygon.fromLngLats(listOf(ring))).apply {
                 addStringProperty("color", "#%06X".format(item.color and 0xFFFFFF))
+                addBooleanProperty("dim", item.dimmed)
             }
         }
         s.getSourceAs<GeoJsonSource>(ITEMS)?.setGeoJson(FeatureCollection.fromFeatures(markers))
@@ -573,6 +597,10 @@ private fun markerBitmap(item: MapItem, density: Float): Bitmap {
 
 private const val ITEMS = "lichen-items"
 private const val ROUTE = "lichen-route"
+private const val ITEMS_DIMMED = "lichen-items-dimmed"
+
+/** A marker that is not a stop of the route shown: about a third of its colour (as on iOS). */
+private const val DIMMED = 0.35f
 private const val CIRCLES = "lichen-circles"
 private const val ELLIPSES = "lichen-search-ellipses"
 private const val HEAT = "lichen-search-heat"

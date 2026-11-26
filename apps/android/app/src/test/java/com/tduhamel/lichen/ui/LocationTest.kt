@@ -218,6 +218,76 @@ class LocationTest : UiTest() {
         for (n in placed()) assertEquals(n.name, 1, count(n.name))
     }
 
+    /** MP-3: a route shown fades the markers that are not its stops (P-route-dim): with the
+     * crest's route, the Refuge board, between the hub and the crest, is "not on this route",
+     * the hub and the crest are not; the node filters still apply to the rest; Close the route
+     * brings it back. */
+    @Test
+    fun MP_3_routeFadesTheOthers() = routeFades()
+
+    @Test
+    @Config(qualifiers = "+fr")
+    fun MP_3_routeFadesTheOthers_fr() = routeFades()
+
+    private fun faded(label: String) = compose.onAllNodes(
+        hasText(label) and SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, str(R.string.not_on_route)),
+        useUnmergedTree = true,
+    ).fetchSemanticsNodes().isNotEmpty()
+
+    private fun routeFades() {
+        launch("demo" to true)
+        advanceUntil("the hub's signal and the crest", 30) {
+            model.nodes.any { it.name == "hub" && it.signal != SignalRating.NONE } && model.nodes.any { it.name == "crest" }
+        }
+        tab(R.string.tab_map)
+        for (n in listOf("hub", "crest", "Refuge board")) assertFalse(n, faded(n))
+        val crest = model.nodes.first { it.name == "crest" }
+        tab(R.string.tab_nodes)
+        tap("crest")
+        tap(R.string.show_on_map)
+        assertEquals(crest.key.hex(), model.mapRouteTo)
+        // Its stops as they were; the board, not on it, faded but there.
+        assertEquals(1, count("Refuge board"))
+        assertTrue(faded("Refuge board"))
+        assertFalse(faded("hub"))
+        assertFalse(faded("crest"))
+        // The filters still apply to the rest: Repeaters leaves the board out, the stops stay.
+        tapDesc(R.string.map_layers)
+        tapInDialog("${str(R.string.filter_repeaters)} ${model.nodes.count { it.kind == NodeKind.REPEATER }}")
+        back()
+        assertEquals(0, count("Refuge board"))
+        assertEquals(1, count("hub"))
+        tapDesc(R.string.map_layers)
+        tapInDialog("${str(R.string.filter_all)} ${model.nodes.size}")
+        back()
+        assertTrue(faded("Refuge board"))
+        // Closed: nothing faded.
+        tapDesc(R.string.close_route)
+        assertNull(model.mapRouteTo)
+        assertEquals(1, count("Refuge board"))
+        for (n in listOf("hub", "crest", "Refuge board")) assertFalse(n, faded(n))
+    }
+
+    /** MP-3: an SOS never fades: with crest's route shown, Camille's SOS marker (`sosdemo2`,
+     * her position with it) stays at full strength while the Refuge board, off the route, fades. */
+    @Test
+    fun MP_3_routeNeverFadesAnSos() {
+        launch("demo" to true, "sosdemo2" to true)
+        val camille = contact("Camille").key.hex()
+        advanceUntil("Camille's SOS with her position", 600) { model.positions.any { it.from.hex() == camille && it.sos } }
+        // Their alerts out of the way (Julien's, then hers).
+        repeat(3) { if (model.sosAlert != null) tap(R.string.dismiss) }
+        tab(R.string.tab_map)
+        val sos = "SOS · Camille"
+        assertEquals(1, count(sos))
+        advanceUntil("the crest", 30) { model.nodes.any { it.name == "crest" } }
+        model.mapRouteTo = model.nodes.first { it.name == "crest" }.key.hex()
+        compose.waitForIdle()
+        assertTrue(faded("Refuge board"))
+        assertEquals(1, count(sos))
+        assertFalse(faded(sos))
+    }
+
     /** MP-3: a node's route on the map (§16.3): from the crest's page, Show on the map draws
      * You → hub → crest, each leg readable ("hub to crest, not measured"); its card says how
      * far and through which repeaters, with the legend; a node tapped on the map shows its
