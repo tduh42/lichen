@@ -47,6 +47,8 @@ struct MapItem: Equatable, Identifiable {
     var symbol: String? = nil
     /// A node heard directly: a thin ring in its rating's colour (ADR-0049).
     var ring: UIColor? = nil
+    /// Not a stop of the route shown: faded, so that the route reads only its own nodes.
+    var dimmed = false
 
     var coordinate: CLLocationCoordinate2D { .init(latitude: lat, longitude: lon) }
 }
@@ -234,10 +236,9 @@ struct MapLibreView: UIViewRepresentable {
                             || a.item.initials != item.initials || a.item.dark != item.dark || a.item.ring != item.ring
                         a.item = item
                         a.coordinate = item.coordinate
-                        if redraw {
-                            a.image = Self.render(item)
-                            (map.view(for: a) as? ItemAnnotationView)?.show(a)
-                        }
+                        if redraw { a.image = Self.render(item) }
+                        // Faded or back, without drawing it again.
+                        (map.view(for: a) as? ItemAnnotationView)?.show(a)
                     }
                 } else {
                     let a = ItemAnnotation(item: item, image: Self.render(item))
@@ -495,6 +496,9 @@ final class ItemAnnotationView: MLNAnnotationView {
         isAccessibilityElement = true
         accessibilityLabel = a.item.kind == .me ? String(localized: "You")
             : a.item.label.isEmpty ? a.item.initials : a.item.label
+        // Not a stop of the route shown: faded, and said.
+        alpha = a.item.dimmed ? 0.35 : 1
+        accessibilityValue = a.item.dimmed ? String(localized: "not on this route") : nil
         imageView.frame = CGRect(origin: .zero, size: size)
         frame.size = size
         let anchor = MarkerBadge.padding(a.item) + (a.item.kind == .me ? MarkerBadge.dot / 2 : MarkerBadge.avatar / 2)

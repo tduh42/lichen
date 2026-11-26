@@ -94,9 +94,13 @@ final class LocationTests: LichenUITest {
         XCTAssertTrue(hubLeg.label.hasSuffix(" dB"), hubLeg.label)
         XCTAssertTrue(element(tr("%@ to %@, %@", "hub", "crest", tr("not measured"))).exists
                       || containing(tr("%@ to %@, %@", "hub", "crest", tr("not measured"))).exists, "the leg to crest is not read")
+        // The route reads only its own nodes: the board, beside it, fades.
+        XCTAssertEqual(nodeMarker("Refuge board").value as? String, tr("not on this route"), "the board is not faded")
+        XCTAssertNotEqual(nodeMarker("hub").value as? String, tr("not on this route"), "a stop is faded")
         keep("mp-route")
         button(tr("Close the route")).tap()
         waitGone(element(tr("Route to %@", "crest")), 5, "the card stayed")
+        XCTAssertNotEqual(nodeMarker("Refuge board").value as? String, tr("not on this route"), "still faded")
         wait(element(tr("Location sharing")), 5, "our shares did not come back")
         // A node tapped on the map: its route.
         nodeMarker("hub").tap()

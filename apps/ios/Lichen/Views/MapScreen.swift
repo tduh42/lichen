@@ -250,7 +250,26 @@ struct MapScreen: View {
                 initials: "", label: "", color: UIColor(Theme.me).resolvedColor(with: traits), dark: dark
             ))
         }
+        // A route shown reads only its own nodes: the others fade (us, at its start, stays). An
+        // SOS never fades: it stays at full strength over the route.
+        if let stops = routeStops {
+            for i in out.indices where !stops.contains(out[i].id) && out[i].kind != .sos { out[i].dimmed = true }
+        }
         return out
+    }
+
+    /// The ids of the map's items that are stops of the route shown: us, each stop's node and
+    /// whoever shares a position under its key; nil without a route drawn.
+    private var routeStops: Set<String>? {
+        guard let key = model.mapRouteTo, let route = model.nodeRoute(key),
+              mapRoute(key).map({ !$0.lines.isEmpty }) == true else { return nil }
+        var ids: Set<String> = ["me"]
+        for s in route.stops {
+            guard let k = s.key else { continue }
+            ids.insert("n:" + k.hex)
+            ids.insert(k.hex)
+        }
+        return ids
     }
 
     /// The route the map draws to `key` (§16.3): our radio at the phone, the other stops where

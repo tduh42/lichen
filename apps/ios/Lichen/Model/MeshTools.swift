@@ -145,6 +145,32 @@ extension AppModel {
         return nodeRoute(key)?.stops.dropFirst().last { $0.lat != nil && $0.lon != nil }.map { ($0.lat ?? 0, $0.lon ?? 0) }
     }
 
+    /// What `key` answered with its readings, the last 7 days, oldest first (§16.7, ADR-0050).
+    func nodeReadings(_ key: Data) -> [NodeReading] {
+        _ = meshToolsVersion
+        _ = nodes
+        return core.nodeReadings(node: key).sorted { $0.atS < $1.atS }
+    }
+
+    /// Where asking `key` for its readings stands (`NodeUpdated` follows each change).
+    func nodeReadingsState(_ key: Data) -> ReadingsState {
+        _ = meshToolsVersion
+        return core.nodeReadingsState(node: key)
+    }
+
+    /// Asks `key` for its readings, by hand only (§16.7: nothing is asked by itself). Why the
+    /// radio would not is kept for the page until the next request.
+    func askReadings(_ key: Data) {
+        readingsRefusals[key] = nil
+        do {
+            try core.requestNodeReadings(node: key, nowMs: now())
+            meshToolsVersion += 1
+            pump()
+        } catch let e as LichenError {
+            readingsRefusals[key] = e
+        } catch {}
+    }
+
     /// How many stops of `key`'s route the map can place: ours at the phone, the others where
     /// they advertise. Fewer than two: no route to draw.
     func routePlaces(_ key: Data) -> Int {

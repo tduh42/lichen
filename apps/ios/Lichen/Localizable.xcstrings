@@ -51,6 +51,16 @@
         }
       }
     },
+    "%@ V · about %lld %%": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ V · environ %2$lld %%"
+          }
+        }
+      }
+    },
     "%@ added you": {
       "localizations": {
         "fr": {
@@ -397,6 +407,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · utilisée le %@"
+          }
+        }
+      }
+    },
+    "%@ · sensor %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · capteur %2$lld"
           }
         }
       }
@@ -2031,6 +2051,26 @@
         }
       }
     },
+    "A repeater answers only those logged in, as a guest at least.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un répéteur ne répond qu’à ceux qui sont connectés, au moins en invité."
+          }
+        }
+      }
+    },
+    "A room server answers only those logged in, as a guest at least.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un serveur de salon ne répond qu’à ceux qui sont connectés, au moins en invité."
+          }
+        }
+      }
+    },
     "A room server keeps the posts of everyone logged in and sends them to each. Your posts use MeshCore’s own encryption to the room: the room and everyone logged in read them.": {
       "localizations": {
         "fr": {
@@ -2401,12 +2441,32 @@
         }
       }
     },
+    "Altitude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Altitude"
+          }
+        }
+      }
+    },
     "An X25519 / Ed25519 key made on this phone. It never leaves it: your radio only carries the messages.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Clé X25519 / Ed25519 générée sur ce téléphone. Elle ne le quitte jamais : ta radio ne fait que transporter les messages."
+          }
+        }
+      }
+    },
+    "Analog input": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrée analogique"
           }
         }
       }
@@ -2581,6 +2641,16 @@
         }
       }
     },
+    "Ask": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demander"
+          }
+        }
+      }
+    },
     "Ask %@ to show a new code.": {
       "localizations": {
         "fr": {
@@ -2591,12 +2661,32 @@
         }
       }
     },
+    "Ask again": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Redemander"
+          }
+        }
+      }
+    },
     "Ask for its neighbours": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Demander ses voisins"
+          }
+        }
+      }
+    },
+    "Ask it for its battery and temperature.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Demande-lui sa batterie et sa température."
           }
         }
       }
@@ -2697,6 +2787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Batterie %1$lld pour cent, %2$@ volts"
+          }
+        }
+      }
+    },
+    "Battery over 7 days, from %@ to %@ V": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Batterie sur 7 jours, de %1$@ à %2$@ V"
           }
         }
       }
@@ -3591,6 +3691,16 @@
         }
       }
     },
+    "Current": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Courant"
+          }
+        }
+      }
+    },
     "Custom": {
       "localizations": {
         "fr": {
@@ -3897,6 +4007,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fermer"
+          }
+        }
+      }
+    },
+    "Distance": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Distance"
           }
         }
       }
@@ -4521,6 +4641,16 @@
         }
       }
     },
+    "Frequency": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fréquence"
+          }
+        }
+      }
+    },
     "Frequency (MHz)": {
       "localizations": {
         "fr": {
@@ -4667,6 +4797,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "GNU GPL 3 ou ultérieure, et ce que lichen inclut"
+          }
+        }
+      }
+    },
+    "Generic": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Générique"
           }
         }
       }
@@ -5061,12 +5201,32 @@
         }
       }
     },
+    "Humidity": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Humidité"
+          }
+        }
+      }
+    },
     "I wrote them down": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Je les ai notés"
+          }
+        }
+      }
+    },
+    "Illuminance": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Éclairement"
           }
         }
       }
@@ -5237,6 +5397,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Inviter avec un QR code"
+          }
+        }
+      }
+    },
+    "It answered without a reading lichen reads.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Il a répondu sans valeur que lichen lit."
           }
         }
       }
@@ -5507,6 +5677,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Plus tard"
+          }
+        }
+      }
+    },
+    "Latitude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Latitude"
           }
         }
       }
@@ -5957,6 +6137,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connexion à chaque mise en route, pour recevoir les nouveaux messages."
+          }
+        }
+      }
+    },
+    "Longitude": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Longitude"
           }
         }
       }
@@ -6757,6 +6947,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pas de connexion Internet : impossible de le proposer."
+          }
+        }
+      }
+    },
+    "No answer. It may be out of reach.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de réponse. Il est peut-être hors de portée."
+          }
+        }
+      }
+    },
+    "No answer. Someone with the MeshCore app answers only if they allow it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pas de réponse. Avec l’app MeshCore, on ne répond que si on l’autorise."
           }
         }
       }
@@ -7851,6 +8061,16 @@
         }
       }
     },
+    "Percentage": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pourcentage"
+          }
+        }
+      }
+    },
     "Photo": {
       "localizations": {
         "fr": {
@@ -8081,6 +8301,16 @@
         }
       }
     },
+    "Power": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puissance"
+          }
+        }
+      }
+    },
     "Precision": {
       "localizations": {
         "fr": {
@@ -8127,6 +8357,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Préréglage"
+          }
+        }
+      }
+    },
+    "Pressure": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pression"
           }
         }
       }
@@ -8377,6 +8617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Relevés"
+          }
+        }
+      }
+    },
+    "Readings it sends": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce qu’il envoie"
           }
         }
       }
@@ -9361,6 +9611,16 @@
         }
       }
     },
+    "Sent %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Envoyé %@"
+          }
+        }
+      }
+    },
     "Sent %lld / %lld · received %lld / %lld · duplicates %lld / %lld": {
       "localizations": {
         "fr": {
@@ -10177,6 +10437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Signale ta radio aux radios autour, pour qu’elles puissent l’ajouter en contact."
+          }
+        }
+      }
+    },
+    "Temperature": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Température"
           }
         }
       }
@@ -11641,6 +11911,16 @@
         }
       }
     },
+    "V": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "V"
+          }
+        }
+      }
+    },
     "Valid for %lld:%@": {
       "localizations": {
         "fr": {
@@ -11757,6 +12037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Qualité de la voix contre temps d’antenne : %@ · ≈ %@ s"
+          }
+        }
+      }
+    },
+    "Voltage": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tension"
           }
         }
       }
@@ -12521,6 +12811,16 @@
         }
       }
     },
+    "Your radio can’t ask it: it isn’t one of its contacts.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ta radio ne peut pas le lui demander : il n’est pas dans ses contacts."
+          }
+        }
+      }
+    },
     "Your radio measures each of their transmissions it hears directly, where you stand; the group shares its measures and every phone works out where they probably are.": {
       "localizations": {
         "fr": {
@@ -12957,6 +13257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "pas mesuré"
+          }
+        }
+      }
+    },
+    "not on this route": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pas sur cette route"
           }
         }
       }

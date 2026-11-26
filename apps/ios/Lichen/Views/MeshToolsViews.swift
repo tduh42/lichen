@@ -252,17 +252,28 @@ struct NodeDetailView: View {
     let key: Data
     @Environment(AppModel.self) private var model
     @State private var error: String?
+    /// Readings' Log in: the login card's password field takes the keyboard.
+    @State private var loginRequest = 0
 
     var body: some View {
         let node = model.node(key)
         TimelineView(.periodic(from: .now, by: 30)) { context in
             let now = UInt64(context.date.timeIntervalSince1970)
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     if let node { header(node, now: now) }
                     SectionLabel("How it reaches you").padding(.top, 10)
                     RouteCard(key: key, error: $error)
                     if let node { SignalSection(node: node, now: now).padding(.top, 10) }
+                    // What it sends: never for our own radio (Radio settings has its battery).
+                    if let node, node.key != model.nodeKey {
+                        ReadingsCard(node: node, now: now) {
+                            withAnimation { proxy.scrollTo("login", anchor: .center) }
+                            loginRequest += 1
+                        }
+                        .padding(.top, 10)
+                    }
                     if let node { details(node).padding(.top, 10) }
                     if node?.kind == .roomServer {
                         SectionLabel("Room").padding(.top, 10)
@@ -277,15 +288,16 @@ struct NodeDetailView: View {
                         }
                         .buttonStyle(.plain)
                         .card(padding: 0)
-                        ServerLoginCard(key: key, room: true)
+                        ServerLoginCard(key: key, room: true, focusRequest: loginRequest).id("login")
                     }
                     if node?.kind == .repeater {
                         SectionLabel("Administration").padding(.top, 10)
-                        ServerLoginCard(key: key, room: false)
+                        ServerLoginCard(key: key, room: false, focusRequest: loginRequest).id("login")
                         RepeaterCards(key: key, error: $error)
                     }
                 }
                 .padding(16)
+            }
             }
         }
         .screen()
@@ -646,11 +658,259 @@ struct SignalChart: View {
     }
 }
 
+/// "Readings it sends" (mockup `NodePage`, §16.7, ADR-0050): its battery, its temperature and
+/// whatever else it sent, when it sent them, and Ask again; or why there is nothing yet. Only
+/// the buttons ask: opening the page never does. A repeater or a room answers only those logged
+/// in: Log in takes the user to its login card.
+struct ReadingsCard: View {
+    let node: NodeInfo
+    let now: UInt64
+    let toLogin: () -> Void
+    @Environment(AppModel.self) private var model
+
+    private var server: Bool { node.kind == .repeater || node.kind == .roomServer }
+
+    var body: some View {
+        let readings = model.nodeReadings(node.key)
+        let state = model.nodeReadingsState(node.key)
+        let refusal = model.readingsRefusals[node.key]
+        let last = readings.last
+        let loggedIn = !server || (model.server(node.key)?.login ?? .out).isIn
+        let refused: Bool = {
+            if state == .refused { return true }
+            if case .UnknownContact? = refusal { return true }
+            return false
+        }()
+        let loginLine = node.kind == .roomServer
+            ? String(localized: "A room server answers only those logged in, as a guest at least.")
+            : String(localized: "A repeater answers only those logged in, as a guest at least.")
+        // What became of the last request, until the next one.
+        let outcome: String? = refused ? String(localized: "Your radio can’t ask it: it isn’t one of its contacts.")
+            : refusal.map(\.display)
+            ?? (state == .answeredEmpty ? String(localized: "It answered without a reading lichen reads.")
+                : state == .noAnswer ? (server ? String(localized: "No answer. It may be out of reach.")
+                                               : String(localized: "No answer. Someone with the MeshCore app answers only if they allow it."))
+                : nil)
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Readings it sends")
+            CardList {
+                if let last {
+                    if let mv = last.batteryMv {
+                        let volts = decimal(Double(mv) / 1000, 2)
+                        ReadingRow(label: String(localized: "Battery"),
+                                   value: last.batteryPercent.map { String(localized: "\(volts) V · about \(Int($0)) %") } ?? "\(volts) V")
+                        CardDivider()
+                    }
+                    if let t = last.temperatureC {
+                        ReadingRow(label: String(localized: "Temperature"), value: "\(Self.decimals(t, 1)) °C")
+                        CardDivider()
+                    }
+                    ForEach(Array(last.values.enumerated()), id: \.offset) { _, v in
+                        let label = Self.label(v.kind)
+                        ReadingRow(label: v.channel == 1 ? label : String(localized: "\(label) · sensor \(Int(v.channel))"),
+                                   value: Self.value(v))
+                        CardDivider()
+                    }
+                    // Its battery over the week, once there are two to join.
+                    let battery = readings.filter { $0.batteryMv != nil && (now <= $0.atS || now - $0.atS <= 7 * 86_400) }
+                    if battery.count >= 2 {
+                        BatteryChart(points: battery, now: now)
+                        CardDivider()
+                    }
+                    HStack(spacing: 12) {
+                        Text(String(localized: "Sent \(model.heard(last.atS))"))
+                            .font(.system(.subheadline))
+                            .foregroundStyle(Theme.tx2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        action(state: state, refused: refused, loggedIn: loggedIn, again: true)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 44)
+                    if let note = outcome ?? (loggedIn ? nil : loginLine) {
+                        Text(note)
+                            .font(.system(.footnote))
+                            .foregroundStyle(Theme.tx2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+                    }
+                } else {
+                    // Nothing yet: what to do, or why it cannot be done.
+                    HStack(spacing: 12) {
+                        Text(outcome ?? (loggedIn ? String(localized: "Ask it for its battery and temperature.") : loginLine))
+                            .font(.system(.subheadline))
+                            .foregroundStyle(outcome != nil ? Theme.tx2 : Theme.tx)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        action(state: state, refused: refused, loggedIn: loggedIn, again: false)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 44)
+                }
+            }
+        }
+    }
+
+    /// Ask, Ask again, Log in; "Asking…" while it waits; nothing when the radio cannot ask.
+    @ViewBuilder
+    private func action(state: ReadingsState, refused: Bool, loggedIn: Bool, again: Bool) -> some View {
+        if refused {
+            EmptyView()
+        } else if state == .asking {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Asking…").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
+            }
+            .accessibilityElement(children: .combine)
+        } else if !loggedIn {
+            button(String(localized: "Log in"), toLogin)
+        } else {
+            button(again ? String(localized: "Ask again") : String(localized: "Ask")) { model.askReadings(node.key) }
+        }
+    }
+
+    private func button(_ title: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(title)
+                .font(.system(.subheadline, weight: .semibold))
+                .foregroundStyle(Theme.tx)
+                .padding(.horizontal, 14)
+                .frame(minHeight: 44)
+                .background(Theme.s2, in: RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.isConnected)
+        .accessibilityIdentifier("readingsAction")
+    }
+
+    /// "11.5", "4": `max` decimals at most, none when it has none, in the phone's language.
+    static func decimals(_ v: Double, _ max: Int) -> String {
+        v.formatted(.number.precision(.fractionLength(0...max)).grouping(.never))
+    }
+
+    static func label(_ kind: ReadingKind) -> String {
+        switch kind {
+        case .analogInput: String(localized: "Analog input")
+        case .generic: String(localized: "Generic")
+        case .illuminance: String(localized: "Illuminance")
+        case .temperature: String(localized: "Temperature")
+        case .humidity: String(localized: "Humidity")
+        case .pressure: String(localized: "Pressure")
+        case .voltage: String(localized: "Voltage")
+        case .current: String(localized: "Current")
+        case .frequency: String(localized: "Frequency")
+        case .percentage: String(localized: "Percentage")
+        case .altitude: String(localized: "Altitude")
+        case .power: String(localized: "Power")
+        case .distance: String(localized: "Distance")
+        case .latitude: String(localized: "Latitude")
+        case .longitude: String(localized: "Longitude")
+        }
+    }
+
+    /// A value with its unit, as many decimals as it needs: volts two, a position four. A
+    /// position is only listed here, never put on the map.
+    static func value(_ v: ReadingValue) -> String {
+        let number = switch v.kind {
+        case .voltage: decimal(v.value, 2)
+        case .latitude, .longitude: decimal(v.value, 4)
+        case .current: decimals(v.value, 3)
+        default: decimals(v.value, 2)
+        }
+        if v.unit.isEmpty { return number }
+        return v.unit == "°" ? number + "°" : "\(number) \(v.unit)"
+    }
+}
+
+/// A label and its value, read as one: "Battery, 3.92 V, about 69 %".
+struct ReadingRow: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .font(.system(.subheadline))
+                .foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            Text(verbatim: value)
+                .font(.system(.subheadline, weight: .medium).monospacedDigit())
+                .foregroundStyle(Theme.tx)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(minHeight: 44)
+        // Read as one line of text, the whole row's frame.
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "\(label), \(value.replacingOccurrences(of: " · ", with: ", "))"))
+        .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// Its battery over 7 days: a dot per answer joined by a thin line, volts up the side, small.
+struct BatteryChart: View {
+    let points: [NodeReading]
+    let now: UInt64
+
+    var body: some View {
+        let volts = points.map { Double($0.batteryMv ?? 0) / 1000 }
+        let lo = min((volts.min() ?? 0) - 0.02, (volts.max() ?? 0) - 0.1)
+        let hi = max((volts.max() ?? 0) + 0.02, lo + 0.1)
+        let window: UInt64 = 7 * 86_400
+        let start = Date(timeIntervalSince1970: TimeInterval(now > window ? now - window : 0))
+        let end = Date(timeIntervalSince1970: TimeInterval(now))
+        VStack(alignment: .leading, spacing: 4) {
+            Chart {
+                ForEach(Array(points.enumerated()), id: \.offset) { i, p in
+                    LineMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(p.atS))), y: .value("V", volts[i]))
+                        .foregroundStyle(Theme.tx2.opacity(0.5))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+                ForEach(Array(points.enumerated()), id: \.offset) { i, p in
+                    PointMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(p.atS))), y: .value("V", volts[i]))
+                        .foregroundStyle(Theme.tx)
+                        .symbolSize(28)
+                }
+            }
+            .chartXScale(domain: start...max(end, start.addingTimeInterval(1)))
+            .chartYScale(domain: lo...hi)
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: [lo, hi]) { value in
+                    AxisGridLine().foregroundStyle(Theme.line)
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text(verbatim: decimal(v, 2)).font(.system(.caption).monospacedDigit()).foregroundStyle(Theme.tx2)
+                        }
+                    }
+                }
+            }
+            .frame(height: 60)
+            Text("7 days").font(.system(.caption)).foregroundStyle(Theme.tx2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Battery over 7 days, from \(decimal(volts.first ?? 0, 2)) to \(decimal(volts.last ?? 0, 2)) V"))
+    }
+}
+
 /// Logging in to a room server or a repeater (§15.8, §16.5).
 struct ServerLoginCard: View {
     let key: Data
     let room: Bool
+    /// Bumped to give the password field the keyboard (a node's readings' Log in).
+    var focusRequest = 0
     @Environment(AppModel.self) private var model
+    @FocusState private var passwordFocused: Bool
     @State private var password = ""
     @State private var remember = true
     @State private var error: String?
@@ -669,7 +929,8 @@ struct ServerLoginCard: View {
                     }
                     CardDivider()
                     Button(role: .destructive) { model.serverLogout(key) } label: {
-                        Text("Log out").frame(maxWidth: .infinity, minHeight: 44)
+                        // The theme's red: the system's is too pale on a white card.
+                        Text("Log out").foregroundStyle(Theme.sos).frame(maxWidth: .infinity, minHeight: 44)
                     }
                 } else {
                     CardDivider()
@@ -677,6 +938,7 @@ struct ServerLoginCard: View {
                                 text: $password)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .focused($passwordFocused)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 44)
                     if room {
@@ -692,6 +954,7 @@ struct ServerLoginCard: View {
                         Text(login == .pending ? String(localized: "Logging in…") : String(localized: "Log in"))
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
+                    .accessibilityIdentifier("serverLogin")
                     .disabled(!model.isConnected || login == .pending || password.utf8.count > 15)
                 }
             }
@@ -705,6 +968,7 @@ struct ServerLoginCard: View {
                 Text(error).font(.system(.footnote)).foregroundStyle(Theme.danger)
             }
         }
+        .onChange(of: focusRequest) { passwordFocused = true }
     }
 }
 
