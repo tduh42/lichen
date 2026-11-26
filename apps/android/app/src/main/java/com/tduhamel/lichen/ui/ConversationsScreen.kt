@@ -500,8 +500,9 @@ fun RadioLine(model: AppModel) {
         Box(Modifier.size(8.dp).background(if (model.isConnected) t.ok else t.tx2, CircleShape))
         val headline = radioHeadline(model)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // On two lines with larger text rather than cut: its count is the point while reading.
             Text(
-                headline, fontSize = 14.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                headline, fontSize = 14.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 // Said as one line, its parts apart: "Reading the radio, contacts 34 of 206".
                 modifier = Modifier.semantics { contentDescription = said(headline) },
             )

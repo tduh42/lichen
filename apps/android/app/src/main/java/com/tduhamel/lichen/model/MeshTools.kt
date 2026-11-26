@@ -115,7 +115,8 @@ fun AppModel.distanceBearing(lat: Double?, lon: Double?): String? {
     val points = app.resources.getString(R.string.compass_points).split(',')
     val point = points[((b + 22.5) / 45).toInt().mod(8)]
     // "850 m", "2.4 km", in the phone's language (as the SOS screen writes it).
-    val far = if (d < 1_000) "${kotlin.math.round(d).toInt()} m" else "%.1f km".format(d / 1000)
+    // A figure and its unit never apart on two lines (a no-break space).
+    val far = if (d < 1_000) "${kotlin.math.round(d).toInt()}\u00A0m" else "%.1f\u00A0km".format(d / 1000)
     return "$far $point"
 }
 

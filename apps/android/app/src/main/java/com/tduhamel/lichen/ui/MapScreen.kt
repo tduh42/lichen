@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
@@ -153,7 +155,9 @@ fun MapScreen(model: AppModel, sos: () -> Unit) {
 
 /** The Map's bar: the SOS button, the two modes, and [end] (the layers). */
 @Composable
-private fun MapBar(model: AppModel, sos: () -> Unit, modifier: Modifier = Modifier, end: @Composable () -> Unit) {
+private fun MapBar(model: AppModel, sos: () -> Unit, modifier: Modifier = Modifier, end: @Composable () -> Unit) = CappedFontScale(1.3f) {
+    // The SOS, the two modes and the layers on one line: their words grow up to 1.3 times, not
+    // past what the line holds ("Positi" / "Locali" at twice the size).
     val t = lichen
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -501,10 +505,12 @@ private fun RouteMapCard(model: AppModel, key: String, drawn: Boolean, unlabelle
 
 /** How a route's legs read: good, fair, weak, not measured; the last signal per leg. */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun RouteLegend() {
     val t = lichen
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        // On more lines rather than cut ("not measured" with larger text, in French).
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             LegendItem(t.ok, false, stringResource(R.string.legend_good))
             LegendItem(t.warn, false, stringResource(R.string.legend_fair))
             LegendItem(t.sos, false, stringResource(R.string.legend_weak))

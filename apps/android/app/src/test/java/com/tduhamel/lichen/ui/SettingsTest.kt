@@ -281,7 +281,7 @@ class SettingsTest : UiTest() {
         launch("demo" to true)
         advanceUntil("the radio's settings") { model.radioSettings != null }
         settings()
-        see("869,618 MHz", substring = true)
+        see("869,618\u00A0MHz", substring = true)
         see("869,4–869,65 MHz", substring = true)
     }
 
@@ -323,6 +323,41 @@ class SettingsTest : UiTest() {
         restart("demo" to true)
         assertTrue(model.irohEnabled)
         assertFalse(model.relayOnly)
+    }
+
+    /** ST-9: the radio screens at twice the text size (French: the longer words): the tabs'
+     * names on one line, never broken in a word; the Map's modes and a route's legend whole;
+     * Radio settings' figures whole (the noise floor with its unit); a distance with its unit
+     * on one line. */
+    @Test
+    @Config(fontScale = 2.0f)
+    fun ST_9_radioScreensAtLargeText() = largeText()
+
+    @Test
+    @Config(qualifiers = "+fr", fontScale = 2.0f)
+    fun ST_9_radioScreensAtLargeText_fr() = largeText()
+
+    private fun largeText() {
+        launch("demo" to true)
+        advanceUntil("the hub and the crest", 30) {
+            model.nodes.any { it.name == "hub" && it.signal != com.tduhamel.lichen.core.SignalRating.NONE } && model.nodes.any { it.name == "crest" }
+        }
+        for (tab in listOf(R.string.tab_messages, R.string.tab_nodes, R.string.tab_map, R.string.tab_settings)) {
+            assertTrue(str(tab), whole(str(tab), oneLine = true))
+        }
+        // A node's distance: its figure and unit together.
+        tab(R.string.tab_nodes)
+        tap("crest")
+        assertTrue(has("\u00A0km", substring = true) || has("\u00A0m ", substring = true))
+        // The Map's modes, the route's legend.
+        tap(R.string.show_on_map)
+        for (t in listOf(R.string.map_positions, R.string.map_locate, R.string.legend_good, R.string.not_measured)) assertTrue(str(t), whole(str(t)))
+        // Radio settings: the figures whole.
+        restart("demo" to true, "screen" to "radio")
+        advanceUntil("the radio's figures") { model.radioSettings?.run { read && noiseFloorDbm != null } == true }
+        val noise = com.tduhamel.lichen.model.dbmText(model.radioSettings!!.noiseFloorDbm!!)
+        assertTrue(noise, whole(noise))
+        for (t in listOf(R.string.noise_floor_stat, R.string.airtime_left_stat, R.string.firmware_stat)) assertTrue(str(t), whole(str(t)))
     }
 
     /** ST-9: accessibility: on the main screens, everything that can be tapped says what it is

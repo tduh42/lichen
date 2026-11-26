@@ -1,5 +1,6 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.onLast
 import android.content.Context
 import android.graphics.Bitmap
@@ -353,6 +354,23 @@ abstract class UiTest {
         val layouts = mutableListOf<TextLayoutResult>()
         node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
         return layouts.first().lineCount
+    }
+
+    /** Wherever the text shows, whole: not wider than its room, no ellipsis; on one line when
+     * [oneLine]. False when it does not show. */
+    fun whole(t: String, oneLine: Boolean = false): Boolean {
+        val nodes = compose.onAllNodesWithText(t, useUnmergedTree = true).fetchSemanticsNodes()
+        return nodes.isNotEmpty() && nodes.all { n ->
+            val layouts = mutableListOf<TextLayoutResult>()
+            n.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
+            // Every character laid out, no ellipsis; on one line, no wider than its room.
+            // (Robolectric's `didOverflowWidth` is set for text well inside its room.)
+            layouts.all { l ->
+                val laidOut = l.getLineEnd(l.lineCount - 1) >= l.layoutInput.text.length
+                val unclipped = l.layoutInput.softWrap || l.multiParagraph.intrinsics.maxIntrinsicWidth <= l.size.width + 1f
+                laidOut && unclipped && (0 until l.lineCount).none { l.isLineEllipsized(it) } && (!oneLine || l.lineCount == 1)
+            }
+        }
     }
 
     /** Saves what each window shows (the screen, a dialog, a menu) as

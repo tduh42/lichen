@@ -1,5 +1,7 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -518,9 +520,9 @@ private fun RadioHeader(model: AppModel, r: RadioSettings) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             IconTile(painterResource(R.drawable.ic_radio_tower), t.loraBg, t.loraFg, size = 48.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.tx, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(name, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = t.tx, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 if (r.manufacturer.isNotEmpty() && r.manufacturer != name) {
-                    Text(r.manufacturer, fontSize = 13.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(r.manufacturer, fontSize = 13.sp, color = t.tx2, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 // The dot on the first line, however many the link takes.
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -535,10 +537,10 @@ private fun RadioHeader(model: AppModel, r: RadioSettings) {
             r.batteryMv?.let { mv -> BatteryRing(r.batteryPercent?.toInt() ?: batteryPercent(mv), mv) }
         }
         Box(Modifier.padding(top = 14.dp).fillMaxWidth().height(1.dp).background(t.line))
-        Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Stat("${left / 1000u} s", stringResource(R.string.airtime_left_stat), Modifier.weight(1f))
-            r.noiseFloorDbm?.let { Stat(dbmText(it), stringResource(R.string.noise_floor_stat), Modifier.weight(1f).landing("noise")) }
-            if (r.firmware.isNotEmpty()) Stat(r.firmware, stringResource(R.string.firmware_stat), Modifier.weight(1f))
+        StatsRow(Modifier.padding(top = 12.dp)) {
+            Stat("${left / 1000u} s", stringResource(R.string.airtime_left_stat))
+            r.noiseFloorDbm?.let { Stat(dbmText(it), stringResource(R.string.noise_floor_stat), Modifier.landing("noise")) }
+            if (r.firmware.isNotEmpty()) Stat(r.firmware, stringResource(R.string.firmware_stat))
         }
         Bar(left.toFloat() / maxOf(model.budget.limitMs, 1uL).toFloat(), Modifier.padding(top = 10.dp), color = t.lora)
     }
@@ -546,9 +548,38 @@ private fun RadioHeader(model: AppModel, r: RadioSettings) {
 
 @Composable
 private fun Stat(value: String, label: String, modifier: Modifier = Modifier) {
+    // Never cut: the figures' row puts them one under the other when they don't fit.
     Column(modifier.semantics(mergeDescendants = true) {}) {
-        Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = lichen.tx, maxLines = 1, style = TextStyle(fontFeatureSettings = "tnum"))
-        Text(label, fontSize = 12.sp, color = lichen.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = lichen.tx, style = TextStyle(fontFeatureSettings = "tnum"))
+        Text(label, fontSize = 12.sp, color = lichen.tx2)
+    }
+}
+
+/** The header's figures side by side in equal columns, as the mockup has them; one under the
+ * other when one of them, or its label, would not fit its column whole (larger text, French). */
+@Composable
+private fun StatsRow(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Layout(content, modifier) { items, c ->
+        val gap = 10.dp.roundToPx()
+        val n = items.size
+        if (n == 0) return@Layout layout(c.maxWidth, 0) {}
+        val share = (c.maxWidth - gap * (n - 1)) / n
+        if (items.all { it.maxIntrinsicWidth(Constraints.Infinity) <= share }) {
+            val placed = items.map { it.measure(Constraints(minWidth = share, maxWidth = share)) }
+            layout(c.maxWidth, placed.maxOf { it.height }) {
+                placed.forEachIndexed { i, p -> p.place(i * (share + gap), 0) }
+            }
+        } else {
+            val placed = items.map { it.measure(c.copy(minWidth = 0, minHeight = 0)) }
+            val between = 8.dp.roundToPx()
+            layout(c.maxWidth, placed.sumOf { it.height } + between * (n - 1)) {
+                var y = 0
+                placed.forEach {
+                    it.place(0, y)
+                    y += it.height + between
+                }
+            }
+        }
     }
 }
 
@@ -564,7 +595,9 @@ private fun BatteryRing(percent: Int, mv: UShort) {
         else -> t.ok
     }
     val said = stringResource(R.string.battery_ring, percent, volts)
-    Box(Modifier.size(58.dp).clearAndSetSemantics { contentDescription = said }, contentAlignment = Alignment.Center) {
+    // Up to 1.4 times larger with larger text, its figures with it, so that they stay inside it
+    // and leave the radio's name its room.
+    Box(Modifier.size(58.dp * LocalDensity.current.fontScale.coerceIn(1f, 1.4f)).clearAndSetSemantics { contentDescription = said }, contentAlignment = Alignment.Center) {
         Canvas(Modifier.fillMaxSize()) {
             val w = 5.dp.toPx()
             val inset = w / 2
@@ -572,9 +605,11 @@ private fun BatteryRing(percent: Int, mv: UShort) {
             drawArc(t.line, 0f, 360f, false, Offset(inset, inset), box, style = Stroke(w))
             drawArc(color, -90f, 360f * percent.coerceIn(0, 100) / 100f, false, Offset(inset, inset), box, style = Stroke(w, cap = StrokeCap.Round))
         }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("$percent %", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = t.tx, style = TextStyle(fontFeatureSettings = "tnum"))
-            Text("$volts V", fontSize = 10.sp, color = t.tx2, style = TextStyle(fontFeatureSettings = "tnum"))
+        CappedFontScale(1.4f) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("$percent %", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = t.tx, maxLines = 1, style = TextStyle(fontFeatureSettings = "tnum"))
+                Text("$volts V", fontSize = 10.sp, color = t.tx2, maxLines = 1, style = TextStyle(fontFeatureSettings = "tnum"))
+            }
         }
     }
 }
@@ -586,7 +621,8 @@ private fun batteryPercent(mv: UShort): Int = (((mv.toDouble() - 3_300) / 900).c
 
 private fun mhz(khz: UInt) = "%.3f".format(khz.toDouble() / 1000)
 
-private fun summary(khz: UInt, hz: UInt, sf: UByte, cr: UByte) = "${mhz(khz)} MHz · ${bandwidth(hz)} · SF$sf · CR 4/$cr"
+// Each figure with its unit on one line (no-break spaces).
+private fun summary(khz: UInt, hz: UInt, sf: UByte, cr: UByte) = "${mhz(khz)}\u00A0MHz · ${bandwidth(hz)} · SF$sf · CR\u00A04/$cr"
 
 @Composable
 private fun LoraSection(model: AppModel, r: RadioSettings, preset: RadioPreset, choose: (RadioPreset) -> Unit) {
@@ -1028,34 +1064,6 @@ private fun FigureRow(key: String, icon: ImageVector, title: String, value: Stri
     }
 }
 
-/** A title at the start and its value at the end of one line; the value under the title when
- * the line can't hold both. */
-@Composable
-private fun TitleAndValue(title: @Composable () -> Unit, value: @Composable () -> Unit, modifier: Modifier = Modifier) {
-    Layout(contents = listOf(title, value), modifier = modifier) { (titles, values), c ->
-        val gap = 12.dp.roundToPx()
-        val loose = c.copy(minWidth = 0, minHeight = 0)
-        val tm = titles.first()
-        val vm = values.first()
-        if (tm.maxIntrinsicWidth(c.maxHeight) + gap + vm.maxIntrinsicWidth(c.maxHeight) <= c.maxWidth) {
-            val tp = tm.measure(loose)
-            val vp = vm.measure(loose)
-            val h = maxOf(tp.height, vp.height)
-            layout(c.maxWidth, h) {
-                tp.place(0, (h - tp.height) / 2)
-                vp.place(c.maxWidth - vp.width, (h - vp.height) / 2)
-            }
-        } else {
-            val tp = tm.measure(loose)
-            val vp = vm.measure(loose)
-            val space = 2.dp.roundToPx()
-            layout(c.maxWidth, tp.height + space + vp.height) {
-                tp.place(0, 0)
-                vp.place(0, tp.height + space)
-            }
-        }
-    }
-}
 
 /**
  * What became of the setting changed from [row] (B-user-5): a spinner while the radio has not

@@ -248,7 +248,8 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
                     }
                 },
                 icon = { TabIcon(icon, badge) },
-                label = { Text(stringResource(label), fontSize = 12.sp, fontWeight = FontWeight.Medium) },
+                // Never broken in the middle of a word: the icon says it too, past 1.3 times.
+                label = { CappedFontScale(1.3f) { Text(stringResource(label), fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false) } },
                 colors = NavigationBarItemDefaults.colors(
                     selectedIconColor = t.tx,
                     selectedTextColor = t.tx,
@@ -264,7 +265,8 @@ private fun TabBar(model: AppModel, nav: NavHostController, route: String?) {
 @Composable
 private fun TabIcon(icon: Painter, badge: Int) {
     if (badge > 0) {
-        BadgedBox(badge = { M3Badge(containerColor = lichen.actBg, contentColor = lichen.actFg) { Text("$badge") } }) {
+        // Its figure up to 1.3 times larger: beyond, the badge covers the icon (the tab says it).
+        BadgedBox(badge = { CappedFontScale(1.3f) { M3Badge(containerColor = lichen.actBg, contentColor = lichen.actFg) { Text("$badge") } } }) {
             Icon(icon, null)
         }
     } else {

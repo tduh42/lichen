@@ -299,7 +299,7 @@ class RadioLinkTest : UiTest() {
         advanceUntil("the radio's settings") { model.radioSettings != null }
         val r = model.radioSettings!!
         text(R.string.radio_settings).assertIsDisplayed()
-        text("SF${r.sf} · CR 4/${r.cr}", substring = true).assertIsDisplayed()
+        text("SF${r.sf} · CR\u00A04/${r.cr}", substring = true).assertIsDisplayed()
         see("${r.txDbm} dBm")
         // One dB less, applied by the radio and read back.
         tap("−")
@@ -605,14 +605,14 @@ class RadioLinkTest : UiTest() {
         compose.onNode(hasClickAction() and hasText(str(R.string.apply))).performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
         text(R.string.lora_confirm_title).assertIsDisplayed()
-        text("%.3f MHz".format(5000.0), substring = true).assertIsDisplayed()
+        text("%.3f\u00A0MHz".format(5000.0), substring = true).assertIsDisplayed()
         tapInDialog(R.string.apply)
         text(R.string.not_changed).assertIsDisplayed()
         text(R.string.err_invalid_setting).assertIsDisplayed()
         tapInDialog(R.string.ok)
         advance(3)
         assertEquals(before.freqKhz, model.radioSettings!!.freqKhz)
-        text("SF${before.sf} · CR 4/${before.cr}", substring = true).assertIsDisplayed()
+        text("SF${before.sf} · CR\u00A04/${before.cr}", substring = true).assertIsDisplayed()
     }
 
     /** The preset row's current choice, which opens the list of presets. */
