@@ -212,7 +212,13 @@ fun NewChatSheet(
                     }
                 }
                 if (model.contacts.isEmpty()) {
-                    item(key = "none") { Text(stringResource(R.string.no_contacts_yet), color = t.tx2, fontSize = 14.sp, modifier = Modifier.padding(8.dp)) }
+                    // Still reading the radio's contacts: not "no contacts" yet.
+                    item(key = "none") {
+                        Text(
+                            stringResource(if (radioReadingText(model) != null) R.string.reading_radio else R.string.no_contacts_yet),
+                            color = t.tx2, fontSize = 14.sp, modifier = Modifier.padding(8.dp),
+                        )
+                    }
                 } else if (shown.isEmpty()) {
                     item(key = "nobody") { Text(stringResource(R.string.nobody_matches), color = t.tx2, fontSize = 14.sp, modifier = Modifier.padding(8.dp)) }
                 }

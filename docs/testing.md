@@ -25,7 +25,7 @@ Launch flags are the debug arguments listed in CLAUDE.md (iOS `-flag value`, And
 `-noBanners YES` (unless it looks at notifications) and `-plainHeard YES` (what the demo's
 stock-client people send reaches the radio even when the busy air loses it), `LichenUITest.launch`.
 
-**Coverage:** 86 of 88 scenarios have at least one automated test (FFI 77, iOS 82, Android 83, lc-core 7). Written by `python3 -I scripts/testing-coverage.py`.
+**Coverage:** 86 of 88 scenarios have at least one automated test (FFI 77, iOS 82, Android 84, lc-core 7). Written by `python3 -I scripts/testing-coverage.py`.
 
 ## 1. Onboarding and identity
 
@@ -54,7 +54,7 @@ stock-client people send reaches the radio even when the busy air loses it), `Li
 | RL-9 | Contact list read whole / cut short | All contacts, asked again when records are missing | | lc-core src/core.rs: a_contact_list_cut_short_still_counts, records_lost_before_the_end_are_asked_for_again<br>· real radio: every contact of a real companion |
 | RL-10 | Send an advert | A choice, nearby or the whole mesh, each saying what it reaches; what it carries (the name, the position when advertised); the time and reach once the radio answered; not sent without a radio | | iOS RadioLinkTests: testRL10_SendAnAdvert, testRL10_AdvertCarriesThePosition<br>Android RadioLinkTest.RL_10_sendAnAdvert (+fr) |
 | RL-11 | Each radio setting says what happened | On its row: the value asked with a spinner while it waits; then "Saved on the radio", or the radio kept its old value, refused it, or did not answer, the radio's value shown | `-screen radio -radioIgnores preferences`, `-radioRefuses power`, `-radioSlow 20` | FFI rl_11_each_setting_says_what_happened<br>iOS RadioLinkTests: testRL11_ASettingSavedOnTheRadio, testRL11_ASettingGoesOutOnAQuietRadio, testRL11_ASettingTheRadioDoesNotKeep<br>Android RadioLinkTest: RL_11_eachSettingSaysWhatHappened (+fr), RL_11_aSettingGoesOutOnAQuietRadio (+fr), RL_11_aSettingTheRadioDoesNotKeep (+fr) |
-| RL-12 | The radio line names the reading after a connection | While a connection fills its lists, the radio line says the step: reading the radio, contacts n of the count the radio announced, channels, waiting messages fetched; then nothing; a radio switched off while a message comes gives it as a waiting message at the next connection | `-manyContacts 200` | FFI rl_12_the_reading_after_a_connection<br>lc-core src/plain.rs: the_reading_goes_through_its_steps, a_disconnection_clears_the_reading |
+| RL-12 | The radio line names the reading after a connection | While a connection fills its lists, the radio line says the step: reading the radio, contacts n of the count the radio announced, channels, waiting messages fetched; then nothing; a radio switched off while a message comes gives it as a waiting message at the next connection; in the apps, the radio line of Messages, the radio card of Settings and the header of Radio settings say it ("Reading the radio · contacts 34 of 206", a thin bar in `lora` for the contacts, "Fetching waiting messages · 3"), one element to a screen reader, which hears the steps but not every count; the Messages list says "Reading the radio…" rather than that there is no conversation | `-manyContacts 200` | FFI rl_12_the_reading_after_a_connection<br>Android RadioLinkTest: RL_12_radioLineWhileReading (+fr), RL_12_fetchingWaitingMessages (+fr)<br>lc-core src/plain.rs: the_reading_goes_through_its_steps, a_disconnection_clears_the_reading |
 
 ## 3. Contacts, nodes, rooms, repeaters, requests, blocks
 

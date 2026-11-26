@@ -1,5 +1,12 @@
 package com.tduhamel.lichen.ui
 
+import androidx.compose.runtime.LaunchedEffect
+import com.tduhamel.lichen.core.RadioReading
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalView
 import android.text.format.DateFormat
 import android.text.format.DateUtils
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -225,7 +232,7 @@ fun ConversationsScreen(
                 }
             }
             if (rows.isEmpty() && archived.isEmpty()) {
-                item { EmptyConversations() }
+                item { EmptyConversations(model) }
             } else if (rows.isNotEmpty()) {
                 item { CardList { rowsOf(rows) } }
             }
@@ -453,9 +460,10 @@ fun shortTime(context: android.content.Context, atMs: Long): String = when {
     else -> DateFormat.getDateFormat(context).format(Date(atMs))
 }
 
-/** "Demo radio connected", "No radio connected"… */
+/** "Demo radio connected", "No radio connected"…; while a connection still reads the radio,
+ * what it reads ("Reading the radio · contacts 34 of 206"). */
 @Composable
-private fun radioHeadline(model: AppModel): String = when (val s = model.radioState) {
+private fun radioHeadline(model: AppModel): String = radioReadingText(model) ?: when (val s = model.radioState) {
     is RadioState.Connected -> stringResource(R.string.radio_connected, model.nodeName.ifEmpty { s.name })
     is RadioState.Connecting -> stringResource(R.string.radio_connecting, s.name)
     RadioState.Scanning -> stringResource(R.string.radio_scanning)
@@ -469,6 +477,7 @@ private fun radioHeadline(model: AppModel): String = when (val s = model.radioSt
 fun RadioLine(model: AppModel) {
     val t = lichen
     var open by remember { mutableStateOf(false) }
+    AnnounceFetching(model)
     if (model.radioDetails) {
         RadioCard(model)
         return
@@ -489,11 +498,63 @@ fun RadioLine(model: AppModel) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(8.dp).background(if (model.isConnected) t.ok else t.tx2, CircleShape))
-        Text(
-            radioHeadline(model), fontSize = 14.sp, color = t.tx2,
-            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-        )
+        val headline = radioHeadline(model)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                headline, fontSize = 14.sp, color = t.tx2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                // Said as one line, its parts apart: "Reading the radio, contacts 34 of 206".
+                modifier = Modifier.semantics { contentDescription = said(headline) },
+            )
+            RadioReadingBar(model)
+        }
         Icon(Icons.Outlined.ExpandMore, null, tint = t.tx2)
+    }
+}
+
+/** What a connection is still reading (protocol §1.1, after `APP_START`), as the radio line
+ * says it: "Reading the radio…", "… · contacts 34 of 206", "… · channels", "Fetching waiting
+ * messages · 3"; null once it is over, or without a radio. No time left, no percentage: only
+ * what the radio's answers count. */
+@Composable
+fun radioReadingText(model: AppModel): String? {
+    if (!model.isConnected) return null
+    return when (val r = model.radioReading) {
+        null -> null
+        is RadioReading.Settings -> stringResource(R.string.reading_radio)
+        is RadioReading.Contacts -> stringResource(R.string.reading_radio_contacts, r.done.toInt(), r.total.toInt())
+        is RadioReading.Channels -> stringResource(R.string.reading_radio_channels)
+        is RadioReading.Messages -> stringResource(R.string.fetching_waiting, r.fetched.toInt())
+    }
+}
+
+/** A line's parts as TalkBack says them: "·" read as a pause. */
+fun said(line: String): String = line.replace(" · ", ", ")
+
+/** Under the radio line while the radio's contacts are read: done of total, thin, in `lora`;
+ * nothing without a total. Silent: the line says it. */
+@Composable
+fun RadioReadingBar(model: AppModel, modifier: Modifier = Modifier) {
+    val r = model.radioReading as? RadioReading.Contacts ?: return
+    if (!model.isConnected || r.total == 0u) return
+    val t = lichen
+    Box(
+        modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(t.s2).testTag(READING_BAR).clearAndSetSemantics {},
+    ) {
+        Box(Modifier.fillMaxWidth((r.done.toFloat() / r.total.toFloat()).coerceIn(0f, 1f)).fillMaxHeight().background(t.lora))
+    }
+}
+
+const val READING_BAR = "radio-reading-bar"
+
+/** TalkBack hears the steps, not every count: once, as the messages that waited come in. */
+@Composable
+private fun AnnounceFetching(model: AppModel) {
+    val view = LocalView.current
+    val fetching = model.isConnected && model.radioReading is RadioReading.Messages
+    val said = stringResource(R.string.fetching_waiting_said)
+    LaunchedEffect(fetching) {
+        @Suppress("DEPRECATION")
+        if (fetching) view.announceForAccessibility(said)
     }
 }
 
@@ -513,9 +574,11 @@ fun RadioCard(model: AppModel, close: (() -> Unit)? = null) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Box(Modifier.size(8.dp).background(if (model.isConnected) t.ok else t.tx2, CircleShape))
+            val headline = radioHeadline(model)
             Text(
-                radioHeadline(model), fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                headline, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = t.tx,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).semantics { contentDescription = said(headline) },
             )
             val r = model.radio
             if (r != null && model.isConnected) {
@@ -523,6 +586,7 @@ fun RadioCard(model: AppModel, close: (() -> Unit)? = null) {
             }
             if (close != null) Icon(Icons.Outlined.ExpandLess, null, tint = t.tx2)
         }
+        RadioReadingBar(model)
         AirtimeMeter(model.budget.usedMs, model.budget.limitMs)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TransportBadge(Transport.LORA, "LoRa")
@@ -650,10 +714,12 @@ fun StatusBanners(model: AppModel, pair: () -> Unit) {
     }
 }
 
-/** No conversation yet (mockup `etats`, bottom). */
+/** No conversation yet (mockup `etats`, bottom); while a connection still reads the radio,
+ * not "no conversations" but that it is reading (its channels and chats are not all in yet). */
 @Composable
-private fun EmptyConversations() {
+private fun EmptyConversations(model: AppModel) {
     val t = lichen
+    val reading = radioReadingText(model) != null
     Column(
         Modifier
             .fillMaxWidth()
@@ -664,7 +730,11 @@ private fun EmptyConversations() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ChirpMark(t.tx2, Modifier.size(40.dp))
-        Text(stringResource(R.string.no_conversations), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
-        Text(stringResource(R.string.no_conversations_note), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
+        if (reading) {
+            Text(stringResource(R.string.reading_radio), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+        } else {
+            Text(stringResource(R.string.no_conversations), fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = t.tx)
+            Text(stringResource(R.string.no_conversations_note), fontSize = 14.sp, color = t.tx2, textAlign = TextAlign.Center)
+        }
     }
 }

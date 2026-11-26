@@ -392,6 +392,13 @@ class SettingsTest : UiTest() {
         see(R.string.readings_title)
         audit("crest, readings")
         // Radio settings: the radio on top, the search, the sections (down to the last); a search.
+        // Messages while a connection still reads the radio (§1.1): its line and its bar.
+        restart("demo" to true, "manyContacts" to 200)
+        advanceUntil("the contacts counted", 10) {
+            val r = model.radioReading
+            r is com.tduhamel.lichen.core.RadioReading.Contacts && r.done > 0u && r.done < r.total
+        }
+        audit("Messages, reading the radio")
         restart("demo" to true, "screen" to "radio")
         advanceUntil("the radio's settings") { model.radioSettings?.read == true }
         audit("radio settings")

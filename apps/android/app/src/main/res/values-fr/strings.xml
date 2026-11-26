@@ -39,6 +39,11 @@
     <!-- Carte radio et bandeaux -->
     <string name="radio_connected">%1$s connecté</string>
     <string name="radio_connecting">Connexion à %1$s…</string>
+    <string name="reading_radio">Lecture de la radio…</string>
+    <string name="reading_radio_contacts">Lecture de la radio · contacts %1$d sur %2$d</string>
+    <string name="reading_radio_channels">Lecture de la radio · canaux</string>
+    <string name="fetching_waiting">Récupération des messages en attente · %1$d</string>
+    <string name="fetching_waiting_said">Récupération des messages en attente</string>
     <string name="radio_scanning">Recherche de nœuds…</string>
     <string name="bluetooth_off">Bluetooth désactivé</string>
     <string name="no_radio">Aucune radio connectée</string>
