@@ -2402,6 +2402,9 @@ final class AppModel {
     /// The node whose route the map draws (§16.3): from its page's Show on the map, or the node
     /// tapped on the map; until the route's card is closed.
     var mapRouteTo: Data?
+    /// The nodes the Map's nodes layer shows (its layers menu): kept while the app runs, apart
+    /// from the Nodes tab's own; never stored. A route's stops show whatever it is.
+    var mapNodeFilter = NodeFilter.all
     /// Why the radio would not ask a node for its readings (§16.7), kept for its page until the
     /// next request.
     var readingsRefusals: [Data: LichenError] = [:]

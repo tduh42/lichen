@@ -12461,6 +12461,16 @@
         }
       }
     },
+    "Which nodes": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quels nœuds"
+          }
+        }
+      }
+    },
     "Who may ask your radio for them. Contacts are chosen in the MeshCore app. lichen’s own positions always travel encrypted, only to the people you choose.": {
       "localizations": {
         "fr": {
