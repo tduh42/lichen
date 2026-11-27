@@ -123,6 +123,96 @@ final class LocationTests: LichenUITest {
         wait(app.buttons[tr("Download this area")], 5, "no offline maps")
     }
 
+    /// Chooses which nodes the map shows, in its layers menu: the choice whose label starts with
+    /// `filter` ("Repeaters 2", "Heard in 2 h").
+    private func mapFilter(_ filter: String, file: StaticString = #filePath, line: UInt = #line) {
+        button(tr("Map layers")).tap()
+        let choice = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", tr(filter))).firstMatch
+        wait(choice, 5, "no “\(tr(filter))” in the layers menu", file: file, line: line).tap()
+    }
+
+    /// Taps Dismiss on an SOS alert when one shows, without failing when the app takes it away
+    /// as it is tapped (it can go and come back a moment after): a snapshot, which does not
+    /// fail when nothing matches, then a tap where it was.
+    private func dismissAlert() {
+        guard let alert = try? button(tr("Dismiss")).snapshot() else { return }
+        let f = alert.frame
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.midX, dy: f.midY)).tap()
+    }
+
+    /// Crest's route on the map, from its page's Show on the map: the camera takes the route in
+    /// (crest, 3.3 km away, is out of the map's first view, and only markers in view are read).
+    private func showCrestsRoute(file: StaticString = #filePath, line: UInt = #line) {
+        tab(.nodes)
+        let crest = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'crest'")).firstMatch
+        wait(crest, 30, "no crest in the Nodes tab", file: file, line: line).tap()
+        wait(button(tr("Show on the map")), 5, "no Show on the map", file: file, line: line).tap()
+        wait(element(tr("Route to %@", "crest")), 10, "no route to crest", file: file, line: line)
+    }
+
+    /// MP-3: the nodes layer's filters, in the layers menu: the Nodes tab's chips with their
+    /// counts. Repeaters leaves only the repeaters; the Nodes tab keeps its own (everyone), and
+    /// the map's is kept on the way back; a route's stops stay whatever it leaves (crest's route
+    /// under Rooms); Heard in 2 h keeps the nodes heard lately; All brings every node back.
+    func testMP3_NodeFiltersOnTheMap() {
+        launch(["-tab", "map", "-quietDemo", "YES"])
+        for name in ["hub", "Refuge board"] { wait(nodeMarker(name), 30, "no \(name) on the map") }
+        // The choices, with how many each keeps.
+        button(tr("Map layers")).tap()
+        let counted = NSPredicate(format: "label MATCHES %@", NSRegularExpression.escapedPattern(for: tr("Repeaters")) + " [0-9]+")
+        let repeaters = app.buttons.matching(counted).firstMatch
+        wait(repeaters, 5, "no Repeaters with its count in the layers menu")
+        XCTAssertTrue(app.buttons[tr("Heard in 2 h")].exists, "no Heard in 2 h")
+        keep("mp-node-filters")
+        repeaters.tap()
+        waitGone(nodeMarker("Refuge board"), 15, "the room server stayed under Repeaters")
+        XCTAssertTrue(nodeMarker("hub").exists, "a repeater left")
+        // The Nodes tab's own filter: everyone still there. Crest's route from its page: under
+        // Repeaters, the board stays away; under Rooms, the board comes and the route's stops
+        // (crest, hub) stay.
+        showCrestsRoute()
+        wait(nodeMarker("crest"), 10, "no crest on its route")
+        XCTAssertFalse(nodeMarker("Refuge board").exists, "the map's filter was not kept")
+        mapFilter("Rooms")
+        wait(nodeMarker("Refuge board"), 15, "no room server under Rooms")
+        XCTAssertTrue(nodeMarker("crest").exists && nodeMarker("hub").exists, "a stop of the route left")
+        keep("mp-node-filters-route")
+        button(tr("Close the route")).tap()
+        waitGone(nodeMarker("crest"), 15, "crest stayed under Rooms without its route")
+        XCTAssertFalse(nodeMarker("hub").exists, "the hub stayed under Rooms without the route")
+        // Heard in 2 h: the nodes heard lately (every placed node of the demo), then All.
+        mapFilter("Heard in 2 h")
+        wait(nodeMarker("hub"), 15, "the hub, heard lately, left")
+        mapFilter("All")
+        for name in ["hub", "crest", "Refuge board"] { wait(nodeMarker(name), 15, "\(name) did not come back") }
+    }
+
+    /// MP-3: an SOS is never faded by a route (`-sosdemo2`: Camille's SOS, with her position,
+    /// about 240 s into the demo, after Julien's): with crest's route shown, her marker reads at
+    /// full strength while the Refuge board, beside the route, is faded.
+    func testMP3_AnSosIsNeverFaded() {
+        launch(["-tab", "map", "-sosdemo2", "YES"])
+        // Julien's alert first, then Camille's: each dismissed (one can come back a moment after).
+        let camille = app.buttons.matching(NSPredicate(format: "label == 'SOS · Camille'")).firstMatch
+        let end = Date().addingTimeInterval(240)
+        while Date() < end && !(camille.exists && camille.isHittable) {
+            dismissAlert()
+            pause(2)
+        }
+        wait(camille, 5, "no SOS from Camille on the map")
+        showCrestsRoute()
+        // Her alert can come back over the map.
+        for _ in 0..<3 where button(tr("Dismiss")).exists {
+            dismissAlert()
+            pause(1)
+        }
+        wait(nodeMarker("Refuge board"), 10, "no board beside the route")
+        XCTAssertEqual(nodeMarker("Refuge board").value as? String, tr("not on this route"), "the board is not faded")
+        wait(camille, 10, "Camille's SOS is not in the route's view")
+        XCTAssertNotEqual(camille.value as? String, tr("not on this route"), "Camille's SOS is faded")
+        keep("mp-sos-not-faded")
+    }
+
     /// MP-5: Julien's SOS arrives (`-sosdemo`): its alert, without GPS, a beacon; ours, sent by
     /// holding the button, is on until stopped.
     func testMP5_SosReceivedSentStopped() {

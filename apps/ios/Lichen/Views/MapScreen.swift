@@ -175,6 +175,18 @@ struct MapScreen: View {
                 Toggle(isOn: $showNodes) {
                     Label("MeshCore nodes", systemImage: "antenna.radiowaves.left.and.right")
                 }
+                // Which nodes: as the Nodes tab's chips, a choice of the map's own.
+                if showNodes {
+                    let now = UInt64(Date().timeIntervalSince1970)
+                    Picker(selection: Binding(get: { model.mapNodeFilter }, set: { model.mapNodeFilter = $0 })) {
+                        ForEach(NodeFilter.allCases) { f in
+                            Text(verbatim: f.chip(model.nodes, now: now)).tag(f)
+                        }
+                    } label: {
+                        Text("Which nodes")
+                    }
+                    .pickerStyle(.inline)
+                }
                 Section {
                     Button {
                         if let (b, z) = camera { offline.download(b, zoom: z, style: style.resolved(dark: dark)) }
@@ -232,8 +244,12 @@ struct MapScreen: View {
             ))
         }
         if showNodes {
+            // The layer's filter, and a route's stops whatever it leaves (§16.3).
+            let now = UInt64(Date().timeIntervalSince1970)
+            let stops = routeStops ?? []
             for n in model.nodes {
-                guard let lat = n.lat, let lon = n.lon else { continue }
+                guard let lat = n.lat, let lon = n.lon,
+                      model.mapNodeFilter.keeps(n, now: now) || stops.contains("n:" + n.key.hex) else { continue }
                 out.append(MapItem(
                     id: "n:" + n.key.hex, kind: .node, lat: lat, lon: lon, radius: 0,
                     initials: "", label: n.name,

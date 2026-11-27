@@ -8,35 +8,10 @@ import SwiftUI
 /// reaches through repeaters (§16.1, ADR-0049).
 struct NodesView: View {
     @Environment(AppModel.self) private var model
-    @State private var filter = Filter.all
+    @State private var filter = NodeFilter.all
     @State private var query = ""
 
-    enum Filter: CaseIterable, Identifiable {
-        case all, people, repeaters, rooms, heard
-        var id: Self { self }
-
-        var label: String {
-            switch self {
-            case .all: String(localized: "All")
-            case .people: String(localized: "People")
-            case .repeaters: String(localized: "Repeaters")
-            case .rooms: String(localized: "Rooms")
-            case .heard: String(localized: "Heard in 2 h")
-            }
-        }
-
-        func keeps(_ n: NodeInfo, now: UInt64) -> Bool {
-            switch self {
-            case .all: true
-            case .people: n.kind == .companion || n.kind == .unknown
-            case .repeaters: n.kind == .repeater
-            case .rooms: n.kind == .roomServer
-            case .heard: n.heard(within: NodesView.twoHours, now: now)
-            }
-        }
-    }
-
-    static let twoHours: UInt64 = 7_200
+    static let twoHours = NodeFilter.twoHours
 
     var body: some View {
         // Now, read again every 30 s: the "heard" times and the 2 h and 24 h limits move on.
@@ -115,9 +90,9 @@ struct NodesView: View {
     private func chips(now: UInt64) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(Filter.allCases) { f in
+                ForEach(NodeFilter.allCases) { f in
                     let on = filter == f
-                    let label = f == .heard ? f.label : "\(f.label) \(model.nodes.filter { f.keeps($0, now: now) }.count)"
+                    let label = f.chip(model.nodes, now: now)
                     Button { filter = f } label: {
                         Text(verbatim: label)
                             .font(.system(.subheadline, weight: .semibold))

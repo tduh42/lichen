@@ -115,6 +115,40 @@ extension NodeRoute {
 }
 
 /// An SNR as people read it: "7.5 dB", "−3.0 dB" (a true minus), the decimal of the language.
+/// The nodes a list or the map shows (the Nodes tab, the Map's nodes layer): all, by kind, or
+/// those heard in the last 2 h.
+enum NodeFilter: CaseIterable, Identifiable {
+    case all, people, repeaters, rooms, heard
+    var id: Self { self }
+
+    static let twoHours: UInt64 = 7_200
+
+    var label: String {
+        switch self {
+        case .all: String(localized: "All")
+        case .people: String(localized: "People")
+        case .repeaters: String(localized: "Repeaters")
+        case .rooms: String(localized: "Rooms")
+        case .heard: String(localized: "Heard in 2 h")
+        }
+    }
+
+    func keeps(_ n: NodeInfo, now: UInt64) -> Bool {
+        switch self {
+        case .all: true
+        case .people: n.kind == .companion || n.kind == .unknown
+        case .repeaters: n.kind == .repeater
+        case .rooms: n.kind == .roomServer
+        case .heard: n.heard(within: Self.twoHours, now: now)
+        }
+    }
+
+    /// Its chip: "Repeaters 2", how many it keeps of `nodes`; "Heard in 2 h" alone.
+    func chip(_ nodes: [NodeInfo], now: UInt64) -> String {
+        self == .heard ? label : "\(label) \(nodes.filter { keeps($0, now: now) }.count)"
+    }
+}
+
 func dbText(_ snr: Float) -> String {
     (snr <= -0.05 ? "−" : "") + decimal(Double(abs(snr)), 1) + " dB"
 }
