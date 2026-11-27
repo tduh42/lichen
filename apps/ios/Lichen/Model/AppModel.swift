@@ -110,6 +110,10 @@ final class AppModel {
     var radioError: String?
     /// Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it.
     var linkRefusals = 0
+    /// The SNR and RSSI from which a reading is Good, and Fair, under the radio's preset
+    /// (ADR-0049): the signal chart's bands. Read again on `Connected` and `RadioSettings`; nil
+    /// before a radio.
+    var signalLimits: SignalLimits?
 
     /// A radio setting row's state: waiting for the radio (`outcome` nil), or what became of
     /// the setting changed from it (B-user-5).
@@ -1031,6 +1035,7 @@ final class AppModel {
             radioSettings = core.radioSettings()
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
             radioConnected()
+            signalLimits = core.signalLimits()
         case let .identityLearned(node, _, _):
             coreContacts = core.contacts()
             // A node row's lichen badge comes from its contact's identity.
@@ -1062,6 +1067,7 @@ final class AppModel {
             radioSettings = r
             radio = core.radio()
             if !r.name.isEmpty { nodeName = r.name }
+            signalLimits = core.signalLimits()
         case .contactsUpdated:
             coreContacts = core.contacts()
             nodes = core.nodes()

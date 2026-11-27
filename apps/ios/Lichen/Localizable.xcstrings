@@ -4461,6 +4461,16 @@
         }
       }
     },
+    "Fair": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moyen"
+          }
+        }
+      }
+    },
     "Fast; the peer sees your IP": {
       "localizations": {
         "fr": {
@@ -4817,6 +4827,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Donner ta position par télémétrie ?"
+          }
+        }
+      }
+    },
+    "Good": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bon"
           }
         }
       }
@@ -13067,6 +13087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "bon"
+          }
+        }
+      }
+    },
+    "good above %@, fair above %@": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bon au-dessus de %1$@, moyen au-dessus de %2$@"
           }
         }
       }
