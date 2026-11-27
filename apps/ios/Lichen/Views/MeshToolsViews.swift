@@ -591,7 +591,7 @@ struct SignalSection: View {
                     if points.isEmpty {
                         Text("No reading in this time.").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                     } else {
-                        SignalChart(points: points, now: now, window: window)
+                        SignalChart(points: points, now: now, window: window, limits: model.signalLimits)
                     }
                     HStack(alignment: .firstTextBaseline) {
                         Text(week ? "7 days ago" : "24 h ago")
@@ -610,20 +610,47 @@ struct SignalSection: View {
 }
 
 /// The readings in their window: a dot each, coloured by its rating, joined by a thin line; dB
-/// up the side.
+/// up the side. Behind them, faint bands at the preset's limits (ADR-0049): Good above the
+/// first, Fair down to the second, weak below; the dB range takes both in. None before a radio.
 struct SignalChart: View {
     let points: [SignalReading]
     let now: UInt64
     let window: UInt64
+    /// The SNRs from which a reading is Good, and Fair, under the radio's preset (ADR-0049): faint
+    /// bands behind the dots. None before a radio.
+    let limits: SignalLimits?
+    @ScaledMetric(relativeTo: .caption) private var labelRoom: CGFloat = 16
+
+    private static let height: CGFloat = 92
 
     var body: some View {
-        let snrs = points.map { Double($0.snrDb) }
-        // At least 6 dB tall, a decibel of room above and below.
-        let lo = min((snrs.min() ?? 0) - 1, (snrs.max() ?? 0) - 6).rounded(.down)
-        let hi = max((snrs.max() ?? 0) + 1, lo + 6).rounded(.up)
+        let good = limits.map { Double($0.goodSnrDb) }
+        let fair = limits.map { Double($0.fairSnrDb) }
+        let values = points.map { Double($0.snrDb) } + [good, fair].compactMap { $0 }
+        // At least 6 dB tall, a decibel of room above and below; both limits inside, with room
+        // above the Good one for its label, however low the readings.
+        let lo = min((values.min() ?? 0) - 1, (values.max() ?? 0) - 6).rounded(.down)
+        let hi = max((values.max() ?? 0) + 1, lo + 6, (good ?? -.infinity) + 3).rounded(.up)
         let start = Date(timeIntervalSince1970: TimeInterval(now > window ? now - window : 0))
         let end = Date(timeIntervalSince1970: TimeInterval(now))
         Chart {
+            // The bands first, faint: the dots stay the main thing.
+            if let good, let fair {
+                RectangleMark(yStart: .value("dB", good), yEnd: .value("dB", hi))
+                    .foregroundStyle(Theme.okBg.opacity(Self.band))
+                RectangleMark(yStart: .value("dB", fair), yEnd: .value("dB", good))
+                    .foregroundStyle(Theme.warnBg.opacity(Self.band))
+                RectangleMark(yStart: .value("dB", lo), yEnd: .value("dB", fair))
+                    .foregroundStyle(Theme.sosBg.opacity(Self.band))
+                // Each limit named at its left end, just above it.
+                ForEach([(String(localized: "Good"), good), (String(localized: "Fair"), fair)], id: \.0) { label, db in
+                    RuleMark(y: .value("dB", db))
+                        .foregroundStyle(.clear)
+                        .annotation(position: .top, alignment: .leading, spacing: 1) {
+                            Text(label).font(.system(.caption)).foregroundStyle(Theme.tx2).padding(.leading, 4)
+                        }
+                }
+            }
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                 LineMark(x: .value("Time", Date(timeIntervalSince1970: TimeInterval(p.atS))),
                          y: .value("dB", Double(p.snrDb)))
@@ -641,7 +668,7 @@ struct SignalChart: View {
         .chartYScale(domain: lo...hi)
         .chartXAxis(.hidden)
         .chartYAxis {
-            AxisMarks(position: .leading, values: [lo, (lo + hi) / 2, hi]) { value in
+            AxisMarks(position: .leading, values: ticks(lo, hi, good, fair)) { value in
                 AxisGridLine().foregroundStyle(Theme.line)
                 AxisValueLabel {
                     if let db = value.as(Double.self) {
@@ -652,9 +679,30 @@ struct SignalChart: View {
                 }
             }
         }
-        .frame(height: 92)
+        .frame(height: Self.height)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Signal chart: \(points.count) readings, now \(dbText(points[points.count - 1].snrDb))"))
+        .accessibilityLabel(said)
+        // For the UI tests (never read aloud): the limits drawn and the dB range.
+        .accessibilityIdentifier(limits.map { "signalChart \($0.goodSnrDb) \($0.fairSnrDb) \(lo) \(hi)" } ?? "signalChart")
+    }
+
+    private static let band = 0.6
+
+    /// "Signal chart: 12 readings, now 7.5 dB, good above 0.0 dB, fair above −5.0 dB".
+    private var said: String {
+        let base = String(localized: "Signal chart: \(points.count) readings, now \(dbText(points[points.count - 1].snrDb))")
+        guard let limits else { return base }
+        return base + ", " + String(localized: "good above \(dbText(limits.goodSnrDb)), fair above \(dbText(limits.fairSnrDb))")
+    }
+
+    /// dB up the side: at the limits when there are some, then the top and the bottom where they
+    /// leave room for their figures; else the top, the middle and the bottom.
+    private func ticks(_ lo: Double, _ hi: Double, _ good: Double?, _ fair: Double?) -> [Double] {
+        guard let good, let fair else { return [lo, (lo + hi) / 2, hi] }
+        let room = (hi - lo) * Double(labelRoom) / Double(Self.height)
+        var ticks: [Double] = []
+        for db in [good, fair, hi, lo] where ticks.allSatisfy({ abs($0 - db) >= room }) { ticks.append(db) }
+        return ticks
     }
 }
 

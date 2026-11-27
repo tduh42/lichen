@@ -188,6 +188,48 @@ final class ContactsTests: LichenUITest {
         XCTAssertFalse(containing(prefix("Heard only through repeaters: no signal of its own. The route above shows how it reaches you.")).exists)
     }
 
+    /// An SNR as the app writes it: "7.5 dB", "−5.0 dB" (French "7,5 dB").
+    private func db(_ v: Double) -> String {
+        (v <= -0.05 ? "−" : "") + String(format: "%.1f", abs(v)).replacingOccurrences(of: ".", with: french ? "," : ".") + " dB"
+    }
+
+    /// A figure the app wrote ("−9.5 dB", "7,5 dB") as a number.
+    private func dbValue(_ text: String) -> Double? {
+        Double(text.replacingOccurrences(of: "−", with: "-").replacingOccurrences(of: ",", with: ".")
+            .replacingOccurrences(of: " dB", with: ""))
+    }
+
+    /// CT-3: the signal chart's bands at the preset's limits (ADR-0049): the limits drawn (the
+    /// chart's identifier, for the tests) inside its range and said to VoiceOver; the hub's
+    /// readings in the Good band, the Refuge board's below Fair, as their ratings say.
+    func testCT3_ChartBands() {
+        launch()
+        tab(.nodes)
+        waitLabel(wait(nodeRow("hub"), 30, "no hub"), contains: prefix("Signal good, %@"), 30)
+        var limits: (good: Double, fair: Double)?
+        for (name, good) in [("hub", true), ("Refuge board", false)] {
+            openNode(name)
+            let chart = wait(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'signalChart '")).firstMatch,
+                             10, "no bands on \(name)'s chart")
+            let drawn = chart.identifier.split(separator: " ").dropFirst().compactMap { Double($0) }
+            XCTAssertEqual(drawn.count, 4, chart.identifier)
+            guard drawn.count == 4 else { return }
+            let (g, f, lo, hi) = (drawn[0], drawn[1], drawn[2], drawn[3])
+            // The same limits on every page (the preset's), both inside the chart's range.
+            if let limits { XCTAssertTrue(limits == (g, f), "\(limits) then \(g), \(f)") }
+            limits = (g, f)
+            XCTAssertTrue(f < g && lo < f && g < hi, "\(lo)…\(hi) does not take in \(f) and \(g)")
+            XCTAssertTrue(chart.label.hasSuffix(", " + tr("good above %@, fair above %@", db(g), db(f))), chart.label)
+            // Its last reading in its band: the hub's above Good, the board's below Fair.
+            let now = chart.label.components(separatedBy: ", ").first { $0.hasPrefix(prefix("now %@")) }
+            let snr = now.flatMap { dbValue(String($0.dropFirst(prefix("now %@").count))) }
+            XCTAssertNotNil(snr, chart.label)
+            if let snr { XCTAssertTrue(good ? snr >= g : snr < f, "\(name) now at \(snr) dB, limits \(g) and \(f)") }
+            keep("ct-chart-bands-\(name == "hub" ? "hub" : "board")")
+            back()
+        }
+    }
+
     /// CT-4: logged in to the board, its posts arrive in a row of its own, and a post goes out.
     func testCT4_RoomLoginReadAndPost() {
         launch(["-roomLogin", "hello"])
