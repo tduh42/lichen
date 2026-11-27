@@ -361,6 +361,26 @@
         }
       }
     },
+    "%@ · %@ %% of received": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ %% des reçus"
+          }
+        }
+      }
+    },
+    "%@ · %@ %% of the time": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ %% du temps"
+          }
+        }
+      }
+    },
     "%@ · %lld°": {
       "localizations": {
         "fr": {
@@ -601,6 +621,16 @@
         }
       }
     },
+    "%lld d %lld h": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld j %2$lld h"
+          }
+        }
+      }
+    },
     "%lld dBm": {
       "localizations": {
         "fr": {
@@ -797,6 +827,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld h %lld min": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld h %2$lld min"
           }
         }
       }
@@ -1351,6 +1391,26 @@
         }
       }
     },
+    "%lld min": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min"
+          }
+        }
+      }
+    },
+    "%lld min %lld s": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld min %2$lld s"
+          }
+        }
+      }
+    },
     "%lld new messages": {
       "localizations": {
         "en": {
@@ -1437,6 +1497,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld réémis"
+          }
+        }
+      }
+    },
+    "%lld s": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s"
           }
         }
       }
@@ -2377,6 +2447,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Temps d’antenne restant : %@ s. La personne l’ouvre avec l’app de son type."
+          }
+        }
+      }
+    },
+    "Airtime received": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d’antenne en réception"
+          }
+        }
+      }
+    },
+    "Airtime sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temps d’antenne en émission"
           }
         }
       }
@@ -3677,6 +3767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Partage impossible"
+          }
+        }
+      }
+    },
+    "Counted by your radio since it started. Read again every minute while this screen is open.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comptés par ta radio depuis son démarrage. Relus chaque minute tant que cet écran est ouvert."
           }
         }
       }
@@ -5711,6 +5811,16 @@
         }
       }
     },
+    "Last packet heard": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dernier paquet entendu"
+          }
+        }
+      }
+    },
     "Later": {
       "localizations": {
         "fr": {
@@ -7381,6 +7491,16 @@
         }
       }
     },
+    "Noise floor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bruit de fond"
+          }
+        }
+      }
+    },
     "Noise floor %lld dBm · last RSSI %lld dBm · SNR %@ dB": {
       "localizations": {
         "fr": {
@@ -7691,6 +7811,16 @@
         }
       }
     },
+    "On for": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allumée depuis"
+          }
+        }
+      }
+    },
     "On its way through the repeaters and back.": {
       "localizations": {
         "fr": {
@@ -7967,6 +8097,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Paquets"
+          }
+        }
+      }
+    },
+    "Packets received": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paquets reçus"
+          }
+        }
+      }
+    },
+    "Packets sent": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paquets envoyés"
           }
         }
       }
@@ -8737,6 +8887,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reçu en LoRa · groupe %@"
+          }
+        }
+      }
+    },
+    "Received with errors": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reçus avec erreurs"
           }
         }
       }
@@ -10167,6 +10327,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Depuis le %@"
+          }
+        }
+      }
+    },
+    "Since it started": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Depuis son démarrage"
           }
         }
       }
@@ -13307,6 +13477,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "aucun chemin trouvé"
+          }
+        }
+      }
+    },
+    "noise floor": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bruit de fond"
           }
         }
       }

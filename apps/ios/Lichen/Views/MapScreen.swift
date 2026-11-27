@@ -859,17 +859,24 @@ struct RouteMapCard: View {
             }
             // A leg too short on screen for its chip: said here, in its colour.
             ForEach(Array(unlabelled.enumerated()), id: \.offset) { _, leg in
+                // Its words wrap at larger text; read as one static text over the whole row (the
+                // audit found it too small to touch, and cut).
                 HStack(spacing: 8) {
                     Image(uiImage: RouteLegend.swatch(leg.color, dashed: leg.dashed)).accessibilityHidden(true)
                     Text(verbatim: leg.said.components(separatedBy: ", ").dropLast().joined(separator: ", "))
                         .font(.system(.caption))
                         .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(verbatim: leg.chip)
                         .font(.system(.caption, weight: .bold).monospacedDigit())
                         .foregroundStyle(Color(leg.chipColor))
+                        .fixedSize()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(leg.said)
+                .accessibilityAddTraits(.isStaticText)
             }
             if drawn {
                 RouteLegend()

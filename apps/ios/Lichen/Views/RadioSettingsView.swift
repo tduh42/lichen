@@ -87,6 +87,7 @@ private struct RadioSettingsContent: View {
     @FocusState private var searching: Bool
     /// The row a search result led to, lit for a moment.
     @State private var highlighted: String?
+    @Environment(\.scenePhase) private var phase
 
     static let bandwidths: [UInt32] = [7_800, 10_400, 15_600, 20_800, 31_250, 41_700, 62_500, 125_000, 250_000, 500_000]
     static let intervals: [UInt32] = [60, 300, 900, 3_600]
@@ -108,7 +109,7 @@ private struct RadioSettingsContent: View {
                     if let radio = model.radioSettings, radio.read, model.isConnected {
                         // While a setting waits for the radio, the value asked for (B-user-5).
                         let r = model.radioAsked ?? radio
-                        RadioHeader(settings: r)
+                        RadioHeader(settings: r, lit: highlighted)
                         searchField(r, proxy)
                         if query.trimmingCharacters(in: .whitespaces).isEmpty {
                             lora(r)
@@ -119,6 +120,7 @@ private struct RadioSettingsContent: View {
                             delivery(r)
                             bluetooth(r)
                             device(r)
+                            since(r)
                         } else {
                             results(r, proxy)
                         }
@@ -148,6 +150,15 @@ private struct RadioSettingsContent: View {
             load()
         }
         .onChange(of: model.radioSettings) { load() }
+        // Its figures (§16.4): now, then every minute while this screen is on view; never in the
+        // background (stopped with the app, or when the screen closes).
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                model.refreshRadioStats()
+                try? await Task.sleep(for: .seconds(60))
+            }
+        }
         .alert("Not changed", isPresented: Binding(get: { model.radioError != nil }, set: { if !$0 { model.radioError = nil } })) {
             Button("OK") { model.radioError = nil }
         } message: {
@@ -187,7 +198,11 @@ private struct RadioSettingsContent: View {
         let delivery = String(localized: "Delivery")
         let bluetooth = String(localized: "Bluetooth")
         let radio = String(localized: "This radio")
-        var e = [Entry(id: "lora", title: String(localized: "Now"), section: lora, icon: "antenna.radiowaves.left.and.right", tint: .lora),
+        let since = String(localized: "Since it started")
+        // The header's noise floor first, when the radio reported it.
+        var e = r.noiseFloorDbm == nil ? []
+            : [Entry(id: "noise", title: String(localized: "Noise floor"), section: radio, icon: "waveform.path")]
+        e += [Entry(id: "lora", title: String(localized: "Now"), section: lora, icon: "antenna.radiowaves.left.and.right", tint: .lora),
                  Entry(id: "preset", title: String(localized: "Preset"), section: lora, icon: "list.bullet")]
         if preset == .custom {
             e += [Entry(id: "frequency", title: String(localized: "Frequency (MHz)"), section: lora, icon: "waveform"),
@@ -230,6 +245,7 @@ private struct RadioSettingsContent: View {
             e += [Entry(id: "key", title: String(localized: "MeshCore public key"), section: radio, icon: "key"),
                   Entry(id: "share_key", title: String(localized: "Share the key"), section: radio, icon: "square.and.arrow.up")]
         }
+        e += r.figures.map { Entry(id: $0.id, title: $0.title, section: since, icon: $0.icon) }
         return e
     }
 
@@ -320,6 +336,30 @@ private struct RadioSettingsContent: View {
     }
 
     // MARK: Sections
+
+    /// What the radio counted since it started (§16.4): one row per figure it reported, then a
+    /// note; nothing when it reported none.
+    @ViewBuilder private func since(_ r: RadioSettings) -> some View {
+        let figures = r.figures
+        if !figures.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionLabel("Since it started").padding(.top, 10)
+                CardList {
+                    ForEach(Array(figures.enumerated()), id: \.element) { i, f in
+                        if i > 0 { CardDivider.tiled }
+                        FigureRow(icon: f.icon, title: f.title, value: r.text(f))
+                            .setting(f.id, lit: highlighted)
+                    }
+                }
+                Text("Counted by your radio since it started. Read again every minute while this screen is open.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                    .accessibilityIdentifier("figuresNote")
+            }
+        }
+    }
 
     /// What the header leaves out: its storage, its MeshCore key and code (its model, firmware
     /// and battery are in the header).
@@ -832,10 +872,12 @@ extension View {
 }
 
 /// The radio at the top of its settings: name and model, the link and for how long, the
-/// battery, the airtime left this hour (a bar in `lora`) and the firmware. Only what the radio
-/// and the core report: a figure the radio did not give is left out.
+/// battery, the airtime left this hour (a bar in `lora`), the noise floor and the firmware. Only
+/// what the radio and the core report: a figure the radio did not give is left out.
 struct RadioHeader: View {
     let settings: RadioSettings
+    /// The figure a search result led to, lit for a moment (the noise floor).
+    var lit: String?
     @Environment(AppModel.self) private var model
     @ScaledMetric(relativeTo: .subheadline) private var ring: CGFloat = 58
     @Environment(\.dynamicTypeSize) private var textSize
@@ -876,6 +918,9 @@ struct RadioHeader: View {
             Rectangle().fill(Theme.line).frame(height: 1)
             HStack(alignment: .top, spacing: 12) {
                 figure("\(airtimeLeft) s", String(localized: "airtime left"))
+                if let noise = r.noiseFloorDbm {
+                    figure(dbmText(noise), String(localized: "noise floor")).setting("noise", lit: lit)
+                }
                 if !r.firmware.isEmpty { figure(r.firmware, String(localized: "firmware")) }
             }
             // The share of this hour's airtime left.
@@ -1008,6 +1053,70 @@ struct RadioRowStatus: View {
         case .notKept: String(localized: "The radio answered but kept its old value.")
         case .refused: String(localized: "The radio refused this setting.")
         case .noAnswer, .saved: String(localized: "The radio did not answer.")
+        }
+    }
+}
+
+/// What the radio counted since it started (§16.4): a figure's row, its tile and title, its value
+/// at the end in tabular digits, or under the title when both don't fit on one line; one element
+/// to VoiceOver ("Packets received, 1,204").
+struct FigureRow: View {
+    let icon: String
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            IconTile(symbol: icon)
+            TitleAndValue {
+                Text(title).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
+                Text(value).font(.system(.callout).monospacedDigit()).foregroundStyle(Theme.tx2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 11)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "\(title), \(value.replacingOccurrences(of: " · ", with: ", "))"))
+        .accessibilityAddTraits(.isStaticText)
+    }
+}
+
+/// A title at the start and its value at the end of one line; the value under the title when
+/// the line can't hold both (larger text, French).
+struct TitleAndValue: Layout {
+    var gap: CGFloat = 12
+    var spacing: CGFloat = 2
+
+    private func oneLine(_ subviews: Subviews, _ width: CGFloat?) -> (CGSize, CGSize, Bool) {
+        let t = subviews[0].sizeThatFits(.unspecified)
+        let v = subviews[1].sizeThatFits(.unspecified)
+        return (t, v, t.width + gap + v.width <= (width ?? .infinity))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let (t, v, fits) = oneLine(subviews, proposal.width)
+        if fits { return CGSize(width: proposal.width ?? t.width + gap + v.width, height: max(t.height, v.height)) }
+        let p = ProposedViewSize(width: proposal.width, height: nil)
+        let t2 = subviews[0].sizeThatFits(p)
+        let v2 = subviews[1].sizeThatFits(p)
+        return CGSize(width: proposal.width ?? max(t2.width, v2.width), height: t2.height + spacing + v2.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let (_, _, fits) = oneLine(subviews, bounds.width)
+        if fits {
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading, proposal: .unspecified)
+            subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+        } else {
+            let p = ProposedViewSize(width: bounds.width, height: nil)
+            let t = subviews[0].sizeThatFits(p)
+            subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: p)
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + t.height + spacing), proposal: p)
         }
     }
 }
