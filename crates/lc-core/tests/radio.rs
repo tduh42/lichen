@@ -336,3 +336,50 @@ fn the_radio_s_board_and_figures() {
             .unwrap()
     );
 }
+
+/// The last packet's RSSI and SNR (`GET_STATS` type 1, §16.4): before the radio heard any, both
+/// read 0 and both are unknown; then the last packet's; a radio that reads RSSI 0 for every
+/// packet (the stock Heltec V4) still gives its SNR.
+#[test]
+fn the_last_packet_heard() {
+    let mut net = Net::new(LoRaParams::meshcore(8, 62_500, 5).unwrap(), 0, 3);
+    let a = net.add_companion(1, "alice");
+    let m = net.add_stock_companion(6, "Marc");
+    net.link(a, m);
+    net.know(m, a, true);
+    net.connect(a);
+    assert!(net.run_until(net.now + 10_000, |n| {
+        n.nodes[a].core.as_ref().is_some_and(|c| c.ready())
+    }));
+    net.run_until(net.now + 2_000, |_| false);
+    let last = |net: &Net| {
+        net.with_core_ref(a, |c| {
+            let r = c.radio_settings();
+            (r.last_rssi, r.last_snr4, r.packets_recv)
+        })
+        .unwrap()
+    };
+    assert_eq!(last(&net), (None, None, Some(0)), "nothing heard yet");
+
+    // Something heard, read again a minute later: both.
+    net.set_link_readings(a, m, 26, -97);
+    net.send_plain_text(m, a, "Salut ?", 1_793_000_000);
+    net.run_until(net.now + 61_000, |_| false);
+    assert!(
+        net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap()
+    );
+    net.run_until(net.now + 2_000, |_| false);
+    assert_eq!(last(&net), (Some(-97), Some(26), Some(1)));
+
+    // A radio that reads RSSI 0 for every packet: its SNR alone.
+    net.set_link_readings(a, m, -14, 0);
+    net.send_plain_text(m, a, "Toujours là ?", 1_793_000_100);
+    net.run_until(net.now + 61_000, |_| false);
+    assert!(
+        net.with_core(a, |c, now| c.radio_refresh_stats(now))
+            .unwrap()
+    );
+    net.run_until(net.now + 2_000, |_| false);
+    assert_eq!(last(&net), (None, Some(-14), Some(2)));
+}

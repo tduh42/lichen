@@ -388,6 +388,10 @@ fn rl_7_the_radio_card_s_board_and_figures() {
         "{s:?}"
     );
     assert_eq!(s.receive_errors, Some(0));
+    // Read at connection, before the radio heard any packet: the last one is unknown (both
+    // read 0, §16.4), never "0 dB".
+    assert_eq!(s.packets_received, Some(0), "{s:?}");
+    assert_eq!((s.last_rssi_dbm, s.last_snr_db), (None, None), "{s:?}");
     let up = s.uptime_s.expect("uptime");
     assert!(
         !sim.core.refresh_radio_stats(sim.now),
@@ -399,6 +403,12 @@ fn rl_7_the_radio_card_s_board_and_figures() {
     let again = sim.core.radio_settings();
     assert!(again.uptime_s.is_some_and(|u| u >= up + 60), "{again:?}");
     assert!(again.packets_received >= s.packets_received);
+    // A minute on, it has heard the mesh: the last packet's RSSI and SNR.
+    assert!(again.packets_received.is_some_and(|n| n > 0), "{again:?}");
+    assert!(
+        again.last_rssi_dbm.is_some() && again.last_snr_db.is_some(),
+        "{again:?}"
+    );
 }
 
 /// RL-7: the battery is read at connection and again on request; with radio details on, a

@@ -368,12 +368,14 @@ impl Core {
         self.events.push_back(Event::RadioSettings);
     }
 
-    /// `GET_STATS` type 1: a noise floor of 0 (not sampled yet) and an RSSI of 0 (none, or a
-    /// radio that does not measure it) are unknown.
+    /// `GET_STATS` type 1 (§16.4): a noise floor of 0 (not sampled yet, or sampling again) is
+    /// unknown; a last RSSI and SNR both 0 (no packet heard yet) are both unknown; an RSSI of 0
+    /// alone (a radio that does not measure it, as the stock Heltec V4) is unknown, its SNR not.
     pub(crate) fn radio_radio_stats(&mut self, noise: i16, rssi: i8, snr4: i8, tx: u32, rx: u32) {
+        let heard = rssi != 0 || snr4 != 0;
         self.settings.noise_floor_dbm = (noise != 0).then_some(noise);
         self.settings.last_rssi = (rssi != 0).then_some(rssi);
-        self.settings.last_snr4 = Some(snr4);
+        self.settings.last_snr4 = heard.then_some(snr4);
         self.settings.tx_air_s = Some(tx);
         self.settings.rx_air_s = Some(rx);
         self.events.push_back(Event::RadioSettings);
