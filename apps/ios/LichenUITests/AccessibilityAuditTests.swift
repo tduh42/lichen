@@ -309,8 +309,12 @@ final class AccessibilityAuditTests: XCTestCase {
         app.swipeUp()
         sleep(1)
         try audit(app, "radio settings, lower")
-        app.swipeDown()
-        app.swipeDown()
+        // The radio's figures, the last card (§16.4).
+        let note = app.staticTexts["figuresNote"]
+        for _ in 0..<10 where !(note.exists && note.isHittable) { app.swipeUp() }
+        sleep(1)
+        try audit(app, "radio settings, since it started")
+        for _ in 0..<12 { app.swipeDown() }
         // Search: the keyboard goes, the rows found stay.
         field.tap()
         field.typeText("e\n")

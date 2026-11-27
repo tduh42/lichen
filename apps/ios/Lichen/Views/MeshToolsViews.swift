@@ -430,6 +430,8 @@ struct RouteRibbon: View {
     let route: NodeRoute
     @Environment(AppModel.self) private var model
     @ScaledMetric(relativeTo: .caption) private var stopWidth: CGFloat = 62
+    /// The first stop, us, wider: the radio's model under "You" on one line ("ThinkNode M5").
+    @ScaledMetric(relativeTo: .caption) private var firstWidth: CGFloat = 92
     @ScaledMetric(relativeTo: .caption) private var minLeg: CGFloat = 56
     @State private var width: CGFloat = 0
 
@@ -438,12 +440,12 @@ struct RouteRibbon: View {
         let names = route.stops.enumerated().map { i, s in i == 0 ? you : s.display }
         let last = route.stops.count - 1
         // The legs share the room the stops leave, never narrower than `minLeg`.
-        let legWidth = last > 0 ? max(minLeg, (width - stopWidth * CGFloat(last + 1)) / CGFloat(last)) : minLeg
+        let legWidth = last > 0 ? max(minLeg, (width - firstWidth - stopWidth * CGFloat(last)) / CGFloat(last)) : minLeg
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(route.stops.enumerated()), id: \.offset) { i, stop in
                     RouteStopView(stop: stop, first: i == 0, last: i == last, name: names[i])
-                        .frame(width: stopWidth)
+                        .frame(width: i == 0 ? firstWidth : stopWidth)
                     if i < last {
                         RouteLegView(leg: i < route.legs.count ? route.legs[i] : nil, from: names[i], to: names[i + 1])
                             .frame(width: legWidth)
@@ -501,6 +503,8 @@ struct RouteStopView: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if first && !model.nodeName.isEmpty {
+                // On one line in its wider stop (`RouteRibbon.firstWidth`, which grows with the
+                // text); on two rather than cut when longer.
                 Text(verbatim: model.nodeName)
                     .font(.system(.caption))
                     .foregroundStyle(Theme.tx2)

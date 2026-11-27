@@ -183,6 +183,12 @@ final class AppModel {
         pump()
     }
 
+    /// Asks the radio for its figures again (§16.4; at most every 60 s, the core decides): Radio
+    /// settings calls it while it is on screen, nothing else does.
+    func refreshRadioStats() {
+        if core.refreshRadioStats(nowMs: now()) { pump() }
+    }
+
     /// Restarts the radio: the connection drops and comes back.
     func rebootRadio() {
         core.rebootRadio()
@@ -520,7 +526,8 @@ final class AppModel {
         default: break
         }
         debugScreen = args.string(forKey: "screen")
-        if debugScreen == "privacy" { tab = .settings }
+        // Both are in Settings: -screen radio alone opens it there, as on Android.
+        if debugScreen == "privacy" || debugScreen == "radio" { tab = .settings }
         // -identityProblem unavailable|corrupt|notSaved|storage|databaseKey|databaseKeyLost: the
         // identity (or database) failure screen.
         switch args.string(forKey: "identityProblem") {

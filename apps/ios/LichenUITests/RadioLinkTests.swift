@@ -402,6 +402,73 @@ final class RadioLinkTests: LichenUITest {
         XCTAssertTrue(element(tr("Preset")).exists, "the other rows did not come back")
     }
 
+    /// A row of "Since it started", read as one: its title, then its figure.
+    private func figure(_ title: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", tr(title) + ", ")).firstMatch
+    }
+
+    /// RL-7: the radio's own figures (§16.4, `GET_STATS`): the noise floor in the header
+    /// ("−118 dBm"); "Since it started", the last card, a row per figure the demo radio counts,
+    /// each read as one ("Packets received, 1,204"), the errors as a share of what it received
+    /// and the airtime as a share of the time it has been on, the note under it; read again a
+    /// minute later, with the last packet heard by then (none before the radio heard one). "noise" ("bruit") finds the noise floor; "errors" ("erreurs") the received
+    /// with errors.
+    func testRL7_TheRadiosOwnFigures() {
+        openRadioSettings()
+        let noise = containing("−118 dBm")
+        wait(noise, 10, "no noise floor in the header")
+        XCTAssertTrue(noise.label.contains(tr("noise floor")), "the noise floor: \(noise.label)")
+        let note = element(tr("Counted by your radio since it started. Read again every minute while this screen is open."))
+        reveal(note)
+        // What the radio counts from its start. Not the last packet: none until it has heard one
+        // (an RSSI and SNR both 0 mean none, #99), checked below once the figures are read again.
+        for title in ["On for", "Packets received", "Packets sent", "Received with errors", "Airtime sent",
+                      "Airtime received"] {
+            XCTAssertTrue(figure(title).exists, "no “\(tr(title))” in Since it started")
+        }
+        // The demo radio counts no error: 0, a share of what it received once it received any.
+        let errors = figure("Received with errors").label
+        let noneReceived = figure("Packets received").label.hasSuffix(", 0")
+        XCTAssertEqual(errors, tr("Received with errors") + ", "
+                       + (noneReceived ? "0" : tr("%@ · %@ %% of received", "0", "0").replacingOccurrences(of: " · ", with: ", ")),
+                       "the errors")
+        let sent = figure("Airtime sent").label
+        let share = tr("%@ · %@ %% of the time", "#", "#").components(separatedBy: "#").last ?? "#"
+        XCTAssertTrue(sent.hasSuffix(share), "the airtime sent: \(sent)")
+        keep("rl-figures")
+        // Read again every minute while the screen is open: the time it has been on moves on
+        // (four minutes of the demo's time per minute).
+        let on = figure("On for")
+        let before = on.label
+        let end = Date().addingTimeInterval(90)
+        while on.label == before && Date() < end { pause(5) }
+        XCTAssertNotEqual(on.label, before, "the figures were not read again within a minute and a half")
+        // By then the radio has heard the demo's traffic: the last packet, once a re-read came
+        // after it (a minute more at most).
+        let last = figure("Last packet heard")
+        let heard = Date().addingTimeInterval(75)
+        while !last.exists && Date() < heard { pause(5) }
+        XCTAssertTrue(last.exists, "no last packet heard after the figures were read again")
+        if last.exists {
+            XCTAssertTrue(last.label.contains(" dBm, ") && last.label.hasSuffix(" dB"), "the last packet: \(last.label)")
+        }
+        // The search finds them: the noise floor, in the header, brought into sight.
+        for _ in 0..<6 { app.swipeDown() }
+        pause(1)
+        let field = app.textFields[tr("Search radio settings")]
+        focus(field)
+        field.typeText(french ? "erreurs" : "errors")
+        wait(cardButton(tr("Received with errors")), 5, "Received with errors not found")
+        button(tr("Clear the search")).tap()
+        focus(field)
+        field.typeText(french ? "bruit" : "noise")
+        let result = cardButton(tr("Noise floor"))
+        wait(result, 5, "the noise floor not found")
+        XCTAssertFalse(cardButton(tr("Packets sent")).exists, "rows that do not match are found")
+        result.tap()
+        waitInSight(noise, 5, "the noise floor is not in sight")
+    }
+
     /// Waits until the advert row says the advert was sent, at a time ("20:41"), nearby or to
     /// the whole mesh.
     private func waitSent(flood: Bool, file: StaticString = #filePath, line: UInt = #line) {

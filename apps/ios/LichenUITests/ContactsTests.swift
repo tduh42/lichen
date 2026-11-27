@@ -303,6 +303,13 @@ final class ContactsTests: LichenUITest {
         XCTAssertTrue(hubLeg.label.hasSuffix(" dB"), hubLeg.label)
         XCTAssertEqual(crestLeg.label, tr("%@ to %@, %@", "hub", "crest", tr("not measured")))
         XCTAssertTrue(element(tr("Not traced yet")).exists, "said traced")
+        // The radio's name under You on one line, as tall as "You" (it wrapped as
+        // "ThinkNode" / "M5").
+        let radio = app.staticTexts["ThinkNode M5"]
+        let youText = app.staticTexts[you]
+        XCTAssertTrue(radio.exists && youText.exists, "no radio's name under You")
+        XCTAssertLessThan(radio.frame.height, youText.frame.height * 1.4,
+                          "the radio's name on more than one line: \(radio.frame) under \(youText.frame)")
         // Heard only through the hub: no signal of its own.
         let noSignal = tr("Heard only through repeaters: no signal of its own. The route above shows how it reaches you.")
         reveal(element(noSignal))
