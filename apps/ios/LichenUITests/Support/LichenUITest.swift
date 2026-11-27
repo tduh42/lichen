@@ -191,6 +191,60 @@ class LichenUITest: XCTestCase {
         return element
     }
 
+    // MARK: The demo's clock
+
+    /// The demo's time, in seconds since it started, with `-demoClock YES` (`DemoClock.swift`).
+    /// At `-demoSpeed`, the app's clock counts at most 0.25 s of the wall clock per reading, so
+    /// the demo falls behind the wall clock while the app's main thread is busy (the tests' own
+    /// accessibility queries, the map): a wait for one of the demo's events goes by this clock.
+    func demoTime() -> Double? {
+        let clock = app.descendants(matching: .any)["demoClock"]
+        guard clock.exists, let value = clock.value as? String else { return nil }
+        return Double(value)
+    }
+
+    /// Waits until `done` while the demo's clock runs `seconds` more, or fails with `message`
+    /// and both times. Looks every 2 s of the wall clock, so that the waiting leaves the app's
+    /// main thread free; gives up anyway after `seconds` of the wall clock and a minute (the
+    /// demo slower than the wall clock). Needs `-demoClock YES`.
+    func waitDemo(_ seconds: Double, _ message: @autoclosure () -> String, file: StaticString = #filePath,
+                  line: UInt = #line, until done: () -> Bool) {
+        let wallStart = Date()
+        let wallEnd = wallStart.addingTimeInterval(seconds + 60)
+        guard let start = demoTime() else {
+            XCTFail("no demo clock: launch with -demoClock YES", file: file, line: line)
+            return
+        }
+        var now = start
+        while !done() {
+            if now - start >= seconds || Date() >= wallEnd {
+                attachHierarchy()
+                XCTFail("\(message()) after \(Int(now - start)) s of the demo's time "
+                        + "(\(Int(Date().timeIntervalSince(wallStart))) s of the wall clock)", file: file, line: line)
+                return
+            }
+            pause(2)
+            now = demoTime() ?? now
+        }
+    }
+
+    /// Waits for `element` while the demo's clock runs `seconds` more (`waitDemo`).
+    @discardableResult
+    func waitDemo(_ element: XCUIElement, _ seconds: Double, _ message: @autoclosure () -> String,
+                  file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
+        waitDemo(seconds, message(), file: file, line: line) { element.exists }
+        return element
+    }
+
+    /// Taps `element` if it is there, without failing when the app takes it away as it is
+    /// tapped (an SOS alert can go and come back a moment after): a snapshot, which does not
+    /// fail when nothing matches, then a tap where it was.
+    func tapIfThere(_ element: XCUIElement) {
+        guard let there = try? element.snapshot() else { return }
+        let f = there.frame
+        app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: f.midX, dy: f.midY)).tap()
+    }
+
     /// The app's accessibility tree, kept with a failure.
     func attachHierarchy() {
         let tree = XCTAttachment(string: app.debugDescription)

@@ -389,6 +389,10 @@ final class AppModel {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var demo: DemoNetwork?
     @ObservationIgnored private var demoTimer: Timer?
+    #if DEBUG
+    /// The demo's clock for the UI tests (`-demoClock YES`, `DemoClock.swift`).
+    @ObservationIgnored private var demoClock: DemoClock?
+    #endif
     /// The simulated network runs on a queue of its own, reads and writes in order: catching up
     /// after a pause can take seconds, and must not freeze the screen.
     @ObservationIgnored private let demoQueue = DispatchQueue(label: "lichen.demo", qos: .userInitiated)
@@ -757,6 +761,9 @@ final class AppModel {
         let speed = min(4, max(1, args.integer(forKey: "demoSpeed")))
         net.setSpeed(speed: UInt32(speed))
         setClockSpeed(Double(speed))
+        // -demoClock YES: the core's clock shown to the UI tests, which wait for the demo's
+        // events on it rather than on the wall clock (F-demo-timing).
+        if args.bool(forKey: "demoClock") { demoClock = DemoClock() }
         #endif
         companionState = .connected("ThinkNode M5")
         core.connect(nowMs: now())
@@ -863,6 +870,9 @@ final class AppModel {
         guard let demo, !demoReading else { return }
         demoReading = true
         let t = now()
+        #if DEBUG
+        demoClock?.show(t)
+        #endif
         demoQueue.async { [weak self] in
             let frames = demo.read(nowMs: t)
             DispatchQueue.main.async {

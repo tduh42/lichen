@@ -98,7 +98,7 @@ final class LifecycleTests: LichenUITest {
     /// with Lucie's next post; muted, Camille's answer gives no notification.
     func testLC2_PinArchiveMute() {
         // At the wall clock's pace: Lucie's next post comes a minute after the first.
-        launch(speed: 1, banners: true)
+        launch(["-demoClock", "YES"], speed: 1, banners: true)
         wait(row("Marc"), 90, "no message from Marc")
         wait(row("Camille"), 5)
         rowAction("Marc", tr("Pin"))
@@ -117,12 +117,12 @@ final class LifecycleTests: LichenUITest {
         send("Quiet for a while")
         swipeBack()
         let answer = banner("Copy: \"Quiet for a while")
-        let deadline = Date().addingTimeInterval(120)
-        while !row("Camille").label.contains("Copy: \"Quiet") && Date() < deadline {
+        // Our text, then her answer, each through the air's retries (a round every `W`, §7.1,
+        // §7.4): minutes when the demo's air is busy, counted on its clock.
+        waitDemo(240, "her answer did not come") {
             XCTAssertFalse(answer.exists, "a notification for a muted chat")
-            pause(1)
+            return row("Camille").label.contains("Copy: \"Quiet")
         }
-        XCTAssertTrue(row("Camille").label.contains("Copy: \"Quiet"), "her answer did not come")
     }
 
     /// LC-3: Camille's conversation deleted: gone from Messages; a new message starts it again,
