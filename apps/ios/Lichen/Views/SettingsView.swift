@@ -408,10 +408,12 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.nodeName.isEmpty ? String(localized: "MeshCore radio") : model.nodeName)
                             .font(.system(.body, weight: .semibold))
-                        Text(radioLine)
+                        // While a connection still reads the radio, what it reads, and how far.
+                        Text(radioReadingText(model).map { "\(model.linkName) · \($0)" } ?? radioLine)
                             .font(.system(.footnote))
                             .foregroundStyle(Theme.tx2)
                             .fixedSize(horizontal: false, vertical: true)
+                        RadioReadingBar().padding(.top, 2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     Badge(text: String(localized: "connected"), background: Theme.okBg, foreground: Theme.okFg)

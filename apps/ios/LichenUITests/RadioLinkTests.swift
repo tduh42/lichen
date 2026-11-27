@@ -610,4 +610,60 @@ final class RadioLinkTests: LichenUITest {
         waitLabel(message("Radio details"), contains: tr("Delivered") + " · 1 fragment", 60)
         keep("rl-details-chat")
     }
+
+    // MARK: The reading after a connection (§1.1)
+
+    /// The radio line's label (its parts said apart: "Reading the radio, contacts 34 of 206").
+    private var radioLine: XCUIElement { app.buttons["radioLine"] }
+
+    /// What the radio line says before a count: "Reading the radio, contacts " (a marker of
+    /// three digits: `tr` groups thousands as the language does).
+    private func lineStart(_ key: String) -> String {
+        tr(key, 987, 987).replacingOccurrences(of: " · ", with: ", ").components(separatedBy: "987")[0]
+    }
+
+    /// RL-12: with 200 more contacts on the demo radio, the radio line says what the connection
+    /// reads, each step held 3 s for the test's slow reads (`-radioReadingFor 3`): its contacts
+    /// "n of 206", as its own count says; meanwhile Messages never says it has no conversation;
+    /// then the usual connected line.
+    func testRL12_TheRadioLineWhileItReads() {
+        launch(["-manyContacts", "200", "-radioReadingFor", "3"])
+        let contacts = lineStart("Reading the radio · contacts %lld of %lld")
+        let end = Date().addingTimeInterval(30)
+        var seen = ""
+        while Date() < end {
+            if radioLine.exists {
+                let label = radioLine.label
+                if label.hasPrefix(contacts) {
+                    seen = label
+                    break
+                }
+            }
+            XCTAssertFalse(element(tr("No conversations yet")).exists, "no conversation said while reading the radio")
+            pause(0.3)
+        }
+        XCTAssertTrue(seen.hasPrefix(contacts), "the contacts' count was not on the radio line")
+        XCTAssertTrue(seen.hasSuffix(" 206"), "not counted out of the radio's 206: \(seen)")
+        keep("rl-reading-contacts")
+        // Then the usual line.
+        waitLabel(radioLine, contains: connected, 30)
+        XCTAssertFalse(radioLine.label.contains(contacts), radioLine.label)
+    }
+
+    /// RL-12: the demo radio switched off at 40 s while Marc writes (45 s) and Lucie posts
+    /// (110 s), back at 150 s: the radio line says it fetches what waited on the radio ("Fetching
+    /// waiting messages · 1"), and Marc's text comes into Messages.
+    func testRL12_FetchingWaitingMessages() {
+        launch(["-offline", "40", "-online", "150", "-radioReadingFor", "3"], skip: 0)
+        // Off, before Marc's text: 10 s of the wall clock at 4×, minutes when the demo trails it
+        // on a loaded machine.
+        wait(element(tr("Radio disconnected")), 150, "the radio did not go off")
+        XCTAssertFalse(row("Marc").exists, "Marc's text came while the radio was off")
+        let fetching = lineStart("Fetching waiting messages · %lld")
+        let line = app.buttons.matching(NSPredicate(format: "identifier == 'radioLine' AND label BEGINSWITH %@", fetching)).firstMatch
+        wait(line, 240, "the waiting messages were not said fetched")
+        keep("rl-reading-fetching")
+        wait(row("Marc"), 30, "what waited on the radio did not come")
+        waitLabel(radioLine, contains: connected, 30)
+    }
 }

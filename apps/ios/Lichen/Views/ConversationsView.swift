@@ -400,6 +400,15 @@ struct RadioLine: View {
     @State private var open = false
 
     var body: some View {
+        // VoiceOver hears the steps of a connection's reading, not every count: once, as the
+        // messages that waited come in.
+        let fetching = model.isConnected && { if case .messages = model.radioReading { true } else { false } }()
+        line.onChange(of: fetching) { _, now in
+            if now { AccessibilityNotification.Announcement(String(localized: "Fetching waiting messages")).post() }
+        }
+    }
+
+    @ViewBuilder private var line: some View {
         if details {
             RadioCard()
         } else if open {
@@ -410,10 +419,13 @@ struct RadioLine: View {
             Button { withAnimation(.snappy) { open = true } } label: {
                 HStack(spacing: 8) {
                     Circle().fill(model.isConnected ? Theme.ok : Theme.tx2).frame(width: 8, height: 8)
-                    Text(radioHeadline(model))
-                        .font(.system(.subheadline))
-                        .foregroundStyle(Theme.tx2)
-                        .multilineTextAlignment(.leading)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(radioHeadline(model))
+                            .font(.system(.subheadline))
+                            .foregroundStyle(Theme.tx2)
+                            .multilineTextAlignment(.leading)
+                        RadioReadingBar()
+                    }
                     Spacer()
                     Image(systemName: "chevron.down")
                         .font(.system(.footnote, weight: .semibold))
@@ -424,20 +436,63 @@ struct RadioLine: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // Said as one line, its parts apart: "Reading the radio, contacts 34 of 206".
+            .accessibilityLabel(said(radioHeadline(model)))
             .accessibilityHint("Shows the airtime left and the transports")
             .accessibilityIdentifier("radioLine")
         }
     }
 }
 
-/// "Demo radio connected", "No radio connected"…
+/// "Demo radio connected", "No radio connected"…; while a connection still reads the radio,
+/// what it reads ("Reading the radio · contacts 34 of 206").
 @MainActor func radioHeadline(_ model: AppModel) -> String {
+    if let reading = radioReadingText(model) { return reading }
     switch model.companionState {
     case let .connected(name): return String(localized: "\(name) connected")
     case let .connecting(name): return String(localized: "Connecting to \(name)…")
     case .scanning: return String(localized: "Looking for nodes…")
     case .off: return String(localized: "Bluetooth is off")
     case .idle: return String(localized: "No radio connected")
+    }
+}
+
+/// What a connection is still reading (protocol §1.1, after `APP_START`), as the radio line
+/// says it: "Reading the radio…", "… · contacts 34 of 206", "… · channels", "Fetching waiting
+/// messages · 3"; nil once it is over, or without a radio. No time left, no percentage: only
+/// what the radio's answers count.
+@MainActor func radioReadingText(_ model: AppModel) -> String? {
+    guard model.isConnected, let reading = model.radioReading else { return nil }
+    switch reading {
+    case .settings: return String(localized: "Reading the radio…")
+    case let .contacts(done, total): return String(localized: "Reading the radio · contacts \(Int(done)) of \(Int(total))")
+    case .channels: return String(localized: "Reading the radio · channels")
+    case let .messages(fetched): return String(localized: "Fetching waiting messages · \(Int(fetched))")
+    }
+}
+
+/// A line's parts as VoiceOver says them: "·" read as a pause.
+func said(_ line: String) -> String {
+    line.replacingOccurrences(of: " · ", with: ", ")
+}
+
+/// Under the radio line while the radio's contacts are read: done of total, thin, in `lora`;
+/// nothing without a total. Silent: the line says it.
+struct RadioReadingBar: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        if model.isConnected, case let .contacts(done, total) = model.radioReading, total > 0 {
+            Capsule().fill(Theme.s2)
+                .frame(height: 3)
+                .overlay(alignment: .leading) {
+                    GeometryReader { g in
+                        Capsule().fill(Theme.lora).frame(width: g.size.width * min(1, CGFloat(done) / CGFloat(total)))
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityHidden(true)
+        }
     }
 }
 
@@ -458,6 +513,8 @@ struct RadioCard: View {
                 // The radio's name whole, its link and parameters under it.
                 VStack(alignment: .leading, spacing: 2) {
                     Text(radioHeadline(model)).font(.system(.subheadline, weight: .semibold))
+                        .accessibilityLabel(said(radioHeadline(model)))
+                    RadioReadingBar().padding(.vertical, 2)
                     if let r = model.radio, model.isConnected {
                         // How the radio is reached: Bluetooth, TCP, or the demo's simulation.
                         let link = model.isDemo ? String(localized: "Demo") : model.link == .tcp ? "TCP" : "BLE"
@@ -681,18 +738,24 @@ struct StatusBanners: View {
     }
 }
 
-/// No conversation yet (mockup `etats`, bottom).
+/// No conversation yet (mockup `etats`, bottom); while a connection still reads the radio, not
+/// "no conversations" but that it is reading (its channels and chats are not all in yet).
 private struct EmptyConversations: View {
     let addContact: () -> Void
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         VStack(spacing: 12) {
             ChirpMark(color: Theme.tx2).frame(width: 40, height: 40)
-            Text("No conversations yet").font(.system(.body, weight: .semibold))
-            Text("Add a contact by scanning their code, in person.")
-                .font(.system(.subheadline))
-                .foregroundStyle(Theme.tx2)
-                .multilineTextAlignment(.center)
+            if radioReadingText(model) != nil {
+                Text("Reading the radio…").font(.system(.body, weight: .semibold))
+            } else {
+                Text("No conversations yet").font(.system(.body, weight: .semibold))
+                Text("Add a contact by scanning their code, in person.")
+                    .font(.system(.subheadline))
+                    .foregroundStyle(Theme.tx2)
+                    .multilineTextAlignment(.center)
+            }
             Button("Add a contact", action: addContact)
                 .font(.system(.subheadline, weight: .semibold))
                 .padding(.horizontal, 18)
