@@ -181,7 +181,12 @@ struct NewChatSheet: View {
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
             if model.contacts.isEmpty {
-                Text("No contacts yet: they come from your node.").foregroundStyle(Theme.secondaryText)
+                // Still reading the radio's contacts: not "no contacts" yet.
+                if radioReadingText(model) != nil {
+                    Text("Reading the radio…").foregroundStyle(Theme.secondaryText)
+                } else {
+                    Text("No contacts yet: they come from your node.").foregroundStyle(Theme.secondaryText)
+                }
             } else if shownPeople.isEmpty {
                 Text("Nobody matches.").foregroundStyle(Theme.secondaryText)
             }

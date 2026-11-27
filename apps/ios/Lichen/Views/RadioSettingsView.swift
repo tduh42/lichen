@@ -865,6 +865,7 @@ struct RadioHeader: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+                    RadioReadingBar().padding(.top, 2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityElement(children: .combine)
@@ -890,8 +891,10 @@ struct RadioHeader: View {
         .card(padding: 16)
     }
 
-    /// "Bluetooth · connected 2 h 14 min".
+    /// "Bluetooth · connected 2 h 14 min"; while a connection still reads the radio, what it
+    /// reads ("Bluetooth · Reading the radio · channels").
     private func line(at now: Date) -> String {
+        if let reading = radioReadingText(model) { return "\(model.linkName) · \(reading)" }
         guard let since = model.connectedSince else { return model.linkName }
         let minutes = max(0, Int(now.timeIntervalSince(since) / 60))
         guard minutes > 0 else { return "\(model.linkName) · \(String(localized: "connected just now"))" }

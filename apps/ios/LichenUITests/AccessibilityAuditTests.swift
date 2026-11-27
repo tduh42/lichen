@@ -146,7 +146,24 @@ final class AccessibilityAuditTests: XCTestCase {
         let app = launch([])
         let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Camille'")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 120), "no Camille")
+        // Settled: Marc's text and Public's first post in too. A row that changes while the audit
+        // runs makes it see text that does not follow Dynamic Type, and a clipped preview (Public's
+        // row, Lucie's post landing as it ran).
+        for name in ["Marc", "Public"] {
+            _ = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", name)).firstMatch.waitForExistence(timeout: 60)
+        }
+        sleep(5)
         try audit(app, "messages")
+    }
+
+    /// Messages while a connection reads the radio's 206 contacts (§1.1, RL-12): the radio line
+    /// with its count and bar, each step held 20 s for the audit.
+    func testMessagesWhileReading() throws {
+        let app = launch(["-manyContacts", "200", "-radioReadingFor", "20"])
+        let line = app.buttons.matching(NSPredicate(format: "identifier == 'radioLine' AND label CONTAINS ' 206'")).firstMatch
+        XCTAssertTrue(line.waitForExistence(timeout: 60), "no contacts' count on the radio line")
+        sleep(1)
+        try audit(app, "messages while reading")
     }
 
     func testConversation() throws {

@@ -106,6 +106,22 @@ final class AppModel {
     var savedRadios: [SavedRadio] = []
     /// What the radio reported of its settings (protocol §1.1), read again after each change.
     var radioSettings: RadioSettings?
+    /// What a connection is still reading after `APP_START` (§1.1): its settings, its contacts
+    /// n of m, its channels, the messages that waited; nil once it is over. Read again with the
+    /// radio's settings (the same event).
+    var radioReading: RadioReading?
+    /// Debug `-radioReadingFor S` (UI tests): each step of the reading stays at least S seconds
+    /// on the radio line, for a busy machine's slow screen reads; the steps that came meanwhile
+    /// follow in order, a count moving on at once within its step.
+    @ObservationIgnored private var readingHold: Double = {
+        #if DEBUG
+        return UserDefaults.standard.double(forKey: "radioReadingFor")
+        #else
+        return 0
+        #endif
+    }()
+    @ObservationIgnored private var readingShownAt = Date.distantPast
+    @ObservationIgnored private var readingQueue: [RadioReading?] = []
     /// Why the radio did not take a setting, for an alert.
     var radioError: String?
     /// Contacts from a link that the radio did not add (§16.6), counted: Add a contact watches it.
@@ -882,20 +898,98 @@ final class AppModel {
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.demoReading = false
-                    guard self.demo === demo else { return }
-                    // Radio off: the network goes on, and what it pushes is lost.
-                    for f in frames where !self.demoRadioOff {
-                        self.core.onCompanionFrame(frame: f, nowMs: t)
+                    guard self.demo === demo else {
+                        self.demoReading = false
+                        return
                     }
-                    self.pump()
+                    self.demoFrames(frames[...], at: t, from: demo)
                 }
             }
         }
     }
 
+    /// The demo radio's frames to the core, in order; radio off, the network goes on and what
+    /// it pushes is lost. A long contact list comes in one batch from the demo radio: its count
+    /// is shown as it goes, every tenth, as a radio's frames one by one show it (§1.1), the rest
+    /// following a frame's time (16 ms) later. A short one (the usual demo) keeps its timing.
+    private func demoFrames(_ frames: ArraySlice<Data>, at t: UInt64, from demo: DemoNetwork, shown: UInt32 = 0) {
+        var rest = frames
+        var shown = shown
+        while let f = rest.popFirst() {
+            if demoRadioOff { continue }
+            core.onCompanionFrame(frame: f, nowMs: t)
+            if case let .contacts(done, total) = core.radioReading(), total >= 50, done >= shown + 10 {
+                shown = done
+                showRadioReading(.contacts(done: done, total: total))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        guard self.demo === demo else {
+                            self.demoReading = false
+                            return
+                        }
+                        self.demoFrames(rest, at: t, from: demo, shown: shown)
+                    }
+                }
+                return
+            }
+        }
+        demoReading = false
+        pump()
+    }
+
+    /// The step of the reading the radio line shows (`radioReading`); with `-radioReadingFor`,
+    /// each step held there for a while.
+    private func showRadioReading(_ r: RadioReading?) {
+        guard readingHold > 0 else {
+            if r != radioReading { radioReading = r }
+            return
+        }
+        // Steps already waiting: this one after them, or a newer count of the last one.
+        if let last = readingQueue.indices.last {
+            if Self.step(readingQueue[last]) == Self.step(r) { readingQueue[last] = r } else { readingQueue.append(r) }
+            return
+        }
+        if Self.step(radioReading) == Self.step(r) {
+            if r != radioReading { radioReading = r }
+            return
+        }
+        let left = readingHold - Date().timeIntervalSince(readingShownAt)
+        guard left > 0 else {
+            radioReading = r
+            readingShownAt = Date()
+            return
+        }
+        readingQueue = [r]
+        showQueuedReading(after: left)
+    }
+
+    private func showQueuedReading(after seconds: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, !self.readingQueue.isEmpty else { return }
+                self.radioReading = self.readingQueue.removeFirst()
+                self.readingShownAt = Date()
+                if !self.readingQueue.isEmpty { self.showQueuedReading(after: self.readingHold) }
+            }
+        }
+    }
+
+    /// Which step a reading is at, its counts aside.
+    private static func step(_ r: RadioReading?) -> Int {
+        switch r {
+        case nil: 0
+        case .settings: 1
+        case .contacts: 2
+        case .channels: 3
+        case .messages: 4
+        }
+    }
+
     private func resetState() {
         nodeName = ""
+        radioReading = nil
+        readingQueue = []
         nodeKey = nil
         radio = nil
         conflicts = [:]
@@ -1033,6 +1127,7 @@ final class AppModel {
             nodeName = name
             self.radio = radio
             radioSettings = core.radioSettings()
+            showRadioReading(core.radioReading())
             UserDefaults.standard.set(key, forKey: Self.nodeKeyDefault)
             radioConnected()
             signalLimits = core.signalLimits()
@@ -1066,6 +1161,7 @@ final class AppModel {
             let r = core.radioSettings()
             radioSettings = r
             radio = core.radio()
+            showRadioReading(core.radioReading())
             if !r.name.isEmpty { nodeName = r.name }
             signalLimits = core.signalLimits()
         case .contactsUpdated:

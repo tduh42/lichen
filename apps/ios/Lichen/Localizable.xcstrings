@@ -4481,6 +4481,26 @@
         }
       }
     },
+    "Fetching waiting messages": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récupération des messages en attente"
+          }
+        }
+      }
+    },
+    "Fetching waiting messages · %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récupération des messages en attente · %lld"
+          }
+        }
+      }
+    },
     "File": {
       "localizations": {
         "fr": {
@@ -8621,12 +8641,42 @@
         }
       }
     },
+    "Reading the radio · channels": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture de la radio · canaux"
+          }
+        }
+      }
+    },
+    "Reading the radio · contacts %lld of %lld": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture de la radio · contacts %1$lld sur %2$lld"
+          }
+        }
+      }
+    },
     "Reading the radio’s settings…": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
             "value": "Lecture des réglages de la radio…"
+          }
+        }
+      }
+    },
+    "Reading the radio…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lecture de la radio…"
           }
         }
       }
