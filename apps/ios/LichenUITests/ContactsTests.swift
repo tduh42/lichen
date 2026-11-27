@@ -427,7 +427,7 @@ final class ContactsTests: LichenUITest {
         // comes before she writes her answer, however slow the machine (B-ios-8). An answer
         // she wrote before the block is not hers "while blocked": it comes after the unblock
         // (ADR-0034, by her own timestamp), as it did on CI when the block took 8 s.
-        launch(["-open", "Camille", "-quietDemo", "YES", "-answerAfter", "20"], speed: 1)
+        launch(["-open", "Camille", "-quietDemo", "YES", "-answerAfter", "20", "-demoClock", "YES"], speed: 1)
         wait(keyButton, Self.camilleTimeout, "no session with Camille")
         send("Are you still at the refuge?")
         // Blocked before she writes her answer.
@@ -451,9 +451,16 @@ final class ContactsTests: LichenUITest {
         tab(.messages)
         openChat("Camille", 5)
         send("Back again")
-        // Her phone's acknowledgement reaches us again, and her answer.
-        waitLabel(message("Back again"), contains: tr("Delivered"), 60)
-        waitText("Copy: \"Back again\"", 60)
+        // Her phone's acknowledgement reaches us again, and her answer. Each goes through the
+        // air's retries, a round every `W` and up to 8 rounds unanswered (§7.1, §7.4): a minute
+        // was not always enough. Counted on the demo's clock (at this speed, the wall clock's).
+        let back = message("Back again")
+        var status = "(gone)"
+        waitDemo(180, "“\(status)” not delivered") {
+            if back.exists { status = back.label }
+            return status.contains(tr("Delivered"))
+        }
+        waitDemo(containing("Copy: \"Back again\""), 180, "no answer to “Back again”")
         keep("ct-unblocked")
         // What she sent while blocked stays lost, as Settings › Blocked says (B-ios-8).
         pause(10)

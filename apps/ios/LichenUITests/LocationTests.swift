@@ -43,12 +43,14 @@ final class LocationTests: LichenUITest {
     /// MP-2: Camille's position (exact, "now") and Julien's (to the group, a 1 km cell) on the
     /// map, and ours.
     func testMP2_PositionsReceivedOnTheMap() {
-        launch(["-tab", "map"])
-        wait(marker("Camille"), 60, "no Camille on the map")
+        launch(["-tab", "map", "-demoClock", "YES"])
+        // Camille's about 70 s into the demo; the map keeps the app busy, and the demo falls
+        // behind the wall clock: the waits go by its own clock.
+        waitDemo(marker("Camille"), 150, "no Camille on the map")
         XCTAssertTrue(nodeMarker(tr("You")).exists || marker(tr("You")).exists, "we are not on the map")
-        // Once the group's keys are out: a minute on a quiet air, up to several when the
-        // demo's hub is busy.
-        wait(marker("Julien"), 240, "no Julien on the map")
+        // Once the group's keys are out: about 4 minutes into the demo on most runs, 9 when its
+        // hub is busy (214 to 544 s, measured in the core over five seeds).
+        waitDemo(marker("Julien"), 550, "no Julien on the map")
         keep("mp-positions")
         XCTAssertTrue(marker("Julien").label.contains("1 km"), "Julien's is not a 1 km cell: \(marker("Julien").label)")
     }
@@ -62,11 +64,12 @@ final class LocationTests: LichenUITest {
         button(tr("Map layers")).tap()
         let layer = wait(app.buttons[tr("MeshCore nodes")], 5, "no nodes layer")
         layer.tap()
-        waitGone(nodeMarker("hub"), 5, "the nodes stayed")
+        // The map redraws its markers on the main thread: seconds on a loaded machine.
+        waitGone(nodeMarker("hub"), 15, "the nodes stayed")
         XCTAssertFalse(nodeMarker("Refuge board").exists)
         button(tr("Map layers")).tap()
         wait(app.buttons[tr("MeshCore nodes")], 5).tap()
-        wait(nodeMarker("hub"), 5, "the nodes did not come back")
+        wait(nodeMarker("hub"), 15, "the nodes did not come back")
     }
 
     /// Any element read as `text` followed by something ("hub to crest, " then its SNR).
@@ -150,7 +153,7 @@ final class LocationTests: LichenUITest {
         let send = button(tr("Send an SOS"))
         for _ in 0..<5 where !send.exists {
             if button(tr("Dismiss")).exists {
-                button(tr("Dismiss")).tap()
+                tapIfThere(button(tr("Dismiss")))
                 pause(1)
             }
             button(tr("SOS")).tap()
@@ -158,10 +161,11 @@ final class LocationTests: LichenUITest {
         }
         let hold = wait(send, 5, "no SOS from Locate")
         hold.press(forDuration: 3.5)
-        let stop = wait(button(tr("Stop the SOS")), 5, "the SOS did not start")
+        // The SOS starts on the main thread, behind the map: seconds on a loaded machine.
+        let stop = wait(button(tr("Stop the SOS")), 15, "the SOS did not start")
         keep("mp-sos-from-locate")
         stop.tap()
-        wait(button(tr("Send an SOS")), 5, "the SOS did not stop")
+        wait(button(tr("Send an SOS")), 15, "the SOS did not stop")
     }
 
     /// MP-6: Locate is a mode of the Map (Positions | Locate at the top): it shows the search
