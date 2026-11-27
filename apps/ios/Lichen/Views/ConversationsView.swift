@@ -339,9 +339,14 @@ func hopsBadge(_ hops: UInt8?) -> String {
 
 private struct ChatRow: View {
     let row: ConversationsView.Row
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        // The avatar beside the words, or above them at the accessibility text sizes, where it
+        // grows with them and the words need the row's width: the same views (B-ios-33).
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        layout {
             Avatar(name: row.title, key: row.key)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -364,7 +369,8 @@ private struct ChatRow: View {
                         if row.waiting {
                             Image(systemName: "clock").accessibilityLabel("Waiting to be sent")
                         }
-                        Text(row.preview).lineLimit(1)
+                        // One line, as on Android; two at the accessibility sizes (B-ios-33).
+                        Text(row.preview).lineLimit(textSize.isAccessibilitySize ? 2 : 1)
                     }
                     .font(.system(.subheadline))
                     .foregroundStyle(Theme.tx2)
