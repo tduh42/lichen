@@ -39,6 +39,7 @@ VARIANTS = {"fr": "fr", "frDark": "fr dark", "dark": "dark"}
 OTHER = [
     ("RL-8", "lc-core", "crates/lc-core/tests/radio.rs", "connecting_sets_the_radios_clock"),
     ("RL-7", "lc-core", "crates/lc-core/tests/radio.rs", "the_radio_s_board_and_figures"),
+    ("RL-7", "lc-core", "crates/lc-core/tests/radio.rs", "the_last_packet_heard"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "a_contact_list_cut_short_still_counts"),
     ("RL-9", "lc-core", "crates/lc-core/src/core.rs", "records_lost_before_the_end_are_asked_for_again"),
     ("RL-12", "lc-core", "crates/lc-core/src/plain.rs", "the_reading_goes_through_its_steps"),

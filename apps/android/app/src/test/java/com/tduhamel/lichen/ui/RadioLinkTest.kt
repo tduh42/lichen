@@ -20,6 +20,9 @@ import com.tduhamel.lichen.core.RadioReading
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tduhamel.lichen.R
 import com.tduhamel.lichen.core.FailReason
@@ -790,7 +793,9 @@ class RadioLinkTest : UiTest() {
 
     /** RL-7: the radio's own figures (§16.4) in Radio settings: its noise floor in the header,
      * and "Since it started" at the bottom with every figure the demo radio reports, each row one
-     * element to TalkBack ("Packets received, 1,204"), and the note under the card. */
+     * element to TalkBack ("Packets received, 1,204"), and the note under the card. Read at
+     * connection, before the radio heard a packet, its last packet is unknown (its RSSI and SNR
+     * both read 0): no row for it, never "0 dB"; a minute later, read again, it has one. */
     @Test
     fun RL_7_radioFigures() = radioFigures()
 
@@ -814,9 +819,30 @@ class RadioLinkTest : UiTest() {
         scrollTo(hasText(str(R.string.figures_note)))
         see(R.string.since_started)
         text(R.string.figures_note).assertIsDisplayed()
+        val first = model.radioSettings!!
+        // Read at connection: no packet heard yet, so every figure but the last packet's.
+        assertEquals(0u, first.packetsReceived)
+        assertEquals(null to null, first.lastRssiDbm to first.lastSnrDb)
+        assertEquals(RadioFigure.entries - RadioFigure.LAST_PACKET, first.figures())
+        assertFalse(has(R.string.fig_last_packet))
+        val zeroDb = Regex("""(^|[^\d.,])0 dB""")
+        compose.onAllNodes(
+            SemanticsMatcher("says 0 dB") { n ->
+                (n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+                    n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()).any { zeroDb.containsMatchIn(it) }
+            },
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+        // A minute later, on the demo's clock and the screen's, read again: the radio has heard
+        // the mesh, and its last packet has a row, RSSI and SNR.
+        advance(61)
+        compose.mainClock.advanceTimeBy(60_000)
+        // Its packets come last of the three answers: all of them read again.
+        advanceUntil("the last packet's figures", 10) {
+            model.radioSettings?.run { lastRssiDbm != null && lastSnrDb != null && (packetsReceived ?: 0u) > 0u } == true
+        }
         val now = model.radioSettings!!
         val figures = now.figures()
-        // The demo radio reports every one (of the last packet, its SNR at least).
         assertEquals(RadioFigure.entries.toList(), figures)
         for (f in figures) {
             val said = "${str(FIGURE_TITLES.getValue(f))}, ${now.figureText(context.resources, f)}"
