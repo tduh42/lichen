@@ -251,10 +251,33 @@ struct Avatar: View {
     var size: CGFloat = 44
 
     var body: some View {
+        // It grows with the text up to the first accessibility size, about 1.6 times: beyond, the
+        // name and the words beside it need the room more than the circle does.
+        AvatarCircle(name: name, key: key, size: size)
+            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+    }
+}
+
+/// `Avatar`'s circle: the initials in a text style about a third of it (a fixed size does not
+/// follow the text size, B-ios-33), the circle scaled with that style so they stay inside.
+private struct AvatarCircle: View {
+    let name: String
+    let key: Data
+    let size: CGFloat
+    @ScaledMetric(relativeTo: .caption) private var captionScale: CGFloat = 1
+    @ScaledMetric(relativeTo: .footnote) private var footnoteScale: CGFloat = 1
+    @ScaledMetric(relativeTo: .subheadline) private var subheadlineScale: CGFloat = 1
+    @ScaledMetric(relativeTo: .title2) private var title2Scale: CGFloat = 1
+
+    var body: some View {
         let (bg, fg) = Theme.avatar(for: key)
+        let (style, scale): (Font.TextStyle, CGFloat) = size >= 70 ? (.title2, title2Scale)
+            : size >= 46 ? (.subheadline, subheadlineScale)
+            : size >= 38 ? (.footnote, footnoteScale) : (.caption, captionScale)
         Text(initials(name))
-            .font(.system(size: size * 0.32, weight: .semibold))
-            .frame(width: size, height: size)
+            .font(.system(style, weight: .semibold))
+            .lineLimit(1)
+            .frame(width: size * scale, height: size * scale)
             .background(bg, in: Circle())
             .foregroundStyle(fg)
             .accessibilityHidden(true)
