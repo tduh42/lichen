@@ -270,9 +270,11 @@ cd apps/android && ./gradlew assembleDebug                     # app/build/outpu
 
 The core's database is SQLCipher on OpenSSL built from source, which needs perl and make (ADR-0036). The radio goes over Bluetooth (bonded first), over USB (OTG, a radio with the USB companion firmware) or over TCP (a Wi-Fi companion, or `lichen bridge` relaying a USB radio, which is how the emulator reaches a real one).
 
-| Messages | Chat | Map |
+| Messages | Nodes | A node |
 |---|---|---|
-| ![Messages](docs/screenshots/android-conversations-en.png) | ![Chat](docs/screenshots/android-chat-en.png) | ![Map](docs/screenshots/android-map-en.png) |
+| ![Messages](docs/screenshots/android-conversations-en.png) | ![Nodes](docs/screenshots/android-nodes-en.png) | ![A node](docs/screenshots/android-node-en.png) |
+| **Chat** | **Map** | **Radio settings** |
+| ![Chat](docs/screenshots/android-chat-en.png) | ![Map](docs/screenshots/android-map-en.png) | ![Radio settings](docs/screenshots/android-radio-en.png) |
 
 ## Licence
 
