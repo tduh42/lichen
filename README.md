@@ -257,9 +257,11 @@ The first launch may say "Untrusted Developer": Settings › General › VPN & D
 
 What a free team allows, from [Apple's capability table](https://developer.apple.com/help/account/reference/supported-capabilities-ios) and [membership comparison](https://developer.apple.com/support/compare-memberships/) (checked 2026-11-16): background modes, keychain sharing and app groups yes; push notifications, iCloud, Sign in with Apple, associated domains, network extensions, NFC, Apple Pay and in-app purchase no. lichen asks for none of the latter: it has no entitlements file. What it uses needs only the default entitlements or an `Info.plist` line: Bluetooth in the background and location (`UIBackgroundModes`: `bluetooth-central`, `location`), the Keychain in the app's own default group, local notifications (no push), Face ID, the camera, the microphone, the local network (TCP to a radio), and file protection set per folder. For the same reason, sharing into lichen from other apps is "Open in lichen" (document types) rather than a share extension.
 
-| Messages | Chat | Map |
+| Messages | Nodes | A node |
 |---|---|---|
-| ![Messages](docs/screenshots/ios-conversations-en.png) | ![Chat](docs/screenshots/ios-chat-en.png) | ![Map](docs/screenshots/ios-map-en.png) |
+| ![Messages](docs/screenshots/ios-conversations-en.png) | ![Nodes](docs/screenshots/ios-nodes-en.png) | ![A node](docs/screenshots/ios-node-en.png) |
+| **Chat** | **Map** | **Radio settings** |
+| ![Chat](docs/screenshots/ios-chat-en.png) | ![Map](docs/screenshots/ios-map-en.png) | ![Radio settings](docs/screenshots/ios-radio-en.png) |
 
 ### Android app
 
