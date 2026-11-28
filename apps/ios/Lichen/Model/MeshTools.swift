@@ -227,9 +227,11 @@ extension AppModel {
     func distanceBearing(lat: Double?, lon: Double?) -> String? {
         guard let lat, let lon, let d = distanceTo(lat: lat, lon: lon) else { return nil }
         let points = String(localized: "N,NE,E,SE,S,SW,W,NW").split(separator: ",").map(String.init)
-        guard points.count == 8 else { return distanceText(d.meters) }
+        // The figure and its unit never apart ("696 m", not "696 / m" across two lines).
+        let distance = distanceText(d.meters).replacingOccurrences(of: " ", with: "\u{a0}")
+        guard points.count == 8 else { return distance }
         let point = points[Int(((d.bearing + 22.5) / 45).rounded(.down)) % 8]
-        return "\(distanceText(d.meters)) \(point)"
+        return "\(distance) \(point)"
     }
 
     /// "5 min ago", from a Unix time in seconds.

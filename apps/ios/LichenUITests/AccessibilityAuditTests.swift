@@ -50,6 +50,9 @@ final class AccessibilityAuditTests: XCTestCase {
     ///   they are scrolled out above it, and on a slow runner the audit then called them
     ///   "partially unsupported" (#70's and #75's runs; its recording shows them growing at the
     ///   sizes before). `testTheTopOfAChatGrowsWithTheText` checks that they grow.
+    /// - Dynamic Type "partially unsupported" on the Map's bar (SOS, Positions | Locate): it
+    ///   grows up to xxxLarge and stops, so that its words stay whole on one line and the
+    ///   layers stay on the screen (part 6); beyond, the Large Content Viewer shows each whole.
     /// And, the app's own but audited apart: Dynamic Type and clipping below `squeezedBelow`.
     /// A banner pinned above the messages grows with the text and leaves them little room, so
     /// the audit no longer sees them grow (B-ios-21, a question for the coordinator); they are
@@ -97,6 +100,8 @@ final class AccessibilityAuditTests: XCTestCase {
             case .dynamicType, .textClipped:
                 ignored = inNavigationBar || squeezedBelow.map { frame.minY >= $0 } == true
                     || issue.auditType == .dynamicType && Self.chatTop.contains(element.identifier)
+                    || issue.auditType == .dynamicType && element.identifier.hasPrefix("mapBar.")
+                        && issue.compactDescription.contains("partially")
             default: ignored = false
             }
             if !ignored {
@@ -239,6 +244,96 @@ final class AccessibilityAuditTests: XCTestCase {
         action.tap()
         sleep(8)
         try audit(app, "crest's readings")
+    }
+
+    // MARK: The radio screens at an accessibility text size (part 6, as Android's ST-9)
+
+    private static let largeText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+
+    /// Fails when `element` is not whole inside the screen's width (content wider than the
+    /// screen is cut on both sides) or starts above it.
+    private func inWindow(_ app: XCUIApplication, _ element: XCUIElement, _ what: String,
+                          file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(element.exists, "no \(what)", file: file, line: line)
+        guard element.exists else { return }
+        let f = element.frame, w = app.windows.firstMatch.frame
+        XCTAssertTrue(f.minX >= w.minX - 1 && f.maxX <= w.maxX + 1 && f.minY >= w.minY - 1,
+                      "\(what) out of the screen: \(f) in \(w)", file: file, line: line)
+    }
+
+    /// Fails when `element` is narrower than half the screen: its words squeezed into a column
+    /// beside something else, one or two letters a line.
+    private func roomy(_ app: XCUIApplication, _ element: XCUIElement, _ what: String,
+                       file: StaticString = #filePath, line: UInt = #line) {
+        guard element.exists else { return XCTFail("no \(what)", file: file, line: line) }
+        let width = app.windows.firstMatch.frame.width
+        XCTAssertGreaterThan(element.frame.width, width / 2, "\(what) squeezed: \(element.frame)", file: file, line: line)
+    }
+
+    private func starting(_ app: XCUIApplication, _ text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", text)).firstMatch
+    }
+
+    /// The Nodes tab, the hub's page (its header, route, signal chart), crest's (its readings
+    /// card) and crest's route on the map, at the largest accessibility size: the audit's clipped text and
+    /// Dynamic Type, and the headers, meters and the map's bar inside the screen.
+    func testST9_NodesAtLargeText() throws {
+        let app = launch(Self.largeText + ["-tab", "nodes", "-quietDemo", "YES"])
+        let hub = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'hub'")).firstMatch
+        XCTAssertTrue(hub.waitForExistence(timeout: 40), "no hub")
+        sleep(4)
+        inWindow(app, hub, "the hub's row")
+        try audit(app, "nodes, large text")
+        hub.tap()
+        XCTAssertTrue(app.navigationBars["hub"].waitForExistence(timeout: 10))
+        sleep(2)
+        inWindow(app, starting(app, "Signal good"), "the hub's meter")
+        try audit(app, "hub, large text")
+        app.swipeUp()
+        sleep(1)
+        try audit(app, "hub's chart, large text")
+        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let crest = app.buttons.matching(NSPredicate(format: "identifier == 'node' AND label BEGINSWITH 'crest'")).firstMatch
+        for _ in 0..<6 where !(crest.exists && crest.isHittable) { app.swipeUp() }
+        crest.tap()
+        XCTAssertTrue(app.navigationBars["crest"].waitForExistence(timeout: 10))
+        sleep(2)
+        roomy(app, app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Repeater ·'")).firstMatch, "crest's kind and distance")
+        try audit(app, "crest, large text")
+        let action = app.buttons["readingsAction"]
+        for _ in 0..<6 where !(action.exists && action.isHittable) { app.swipeUp() }
+        sleep(1)
+        inWindow(app, action, "the readings card's button")
+        try audit(app, "crest's readings, large text")
+        let show = app.buttons["showOnMap"]
+        for _ in 0..<8 where !(show.exists && show.isHittable) { app.swipeDown() }
+        show.tap()
+        sleep(5)
+        inWindow(app, app.buttons.matching(NSPredicate(format: "label == %@", "Map layers")).firstMatch, "the layers button")
+        try audit(app, "crest's route on the map, large text")
+    }
+
+    /// Radio settings (its header and figures, "Since it started") and the radio line while a
+    /// connection reads, at the largest accessibility size.
+    func testST9_RadioSettingsAtLargeText() throws {
+        var app = launch(Self.largeText + ["-tab", "settings", "-screen", "radio"])
+        let noise = starting(app, "−118 dBm")
+        XCTAssertTrue(noise.waitForExistence(timeout: 40), "no noise floor")
+        sleep(3)
+        inWindow(app, noise, "the noise floor")
+        // Too wide to sit three abreast at this size: each figure takes the row.
+        roomy(app, noise, "the noise floor's figure")
+        try audit(app, "radio settings, large text")
+        let note = app.staticTexts["figuresNote"]
+        for _ in 0..<14 where !(note.exists && note.isHittable) { app.swipeUp() }
+        sleep(1)
+        try audit(app, "since it started, large text")
+        app.terminate()
+        app = launch(Self.largeText + ["-manyContacts", "200", "-radioReadingFor", "30"])
+        let line = app.buttons.matching(NSPredicate(format: "identifier == 'radioLine' AND label CONTAINS ' 206'")).firstMatch
+        XCTAssertTrue(line.waitForExistence(timeout: 60), "no contacts' count on the radio line")
+        sleep(1)
+        try audit(app, "messages while reading, large text")
     }
 
     func testGroup() throws {

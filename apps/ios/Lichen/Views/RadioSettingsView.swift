@@ -916,12 +916,17 @@ struct RadioHeader: View {
                 }
             }
             Rectangle().fill(Theme.line).frame(height: 1)
-            HStack(alignment: .top, spacing: 12) {
-                figure("\(airtimeLeft) s", String(localized: "airtime left"))
-                if let noise = r.noiseFloorDbm {
-                    figure(dbmText(noise), String(localized: "noise floor")).setting("noise", lit: lit)
+            // Side by side while each keeps its figure whole on one line and its words whole,
+            // else one under the other (larger text, French).
+            let figures = headerFigures(r)
+            ColumnsOrStack(minColumn: minColumn(figures)) {
+                ForEach(figures, id: \.label) { f in
+                    if f.noise {
+                        figure(f.value, f.label).setting("noise", lit: lit)
+                    } else {
+                        figure(f.value, f.label)
+                    }
                 }
-                if !r.firmware.isEmpty { figure(r.firmware, String(localized: "firmware")) }
             }
             // The share of this hour's airtime left.
             Capsule().fill(Theme.s2)
@@ -958,11 +963,36 @@ struct RadioHeader: View {
         return CGFloat(airtimeLeft * 1000) / CGFloat(model.budget.limitMs)
     }
 
+    /// The airtime left, the noise floor and the firmware, each only once known: a figure and
+    /// its unit joined by a no-break space.
+    private func headerFigures(_ r: RadioSettings) -> [(value: String, label: String, noise: Bool)] {
+        var out = [(value: "\(airtimeLeft)\u{a0}s", label: String(localized: "airtime left"), noise: false)]
+        if let noise = r.noiseFloorDbm { out.append((dbmText(noise), String(localized: "noise floor"), true)) }
+        if !r.firmware.isEmpty { out.append((r.firmware, String(localized: "firmware"), false)) }
+        return out
+    }
+
+    /// The narrowest column that keeps each figure whole: its value on one line, the longest
+    /// word of what it is.
+    private func minColumn(_ figures: [(value: String, label: String, noise: Bool)]) -> CGFloat {
+        let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(textSize))
+        let value = UIFont.monospacedDigitSystemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: traits).pointSize, weight: .semibold)
+        let label = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: traits)
+        func width(_ text: String, _ font: UIFont) -> CGFloat { (text as NSString).size(withAttributes: [.font: font]).width }
+        let widest = figures.map { f in
+            max(width(f.value, value), f.label.split(separator: " ").map { width(String($0), label) }.max() ?? 0)
+        }.max() ?? 0
+        return ceil(widest) + 2
+    }
+
     /// A tabular figure over what it is.
     private func figure(_ value: String, _ label: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(value).font(.system(.subheadline, weight: .semibold).monospacedDigit()).foregroundStyle(Theme.tx)
+                .fixedSize(horizontal: false, vertical: true)
             Text(label).font(.system(.caption)).foregroundStyle(Theme.tx2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -1117,6 +1147,47 @@ struct TitleAndValue: Layout {
             let t = subviews[0].sizeThatFits(p)
             subviews[0].place(at: CGPoint(x: bounds.minX, y: bounds.minY), proposal: p)
             subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + t.height + spacing), proposal: p)
+        }
+    }
+}
+
+/// Side by side in equal columns while each column is at least `minColumn` wide, else one under
+/// the other at the row's width (the radio's figures, larger text).
+struct ColumnsOrStack: Layout {
+    var minColumn: CGFloat
+    var spacing: CGFloat = 12
+    var rowSpacing: CGFloat = 10
+
+    private func column(_ count: Int, _ width: CGFloat) -> CGFloat? {
+        guard count > 0 else { return nil }
+        let column = (width - spacing * CGFloat(count - 1)) / CGFloat(count)
+        return column >= minColumn ? column : nil
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let count = subviews.count
+        let width = proposal.width ?? (minColumn * CGFloat(count) + spacing * CGFloat(max(count - 1, 0)))
+        if let column = column(count, width) {
+            let height = subviews.map { $0.sizeThatFits(ProposedViewSize(width: column, height: nil)).height }.max() ?? 0
+            return CGSize(width: width, height: height)
+        }
+        let heights = subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)).height }
+        return CGSize(width: width, height: heights.reduce(0, +) + rowSpacing * CGFloat(max(count - 1, 0)))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        if let column = column(subviews.count, bounds.width) {
+            for (i, view) in subviews.enumerated() {
+                view.place(at: CGPoint(x: bounds.minX + CGFloat(i) * (column + spacing), y: bounds.minY),
+                           proposal: ProposedViewSize(width: column, height: nil))
+            }
+        } else {
+            var y = bounds.minY
+            for view in subviews {
+                let p = ProposedViewSize(width: bounds.width, height: nil)
+                view.place(at: CGPoint(x: bounds.minX, y: y), proposal: p)
+                y += view.sizeThatFits(p).height + rowSpacing
+            }
         }
     }
 }
