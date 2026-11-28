@@ -165,30 +165,43 @@ struct NodeRow: View {
     var inReach = false
     var now = UInt64(Date().timeIntervalSince1970)
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
-        HStack(spacing: 12) {
+        // The tile beside the words, or above them at the accessibility text sizes, where it
+        // grows with them and the words need the row's width.
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             NodeLeading(node: node)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(node.name)
-                        .font(.system(.callout, weight: .semibold))
-                        .foregroundStyle(Theme.tx)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if node.lichen { LichenBadge() }
-                    if !node.onRadio {
-                        Badge(text: String(localized: "heard"), background: Theme.s2, foreground: Theme.tx2)
+            // Its signal or hops beside the words while they keep half the row, else under them.
+            BesideOrUnder {
+                VStack(alignment: .leading, spacing: 2) {
+                    // Its badges beside the name while it keeps half the row, else under it (a
+                    // name squeezed beside "heard" broke in the middle of a word).
+                    BesideOrUnder(spacing: 6, packed: true) {
+                        Text(node.name)
+                            .font(.system(.callout, weight: .semibold))
+                            .foregroundStyle(Theme.tx)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if node.lichen || !node.onRadio {
+                            HStack(spacing: 6) {
+                                if node.lichen { LichenBadge() }
+                                if !node.onRadio {
+                                    Badge(text: String(localized: "heard"), background: Theme.s2, foreground: Theme.tx2)
+                                }
+                            }
+                        }
                     }
+                    subtitle
+                        .font(.system(.footnote))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                subtitle
-                    .font(.system(.footnote))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            if inReach {
-                SignalMeter(rating: node.signal, snr: node.snrDb)
-            } else {
-                HopPill(hops: node.hops)
+                if inReach {
+                    SignalMeter(rating: node.signal, snr: node.snrDb)
+                } else {
+                    HopPill(hops: node.hops)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -226,6 +239,7 @@ extension NodeInfo {
 struct NodeDetailView: View {
     let key: Data
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var textSize
     @State private var error: String?
     /// Readings' Log in: the login card's password field takes the keyboard.
     @State private var loginRequest = 0
@@ -291,8 +305,13 @@ struct NodeDetailView: View {
     /// The node on top: its tile, name, kind and distance, when last heard; its signal (heard
     /// directly) or how many repeaters away.
     private func header(_ n: NodeInfo, now: UInt64) -> some View {
-        HStack(spacing: 14) {
+        // The tile beside the words, or above them at the accessibility text sizes; the signal
+        // beside them while they keep half the row, else under them.
+        let layout = textSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 14))
+        return layout {
             NodeLeading(node: n, base: 56)
+            BesideOrUnder {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(n.name).font(.system(.title3, weight: .bold)).foregroundStyle(Theme.tx)
@@ -311,6 +330,7 @@ struct NodeDetailView: View {
                 SignalMeter(rating: n.signal, snr: n.snrDb, large: true)
             } else {
                 HopPill(hops: n.hops)
+            }
             }
         }
         .padding(.horizontal, 2)
@@ -340,6 +360,7 @@ struct RouteCard: View {
     let key: Data
     @Binding var error: String?
     @Environment(AppModel.self) private var model
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
         let route = model.nodeRoute(key)
@@ -355,7 +376,10 @@ struct RouteCard: View {
                 .font(.system(.footnote))
                 .foregroundStyle(Theme.tx2)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
+            // Side by side, or one under the other at the accessibility text sizes, their words
+            // whole.
+            (textSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                                          : AnyLayout(HStackLayout(spacing: 8))) {
                 Button {
                     error = model.startTrace(key)
                 } label: {
@@ -407,16 +431,36 @@ struct RouteRibbon: View {
     @ScaledMetric(relativeTo: .caption) private var stopWidth: CGFloat = 62
     /// The first stop, us, wider: the radio's model under "You" on one line ("ThinkNode M5").
     @ScaledMetric(relativeTo: .caption) private var firstWidth: CGFloat = 92
-    @ScaledMetric(relativeTo: .caption) private var minLeg: CGFloat = 56
+    @ScaledMetric(relativeTo: .caption) private var minLeg: CGFloat = 44
     @State private var width: CGFloat = 0
+    @Environment(\.dynamicTypeSize) private var textSize
 
     var body: some View {
         let you = String(localized: "You")
         let names = route.stops.enumerated().map { i, s in i == 0 ? you : s.display }
         let last = route.stops.count - 1
+        if textSize >= .xxLarge {
+            // From XXL, top to bottom: each stop on its line, each leg between them, their words
+            // whole (side by side they no longer fit the card).
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(Array(route.stops.enumerated()), id: \.offset) { i, stop in
+                    RouteStopView(stop: stop, first: i == 0, last: i == last, name: names[i], vertical: true)
+                    if i < last {
+                        RouteLegView(leg: i < route.legs.count ? route.legs[i] : nil, from: names[i], to: names[i + 1],
+                                     vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            horizontal(names: names, last: last)
+        }
+    }
+
+    private func horizontal(names: [String], last: Int) -> some View {
         // The legs share the room the stops leave, never narrower than `minLeg`.
         let legWidth = last > 0 ? max(minLeg, (width - firstWidth - stopWidth * CGFloat(last)) / CGFloat(last)) : minLeg
-        ScrollView(.horizontal, showsIndicators: false) {
+        return ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: 0) {
                 ForEach(Array(route.stops.enumerated()), id: \.offset) { i, stop in
                     RouteStopView(stop: stop, first: i == 0, last: i == last, name: names[i])
@@ -440,11 +484,52 @@ struct RouteStopView: View {
     let first: Bool
     let last: Bool
     let name: String
+    /// Top to bottom (larger text): the icon beside the name, not above it.
+    var vertical = false
     @Environment(AppModel.self) private var model
     @ScaledMetric(relativeTo: .caption) private var side: CGFloat = 40
 
     var body: some View {
-        VStack(spacing: 5) {
+        if vertical {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 12) {
+                    icon.dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                    Text(verbatim: name)
+                        .font(.system(.subheadline, weight: .semibold))
+                        .foregroundStyle(Theme.tx)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                // The radio's model under it, at the card's width ("ThinkNode M5" broke beside
+                // the disc).
+                if first && !model.nodeName.isEmpty {
+                    Text(verbatim: model.nodeName)
+                        .font(.system(.footnote))
+                        .foregroundStyle(Theme.tx2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        } else {
+            VStack(spacing: 5) {
+                icon
+                Text(verbatim: name)
+                    .font(.system(.caption, weight: .semibold))
+                    .foregroundStyle(Theme.tx)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                if first && !model.nodeName.isEmpty {
+                    // On one line in its wider stop (`RouteRibbon.firstWidth`, which grows with the
+                    // text); on two rather than cut when longer.
+                    Text(verbatim: model.nodeName)
+                        .font(.system(.caption))
+                        .foregroundStyle(Theme.tx2)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var icon: some View {
             ZStack {
                 if first {
                     Text(initials(model.nodeName.isEmpty ? name : model.nodeName))
@@ -472,21 +557,6 @@ struct RouteStopView: View {
             }
             .frame(width: side, height: side)
             .accessibilityHidden(true)
-            Text(verbatim: name)
-                .font(.system(.caption, weight: .semibold))
-                .foregroundStyle(Theme.tx)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if first && !model.nodeName.isEmpty {
-                // On one line in its wider stop (`RouteRibbon.firstWidth`, which grows with the
-                // text); on two rather than cut when longer.
-                Text(verbatim: model.nodeName)
-                    .font(.system(.caption))
-                    .foregroundStyle(Theme.tx2)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
 
@@ -496,12 +566,43 @@ struct RouteLegView: View {
     let leg: RouteLeg?
     let from: String
     let to: String
+    /// Top to bottom (larger text): a vertical line, its figure beside it.
+    var vertical = false
     @ScaledMetric(relativeTo: .caption) private var top: CGFloat = 18
+    @ScaledMetric(relativeTo: .caption) private var side: CGFloat = 40
 
     var body: some View {
         let snr = leg?.snrDb
         let rating = leg?.signal ?? .none
         let label = snr.map(dbText) ?? String(localized: "not measured")
+        if vertical {
+            HStack(spacing: 12) {
+                Group {
+                    if snr != nil {
+                        Capsule().fill(rating != .none ? rating.color : Theme.tx2).frame(width: 4)
+                    } else {
+                        VerticalLine()
+                            .stroke(Theme.line, style: StrokeStyle(lineWidth: 4, lineCap: .round, dash: [8, 5]))
+                            .frame(width: 4)
+                    }
+                }
+                .frame(height: 36)
+                // Under the stops' icons, whose width is capped at the first accessibility size.
+                .frame(width: side)
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+                Text(verbatim: label)
+                    .font(.system(.footnote, weight: snr != nil ? .semibold : .regular).monospacedDigit())
+                    .foregroundStyle(snr != nil && rating != .none ? rating.color : Theme.tx2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(localized: "\(from) to \(to), \(label)"))
+        } else {
+            horizontal(snr: snr, rating: rating, label: label)
+        }
+    }
+
+    private func horizontal(snr: Float?, rating: SignalRating, label: String) -> some View {
         VStack(spacing: 4) {
             if snr != nil {
                 Capsule().fill(rating != .none ? rating.color : Theme.tx2).frame(height: 4)
@@ -521,6 +622,16 @@ struct RouteLegView: View {
         .padding(.horizontal, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(String(localized: "\(from) to \(to), \(label)"))
+    }
+}
+
+/// A vertical line through the middle of its frame.
+struct VerticalLine: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        return p
     }
 }
 
@@ -570,7 +681,10 @@ struct SignalSection: View {
                     if points.isEmpty {
                         Text("No reading in this time.").font(.system(.subheadline)).foregroundStyle(Theme.tx2)
                     } else {
+                        // Its text grows up to the first accessibility size, the chart with it
+                        // (up to 1.5 times): beyond, its figures would crowd the plot.
                         SignalChart(points: points, now: now, window: window, limits: model.signalLimits)
+                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                     }
                     HStack(alignment: .firstTextBaseline) {
                         Text(week ? "7 days ago" : "24 h ago")
@@ -599,6 +713,9 @@ struct SignalChart: View {
     /// bands behind the dots. None before a radio.
     let limits: SignalLimits?
     @ScaledMetric(relativeTo: .caption) private var labelRoom: CGFloat = 16
+    @ScaledMetric(relativeTo: .caption) private var scaledHeight: CGFloat = 92
+    /// Taller with larger text, up to 1.5 times.
+    private var height: CGFloat { min(scaledHeight, Self.height * 1.5) }
 
     private static let height: CGFloat = 92
 
@@ -658,7 +775,9 @@ struct SignalChart: View {
                 }
             }
         }
-        .frame(height: Self.height)
+        .frame(height: height)
+        // Room for the figures at the top and bottom lines, centred on them.
+        .padding(.vertical, labelRoom * 0.4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(said)
         // For the UI tests (never read aloud): the limits drawn and the dB range.
@@ -678,7 +797,7 @@ struct SignalChart: View {
     /// leave room for their figures; else the top, the middle and the bottom.
     private func ticks(_ lo: Double, _ hi: Double, _ good: Double?, _ fair: Double?) -> [Double] {
         guard let good, let fair else { return [lo, (lo + hi) / 2, hi] }
-        let room = (hi - lo) * Double(labelRoom) / Double(Self.height)
+        let room = (hi - lo) * Double(labelRoom) / Double(height)
         var ticks: [Double] = []
         for db in [good, fair, hi, lo] where ticks.allSatisfy({ abs($0 - db) >= room }) { ticks.append(db) }
         return ticks
@@ -742,9 +861,10 @@ struct ReadingsCard: View {
                     let battery = readings.filter { $0.batteryMv != nil && (now <= $0.atS || now - $0.atS <= 7 * 86_400) }
                     if battery.count >= 2 {
                         BatteryChart(points: battery, now: now)
+                            .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                         CardDivider()
                     }
-                    HStack(spacing: 12) {
+                    BesideOrUnder(spacing: 12) {
                         Text(String(localized: "Sent \(model.heard(last.atS))"))
                             .font(.system(.subheadline))
                             .foregroundStyle(Theme.tx2)
@@ -766,7 +886,7 @@ struct ReadingsCard: View {
                     }
                 } else {
                     // Nothing yet: what to do, or why it cannot be done.
-                    HStack(spacing: 12) {
+                    BesideOrUnder(spacing: 12) {
                         Text(outcome ?? (loggedIn ? String(localized: "Ask it for its battery and temperature.") : loginLine))
                             .font(.system(.subheadline))
                             .foregroundStyle(outcome != nil ? Theme.tx2 : Theme.tx)

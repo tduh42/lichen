@@ -346,17 +346,19 @@ struct CardRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             if let icon { IconTile(symbol: icon, tint: tint) }
-            VStack(alignment: .leading, spacing: 2) {
-                // Whole on more lines with larger text, beside its tile.
-                Text(title).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let subtitle {
-                    Text(subtitle).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+            // Its control beside the words while they keep half the row, else under them.
+            BesideOrUnder {
+                VStack(alignment: .leading, spacing: 2) {
+                    // Whole on more lines with larger text, beside its tile.
+                    Text(title).font(.system(.callout, weight: .medium)).foregroundStyle(Theme.tx)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let subtitle {
+                        Text(subtitle).font(.system(.footnote)).foregroundStyle(Theme.tx2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                trailing()
             }
-            Spacer(minLength: 8)
-            trailing()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 11)
@@ -564,5 +566,65 @@ struct LichenBadge: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(Theme.s2, in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+/// A view and what goes at its end (a figure, a control, a button): beside it while the view
+/// keeps at least half the row, else under it, at its start (larger text, French). Without a
+/// second view, the first alone.
+struct BesideOrUnder: Layout {
+    var spacing: CGFloat = 8
+    var below: CGFloat = 6
+    /// Beside: right after the first view (a badge after a name), not at the row's end.
+    var packed = false
+
+    private func beside(_ subviews: Subviews, _ width: CGFloat) -> Bool {
+        guard subviews.count > 1 else { return true }
+        let end = subviews[1].sizeThatFits(.unspecified).width
+        return width - end - spacing >= width / 2
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let first = subviews.first else { return .zero }
+        guard subviews.count > 1 else { return first.sizeThatFits(proposal) }
+        let end = subviews[1].sizeThatFits(.unspecified)
+        guard let width = proposal.width else {
+            let lead = first.sizeThatFits(.unspecified)
+            return CGSize(width: lead.width + spacing + end.width, height: max(lead.height, end.height))
+        }
+        if beside(subviews, width) {
+            let lead = first.sizeThatFits(ProposedViewSize(width: width - end.width - spacing, height: nil))
+            return CGSize(width: width, height: max(lead.height, end.height))
+        }
+        let lead = first.sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let under = subviews[1].sizeThatFits(ProposedViewSize(width: min(end.width, width), height: nil))
+        return CGSize(width: width, height: lead.height + below + under.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let first = subviews.first else { return }
+        guard subviews.count > 1 else {
+            first.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+            return
+        }
+        let end = subviews[1].sizeThatFits(.unspecified)
+        if beside(subviews, bounds.width) {
+            let room = bounds.width - end.width - spacing
+            let lead = first.sizeThatFits(ProposedViewSize(width: room, height: nil))
+            first.place(at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                        proposal: ProposedViewSize(width: room, height: lead.height))
+            if packed {
+                subviews[1].place(at: CGPoint(x: bounds.minX + min(lead.width, room) + spacing, y: bounds.midY),
+                                  anchor: .leading, proposal: .unspecified)
+            } else {
+                subviews[1].place(at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing, proposal: .unspecified)
+            }
+        } else {
+            let whole = ProposedViewSize(width: bounds.width, height: nil)
+            let lead = first.sizeThatFits(whole)
+            first.place(at: bounds.origin, proposal: whole)
+            subviews[1].place(at: CGPoint(x: bounds.minX, y: bounds.minY + lead.height + below),
+                              proposal: ProposedViewSize(width: min(end.width, bounds.width), height: nil))
+        }
     }
 }

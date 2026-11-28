@@ -123,6 +123,9 @@ struct MapScreen: View {
             }
             mapButtons
         }
+        // It grows with the text up to xxxLarge (about 1.3 times), then stops: beyond, the modes
+        // broke in the middle of their words and pushed the layers above the screen.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 
     private var sosButton: some View {
@@ -139,6 +142,7 @@ struct MapScreen: View {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle")
                 Text(model.sos ? "SOS on" : "SOS").fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("mapBar.sosText")
             }
             .font(.system(.subheadline, weight: .bold))
             .padding(.horizontal, 18)
@@ -149,6 +153,9 @@ struct MapScreen: View {
             .overlay(Capsule().stroke(.white.opacity(0.9), lineWidth: model.sos ? 3 : 0))
         }
         .accessibilityLabel(model.sos ? "SOS on: open" : "SOS")
+        // Bounded with the bar (xxxLarge): the Large Content Viewer shows it whole beyond.
+        .accessibilityShowsLargeContentViewer()
+        .accessibilityIdentifier("mapBar.sos")
     }
 
     private var modePicker: some View {
@@ -447,6 +454,9 @@ private struct ModePicker: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
+        // Bounded with the bar (xxxLarge): the Large Content Viewer shows it whole beyond.
+        .accessibilityShowsLargeContentViewer()
+        .accessibilityIdentifier("mapBar.\(m == .positions ? "positions" : "locate")")
     }
 }
 
@@ -879,14 +889,17 @@ struct RouteMapCard: View {
                 // audit found it too small to touch, and cut).
                 HStack(spacing: 8) {
                     Image(uiImage: RouteLegend.swatch(leg.color, dashed: leg.dashed)).accessibilityHidden(true)
-                    Text(verbatim: leg.said.components(separatedBy: ", ").dropLast().joined(separator: ", "))
-                        .font(.system(.caption))
-                        .foregroundStyle(Theme.tx2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(verbatim: leg.chip)
-                        .font(.system(.caption, weight: .bold).monospacedDigit())
-                        .foregroundStyle(Color(leg.chipColor))
-                        .fixedSize()
+                    // Its figure beside its words while they keep half the row, else under them.
+                    BesideOrUnder {
+                        Text(verbatim: leg.said.components(separatedBy: ", ").dropLast().joined(separator: ", "))
+                            .font(.system(.caption))
+                            .foregroundStyle(Theme.tx2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(verbatim: leg.chip)
+                            .font(.system(.caption, weight: .bold).monospacedDigit())
+                            .foregroundStyle(Color(leg.chipColor))
+                            .fixedSize()
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
